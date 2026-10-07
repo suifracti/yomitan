@@ -156,7 +156,10 @@ export function prepareStudyCard(display) {
             element.addEventListener('focusin', (event) => {
                 if (event.target !== toggle) { expand(true); }
             });
-            element.addEventListener('study-entry-focus', () => { expand(true); });
+            element.addEventListener('study-entry-focus', () => {
+                setView('dictionary');
+                expand(true);
+            });
             element.prepend(toggle);
         }
         const audio = element.querySelector('.actions [data-action="play-audio"]');

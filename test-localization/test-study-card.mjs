@@ -103,6 +103,7 @@ test('mouse-selected secondary can still collapse; keyboard navigation explicitl
  assert.equal(element.dataset.studyExpanded,'false');
  element.dispatchEvent(new document.defaultView.Event('study-entry-focus'));
  assert.equal(element.dataset.studyExpanded,'true');
+ assert.equal(document.documentElement.dataset.studyView,'dictionary','keyboard navigation reveals the destination view');
 });
 test('cancelling before permission resolves never starts a model connection',async()=>{
  const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
