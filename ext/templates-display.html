@@ -8,10 +8,11 @@
             <div class="note-actions-container"></div>
             <div class="action-button-container">
                 <button type="button" class="action-button" data-action="play-audio" title="播放发音" data-title-default="播放发音" data-hotkey='["playAudio",["title","data-title-default"],"播放发音 ({0})"]' data-menu-position="left below h-cover v-cover">
-                    <span class="action-icon icon color-icon" data-icon="play-audio"></span>
+                    <span class="action-icon icon color-icon" data-icon="play-audio"></span><span class="study-action-label">播放发音</span>
                     <span class="action-button-badge icon" hidden></span>
                 </button>
-                <button type="button" class="action-button action-button-collapsible" data-action="menu" data-menu-position="left below h-cover v-cover">
+                <button type="button" class="study-audio-sources" title="选择发音来源">来源 ▾</button>
+                <button type="button" title="更多操作" aria-label="更多操作" class="action-button action-button-collapsible" data-action="menu" data-menu-position="left below h-cover v-cover">
                     <span class="action-icon icon" data-icon="kebab-menu"></span>
                 </button>
             </div>
@@ -182,10 +183,10 @@
 </label></template>
 
 <!-- Popup menu -->
-<template id="audio-button-popup-menu-template"><div class="popup-menu-container scan-disable audio-button-popup-menu" tabindex="-1" role="dialog"><div class="popup-menu popup-menu-auto-size"><div class="popup-menu-body"></div></div></div></template>
+<template id="audio-button-popup-menu-template"><div class="popup-menu-container scan-disable audio-button-popup-menu" tabindex="-1" role="dialog"><div class="popup-menu popup-menu-auto-size"><div class="study-menu-heading">选择发音来源</div><div class="study-menu-hint">点击来源试听 · 右侧选择卡片音频</div><div class="popup-menu-body"></div></div></div></template>
 <template id="audio-button-popup-menu-item-template"><div class="popup-menu-item-group">
     <button type="button" class="popup-menu-item popup-menu-item-audio-button" data-menu-action="playAudioFromSource"><div class="popup-menu-item-icon icon" data-icon="none"></div><span class="popup-menu-item-label"></span></button>
-    <button type="button" class="popup-menu-item popup-menu-item-set-primary-audio-button" data-menu-action="setPrimaryAudio" title="用作 Anki 卡片音频"><div class="popup-menu-item-icon icon" data-icon="note-card"></div></button>
+    <button type="button" class="popup-menu-item popup-menu-item-set-primary-audio-button" data-menu-action="setPrimaryAudio" title="用作 Anki 卡片音频" aria-label="用作 Anki 卡片音频"><div class="popup-menu-item-icon icon" data-icon="note-card"></div><span class="study-card-audio-label">选用</span></button>
 </div></template>
 <template id="view-note-button-popup-menu-template"><div class="popup-menu-container scan-disable view-note-button-popup-menu" tabindex="-1" role="dialog"><div class="popup-menu popup-menu-auto-size"><div class="popup-menu-body"></div></div></div></template>
 <template id="view-note-button-popup-menu-item-template"><button type="button" class="popup-menu-item"><span class="popup-menu-item-label"></span></button></template>
@@ -202,14 +203,14 @@
 </button></template>
 
 <template id="note-action-button-view-note-template"><button type="button" class="action-button" data-action="view-note" hidden disabled title="查看已添加笔记" data-hotkey='["viewNotes","title","查看已添加笔记 ({0})"]' data-menu-position="left below h-cover v-cover">
-    <span class="action-icon icon color-icon" data-icon="view-note"></span>
+    <span class="action-icon icon color-icon" data-icon="view-note"></span><span class="study-action-label">查看卡片</span>
     <span class="action-button-badge icon"></span>
 </button></template>
 
 <template id="action-button-container-template">
     <div class="action-button-container">
         <button type="button" class="action-button" data-action="save-note" title="添加 {0}" data-hotkey='["saveNote","title","添加 {0} ({0})"]'>
-            <span class="action-icon icon color-icon" data-icon=""></span>
+            <span class="action-icon icon color-icon" data-icon=""></span><span class="study-action-label">添加到 Anki</span>
         </button>
     </div>
 </template>

@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-export const bundledDictionaryTitle = 'ECDICT 英汉词典';
+export const bundledDictionaryTitle = 'ECDICT 英语学习词典';
 
 /**
  * @param {{getInfo: () => Promise<import('dictionary-importer').Summary[]>, importArchive: () => Promise<import('dictionary-importer').ImportResult>, enable: (summary: import('dictionary-importer').Summary) => Promise<void>}} services
@@ -35,4 +35,30 @@ export async function initializeBundledDictionary({getInfo, importArchive, enabl
     }
     await enable(result);
     return 'imported';
+}
+
+/**
+ * Non-destructive migration of our identified package only. Disabled predecessor stays disabled.
+ * @param {import('settings').DictionaryOptions[]} previous
+ * @param {import('dictionary-importer').Summary} summary
+ * @param {import('dictionary-importer').Summary[]} installed
+ * @returns {import('settings').DictionaryOptions[]}
+ */
+export function planStudyDictionary(previous, summary, installed) {
+    if (previous.some(({name}) => name === summary.title)) { return previous; }
+    const owned = installed.some(({title, revision}) => title === 'ECDICT 英汉词典' && revision === 'ECDICT-2026-10-07');
+    const predecessor = owned ? previous.find(({name}) => name === 'ECDICT 英汉词典') : void 0;
+    return [
+        ...previous.map((d) => (d === predecessor ? {...d, enabled: false} : d)),
+        {
+            name: summary.title,
+            alias: summary.title,
+            enabled: predecessor?.enabled ?? true,
+            allowSecondarySearches: false,
+            definitionsCollapsible: 'not-collapsible',
+            partsOfSpeechFilter: true,
+            useDeinflections: true,
+            styles: summary.styles ?? '',
+        },
+    ];
 }

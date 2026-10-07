@@ -57,15 +57,15 @@ export class DisplayAudio {
         this._audioSources = [];
         /** @type {Map<import('settings').AudioSourceType, string>} */
         this._audioSourceTypeNames = new Map([
-            ['jpod101', 'JapanesePod101'],
-            ['language-pod-101', 'LanguagePod101'],
-            ['jisho', 'Jisho.org'],
-            ['lingua-libre', 'Lingua Libre'],
-            ['wiktionary', 'Wiktionary'],
-            ['text-to-speech', 'Text-to-speech'],
-            ['text-to-speech-reading', 'Text-to-speech (Kana reading)'],
-            ['custom', 'Custom URL'],
-            ['custom-json', 'Custom URL (JSON)'],
+            ['jpod101', 'JapanesePod101 · 日语发音'],
+            ['language-pod-101', 'LanguagePod101 · 语言发音库'],
+            ['jisho', 'Jisho.org · 日语词典'],
+            ['lingua-libre', 'Lingua Libre · 开放录音库'],
+            ['wiktionary', 'Wiktionary · 维基词典'],
+            ['text-to-speech', '系统语音合成'],
+            ['text-to-speech-reading', '系统语音合成（读音）'],
+            ['custom', '自定义音频地址'],
+            ['custom-json', '自定义音频地址（JSON）'],
         ]);
         /** @type {?boolean} */
         this._enableDefaultAudioSources = null;

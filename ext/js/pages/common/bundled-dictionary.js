@@ -17,21 +17,21 @@
  */
 
 import {DictionaryWorker} from '../../dictionary/dictionary-worker.js';
-import {initializeBundledDictionary, bundledDictionaryTitle} from './bundled-dictionary-core.js';
+import {initializeBundledDictionary, planStudyDictionary} from './bundled-dictionary-core.js';
 
 /** @param {import('../settings/settings-controller.js').SettingsController} controller */
 export async function prepareBundledDictionary(controller) {
     const options = await controller.getOptionsFull();
     // Do not auto-import into migrated/custom profiles or reimport after an intentional deletion.
     if (options.profiles.length !== 1 || options.profiles[0].name !== '英语学习') { return; }
-    const marker = 'personalStudyDictionaryReady';
+    const marker = 'personalStudyDictionaryRichReadyV1';
     if ((await chrome.storage.local.get(marker))[marker]) { return; }
     await navigator.locks.request('personal-study-dictionary-import', {ifAvailable: true}, async (lock) => {
         if (!lock || (await chrome.storage.local.get(marker))[marker]) { return; }
         const status = document.createElement('div');
         status.setAttribute('role', 'status');
         status.style.cssText = 'padding:14px 20px;background:#ede8ff;color:#36265c;border-radius:10px;margin:16px;font-size:14px;';
-        status.textContent = '正在初始化内置英汉词典（约 77 万词条），首次导入可能需要几分钟。请保持此页面打开；现有词典不会被删除。';
+        status.textContent = '正在初始化增强英语词典（约 77 万词条），首次导入可能需要几分钟。请保持此页面打开；现有词典不会被删除。';
         document.body.prepend(status);
         try {
             await initializeBundledDictionary({
@@ -47,25 +47,18 @@ export async function prepareBundledDictionary(controller) {
                 enable: async (summary) => {
                     const full = await controller.getOptionsFull();
                     const profile = full.profiles[0];
-                    if (profile.name !== '英语学习') { throw new Error('配置已变更，停止自动设置'); }
-                    if (!profile.options.dictionaries.some(({name}) => name === bundledDictionaryTitle)) {
-                        profile.options.dictionaries.push({
-                            name: summary.title,
-                            alias: summary.title,
-                            enabled: true,
-                            allowSecondarySearches: false,
-                            definitionsCollapsible: 'not-collapsible',
-                            partsOfSpeechFilter: true,
-                            useDeinflections: true,
-                            styles: summary.styles ?? '',
-                        });
+                    if (full.profiles.length !== 1 || profile.name !== '英语学习') { throw new Error('配置已变更，停止自动设置'); }
+                    const installed = await controller.application.api.getDictionaryInfo();
+                    const planned = planStudyDictionary(profile.options.dictionaries, summary, installed);
+                    if (planned !== profile.options.dictionaries) {
+                        profile.options.dictionaries = planned;
                         await controller.setAllSettings(full);
                     }
                     await controller.application.api.triggerDatabaseUpdated('dictionary', 'import');
                 },
             });
             await chrome.storage.local.set({[marker]: true});
-            status.textContent = '英汉词典已就绪。学习预设：英语查词 · 按住 Shift 扫描 · Anki 端口 8766 · 外语::英语语境。';
+            status.textContent = '增强英语词典已就绪。按住 Shift 查词；英文解释和词形可展开。旧内置词典保留但不重复显示，自定义词典不变。';
         } catch (error) {
             status.textContent = `初始化未完成：${error instanceof Error ? error.message : String(error)}。可重新打开入门页重试。`;
         }

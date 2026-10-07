@@ -2123,3 +2123,7 @@ button.footer-notification-close-button {
 :root[data-popup-display-mode=full-width] .frame-resizer-container {
     display: none;
 }
+
+/* Visible action labels are enabled only by the personal popup card stylesheet. */
+.study-action-label,
+.study-audio-sources { display: none; }

@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {fitStudyPopup} from './study-popup-size.js';
 import {FrameClient} from '../comm/frame-client.js';
 import {DynamicProperty} from '../core/dynamic-property.js';
 import {EventDispatcher} from '../core/event-dispatcher.js';
@@ -438,7 +439,12 @@ export class Popup extends EventDispatcher {
      * @returns {Promise<boolean>} `true` if the size assignment was successful, `false` otherwise.
      */
     async setFrameSize(width, height) {
-        this._setFrameSize(width, height);
+        const viewport = this._getViewport(this._scaleRelativeToVisualViewport);
+        const rect = this._frame.getBoundingClientRect();
+        const fitted = fitStudyPopup(rect, width, height, viewport, this._frame.dataset.below === 'true');
+        this._frame.style.left = `${fitted.left}px`;
+        this._frame.style.top = `${fitted.top}px`;
+        this._setFrameSize(fitted.width, fitted.height);
         return true;
     }
 

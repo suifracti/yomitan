@@ -23,12 +23,12 @@ test('only exact UI labels are translated', async()=>{
 test('bundled dictionary initializes once and never deletes existing data', async()=>{
  const {initializeBundledDictionary}=await import('../ext/js/pages/common/bundled-dictionary-core.js');
  let imports=0;let enabled=0;
- const services={getInfo:async()=>[],importArchive:async()=>{imports++;return {result:{title:'ECDICT 英汉词典',importSuccess:true},errors:[]};},enable:async()=>{enabled++;}};
+ const services={getInfo:async()=>[],importArchive:async()=>{imports++;return {result:{title:'ECDICT 英语学习词典',importSuccess:true},errors:[]};},enable:async()=>{enabled++;}};
  assert.equal(await initializeBundledDictionary(services),'imported');
  assert.equal(imports,1);assert.equal(enabled,1);
- services.getInfo=async()=>[{title:'ECDICT 英汉词典',importSuccess:true}];
+ services.getInfo=async()=>[{title:'ECDICT 英语学习词典',importSuccess:true}];
  assert.equal(await initializeBundledDictionary(services),'exists');assert.equal(imports,1);
- services.getInfo=async()=>[{title:'ECDICT 英汉词典',importSuccess:false}];
+ services.getInfo=async()=>[{title:'ECDICT 英语学习词典',importSuccess:false}];
  await assert.rejects(()=>initializeBundledDictionary(services),/未完成/);
 });
 test('lookup action titles are Chinese without rewriting dictionary contents',()=>{

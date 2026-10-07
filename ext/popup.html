@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-page-type="popup">
+<html lang="zh-CN" data-page-type="popup">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Yomitan Search</title>
+    <title>英语查词 · Yomitan</title>
     <link rel="icon" type="image/png" href="/images/icon16.png" sizes="16x16">
     <link rel="icon" type="image/png" href="/images/icon19.png" sizes="19x19">
     <link rel="icon" type="image/png" href="/images/icon32.png" sizes="32x32">
@@ -15,6 +15,7 @@
     <link rel="stylesheet" type="text/css" href="/css/display.css">
     <link rel="stylesheet" type="text/css" href="/css/display-pronunciation.css">
     <link rel="stylesheet" type="text/css" href="/css/structured-content.css">
+    <link rel="stylesheet" type="text/css" href="/css/study-card.css">
     <script src="/js/display/popup-main.js" type="module"></script>
 </head>
 <body>
@@ -26,6 +27,11 @@
                 <div class="top-progress-bar-container"><div class="progress-bar-indeterminant" id="progress-indicator" hidden></div></div>
                 <div class="content-body-inner">
 
+                    <div class="study-toolbar scan-disable">
+                        <span class="study-toolbar-title">英语查词</span>
+                        <label class="study-auto-size"><input type="checkbox" id="study-auto-size" checked>自适应</label>
+                        <a href="/settings.html" target="_blank" rel="noopener noreferrer" class="study-settings" title="打开 Yomitan 设置">设置 ↗</a>
+                    </div>
                     <span tabindex="-1" id="content-scroll-focus"></span>
 
                     <div class="search-header">
@@ -41,14 +47,14 @@
 
                     <div id="no-results" hidden>
                         <div class="entry">
-                            <p>No results found.</p>
+                            <p>没有找到词条。</p>
                         </div>
                     </div>
 
                     <div id="no-dictionaries" hidden>
                         <div class="entry">
-                            <p>No dictionaries have been installed or enabled yet.</p>
-                            <p><a href="/settings.html#dictionaries" target="_top">Go to Dictionaries settings.</a></p>
+                            <p>尚未安装或启用词典。</p>
+                            <p><a href="/settings.html#dictionaries" target="_top">打开词典设置</a></p>
                         </div>
                     </div>
                     <div id="error-extension-unloaded" hidden>
@@ -68,7 +74,7 @@
         <div class="overlay-panel-container">
             <div class="overlay-panel scrollbar" id="profile-panel" hidden>
                 <div class="overlay-panel-inner">
-                    <h3>Default Profile</h3>
+                    <h3>当前配置</h3>
                     <div class="profile-list" id="profile-list"></div>
                 </div>
             </div>
@@ -77,11 +83,11 @@
     <div class="content-sidebar scrollbar" id="content-sidebar">
         <div class="content-sidebar-inner">
             <div class="content-sidebar-top-pre">
-                <button type="button" class="sidebar-button danger" id="close-button" title="Close popup" data-hotkey='["close","title","Close popup ({0})"]'><span class="sidebar-button-icon icon" data-icon="cross"></span></button>
+                <button type="button" class="sidebar-button danger" id="close-button" title="关闭查词窗" data-hotkey='["close","title","关闭查词窗 ({0})"]'><span class="sidebar-button-icon icon" data-icon="cross"></span></button>
             </div>
             <div class="content-sidebar-top">
-                <button type="button" class="sidebar-button" disabled id="navigate-previous-button" title="Previous definition" data-hotkey='["historyBackward","title","Previous definition ({0})"]'><span class="sidebar-button-icon icon" data-icon="left-chevron"></span></button>
-                <button type="button" class="sidebar-button" disabled id="navigate-next-button" title="Next definition" data-hotkey='["historyForward","title","Next definition ({0})"]'><span class="sidebar-button-icon icon" data-icon="right-chevron"></span></button>
+                <button type="button" class="sidebar-button" disabled id="navigate-previous-button" title="上一条释义" data-hotkey='["historyBackward","title","上一条释义 ({0})"]'><span class="sidebar-button-icon icon" data-icon="left-chevron"></span></button>
+                <button type="button" class="sidebar-button" disabled id="navigate-next-button" title="下一条释义" data-hotkey='["historyForward","title","下一条释义 ({0})"]'><span class="sidebar-button-icon icon" data-icon="right-chevron"></span></button>
             </div>
             <div class="content-sidebar-bottom">
                 <p id="profile-name"></p>

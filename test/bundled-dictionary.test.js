@@ -30,12 +30,18 @@ test('the actual bundled archive and every term bank pass official schemas', asy
         expect(validateTerms(bank), `${name}: ${JSON.stringify(validateTerms.errors)}`).toBe(true);
         count += bank.length;
     }
-    expect(count).toBe(768739);
+    expect(count).toBe(770611);
 }, 60000);
 
 test('official importer accepts bundled metadata and English definitions can be queried', async () => {
     const archive = await JSZip.loadAsync(readFileSync(archivePath));
-    const entries = JSON.parse(await archive.file('term_bank_1.json').async('string')).slice(0, 8);
+    const wanted = new Set(['ourselves', 'bank', 'account', 'run']);
+    const entries = [];
+    for (const name of Object.keys(archive.files).filter((n) => /^term_bank_\d+\.json$/.test(n))) {
+        const bank = JSON.parse(await archive.file(name).async('string'));
+        entries.push(...bank.filter((t) => wanted.has(t[0])));
+    }
+    expect(entries.length).toBe(4);
     const sample = new JSZip();
     sample.file('index.json', await archive.file('index.json').async('string'));
     sample.file('term_bank_1.json', JSON.stringify(entries));

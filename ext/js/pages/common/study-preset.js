@@ -26,6 +26,7 @@ export function applyStudyPreset(options) {
         profile.name = '英语学习';
         const {general, scanning, translation, anki} = profile.options;
         general.language = 'en';
+        general.popupWidth = 440;
         scanning.scanResolution = 'word';
         translation.searchResolution = 'word';
         anki.enable = true;
