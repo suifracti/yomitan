@@ -286,7 +286,8 @@ export class DictionaryImporter {
                 tagList = [];
             }
 
-            importSuccess = true;
+            // A partial transaction failure is not a successful import.
+            importSuccess = errors.length === 0;
         } catch (e) {
             errors.push(toError(e));
         }
