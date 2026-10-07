@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {prepareStudyTranslation} from './study-translation.js';
+
 /**
  * Display-only context: never treats a dictionary example as the user's source.
  * @param {HTMLElement} entry
@@ -50,6 +52,8 @@ export function prepareStudyCard(display) {
     const inner = document.querySelector('.content-body-inner');
     const autoSize = /** @type {?HTMLInputElement} */ (document.querySelector('#study-auto-size'));
     if (!(inner instanceof HTMLElement) || !autoSize) { return; }
+    const context = document.querySelector('#study-context');
+    const translation = prepareStudyTranslation();
     let manual = false;
     let generation = 0;
     let pending = false;
@@ -83,14 +87,62 @@ export function prepareStudyCard(display) {
     for (const event of ['mousedown', 'touchstart']) {
         handle?.addEventListener(event, () => { manual = true; }, {capture: true, passive: true});
     }
-    display.on('contentUpdateStart', () => {
+    const clear = () => {
         ++generation;
         manual = false;
-    });
-    display.on('contentUpdateEntry', ({element, dictionaryEntry}) => {
+        translation.cancel();
+        if (context instanceof HTMLElement) {
+            context.replaceChildren();
+            context.hidden = true;
+        }
+    };
+    display.on('contentUpdateStart', clear);
+    display.on('contentClear', clear);
+    display.on('contentUpdateEntry', ({element, dictionaryEntry, index}) => {
         if (dictionaryEntry.type !== 'term' || !(element instanceof HTMLElement)) { return; }
         element.classList.add('study-entry');
-        appendStudyContext(element, display.history.state?.sentence ?? null, display.query);
+        for (const card of element.querySelectorAll('[data-sc-study-role=card]')) {
+            const metadata = card.querySelectorAll('[data-sc-study-role=forms], [data-sc-study-role=tags], [data-sc-study-role=frequency]');
+            if (metadata.length > 0) {
+                const details = document.createElement('details');
+                details.className = 'study-word-details';
+                const summary = document.createElement('summary');
+                summary.textContent = '词形 · 考试标签 · 词频';
+                details.append(summary, ...metadata);
+                card.append(details);
+            }
+            for (const row of card.querySelectorAll('[data-sc-study-role=meaning]>div:not([data-sc-study-role=label])')) {
+                const text = row.textContent ?? '';
+                const match = /^(a\.|adj\.|adv\.|n\.|v\.|vt\.|vi\.|prep\.|pron\.|conj\.|interj\.)\s+/.exec(text);
+                if (match) {
+                    const pos = document.createElement('span');
+                    pos.className = 'study-pos';
+                    pos.textContent = match[1];
+                    row.replaceChildren(pos, document.createTextNode(text.slice(match[0].length)));
+                }
+            }
+        }
+        if (index > 0) {
+            element.classList.add('study-secondary');
+            element.dataset.studyExpanded = 'false';
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'study-match-toggle scan-disable';
+            toggle.textContent = `另一个匹配 · ${dictionaryEntry.headwords.map(({term}) => term).join(' / ')} ▾`;
+            toggle.setAttribute('aria-expanded', 'false');
+            /** @param {boolean} value */
+            const expand = (value) => {
+                element.dataset.studyExpanded = `${value}`;
+                toggle.setAttribute('aria-expanded', `${value}`);
+                schedule();
+            };
+            toggle.addEventListener('click', () => { expand(element.dataset.studyExpanded !== 'true'); });
+            element.addEventListener('focusin', (event) => {
+                if (event.target !== toggle) { expand(true); }
+            });
+            element.addEventListener('study-entry-focus', () => { expand(true); });
+            element.prepend(toggle);
+        }
         const audio = element.querySelector('.actions [data-action="play-audio"]');
         const sources = element.querySelector('.study-audio-sources');
         const word = dictionaryEntry.headwords[0]?.term;
@@ -108,5 +160,16 @@ export function prepareStudyCard(display) {
             audio?.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}));
         });
     });
-    display.on('contentUpdateComplete', schedule);
+    display.on('contentUpdateComplete', () => {
+        if (context instanceof HTMLElement) {
+            context.replaceChildren();
+            const sentence = display.history.state?.sentence ?? null;
+            appendStudyContext(context, sentence, display.query);
+            if (sentence && sentence.text.trim() && sentence.text.trim() !== display.query.trim()) {
+                context.hidden = false;
+                translation.render(context, sentence.text, display.query);
+            }
+        }
+        schedule();
+    });
 }

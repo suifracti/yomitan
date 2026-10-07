@@ -1689,6 +1689,8 @@ export class Display extends EventDispatcher {
         index = Math.max(Math.min(index, this._dictionaryEntries.length - 1), 0);
 
         this._entrySetCurrent(index);
+        // Personal popup: reveal a compact secondary result before measuring keyboard scroll position.
+        this._getEntry(index)?.dispatchEvent(new Event('study-entry-focus'));
 
         let node = (index >= 0 && index < this._dictionaryEntryNodes.length ? this._dictionaryEntryNodes[index] : null);
         if (definitionIndex > 0) {
