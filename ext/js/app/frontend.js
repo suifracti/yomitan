@@ -786,6 +786,15 @@ export class Frontend {
             pageTheme,
         };
         if (sentence !== null) { detailsState.sentence = sentence; }
+        const parent = textSource instanceof TextSourceRange ? textSource.range.startContainer.parentElement : null;
+        const subtitle = parent?.closest('.asbplayer-subtitles, .asbplayer-fullscreen-subtitles, .ytp-caption-window-container, .bpx-player-subtitle-panel');
+        if (subtitle) {
+            // Do not mistake surrounding page comments/controls for adjacent video dialogue.
+            if (sentence !== null) { detailsState.sentence = {...sentence, adjacent: ''}; }
+            const videos = [...document.querySelectorAll('video')].filter((v) => v.getBoundingClientRect().width > 0);
+            const position = videos.length === 1 ? videos[0].currentTime : Number.NaN;
+            if (Number.isFinite(position) && position >= 0) { detailsState.videoTime = Math.floor(position); }
+        }
         if (documentTitle !== null) { detailsState.documentTitle = documentTitle; }
         const {tabId, frameId} = this._application;
         /** @type {import('display').HistoryContent} */

@@ -79,6 +79,8 @@ export type HistoryParams = {
  * The semi-persistent state assigned to the navigation entry.
  */
 export type HistoryState = {
+    /** Playback position only when source is a recognized subtitle and exactly one visible video exists. */
+    videoTime?: number;
     /** What was the cause of the navigation. */
     cause?: 'queryParser';
     /** The sentence context. */
@@ -103,6 +105,8 @@ export type HistoryState = {
  * The sentence context.
  */
 export type HistoryStateSentence = {
+    /** Optional bounded local adjacent sentences; not uploaded by default. */
+    adjacent?: string;
     /** The full string. */
     text: string;
     /** The offset from the start of `text` to the full search query. */

@@ -26,6 +26,10 @@ try {
  const dimensions=await page.evaluate(()=>({width:innerWidth,bodyWidth:document.body.scrollWidth,contentHeight:document.querySelector('.content-body-inner').offsetHeight,buttons:[...document.querySelectorAll('.actions button')].filter(b=>getComputedStyle(b).display!=='none').map(b=>({text:b.textContent.trim(),width:b.getBoundingClientRect().width})),details:document.querySelectorAll('[data-sc-study-role=card] details').length}));
  if(dimensions.bodyWidth>dimensions.width)throw new Error('Horizontal overflow');
  console.log(JSON.stringify(dimensions));
+ const firstView=await page.evaluate(()=>({height:innerHeight, bottom:document.querySelector('.study-translation-actions').getBoundingClientRect().bottom, top:document.querySelector('.study-ai-translation').getBoundingClientRect().top, notes:getComputedStyle(document.querySelector('.study-ai-details')).display}));
+ if(firstView.bottom>firstView.height || firstView.top<0 || firstView.notes!=='none')throw new Error('Overview requires scrolling to read translation/actions: '+JSON.stringify(firstView));
+ console.log('overview translation and actions fit without scrolling',JSON.stringify(firstView));
+ await page.evaluate(()=>document.documentElement.dataset.studyView='dictionary');
  await page.locator('[data-sc-study-role=english]').first().evaluate(el=>el.open=true);
  await page.evaluate(()=>document.documentElement.dataset.theme='dark');
  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.study-audio-sources')).backgroundColor==='rgb(36, 51, 46)');

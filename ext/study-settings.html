@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>英语学习 · AI 与记忆</title>
+    <link rel="stylesheet" href="/css/study-settings.css">
+    <script src="/js/pages/study-settings-main.js" type="module"></script>
+</head>
+<body>
+    <main>
+        <header><div><p class="eyebrow">YOMITAN · 私人英语学习版</p><h1>AI 与学习记忆</h1><p>少一点设置，多一点连续阅读。</p></div><a href="/settings.html">词典与扩展设置 ↗</a></header>
+        <p id="status" role="status" aria-live="polite">正在读取本地设置…</p>
+        <form id="settings-form">
+            <section><h2>模型与速度</h2><p>列表来自本机 Codex。读取列表不生成译文；模型能否实际调用仍取决于账号。</p>
+                <div class="fields"><label>模型<select id="model" name="model"></select></label><label>推理强度<select id="effort" name="effort"></select></label></div>
+                <button type="button" id="load-models">读取 / 刷新可用模型</button><small>高强度通常等待更久；查词建议低强度。不会自动切换或重试其他模型。</small>
+            </section>
+            <section><h2>学习偏好</h2><p>只记住你在这里设定的偏好，不猜测掌握程度，也不读取 Obsidian 或 Anki。</p>
+                <label class="check"><input type="checkbox" id="memoryEnabled">在点击 AI 时使用学习偏好</label>
+                <div class="fields">
+                    <label>目前水平<select id="level"><option value="unspecified">暂不指定</option><option value="beginner">入门</option><option value="intermediate">中级</option><option value="advanced">进阶</option></select></label>
+                    <label>学习目标<select id="goal"><option value="general">日常理解</option><option value="reading">阅读文章</option><option value="listening">听力 / 视频</option><option value="exam">考试学习</option></select></label>
+                    <label>解释风格<select id="style"><option value="brief">简明中文，抓住重点</option><option value="detailed">中文解释，补充必要搭配</option></select></label>
+                </div><button type="button" id="reset-memory">清空学习偏好</button>
+            </section>
+            <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>最多 100 条、有效期 30 天；模型、推理或语境变化会区分缓存。缓存包含你点击发送的句子，不保存整篇文章。关闭后立即清空并停止保存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
+            <div class="save-bar"><button type="submit" class="primary">保存设置</button><span>模型调用仅在你点击查词卡的 AI 按钮时发生。</span></div>
+        </form>
+        <section><div class="section-heading"><h2>收藏的语境</h2><div><button type="button" id="export-saved">导出 JSON</button><button type="button" id="clear-saved">清空收藏</button></div></div><p>仅记录你主动点击“收藏语境”的词和句子，附可用来源链接。最多 200 条，满后提示导出清理，不自动删除旧收藏；不会扫描全文或制作复习卡。</p><div id="saved"></div></section>
+        <footer>数据保存在此扩展的本地存储；不随源码或安装包上传。卸载扩展会清除本地数据，重要收藏请先导出。</footer>
+    </main>
+</body>
+</html>

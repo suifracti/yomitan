@@ -54,6 +54,21 @@ export function prepareStudyCard(display) {
     if (!(inner instanceof HTMLElement) || !autoSize) { return; }
     const context = document.querySelector('#study-context');
     const translation = prepareStudyTranslation();
+    const viewButtons = document.querySelectorAll('[data-study-view]');
+    /** @param {string} view */
+    const setView = (view) => {
+        document.documentElement.dataset.studyView = view;
+        for (const details of document.querySelectorAll('.study-ai-details')) {
+            if (details instanceof HTMLDetailsElement) { details.open = view === 'usage'; }
+        }
+        for (const button of viewButtons) { button.setAttribute('aria-pressed', `${(/** @type {HTMLElement} */ (button)).dataset.studyView === view}`); }
+        const scroll = document.querySelector('#content-scroll');
+        if (scroll) { scroll.scrollTop = 0; }
+    };
+    setView('overview');
+    for (const button of viewButtons) {
+        button.addEventListener('click', () => { setView((/** @type {HTMLElement} */ (button)).dataset.studyView ?? 'overview'); });
+    }
     let manual = false;
     let generation = 0;
     let pending = false;
@@ -91,6 +106,7 @@ export function prepareStudyCard(display) {
         ++generation;
         manual = false;
         translation.cancel();
+        setView('overview');
         if (context instanceof HTMLElement) {
             context.replaceChildren();
             context.hidden = true;
@@ -167,7 +183,7 @@ export function prepareStudyCard(display) {
             appendStudyContext(context, sentence, display.query);
             if (sentence && sentence.text.trim() && sentence.text.trim() !== display.query.trim()) {
                 context.hidden = false;
-                translation.render(context, sentence.text, display.query);
+                translation.render(context, sentence.text, display.query, {url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime});
             }
         }
         schedule();

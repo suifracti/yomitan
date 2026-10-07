@@ -44,7 +44,7 @@ test('upgrade disables only identified bundled predecessor and preserves user ch
 });
 function setupDisplay() {
  const dom=new JSDOM('<div class="content-body-inner"><input id="study-auto-size" type="checkbox" checked><section id="study-context"></section><div id="dictionary-entries"></div></div>');
- for(const key of ['document','HTMLElement','MouseEvent','MutationObserver'])globalThis[key]=dom.window[key];
+ for(const key of ['document','HTMLElement','HTMLDetailsElement','MouseEvent','MutationObserver'])globalThis[key]=dom.window[key];
  globalThis.ResizeObserver=class {observe(){}};
  globalThis.requestAnimationFrame=()=>{};
  const callbacks=new Map();
@@ -72,14 +72,14 @@ test('one shared source, secondary matches collapsed, keyboard focus reveals the
 test('translation is click-only, bounded editable source and stale responses do not replace next query',async()=>{
  const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
  const {callbacks,display}=setupDisplay();let calls=0,finish;
- globalThis.chrome={permissions:{request:async()=>true},runtime:{lastError:null,connectNative:()=>({onMessage:{addListener:cb=>finish=cb},onDisconnect:{addListener:()=>{}},postMessage:data=>{calls++;assert.equal(data.sentence,'A complete edited sentence.');},disconnect:()=>{}})}};
+ globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async ({studyAction,data})=>{if(studyAction==='peek')return {ok:true,value:{result:null}};calls++;assert.equal(data.sentence,'A complete edited sentence.');return new Promise(resolve=>finish=resolve);}}};
  prepareStudyCard(display);callbacks.get('contentUpdateStart')();callbacks.get('contentUpdateComplete')();
  assert.equal(calls,0);
  const button=document.querySelector('[data-study-translate="translate"]');assert.ok(button,'explicit translate button');
  document.querySelector('.study-source-editor').value='A complete edited sentence.';
  button.click();await new Promise(r=>setImmediate(r));assert.equal(calls,1);
  callbacks.get('contentUpdateStart')();display.query='new';display.history.state.sentence={text:'Another sentence.',offset:0};callbacks.get('contentUpdateComplete')();
- finish({ok:true,text:'STALE'});await new Promise(r=>setImmediate(r));
+ finish({ok:true,value:{result:{translation:'STALE',meaning:'old',notes:''},cached:false}});await new Promise(r=>setImmediate(r));
  assert.doesNotMatch(document.querySelector('#study-context').textContent,/STALE/);
 });
 test('low-value metadata is collapsed together, original meanings and POS retained',async()=>{

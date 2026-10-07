@@ -15,6 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {adjacentSentences} from '../study/study-data.js';
 import {log} from '../core/log.js';
 import {computeZoomScale, isPointInAnyRect} from './document-util.js';
 import {DOMTextScanner} from './dom-text-scanner.js';
@@ -60,7 +61,7 @@ export class TextSourceGenerator {
      * @param {import('text-scanner').SentenceTerminatorMap} terminatorMap A mapping of characters that terminate a sentence.
      * @param {import('text-scanner').SentenceForwardQuoteMap} forwardQuoteMap A mapping of quote characters that delimit a sentence.
      * @param {import('text-scanner').SentenceBackwardQuoteMap} backwardQuoteMap A mapping of quote characters that delimit a sentence, which is the inverse of forwardQuoteMap.
-     * @returns {{text: string, offset: number}} The sentence and the offset to the original source.
+     * @returns {{text: string, offset: number, adjacent: string}} The sentence and the offset to the original source.
      */
     extractSentence(source, layoutAwareScan, extent, terminateAtNewlines, terminatorMap, forwardQuoteMap, backwardQuoteMap) {
         // Scan text
@@ -176,6 +177,7 @@ export class TextSourceGenerator {
         return {
             text: text.slice(cursorStart, cursorEnd).join(''),
             offset: startLength - cursorStart,
+            adjacent: adjacentSentences(text.slice(0, cursorStart).join(''), text.slice(cursorEnd).join('')),
         };
     }
 

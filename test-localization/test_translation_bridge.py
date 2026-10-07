@@ -55,6 +55,7 @@ for line in sys.stdin:
  if method=='initialized':continue
  if method=='initialize':result={}
  elif method=='config/read':result={'config':{'features':features,'agents':{'enabled':False},'web_search':'disabled','project_doc_max_bytes':0}}
+ elif method=='model/list':result={'data':[{'model':'gpt-6.1-sol','displayName':'GPT-6.1 Sol','supportedReasoningEfforts':[{'reasoningEffort':'low'},{'reasoningEffort':'high'}],'defaultReasoningEffort':'low'}],'nextCursor':None}
  elif method=='thread/start':
   assert v['params']['ephemeral'] and v['params']['environments']==[] and v['params']['dynamicTools']==[]
   result={'thread':{'id':'fixture-thread'}}
@@ -94,5 +95,24 @@ for line in sys.stdin:
     host=runtime/'study_translator.py';host.write_text('User changed this')
     with self.assertRaises(ValueError):i.install(home,codex,sys.executable)
     self.assertEqual(host.read_text(),'User changed this')
+
+class ModelSettingsTests(unittest.TestCase):
+ module = BridgeTests.module
+ def test_catalog_validates_combinations_and_keeps_configuration_out_of_untrusted_input(self):
+  m=self.module();models=[{'model':'gpt-6.1-sol','supportedReasoningEfforts':[{'reasoningEffort':'low'}]}]
+  config={'model':'gpt-6.1-sol','effort':'low','level':'beginner','goal':'reading','style':'brief','memoryEnabled':True}
+  payload=m.normalize_request({'action':'explain','sentence':'A test.','word':'test','context':'Previous sentence.','config':config})
+  m.validate_model(config,models)
+  with self.assertRaises(ValueError):m.validate_model(dict(config,effort='ultra'),models)
+  thread=m.thread_params('/tmp/isolated',config);self.assertEqual(thread['model'],config['model'])
+  turn=m.turn_params('t',payload);self.assertEqual(turn['effort'],'low')
+  data=json.loads(turn['input'][0]['text']);self.assertNotIn('model',data);self.assertNotIn('config',data)
+  self.assertEqual(data['context'],'Previous sentence.')
+  self.assertEqual(data['learningPreferences']['goal'],'reading')
+  payload['config']['memoryEnabled']=False
+  self.assertNotIn('learningPreferences',json.loads(m.turn_params('t',payload)['input'][0]['text']))
+ def test_model_metadata_request_never_creates_a_thread(self):
+  m=self.module();self.assertEqual(m.normalize_request({'action':'models'}),{'action':'models'})
+  with self.assertRaises(ValueError):m.normalize_request({'action':'models','command':'ls'})
 
 if __name__=='__main__':unittest.main()

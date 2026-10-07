@@ -16,12 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {prepareStudyService} from '../study/study-service.js';
 import {log} from '../core/log.js';
 import {WebExtension} from '../extension/web-extension.js';
 import {Backend} from './backend.js';
 
 /** Entry point. */
 async function main() {
+    prepareStudyService();
     const webExtension = new WebExtension();
     log.configure(webExtension.extensionName);
 

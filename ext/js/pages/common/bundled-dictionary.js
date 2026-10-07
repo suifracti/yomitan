@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {prepareStudyRichDictionary} from './study-rich-dictionary.js';
 import {DictionaryWorker} from '../../dictionary/dictionary-worker.js';
 import {bundledDictionaryTitle, initializeBundledDictionary, planStudyDictionary} from './bundled-dictionary-core.js';
 
@@ -37,19 +38,25 @@ export async function prepareBundledDictionary(controller) {
     const link = document.createElement('a');
     link.href = '/settings.html#dictionaries';
     link.textContent = '  查看词典管理';
-    status.append(label, button, link);
+    const aiLink = document.createElement('a');
+    aiLink.href = '/study-settings.html';
+    aiLink.textContent = '  AI 设置 · 模型 / 记忆 / 缓存 ↗';
+    status.append(label, button, link, aiLink);
     document.body.prepend(status);
     const refresh = async () => {
         const full = await controller.getOptionsFull();
         const info = await controller.application.api.getDictionaryInfo();
         const installed = info.find(({title}) => title === bundledDictionaryTitle);
         const enabled = full.profiles[full.profileCurrent]?.options.dictionaries.some(({name, enabled: value}) => name === bundledDictionaryTitle && value);
+        const duplicate = enabled && info.some(({title, revision}) => title === 'ECDICT 英汉词典' && revision === 'ECDICT-2026-10-07') && full.profiles[full.profileCurrent]?.options.dictionaries.some((d) => d.name === 'ECDICT 英汉词典' && d.enabled);
+        button.textContent = duplicate ? '去除重复，保留增强版' : '升级／启用增强英语词典';
         label.textContent = installed ?
 (installed.importSuccess === false ?
             '增强英语词典上次导入未完成；请在词典管理中检查，不会自动删除数据。' :
             `增强英语词典已安装，当前配置${enabled ? '已启用' : '未启用'}。`) :
             '增强英语词典未安装。查词结果中的“ECDICT 英汉词典”是旧版，不包含已恢复的英文解释、词形等字段。';
-        button.hidden = Boolean(installed && installed.importSuccess !== false && enabled);
+        if (duplicate) { label.textContent += ' 两份 ECDICT 同时启用，点击去除重复即可；旧数据保留。'; }
+        button.hidden = Boolean(installed && installed.importSuccess !== false && enabled && !duplicate);
         return installed;
     };
     /** @param {boolean} explicit */
@@ -102,8 +109,30 @@ export async function prepareBundledDictionary(controller) {
         }
     };
     button.addEventListener('click', () => { void run(true); });
+    const repairMarker = 'personalStudyDuplicateRepairV2';
+    const seen = (await chrome.storage.local.get(repairMarker))[repairMarker];
+    let repaired = false;
+    if (!seen) {
+        const full = await controller.getOptionsFull();
+        const info = await controller.application.api.getDictionaryInfo();
+        const profile = full.profiles[currentIndex];
+        const ownsOld = info.some(({title, revision}) => title === 'ECDICT 英汉词典' && revision === 'ECDICT-2026-10-07');
+        const activeNew = profile?.options.dictionaries.some(({name, enabled}) => name === bundledDictionaryTitle && enabled);
+        if (full.profileCurrent === currentIndex && profile?.name === initialProfile.name && ownsOld && activeNew) {
+            const old = profile.options.dictionaries.find(({name, enabled}) => name === 'ECDICT 英汉词典' && enabled);
+            if (old) {
+                old.enabled = false;
+                await controller.setAllSettings(full);
+                await controller.application.api.triggerDatabaseUpdated('dictionary', 'import');
+                repaired = true;
+            }
+            await chrome.storage.local.set({[repairMarker]: true});
+        }
+    }
     const installed = await refresh();
+    if (repaired) { label.textContent += ' 重复旧版已停用（数据保留）。'; }
     const marked = (await chrome.storage.local.get(marker))[marker];
     // Automatic first-install path only; other profiles or intentional deletion need an explicit click.
     if (!marked && !installed && initial.profiles.length === 1 && initialProfile.name === '英语学习') { await run(false); }
+    await prepareStudyRichDictionary(controller);
 }
