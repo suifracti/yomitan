@@ -2,12 +2,12 @@
 
 <!-- Term entry -->
 <template id="term-entry-template" data-remove-whitespace-text="true"><div class="entry" data-type="term">
-    <div class="entry-current-indicator" title="Current entry"><span class="entry-current-indicator-inner"></span></div>
+    <div class="entry-current-indicator" title="当前结果"><span class="entry-current-indicator-inner"></span></div>
     <div class="entry-header">
         <div class="actions">
             <div class="note-actions-container"></div>
             <div class="action-button-container">
-                <button type="button" class="action-button" data-action="play-audio" title="Play audio" data-title-default="Play audio" data-hotkey='["playAudio",["title","data-title-default"],"Play audio ({0})"]' data-menu-position="left below h-cover v-cover">
+                <button type="button" class="action-button" data-action="play-audio" title="播放发音" data-title-default="播放发音" data-hotkey='["playAudio",["title","data-title-default"],"播放发音 ({0})"]' data-menu-position="left below h-cover v-cover">
                     <span class="action-icon icon color-icon" data-icon="play-audio"></span>
                     <span class="action-button-badge icon" hidden></span>
                 </button>
@@ -15,7 +15,7 @@
                     <span class="action-icon icon" data-icon="kebab-menu"></span>
                 </button>
             </div>
-            <span class="entry-current-indicator-icon" title="Current entry">
+            <span class="entry-current-indicator-icon" title="当前结果">
                 <span class="icon color-icon" data-icon="entry-current"></span>
             </span>
         </div>
@@ -48,7 +48,7 @@
         </span>
     </div>
     <div class="headword-details">
-        <button type="button" class="action-button" data-action="play-audio" title="Play audio" data-title-default="Play audio" data-hotkey='["playAudio",["title","data-title-default"],"Play audio ({0})"]' data-menu-position="right below h-cover v-cover">
+        <button type="button" class="action-button" data-action="play-audio" title="播放发音" data-title-default="播放发音" data-hotkey='["playAudio",["title","data-title-default"],"播放发音 ({0})"]' data-menu-position="right below h-cover v-cover">
             <span class="action-icon icon color-icon" data-icon="play-audio"></span>
             <span class="action-button-badge icon" hidden></span>
         </button>
@@ -98,11 +98,11 @@
 
 <!-- Kanji entry -->
 <template id="kanji-entry-template" data-remove-whitespace-text="true"><div class="entry kanji-entry" data-type="kanji">
-    <div class="entry-current-indicator" title="Current entry"><span class="entry-current-indicator-inner"></span></div>
+    <div class="entry-current-indicator" title="当前结果"><span class="entry-current-indicator-inner"></span></div>
     <div class="entry-header">
         <div class="actions">
             <div class="note-actions-container"></div>
-            <span class="entry-current-indicator-icon" title="Current entry">
+            <span class="entry-current-indicator-icon" title="当前结果">
                 <span class="icon color-icon" data-icon="entry-current"></span>
             </span>
             <button type="button" class="action-button action-button-collapsible" data-action="menu" data-menu-position="left below h-cover v-cover">
@@ -185,7 +185,7 @@
 <template id="audio-button-popup-menu-template"><div class="popup-menu-container scan-disable audio-button-popup-menu" tabindex="-1" role="dialog"><div class="popup-menu popup-menu-auto-size"><div class="popup-menu-body"></div></div></div></template>
 <template id="audio-button-popup-menu-item-template"><div class="popup-menu-item-group">
     <button type="button" class="popup-menu-item popup-menu-item-audio-button" data-menu-action="playAudioFromSource"><div class="popup-menu-item-icon icon" data-icon="none"></div><span class="popup-menu-item-label"></span></button>
-    <button type="button" class="popup-menu-item popup-menu-item-set-primary-audio-button" data-menu-action="setPrimaryAudio" title="Use as audio for Anki card"><div class="popup-menu-item-icon icon" data-icon="note-card"></div></button>
+    <button type="button" class="popup-menu-item popup-menu-item-set-primary-audio-button" data-menu-action="setPrimaryAudio" title="用作 Anki 卡片音频"><div class="popup-menu-item-icon icon" data-icon="note-card"></div></button>
 </div></template>
 <template id="view-note-button-popup-menu-template"><div class="popup-menu-container scan-disable view-note-button-popup-menu" tabindex="-1" role="dialog"><div class="popup-menu popup-menu-auto-size"><div class="popup-menu-body"></div></div></div></template>
 <template id="view-note-button-popup-menu-item-template"><button type="button" class="popup-menu-item"><span class="popup-menu-item-label"></span></button></template>
@@ -201,14 +201,14 @@
     <span class="action-icon icon" data-icon="tag"></span>
 </button></template>
 
-<template id="note-action-button-view-note-template"><button type="button" class="action-button" data-action="view-note" hidden disabled title="View added note" data-hotkey='["viewNotes","title","View added note ({0})"]' data-menu-position="left below h-cover v-cover">
+<template id="note-action-button-view-note-template"><button type="button" class="action-button" data-action="view-note" hidden disabled title="查看已添加笔记" data-hotkey='["viewNotes","title","查看已添加笔记 ({0})"]' data-menu-position="left below h-cover v-cover">
     <span class="action-icon icon color-icon" data-icon="view-note"></span>
     <span class="action-button-badge icon"></span>
 </button></template>
 
 <template id="action-button-container-template">
     <div class="action-button-container">
-        <button type="button" class="action-button" data-action="save-note" title="Add {0}" data-hotkey='["saveNote","title","Add {0} ({0})"]'>
+        <button type="button" class="action-button" data-action="save-note" title="添加 {0}" data-hotkey='["saveNote","title","添加 {0} ({0})"]'>
             <span class="action-icon icon color-icon" data-icon=""></span>
         </button>
     </div>

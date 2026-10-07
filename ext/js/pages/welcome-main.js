@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {prepareBundledDictionary} from './common/bundled-dictionary.js';
 import {Application} from '../application.js';
 import {DocumentFocusController} from '../dom/document-focus-controller.js';
 import {querySelectorNotNull} from '../dom/query-selector.js';
@@ -116,4 +117,5 @@ await Application.main(true, async (application) => {
     await Promise.all(preparePromises);
 
     document.documentElement.dataset.loaded = 'true';
+    void prepareBundledDictionary(settingsController);
 });

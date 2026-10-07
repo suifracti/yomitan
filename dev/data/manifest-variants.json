@@ -1,7 +1,7 @@
 {
     "manifest": {
         "manifest_version": 3,
-        "name": "Yomitan Popup Dictionary",
+        "name": "Yomitan 英汉学习版",
         "version": "$YOMITAN_VERSION",
         "description": "Popup dictionary for language learning",
         "author": {
@@ -120,7 +120,8 @@
         "content_security_policy": {
             "extension_pages": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src blob: 'self'; style-src 'self' 'unsafe-inline'; media-src *; connect-src *",
             "sandbox": "sandbox allow-scripts; default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'unsafe-inline'"
-        }
+        },
+        "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0MtbCUkMBbp2DwMS4b1nw7SE8tR2KoWus/67oqh+r697LwU0keENuuvCHOudm6Ur031ZIrlMMiBtJANjmI2jpzevkG4HhbhRXoY9ossThubBoJOA+o7QhfjL2frBaumRg5TvwjiwRRWPfl+qNCpvOurfyh8eH7i3X93Hra4prDs48u9I6+fOtQFYSuqRXaPdYcQ56i9hSpyDV0BrLzrY9bnqrASV9TGvKO7Z7GbGgtAJrt4JzUHPyJvKJzhKjGN9K24BmF9VFNiShruDOWfpe7D6mpQP/TDZxOROhrlzVdo6qhemFO5Ae7GIDRwDSsMcyLokmBpeffdjfBcEjGgCSwIDAQAB"
     },
     "defaultVariant": "base",
     "variants": [

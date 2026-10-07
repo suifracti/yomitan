@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {applyStudyPreset} from '../pages/common/study-preset.js';
 import {fetchJson, fetchText} from '../core/fetch-utilities.js';
 import {parseJson} from '../core/json.js';
 import {isObjectNotArray} from '../core/object-utilities.js';
@@ -168,7 +169,7 @@ export class OptionsUtil {
         const optionsVersion = this._getVersionUpdates(null).length;
         const options = /** @type {import('settings').Options} */ (/** @type {JsonSchema} */ (this._optionsSchema).getValidValueOrDefault());
         options.version = optionsVersion;
-        return options;
+        return applyStudyPreset(options);
     }
 
     /**
