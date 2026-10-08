@@ -197,7 +197,7 @@ Files：固定学习档案读接口、模型请求数据/缓存键与设置 UI�
 - [x] Task 2：现有 card/dictionary 用例验证同卡内容与语境重挂、无新标签、直接 AI 用法、短组义项/首条例句。调整 popup.html / study-card.js / study-card.css / study-dictionary.js / study-translation.js；保留上游实际动作与索引。
 - [x] Task 3：Popup/Proxy/Factory/Frontend 明确区分自动隐藏与主动关闭，根卡不因移开消失；检查连续查词、关闭与子查词仍使用同卡及正确来源。
 - [x] Task 4：最小相关测试/类型/格式/构建 + fresh 无个人 profile 的真实源条目预览；不将 fixture 写成用户 Chrome 验收。构建 26.10.8.3。
-- [ ] Task 5：按自有摘要安全部署固定目录与 bridge；生成 study7 统一包、只推自己的 main/Release；记录原话、当前版本与未验范围。不覆盖未知文件/个人数据。
+- [x] Task 5：按自有摘要安全部署固定目录与 bridge；生成 study7 统一包、只推自己的 main/Release；记录原话、当前版本与未验范围。不覆盖未知文件/个人数据。
 
 **Research**：前轮已核对 Migaku 同页词典、Readlang 语境解释、asbplayer 同页字幕/制卡与 side panel 安全限制。用户明确否决独立标签、第二层弹窗、新侧栏/额外固定面板；后续就地深入，不变出新学习界面。
 
@@ -207,4 +207,7 @@ Files：固定学习档案读接口、模型请求数据/缓存键与设置 UI�
 - fresh 无个人 profile 的 Chromium 使用真实 DisplayGenerator＋包内 just 原条目，在 420px 浅色和 320px 深色无横向溢出，× 保持可见；中文释义/原句/离线 AI fixture 在英英前。修复原上游 display:list-item 覆盖 hidden 而泄漏其他组的 CSS 问题。完整源条目没有删除，当前组 3 义/首条例句，更多组/例句仍可看。不是用户 Chrome 扩展验收。
 - 用户旧实机截图、旧模型目录/获准单句演示仅作历史，不当成本版验收；本版真实模型调用 0 次、未创建 Anki 测试卡，未读写 Chrome profile/数据库。不重复跑未修改的全量词库计数验证。
 
-- Chrome 26.10.8.3 构建成功；ZIP CRC、版本、修改的 13 个 ext 文件逐项匹配、固定 key 与声明权限均与原加载产物相同。词库/formatter/asbplayer 运行代码未改。
+- Chrome 26.10.8.3 构建成功；ZIP CRC、版本、修改的 14 个 ext 文件逐项匹配、固定 key 与声明权限均与原加载产物相同。词库/formatter/asbplayer 运行代码未改。
+
+- 自有本机桥 installer 冲突检查通过，安装只执行 CLI --version；已安装 study_translator.py 与运行源 SHA256 同为 df7a1df06eeccaa26339b65a9867f5a160d3ea3a6f56292e1deb3a99190614f1，未读取/输出认证原值或调用模型。
+- 固定目录部署前原摘要全部匹配，619 个自有文件部署后逐项 verified，未知文件不覆盖；asbplayer 新独立包 SHA 与 study6 完全相同。统一包 english-study-extensions-2026-10-08-study7.zip，157969148 bytes，SHA256 135285e4c1de25d9fa9afac7fbf0d5080b76135a2bfc726f4e8e0bb8522cf0fb；Yomitan 独立包 153432426 bytes，SHA256 2e8524d60589a0bd01714b3f5907ecd5130a158d76d13b5347f0b10af43d6565；asbplayer 4468541 bytes，SHA256 9457cc099efb799ed6e038b3d15961a4539af47610d2b5ab8223f59b597b3aba。运行源码 b0b8285c92adb342ff9aa12e42cee33cb9137477 / 26.10.8.3；asbplayer 文档 1bf1cdf2bd1f673c80e3cb8526e1ef8bcf77cb53，运行产物仍 3406409abcb3df770c631c40e34f17a17c9db790 / 1.22.0。两自有 main 已推送；两个自有 study7 Release 的 7 个资产大小/SHA256 全部经 API 核对后已发布，无上游写入。旧 study6 Downloads 统一包在已知 SHA 匹配且新包验证后删除。Raw 独立创建、唯一当前主源 CAS 更新并回读通过；保留真实 Chrome/模型/媒体与 Obsidian→Anki 未验/未实现边界。
