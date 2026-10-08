@@ -26,11 +26,6 @@ const effort = /** @type {HTMLSelectElement} */ (document.querySelector('#effort
 let catalog = [];
 /**
  * @param {string} id
- * @returns {HTMLSelectElement}
- */
-const select = (id) => /** @type {HTMLSelectElement} */ (document.getElementById(id));
-/**
- * @param {string} id
  * @returns {HTMLInputElement}
  */
 const check = (id) => /** @type {HTMLInputElement} */ (document.getElementById(id));
@@ -65,15 +60,11 @@ function fill(config) {
     model.replaceChildren();
     option(model, config.model, `${config.model}（已保存；刷新可选列表）`);
     refreshEffort(config.effort);
-    for (const id of ['level', 'goal', 'style']) {
-        select(id).value = config[/** @type {'level'|'goal'|'style'} */ (id)];
-    }
-    check('memoryEnabled').checked = config.memoryEnabled;
     check('cacheEnabled').checked = config.cacheEnabled;
 }
 /** @returns {import('study').StudyConfig} */
 function current() {
-    return {model: model.value, effort: effort.value, level: select('level').value, goal: select('goal').value, style: select('style').value, memoryEnabled: check('memoryEnabled').checked, cacheEnabled: check('cacheEnabled').checked};
+    return {model: model.value, effort: effort.value, cacheEnabled: check('cacheEnabled').checked};
 }
 /**
  * @param {() => Promise<void>} operation
@@ -165,18 +156,6 @@ document.querySelector('#settings-form')?.addEventListener('submit', (event) => 
         }
         await studyCall('saveSettings', value);
         status.textContent = '已保存；下一次查词 AI 使用新设置。没有调用模型。';
-    });
-});
-document.querySelector('#reset-memory')?.addEventListener('click', () => {
-    void run(async () => {
-        const config = /** @type {import('study').StudyConfig} */ (await studyCall('settings'));
-        const next = {...config, level: 'unspecified', goal: 'general', style: 'brief', memoryEnabled: false};
-        await studyCall('saveSettings', next);
-        for (const id of ['level', 'goal', 'style']) {
-            select(id).value = next[/** @type {'level'|'goal'|'style'} */ (id)];
-        }
-        check('memoryEnabled').checked = false;
-        status.textContent = '学习偏好已清空并关闭，不影响模型设置或收藏。';
     });
 });
 document.querySelector('#clear-cache')?.addEventListener('click', () => {

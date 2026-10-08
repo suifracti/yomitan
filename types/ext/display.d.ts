@@ -105,6 +105,8 @@ export type HistoryState = {
  * The sentence context.
  */
 export type HistoryStateSentence = {
+    /** Lookup material inside our card is not an article or subtitle. */
+    sourceKind?: 'dictionary';
     /** Optional bounded local adjacent sentences; not uploaded by default. */
     adjacent?: string;
     /** The full string. */

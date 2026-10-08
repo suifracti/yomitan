@@ -1,4 +1,4 @@
-export type StudyConfig = {model: string; effort: string; level: string; goal: string; style: string; memoryEnabled: boolean; cacheEnabled: boolean};
+export type StudyConfig = {model: string; effort: string; cacheEnabled: boolean};
 export type Lookup = {sentence: string; word: string; context: string; mode?: string};
 export type Result = {translation: string; meaning: string; notes: string};
 export type NativeResult = {ok?: boolean; error?: string; result?: Result | DictionaryResult; models?: Model[]};

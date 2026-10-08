@@ -131,8 +131,9 @@ export class PopupWindow extends EventDispatcher {
     /**
      * Hides the popup. This does nothing for `PopupWindow`.
      * @param {boolean} _changeFocus Whether or not the parent popup or host frame should be focused.
+     * @param {boolean} [_force] Explicit dismissal, not used for a separate window.
      */
-    hide(_changeFocus) {
+    hide(_changeFocus, _force = false) {
         // NOP
     }
 

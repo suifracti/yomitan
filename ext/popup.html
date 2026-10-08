@@ -30,8 +30,8 @@
                     <div class="study-toolbar scan-disable">
                         <span class="study-toolbar-title">英语查词</span>
                         <label class="study-auto-size"><input type="checkbox" id="study-auto-size" checked>自适应</label>
-                        <button type="button" id="study-open-detail" class="study-detail-button">固定详解 ↗</button>
-                        <a href="/study-settings.html" target="_blank" rel="noopener noreferrer" class="study-settings" title="模型、推理强度、记忆和缓存">AI 设置 ↗</a>
+                        <a href="/study-settings.html" target="_blank" rel="noopener noreferrer" class="study-settings" title="模型、推理强度和缓存">AI 设置 ↗</a>
+                        <button type="button" class="study-close" id="close-button" aria-label="关闭查词卡" title="关闭查词卡（Esc）">×</button>
                     </div>
                     <span tabindex="-1" id="content-scroll-focus"></span>
 
@@ -85,7 +85,7 @@
     <div class="content-sidebar scrollbar" id="content-sidebar">
         <div class="content-sidebar-inner">
             <div class="content-sidebar-top-pre">
-                <button type="button" class="sidebar-button danger" id="close-button" title="关闭查词窗" data-hotkey='["close","title","关闭查词窗 ({0})"]'><span class="sidebar-button-icon icon" data-icon="cross"></span></button>
+
             </div>
             <div class="content-sidebar-top">
                 <button type="button" class="sidebar-button" disabled id="navigate-previous-button" title="上一条释义" data-hotkey='["historyBackward","title","上一条释义 ({0})"]'><span class="sidebar-button-icon icon" data-icon="left-chevron"></span></button>

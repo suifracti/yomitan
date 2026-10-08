@@ -142,6 +142,7 @@ export type ApiSurface = {
         params: {
             id: string;
             changeFocus: boolean;
+            force?: boolean;
         };
         return: void;
     };

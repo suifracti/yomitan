@@ -261,9 +261,9 @@ export class PopupFactory {
     }
 
     /** @type {import('cross-frame-api').ApiHandler<'popupFactoryHide'>} */
-    async _onApiHide({id, changeFocus}) {
+    async _onApiHide({id, changeFocus, force = false}) {
         const popup = this._getPopup(id);
-        await popup.hide(changeFocus);
+        await popup.hide(changeFocus, force);
     }
 
     /** @type {import('cross-frame-api').ApiHandler<'popupFactoryIsVisible'>} */

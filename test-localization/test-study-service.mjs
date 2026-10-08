@@ -26,7 +26,7 @@ test('settings and context invalidate cache, clearing it cannot be undone by an 
  const f=await fixture();const p=f.service.handle('generate',{...lookup,mode:'translate'});await new Promise(r=>setImmediate(r));
  await f.service.handle('clearCache',{});f.finish();await p;assert.equal((await f.service.handle('peek',lookup)).result,null);
  const current=await f.service.handle('settings',{});assert.equal(current.cacheEnabled,true);
- await f.service.handle('saveSettings',{...current,goal:'reading'});
+ await f.service.handle('saveSettings',{...current,effort:'high'});
  assert.equal((await f.service.handle('peek',lookup)).result,null);
 });
 test('local collections are explicit, bounded and removable; URLs never enter the model payload',async()=>{
@@ -35,12 +35,12 @@ test('local collections are explicit, bounded and removable; URLs never enter th
  const saved=await f.service.handle('saved',{});assert.equal(saved.length,1);assert.equal(saved[0].title,'阅读材料');
  await f.service.handle('removeWord',{id:saved[0].id});assert.deepEqual(await f.service.handle('saved',{}),[]);
 });
-test('AI results are first-view translation and contextual meaning; long analysis is closed by default',async()=>{
+test('AI results are first-view translation and contextual meaning; analysis stays directly in the same card',async()=>{
  const {renderStudyResult}=await import('../ext/js/display/study-translation.js');
  const d=new JSDOM('<div id="out"></div>').window.document;const out=d.getElementById('out');
  renderStudyResult(out,{translation:'译文',meaning:'简短语境含义',notes:'长分析\n'.repeat(300)},true);
  assert.match(out.querySelector('.study-ai-translation').textContent,/译文/);
- assert.equal(out.querySelector('details').open,false);assert.match(out.textContent,/已缓存/);
+ assert.equal(out.querySelector('details'),null);assert.match(out.querySelector('.study-ai-notes').textContent,/长分析/);assert.match(out.textContent,/已缓存/);
 });
 test('bounded neighbouring sentences are separate from the selected sentence',async()=>{
  const {adjacentSentences}=await import('../ext/js/study/study-data.js');

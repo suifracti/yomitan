@@ -1,27 +1,33 @@
 # 私人定制构建与验收
 
 ## 范围
+
 - yomitan 中文显示层、无凭据的英语学习默认预设；只写自己的 fork。
 - 不改查词/播放器算法、Anki 调度或声明权限；本机翻译使用已有 optional nativeMessaging，由首次点击授权。保留上游动作与条目索引。
 - 独立 public key 隔离商店版，私钥未保存/上传；此 key 不是任何账号凭据。
 
 ## 工具链
+
 - 本机 Node 24.18.0。asbplayer 上游声明 Node 24.21.0/pnpm 11.27.0；本次使用 pnpm 11.27.0，Node 24.18.0 构建通过，但并非完全相同版本。
 - Yomitan 使用 npm ci --ignore-scripts 与 npm run build:libs；asbplayer 使用冻结 pnpm lockfile。未自动升级依赖。
 
 ## 测试
+
 - Yomitan：五项本地回归、上游 schema 验证及既有配置保留测试、修改文件 ESLint 与 TypeScript 检查。
 - asbplayer：四项中文/字段预设检查、全语言键一致性与既有设置提供器 14 项回归。
 - Anki：8766 只读 version=6；目标牌组与七字段已核对；两个新扩展 Origin 请求被当前接口接受。未新增测试学习卡片。
 - Chromium 构建通过；最终文件与 SHA256 以 Release 的 BUILD-INFO.json 为准。
 
 ## 未实测
+
 新版本实际 Chrome 加载、首次词典完整导入、视频字幕检测、音频截取、真实制卡与复习回流。没有通过受限扩展页面自动化伪造验收。
 
 ## 上游安全边界
+
 Yomitan npm 全依赖审计报告 52 项（含开发工具）；omit=dev 检查为 0 项。该审计不保证构建链/最终扩展无漏洞；不执行 audit fix --force 来掩盖风险。
 
 ## 更新
+
 不自动定时更新；用户要求适配时先只读 fetch 官方更新，再在我们唯一的 `main` 审查合并与适配。不向官方写入；不保留额外长期分支。Yomitan 将翻译集中于 ext/data/zh-cn-ui.json；新增或改名文案需检查。 完成测试及构建后才发布到自己的 fork，不向官方提 PR。
 
 README 每次发布可更新，保留原作者出处、许可证、修改说明与对应源码入口。仅清理本次完成的临时计划、重复介绍和自有 fork 的多余分支；不删除上游运行代码、测试或构建依赖。
@@ -52,7 +58,7 @@ README 每次发布可更新，保留原作者出处、许可证、修改说明�
 ## study4 维护与验收边界
 
 - 本轮设计经用户“做吧”授权，用户另明确允许只测试一句真实翻译。当前只有自有 main，未使用子代理、外部实施代理或上游写操作。
-- 视觉：主卡完整、次卡短行，原句只显示一次，可编辑输入；资料合并收起与 POS 标记只改渲染，不改词条含义。为避免鼠标当前条目无法再次收起，Display._focusEntry 在计算滚动位置前触发 `study-entry-focus`，不把 `.entry-current` 当作永远展开的 CSS 条件。
+- 视觉：主卡完整、次卡短行，原句只显示一次，可编辑输入；资料合并收起与 POS 标记只改渲染，不改词条含义。为避免鼠标当前条目无法再次收起，Display.\_focusEntry 在计算滚动位置前触发 `study-entry-focus`，不把 `.entry-current` 当作永远展开的 CSS 条件。
 - 词典：旧自动入口的 profile 名称/标记限制是代码事实，不能据此断言用户 DB 的真实原因。每次设置/欢迎页展示安装及当前配置启用状态。显式按钮允许当前目标 profile 升级/启用；操作期间切换/改名立即停止配置写入，不自动删 DB。原 source ZIP 未修改。
 - 组件：`local-bridge/study_translator.py`、`install_bridge.py` 和安装 command 均 GPL-3.0-or-later。仅注册自有 `com.suifracti.study_translator` Chrome native host，不改浏览器 Preferences/IndexedDB/扩展加载状态；安装冲突停止。当前 macOS 私有安装位置 `~/Library/Application Support/EnglishStudyTranslator`，权限 0700，认证不在源码/安装 ZIP/Vault。
 - 独立 `CODEX_HOME` 是必要隔离：直接加载用户全局 config 的诊断在 thread/turn 前因自定义 MCP transport 不兼容而退出，不能通过仅写 enabled=false 假装隔离。独立 profile 复用本机 auth 文件链接，不读取或导出其值。CLI 自身可能刷新本机认证缓存；升级不得上传这些文件。
@@ -60,7 +66,7 @@ README 每次发布可更新，保留原作者出处、许可证、修改说明�
 - config/read 在 turn 前检查 MCP/插件/关键能力已关闭；原句作为 JSON 数据不是指令。单句长度限制、仅两动作、全局单请求锁、100 秒超时、2MB 输出限额、取消/断开终止独立进程组。遇到工具 item 或服务端审批/动态工具 RPC 立即停止，不代理任何工具。文本以 DOM textContent 展示。CLI 更新后应复核 schema 和工具隔离，不把一次成功当长期安全保证。
 - 已验证：增强词库 770611 条官方 schema 与导入器样本（8 组 67 项）；Node UI/升级状态 16 项；桥协议/安装 9 项（其中模拟协议明确是 fixture）；相关类型/lint/HTML/CSS；离线浅/深/280px 布局。独立真实 app-server 配置 guard、native host 状态/错误 Origin 拒绝；一句真实 explain 请求约 11.77 秒，返回翻译、语境含义和语法提示。
 - 未验证：Chrome 实际权限弹框/点击/新词库查询；真视频字幕、原句截取完整性、发音、截音、制卡、复习回流、其他系统/浏览器；未新增学习卡片。真实调用证据不等于 Chrome 端到端。
-- 更新钩子：Display._focusEntry / content events、模板动作、Chrome optional permissions/Native Messaging、配置 profile/index、官方导入器，以及 Codex app-server schema、受限配置及模型权限。上游适配只进入自己的唯一 main，不向官方推送。
+- 更新钩子：Display.\_focusEntry / content events、模板动作、Chrome optional permissions/Native Messaging、配置 profile/index、官方导入器，以及 Codex app-server schema、受限配置及模型权限。上游适配只进入自己的唯一 main，不向官方推送。
 - 官方实现参考：[App Server](https://learn.chatgpt.com/docs/app-server)、[Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)。随包不附 Codex 二进制；需要用户已有安装/登录，使用账号额度，不声称免费离线。
 
 ## zh-study5 已批准设计与实施步骤｜2026-10-08
@@ -139,7 +145,7 @@ Files：study-service.js、study-translation.js、study-card.js、study-settings
 
 - [ ] 发送原句、已缓存译文或可读词典简释、来源；保存不偷偷触发模型生成。需要补释义时提示本人先点 AI，而不是自动耗额度。
 - [ ] 主按钮「记下来并制卡」，原直接 Anki 动作保留为高级入口但区分，避免重复创建。明确两阶段状态；失败不会撤销已成功保存的笔记。
-- [ ] 记忆页展示「确认学习档案」与来源/更新时间，手动水平选择降为可选高级覆盖，不强迫用户自评。
+- [ ] 仅展示经实际学习/人与 AI 讨论确认的学习档案及来源/更新时间；用户已撤回手动水平/目标/风格模块，不保留高级覆盖，不自动上传全部聊天。
 - [ ] 迁移旧扩展收藏只能由本人确认；不静默批量写笔记或卡片。
 
 ### Task 4：AI 学习档案与讨论建议（未实施）
@@ -160,8 +166,7 @@ Files：固定学习档案读接口、模型请求数据/缓存键与设置 UI�
 
 **当前停止线**：先交付导入恢复修复；新的 Obsidian/Anki/档案模块尚未实现，不把批准设计当成功闭环。
 
-
-## zh-study6：短查词卡＋固定详解（2026-10-08 批准）
+## zh-study6：历史交付，交互已被 study7 取代（2026-10-08）
 
 用户选定短卡＋固定详解，不再把长词典/AI 分析塞进鼠标悬浮窗。本轮仅实现查词体验；上面的 Obsidian→Anki 闭环继续单独标为未实施。
 
@@ -172,7 +177,6 @@ Files：固定学习档案读接口、模型请求数据/缓存键与设置 UI�
 - [x] 协议限制、取消、失败不缓存、清缓存并发保护、固定 URL、安全 DOM、UI尺寸与现有回归测试；不做真实生成测试。
 - [x] 更新固定加载目录和下载包，保留 ID/key/permissions/许可证/asbplayer；保存原话与唯一当前状态，标清离线与真实 Chrome 验收边界。
 
-
 ### 本轮验证与停止线
 
 - 2026-10-08：34 个相关 Node 行为测试、13 个 Python 边界/隔离/协议 fixture、5 个词典 schema/官方样本 importer 用例通过；类型检查、修改 JS lint、CSS lint、HTML 验证及 Chrome 构建通过。后续英文批次状态文案仅说明发送范围，详情 7 个相关用例/类型再通过。
@@ -182,3 +186,25 @@ Files：固定学习档案读接口、模型请求数据/缓存键与设置 UI�
 
 - 交付：固定目录 619 个自有文件逐项 SHA verified；未知文件不覆盖，asbplayer 原产物逐文件相同，许可证保留，公开 key/ID/权限与新 source 一致。统一包 `english-study-extensions-2026-10-08-study6.zip`，157970879 bytes，SHA256 `14186593c06473b700e306a1c25775731c94c32575b3f9aeefaed96266f227d0`；原 study5.1 下载仅在核对已知 SHA 后删除。
 - 运行源码提交 `dbb3d1c65c6242ba92fe8f9a1cd7dd9825dcd541`，作者/提交者邮箱均为用户指定邮箱。自有 main 推送恢复成功；study6 两个自有 Release 已发布，未向 upstream 写入。后续仅文档同步，不重新构建未变化的运行产物。
+
+## zh-study7：同卡连续理解（2026-10-08 用户继续实施）
+
+**Goal**：学习过程中只用当前查词卡；去掉新页/额外面板及手动学习偏好，保留词库/收藏/缓存与原 Anki/音频动作。
+**Architecture**：继续使用原 Popup iframe 和真实 DisplayGenerator。原句/AI 上移至第一词条内、所有中文释义保留、英英与首条例句就地分页；AI 用法直接显示。根卡持续显示，显式关闭/禁用仍能退出。旧详解快照只兼容旧链接，不再提供新建入口。
+**Constraints**：当前主代理独立；仅 main，不建分支/worktree、不向 upstream 写入；作者/提交者秋星祭 <suifracti@gmail.com>。不真实调用模型、不读 Chrome 数据库、不清自定义词典/收藏、不新增权限。不新增 SRS 或冒充完成 Obsidian→Anki 闭环。
+
+- [x] Task 1：现有 settings/service/bridge 用例先红后绿，删除整个偏好表单与字段/模型请求；保留模型、强度、缓存，并忽略旧设置多余字段。
+- [x] Task 2：现有 card/dictionary 用例验证同卡内容与语境重挂、无新标签、直接 AI 用法、短组义项/首条例句。调整 popup.html / study-card.js / study-card.css / study-dictionary.js / study-translation.js；保留上游实际动作与索引。
+- [x] Task 3：Popup/Proxy/Factory/Frontend 明确区分自动隐藏与主动关闭，根卡不因移开消失；检查连续查词、关闭与子查词仍使用同卡及正确来源。
+- [x] Task 4：最小相关测试/类型/格式/构建 + fresh 无个人 profile 的真实源条目预览；不将 fixture 写成用户 Chrome 验收。构建 26.10.8.3。
+- [ ] Task 5：按自有摘要安全部署固定目录与 bridge；生成 study7 统一包、只推自己的 main/Release；记录原话、当前版本与未验范围。不覆盖未知文件/个人数据。
+
+**Research**：前轮已核对 Migaku 同页词典、Readlang 语境解释、asbplayer 同页字幕/制卡与 side panel 安全限制。用户明确否决独立标签、第二层弹窗、新侧栏/额外固定面板；后续就地深入，不变出新学习界面。
+
+### study7 验证与交付记录
+
+- 相关 Node 行为测试 29/29、Python 隔离/协议/安装 fixture 13/13；TypeScript 主源类型检查、修改 JS/CSS/HTML 和 diff 格式通过。先红后绿验证偏好字段去除、移开不隐藏/主动关闭、卡内递归复用当前卡及来源、完整中文与共享语境重挂、缓存/错序/取消。
+- fresh 无个人 profile 的 Chromium 使用真实 DisplayGenerator＋包内 just 原条目，在 420px 浅色和 320px 深色无横向溢出，× 保持可见；中文释义/原句/离线 AI fixture 在英英前。修复原上游 display:list-item 覆盖 hidden 而泄漏其他组的 CSS 问题。完整源条目没有删除，当前组 3 义/首条例句，更多组/例句仍可看。不是用户 Chrome 扩展验收。
+- 用户旧实机截图、旧模型目录/获准单句演示仅作历史，不当成本版验收；本版真实模型调用 0 次、未创建 Anki 测试卡，未读写 Chrome profile/数据库。不重复跑未修改的全量词库计数验证。
+
+- Chrome 26.10.8.3 构建成功；ZIP CRC、版本、修改的 13 个 ext 文件逐项匹配、固定 key 与声明权限均与原加载产物相同。词库/formatter/asbplayer 运行代码未改。

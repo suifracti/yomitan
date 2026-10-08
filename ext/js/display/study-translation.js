@@ -36,15 +36,11 @@ export function renderStudyResult(output, result, cached) {
     const meaning = d.createElement('p');
     meaning.className = 'study-ai-meaning';
     meaning.textContent = result.meaning;
-    const details = d.createElement('details');
-    details.className = 'study-ai-details';
-    details.open = d.documentElement.dataset.studyDetail === 'true';
-    const summary = d.createElement('summary');
-    summary.textContent = '查看用法分析';
     const notes = d.createElement('p');
-    notes.textContent = result.notes || '没有额外用法提示。';
-    details.append(summary, notes);
-    output.append(status, translation, meaning, details);
+    notes.className = 'study-ai-notes';
+    notes.textContent = result.notes;
+    notes.hidden = !result.notes;
+    output.append(status, translation, meaning, notes);
 }
 
 /**
@@ -98,7 +94,7 @@ export function prepareStudyTranslation() {
             output.setAttribute('role', 'status');
             const notice = d.createElement('p');
             notice.className = 'study-privacy-note';
-            notice.textContent = d.documentElement.dataset.studyDetail === 'true' ? '点击发送原句、查词及所选语境/偏好；缓存有效 30 天。' : 'AI 点击才发送所选句/词 · 缓存 30 天';
+            notice.textContent = 'AI 点击才发送所选句/词 · 缓存 30 天';
             /** @type {HTMLButtonElement[]} */
             const buttons = [];
             let busy = false;

@@ -61,7 +61,7 @@ export function dictionaryText(element) {
 }
 
 /**
- * Fixed page only; paging and peeking never call a model.
+ * Inline in the same card; paging and peeking never call a model.
  * @param {HTMLElement} entry
  * @param {string} word
  * @returns {() => void}
@@ -96,7 +96,7 @@ export function prepareStudyDictionary(entry, word) {
     const pages = [];
     for (const sense of senses) {
         const last = pages.at(-1);
-        if (!last || last.length >= 6 || last.reduce((n, s) => n + Math.min(s.text.length, 1800), 0) + Math.min(sense.text.length, 1800) > 4000) {
+        if (!last || last.length >= 3 || last.reduce((n, s) => n + Math.min(s.text.length, 1800), 0) + Math.min(sense.text.length, 1800) > 4000) {
             pages.push([sense]);
         } else {
             last.push(sense);
@@ -180,7 +180,8 @@ export function prepareStudyDictionary(entry, word) {
             if (rows.length > 0) { /** @type {HTMLElement} */ (definition).hidden = ![...rows].some((r) => /** @type {HTMLElement} */ (r).dataset.studySenseHidden === 'false'); }
         }
         prev.disabled = page === 0; next.disabled = page === pages.length - 1;
-        label.textContent = `英英义项 ${page + 1}/${pages.length} · 共 ${senses.length} 条`;
+        prev.hidden = next.hidden = pages.length === 1;
+        label.textContent = `英英 ${page + 1}/${pages.length} · ${senses.length} 义`;
         void restore();
     };
     prev.addEventListener('click', () => {

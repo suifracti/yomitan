@@ -146,10 +146,11 @@ export class PopupProxy extends EventDispatcher {
     /**
      * Hides the popup.
      * @param {boolean} changeFocus Whether or not the parent popup or host frame should be focused.
+     * @param {boolean} [force] Explicit dismissal.
      * @returns {Promise<void>}
      */
-    async hide(changeFocus) {
-        await this._invokeSafe('popupFactoryHide', {id: this._id, changeFocus}, void 0);
+    async hide(changeFocus, force = false) {
+        await this._invokeSafe('popupFactoryHide', {id: this._id, changeFocus, force}, void 0);
     }
 
     /**

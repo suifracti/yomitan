@@ -292,7 +292,7 @@ export class Frontend {
 
     /** @type {import('cross-frame-api').ApiHandler<'frontendClosePopup'>} */
     _onApiClosePopup() {
-        this._clearSelection(false);
+        this._clearSelection(false, true);
     }
 
     /** @type {import('cross-frame-api').ApiHandler<'frontendCopySelection'>} */
@@ -362,7 +362,7 @@ export class Frontend {
      * @returns {void}
      */
     _onClosePopups() {
-        this._clearSelection(true);
+        this._clearSelection(true, true);
         this._clearMousePosition();
     }
 
@@ -442,12 +442,13 @@ export class Frontend {
 
     /**
      * @param {boolean} passive
+     * @param {boolean} [force] Explicit close or disabling the scanner.
      */
-    _clearSelection(passive) {
+    _clearSelection(passive, force = false) {
         this._stopClearSelectionDelayed();
         if (this._popup !== null) {
             void this._popup.clearAutoPlayTimer();
-            void this._popup.hide(!passive);
+            void this._popup.hide(!passive, force);
             this._isPointerOverPopup = false;
         }
         this._textScanner.clearSelection();
@@ -644,7 +645,7 @@ export class Frontend {
         if (this._updatePopupToken !== token) { return; }
 
         if (popup !== currentPopup) {
-            this._clearSelection(true);
+            this._clearSelection(true, true);
         }
 
         this._popupEventListeners.removeAllEventListeners();
@@ -681,10 +682,13 @@ export class Frontend {
      * @returns {Promise<import('popup').PopupAny>}
      */
     async _getProxyPopup() {
+        // A lookup inside our card replaces that card, never creates a second layer.
+        const sameCard = this._pageType === 'popup';
         return await this._popupFactory.getOrCreatePopup({
             frameId: this._parentFrameId,
             depth: this._depth,
-            parentPopupId: this._parentPopupId,
+            id: sameCard ? this._parentPopupId : null,
+            parentPopupId: sameCard ? null : this._parentPopupId,
             childrenSupported: this._childrenSupported,
         });
     }
@@ -796,6 +800,11 @@ export class Frontend {
             if (Number.isFinite(position) && position >= 0) { detailsState.videoTime = Math.floor(position); }
         }
         if (documentTitle !== null) { detailsState.documentTitle = documentTitle; }
+        if (this._pageType === 'popup') {
+            detailsState.url = '';
+            detailsState.documentTitle = '词典解释';
+            if (sentence !== null) { detailsState.sentence = {...sentence, sourceKind: 'dictionary'}; }
+        }
         const {tabId, frameId} = this._application;
         /** @type {import('display').HistoryContent} */
         const detailsContent = {
@@ -861,7 +870,7 @@ export class Frontend {
         if (enabled === this._textScanner.isEnabled()) { return; }
         this._textScanner.setEnabled(enabled);
         if (this._textScannerHasBeenEnabled) {
-            this._clearSelection(true);
+            this._clearSelection(true, true);
         }
         if (enabled) {
             this._textScannerHasBeenEnabled = true;

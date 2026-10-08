@@ -113,7 +113,7 @@ class ModelSettingsTests(unittest.TestCase):
  module = BridgeTests.module
  def test_catalog_validates_combinations_and_keeps_configuration_out_of_untrusted_input(self):
   m=self.module();models=[{'model':'gpt-6.1-sol','supportedReasoningEfforts':[{'reasoningEffort':'low'}]}]
-  config={'model':'gpt-6.1-sol','effort':'low','level':'beginner','goal':'reading','style':'brief','memoryEnabled':True}
+  config={'model':'gpt-6.1-sol','effort':'low'}
   payload=m.normalize_request({'action':'explain','sentence':'A test.','word':'test','context':'Previous sentence.','config':config})
   m.validate_model(config,models)
   with self.assertRaises(ValueError):m.validate_model(dict(config,effort='ultra'),models)
@@ -121,8 +121,7 @@ class ModelSettingsTests(unittest.TestCase):
   turn=m.turn_params('t',payload);self.assertEqual(turn['effort'],'low')
   data=json.loads(turn['input'][0]['text']);self.assertNotIn('model',data);self.assertNotIn('config',data)
   self.assertEqual(data['context'],'Previous sentence.')
-  self.assertEqual(data['learningPreferences']['goal'],'reading')
-  payload['config']['memoryEnabled']=False
+  with self.assertRaises(ValueError):m.normalize_config(dict(config,level='advanced'))
   self.assertNotIn('learningPreferences',json.loads(m.turn_params('t',payload)['input'][0]['text']))
  def test_model_metadata_request_never_creates_a_thread(self):
   m=self.module();self.assertEqual(m.normalize_request({'action':'models'}),{'action':'models'})

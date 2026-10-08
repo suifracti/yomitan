@@ -18,7 +18,7 @@ test('source context is safe text, highlighted and omitted when absent',async()=
  const entry=d.getElementById('entry');
  appendStudyContext(entry,{text:'We help <img onerror=evil()> ourselves.',offset:29},'ourselves');
  assert.equal(entry.querySelector('img'),null);
- assert.match(entry.textContent,/来自当前页面/);
+ assert.match(entry.textContent,/当前原句/);
  assert.equal(entry.querySelector('mark').textContent,'ourselves');
  const empty=d.createElement('div');appendStudyContext(empty,null,'word');assert.equal(empty.children.length,0);
 });
@@ -105,7 +105,7 @@ test('mouse-selected secondary can still collapse; keyboard navigation explicitl
  assert.equal(element.dataset.studyExpanded,'false');
  element.dispatchEvent(new document.defaultView.Event('study-entry-focus'));
  assert.equal(element.dataset.studyExpanded,'true');
- assert.equal(document.documentElement.dataset.studyView,'expanded','keyboard navigation reveals the destination entry');
+ assert.equal(document.documentElement.dataset.studyView,'single','keyboard navigation does not switch modes');
 });
 test('cancelling before permission resolves never starts a model connection',async()=>{
  const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
@@ -115,4 +115,37 @@ test('cancelling before permission resolves never starts a model connection',asy
  document.querySelector('[data-study-translate="translate"]').click();
  [...document.querySelectorAll('.study-translation-actions button')].find(b=>b.textContent==='取消').click();
  grant(true);await new Promise(r=>setImmediate(r));assert.equal(calls,0);
+});
+
+test('source and dictionary stay in one card across content replacement; no truncated meaning clone',async()=>{
+ const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
+ const {callbacks,display}=setupDisplay();prepareStudyCard(display);
+ for (let i=0;i<2;i++) {
+  callbacks.get('contentUpdateStart')();document.querySelector('#dictionary-entries').replaceChildren();
+  const element=document.createElement('div');element.innerHTML='<div class="entry-header">word</div><div class="entry-body"><div data-sc-study-role="card"><div data-sc-study-role="meaning"><div>第一义</div><div>第二义</div><div>第三义</div><div>第四义</div></div><details data-sc-study-role="english"><summary>英文解释</summary><div>Original English meaning</div></details></div></div>';
+  callbacks.get('contentUpdateEntry')({element,dictionaryEntry:{type:'term',headwords:[{term:'word'}]},index:0});document.querySelector('#dictionary-entries').append(element);
+  callbacks.get('contentUpdateComplete')();
+  assert.equal(document.querySelectorAll('#study-context').length,1);assert.equal(element.querySelector('#study-context')?.previousElementSibling?.className,'entry-header');
+  assert.match(element.querySelector('.entry-header').textContent,/第四义/);assert.equal(element.querySelector('.study-quick-meaning'),null);assert.equal(element.querySelector('[data-sc-study-role=english]').open,true);
+ }
+});
+test('root card survives automatic hide but explicit close works; nested legacy popups still hide normally',async()=>{
+ const dom=new JSDOM('<body></body>');globalThis.document=dom.window.document;globalThis.window=dom.window;
+ globalThis.chrome={runtime:{getURL:p=>'chrome-extension://test'+p}};
+ const {Popup}=await import('../ext/js/app/popup.js');
+ const popup=new Popup({},'root',0,1,true);popup._visible.defaultValue=true;
+ popup.hide(false);assert.equal(popup.isVisibleSync(),true);
+ popup.hideDelayed(0);assert.equal(popup.isVisibleSync(),true);
+ popup.hide(false,true);assert.equal(popup.isVisibleSync(),false);
+ const child=new Popup({},'nested',1,1,true);child._visible.defaultValue=true;child.hide(false);assert.equal(child.isVisibleSync(),false);
+});
+
+test('looking up inside the card reuses the original popup and labels dictionary context honestly',async()=>{
+ const {Frontend}=await import('../ext/js/app/frontend.js');
+ const card={id:'original'};let created=0;
+ const owner={_parentFrameId:1,_depth:1,_parentPopupId:'original',_childrenSupported:true,_pageType:'popup',_popupFactory:{getOrCreatePopup:async p=>{if(p.id==='original')return card;created++;return {};}}};
+ assert.equal(await Frontend.prototype._getProxyPopup.call(owner),card);assert.equal(created,0);
+ let shown;Object.assign(owner,{_application:{frameId:2},_showPopupContent:(_source,_options,details)=>{shown=details;},_popup:{},_getContentOrigin:()=>({})});
+ Frontend.prototype._showContent.call(owner,{text:()=> 'morally'},false,[],'terms',{text:'morally right',offset:0},'Private article',{url:'https://example.com/article'},'light');
+ assert.equal(shown.state.url,'');assert.equal(shown.state.sentence.sourceKind,'dictionary');assert.equal(shown.state.documentTitle,'词典解释');
 });

@@ -18,22 +18,21 @@
 
 import {prepareStudyTranslation} from './study-translation.js';
 import {prepareStudyDictionary} from './study-dictionary.js';
-import {studyCall} from '../study/study-client.js';
 
 /**
  * Display-only context: never treats a dictionary example as the user's source.
  * @param {HTMLElement} entry
- * @param {?{text: string, offset: number}} sentence
+ * @param {?{text: string, offset: number, sourceKind?: string}} sentence
  * @param {string} query
  */
 export function appendStudyContext(entry, sentence, query) {
     if (!sentence || !sentence.text.trim() || sentence.text.trim() === query.trim()) { return; }
     const d = entry.ownerDocument;
-    const context = d.createElement('details');
+    const context = d.createElement('div');
     context.className = 'study-source';
-    context.open = true;
-    const label = d.createElement('summary');
-    label.textContent = '来自当前页面';
+    const label = d.createElement('span');
+    label.className = 'study-source-label';
+    label.textContent = sentence.sourceKind === 'dictionary' ? '来自词典解释' : '当前原句';
     const text = d.createElement('p');
     const offset = sentence.offset;
     if (query.length > 0 && Number.isInteger(offset) && offset >= 0 &&
@@ -62,36 +61,7 @@ export function prepareStudyCard(display, detail = false) {
     let dictionaryViews = [];
     const context = document.querySelector('#study-context');
     const translation = prepareStudyTranslation();
-    /** @param {string} view */
-    const setView = (view) => { document.documentElement.dataset.studyView = detail ? 'detail' : view; };
-    setView('compact');
-    const detailButton = document.querySelector('#study-open-detail');
-    detailButton?.addEventListener('click', () => {
-        const state = display.history.state;
-        const selected = display.selectedIndex > 0 ? display.dictionaryEntries[display.selectedIndex] : null;
-        const selectedWord = selected?.type === 'term' ? selected.headwords[0]?.term ?? display.query : display.query;
-        const editor = document.querySelector('.study-source-editor');
-        const contextEditor = document.querySelectorAll('.study-source-editor')[1];
-        const options = display.getOptionsContext?.();
-        const sentence = editor instanceof HTMLTextAreaElement ? editor.value : state?.sentence?.text ?? display.query;
-        const contextText = contextEditor instanceof HTMLTextAreaElement ? contextEditor.value : state?.sentence?.adjacent ?? '';
-        detailButton.textContent = '正在打开…';
-        detailButton.setAttribute('disabled', '');
-        void studyCall('openDetail', {word: selectedWord,
-            sentence,
-            offset: state?.sentence?.offset ?? 0,
-            context: contextText,
-            url: state?.url,
-            title: state?.documentTitle,
-            videoTime: state?.videoTime,
-            profileIndex: options && 'index' in options ? options.index : void 0}).then(() => {
-            detailButton.textContent = '固定详解 ↗';
-        }).catch((error) => {
-            detailButton.textContent = '重试打开详解 ↗';
-            detailButton.setAttribute('title', error instanceof Error ? error.message : '无法打开');
-        })
-            .finally(() => { detailButton.removeAttribute('disabled'); });
-    });
+    document.documentElement.dataset.studyView = 'single';
     let manual = false;
     let generation = 0;
     let pending = false;
@@ -127,12 +97,11 @@ export function prepareStudyCard(display, detail = false) {
     }
     const clear = () => {
         ++generation;
-        manual = false;
         translation.cancel();
-        setView('compact');
         for (const dispose of dictionaryViews) { dispose(); }
         dictionaryViews = [];
         if (context instanceof HTMLElement) {
+            if (context.closest('.study-entry')) { document.querySelector('#dictionary-entries')?.before(context); }
             context.replaceChildren();
             context.hidden = true;
         }
@@ -180,10 +149,15 @@ export function prepareStudyCard(display, detail = false) {
         if (!detail) {
             const phonetic = element.querySelector('[data-sc-study-role=phonetic]');
             if (phonetic) {
-                const pronunciation = phonetic.cloneNode(true);
+                const pronunciation = phonetic;
                 if (pronunciation instanceof HTMLElement) { pronunciation.classList.add('study-quick-phonetic'); }
                 element.querySelector('.entry-header')?.append(pronunciation);
             }
+        }
+        const meaning = element.querySelector('[data-sc-study-role=meaning]');
+        if (meaning instanceof HTMLElement) {
+            meaning.classList.add('study-primary-meaning');
+            element.querySelector('.entry-header')?.append(meaning);
         }
         if (index > 0) {
             element.classList.add('study-secondary');
@@ -204,12 +178,11 @@ export function prepareStudyCard(display, detail = false) {
                 if (event.target !== toggle) { expand(true); }
             });
             element.addEventListener('study-entry-focus', () => {
-                setView('expanded');
                 expand(true);
             });
             element.prepend(toggle);
         }
-        if (detail) {
+        {
             for (const disclosure of element.querySelectorAll('[data-sc-study-role=english], [data-sc-study-role=more]')) {
                 if (disclosure instanceof HTMLDetailsElement) {
                     const supplement = disclosure.dataset.scStudyRole === 'english' && element.querySelector('[data-sc-content=glosses]') !== null;
@@ -226,37 +199,9 @@ export function prepareStudyCard(display, detail = false) {
                 if (label.textContent === 'Etymology') { label.textContent = '词源'; }
             }
             dictionaryViews.push(prepareStudyDictionary(element, dictionaryEntry.headwords[0]?.term ?? display.query));
-        } else {
-            const meaning = element.querySelector('[data-sc-study-role=meaning]');
-            const quick = document.createElement('div');
-            quick.className = 'study-quick-meaning';
-            const rows = meaning ? [...meaning.children].filter((r) => !(r instanceof HTMLElement) || r.dataset.scStudyRole !== 'label') : [];
-            for (const row of rows.slice(0, 3)) { quick.append(row.cloneNode(true)); }
-            if (quick.childNodes.length === 0) {
-                const gloss = element.querySelector('.gloss-content');
-                const text = document.createElement('p');
-                text.textContent = gloss?.textContent?.slice(0, 200) ?? '完整释义请打开固定详解。';
-                quick.append(text);
-            }
-            const caption = document.createElement('span');
-            caption.className = 'study-quick-label';
-            caption.textContent = '常用义 · 完整义项与例句在固定详解';
-            quick.append(caption);
-            element.querySelector('.entry-body')?.before(quick);
         }
         const audio = element.querySelector('.actions [data-action="play-audio"]');
         const sources = element.querySelector('.study-audio-sources');
-        const word = dictionaryEntry.headwords[0]?.term;
-        if (word) {
-            const link = document.createElement('a');
-            link.className = 'study-online-dictionary scan-disable';
-            link.href = `https://en.wiktionary.org/wiki/${encodeURIComponent(word)}#English`;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            link.textContent = 'Wiktionary · 更多释义 ↗';
-            link.title = '在线词典；内容不包含在离线词库中';
-            element.append(link);
-        }
         sources?.addEventListener('click', () => {
             audio?.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}));
         });
@@ -265,10 +210,12 @@ export function prepareStudyCard(display, detail = false) {
         if (context instanceof HTMLElement) {
             context.replaceChildren();
             const sentence = display.history.state?.sentence ?? null;
+            const header = document.querySelector('.study-entry .entry-header');
+            header?.after(context);
             appendStudyContext(context, sentence, display.query);
             if (sentence && sentence.text.trim() && sentence.text.trim() !== display.query.trim()) {
                 context.hidden = false;
-                translation.render(context, sentence.text, display.query, {contextSelected: detail, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime});
+                translation.render(context, sentence.text, display.query, {contextSelected: false, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime});
             }
         }
         schedule();

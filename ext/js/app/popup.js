@@ -237,8 +237,12 @@ export class Popup extends EventDispatcher {
     /**
      * Hides the popup.
      * @param {boolean} changeFocus Whether or not the parent popup or host frame should be focused.
+     * @param {boolean} [force] Explicit close or disabling scanning.
      */
-    hide(changeFocus) {
+    hide(changeFocus, force = false) {
+        if (this._depth === 0 && !force) {
+            this.stopHideDelayed(); return;
+        }
         if (!this.isVisibleSync()) {
             return;
         }
@@ -247,7 +251,7 @@ export class Popup extends EventDispatcher {
 
         this._setVisible(false);
         if (this._child !== null) {
-            this._child.hide(false);
+            this._child.hide(false, force);
         }
         if (changeFocus) {
             this._focusParent();
@@ -258,6 +262,9 @@ export class Popup extends EventDispatcher {
      * @param {number} delay
      */
     hideDelayed(delay) {
+        if (this._depth === 0) {
+            this.stopHideDelayed(); return;
+        }
         if (this.isPointerOverSelfOrChildren()) { return; }
 
         if (delay > 0) {

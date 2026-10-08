@@ -27,7 +27,7 @@ export const DETAIL_KEY = 'studyDetailSnapshotsV1';
 export const DICTIONARY_CACHE_KEY = 'studyDictionaryCacheV1';
 
 /** @type {import('study').StudyConfig} */
-export const DEFAULTS = {model: 'gpt-6.1-sol', effort: 'low', level: 'unspecified', goal: 'general', style: 'brief', memoryEnabled: true, cacheEnabled: true};
+export const DEFAULTS = {model: 'gpt-6.1-sol', effort: 'low', cacheEnabled: true};
 
 export const TTL = 30 * 24 * 60 * 60 * 1000;
 
@@ -43,10 +43,6 @@ export function studyConfig(value) {
     const effort = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(v.effort ?? '') ? v.effort : DEFAULTS.effort;
     return {model,
         effort: effort ?? DEFAULTS.effort,
-        level: ['unspecified', 'beginner', 'intermediate', 'advanced'].includes(v.level ?? '') ? v.level ?? 'unspecified' : 'unspecified',
-        goal: ['general', 'reading', 'listening', 'exam'].includes(v.goal ?? '') ? v.goal ?? 'general' : 'general',
-        style: ['brief', 'detailed'].includes(v.style ?? '') ? v.style ?? 'brief' : 'brief',
-        memoryEnabled: v.memoryEnabled !== false,
         cacheEnabled: v.cacheEnabled !== false};
 }
 
@@ -95,7 +91,7 @@ export function sentenceKey(lookup, config) {
         lookup.context,
         config.model,
         config.effort,
-        config.memoryEnabled ? [config.level, config.goal, config.style] : null]);
+        null]);
 }
 
 /**
@@ -161,7 +157,7 @@ export function isDictionaryResult(value, lookup) {
  * @returns {string}
  */
 export function dictionaryKey(lookup, config) {
-    return JSON.stringify(['dictionary6', lookup, config.model, config.effort, config.memoryEnabled ? [config.level, config.goal, config.style] : null]);
+    return JSON.stringify(['dictionary6', lookup, config.model, config.effort, null]);
 }
 
 /**

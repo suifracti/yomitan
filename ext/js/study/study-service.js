@@ -279,13 +279,8 @@ export function prepareStudyService() {
             return false;
         }
         if (studyAction === 'openDetail') {
-            void service.handle('storeDetail', data).then(async (value) => {
-                const {id} = /** @type {import('study').DetailSnapshot} */ (value);
-                // Constant extension page only. No website URL or source sentence in navigation.
-                await chrome.tabs.create({url: chrome.runtime.getURL(`search.html?studyDetail=${id}`), active: true});
-                reply({ok: true, value: {id}});
-            }).catch((error) => reply({ok: false, error: error instanceof Error ? error.message : '无法打开详解。'}));
-            return true;
+            reply({ok: false, error: '详解已留在当前查词卡，不再打开其他页面。'});
+            return false;
         }
         void service.handle(studyAction, data).then((result) => reply({ok: true, value: result}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '学习操作失败。'}));
         return true;

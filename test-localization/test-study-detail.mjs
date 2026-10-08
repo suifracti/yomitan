@@ -44,7 +44,7 @@ test('safe aligned bilingual rendering retains originals; no HTML from AI',async
  renderDictionaryTranslation(out,dictionary,{items:[{id:'0',translation:'<img onerror=evil()>只是'},{id:'1',translation:'公正'}]},true);
  assert.equal(out.querySelector('img'),null);assert.match(out.textContent,/Only, simply, merely/);assert.match(out.textContent,/AI.*已缓存/);assert.equal(out.querySelectorAll('.study-bilingual-row').length,2);
 });
-test('fixed-page senses page without AI; examples already readable and stale generation never leaks across pages',async()=>{
+test('same-card senses page without AI; examples already readable and stale generation never leaks across pages',async()=>{
  const {prepareStudyDictionary}=await import('../ext/js/display/study-dictionary.js');
  const dom=new JSDOM('<div id="entry"><div class="entry-body"><div class="definition-item"><ol data-sc-content="glosses">'+Array.from({length:8},(_,i)=>`<li><div>Sense ${i}.<details data-sc-content="details-entry-examples"><summary>1 example</summary><div data-sc-content="extra-info">A source example ${i}.</div></details></div></li>`).join('')+'</ol></div></div></div>');
  for(const key of ['HTMLElement','HTMLDetailsElement'])globalThis[key]=dom.window[key];
@@ -55,30 +55,28 @@ test('fixed-page senses page without AI; examples already readable and stale gen
   return {ok:true,value:true};
  }}};
  const entry=dom.window.document.querySelector('#entry'),dispose=prepareStudyDictionary(entry,'just');
- await new Promise(r=>setImmediate(r));assert.equal(generated,0);assert.equal(entry.querySelectorAll('[data-study-sense-hidden=false]').length,6);
+ await new Promise(r=>setImmediate(r));assert.equal(generated,0);assert.equal(entry.querySelectorAll('[data-study-sense-hidden=false]').length,3);
  assert.equal(entry.querySelector('details').open,true);
  const buttons=[...entry.querySelectorAll('.study-dictionary-controls button')];buttons.find(b=>b.textContent==='AI 中文 · 本组').click();
  grant(true);await new Promise(r=>setImmediate(r));assert.equal(generated,1);
- buttons.find(b=>b.textContent==='下一组').click();await new Promise(r=>setImmediate(r));assert.equal(entry.querySelectorAll('[data-study-sense-hidden=false]').length,2);
+ buttons.find(b=>b.textContent==='下一组').click();await new Promise(r=>setImmediate(r));assert.equal(entry.querySelectorAll('[data-study-sense-hidden=false]').length,3);
  finish();await new Promise(r=>setImmediate(r));assert.doesNotMatch(entry.textContent,/OLD PAGE 中文/);dispose();
 });
-test('openDetail accepts only own pages and opens constant persistent URL, never navigation to a submitted website',async()=>{
+test('retired openDetail never opens another tab; data controls remain own-settings-only',async()=>{
  const {prepareStudyService}=await import('../ext/js/study/study-service.js');
  let receive;const tabs=[],storage={};const base='chrome-extension://test-id/';
  globalThis.chrome={runtime:{id:'test-id',getURL:p=>base+p,onMessage:{addListener:fn=>receive=fn}},tabs:{create:async v=>tabs.push(v)},storage:{local:{get:async k=>({[k]:storage[k]}),set:async v=>Object.assign(storage,v)}}};
  prepareStudyService();
- const invoke=(sender,studyAction='openDetail',data=source)=>new Promise(resolve=>{const async=receive({studyAction,data},sender,resolve);if(!async)resolve({ok:false});});
- assert.equal((await invoke({id:'test-id',url:'https://example.com/'})).ok,false);assert.equal(tabs.length,0);
- assert.equal((await invoke({id:'test-id',url:base+'popup.html'})).ok,true);assert.equal(tabs.length,1);
- assert.match(tabs[0].url,/^chrome-extension:\/\/test-id\/search.html\?studyDetail=[a-f0-9-]{36}$/);
- assert.doesNotMatch(tabs[0].url,/example.com|You|sentence/);
- assert.equal((await invoke({id:'test-id',url:base+'search.html?studyDetail=x'},'clearCache',{})).ok,false);
+ const invoke=(sender,studyAction='openDetail',data=source)=>new Promise(resolve=>{const pending=receive({studyAction,data},sender,resolve);if(!pending)resolve({ok:false});});
+ assert.equal((await invoke({id:'test-id',url:base+'popup.html'})).ok,false);assert.equal(tabs.length,0);
+ assert.equal((await invoke({id:'test-id',url:'https://example.com/'})).ok,false);
+ assert.equal((await invoke({id:'test-id',url:base+'search.html'},'clearCache',{})).ok,false);
 });
 
-test('real popup has one fixed detail button; search ships study stylesheet and original upstream actions',()=>{
+test('real popup has only the existing card, direct close, and no detail navigation',()=>{
  const root=new URL('../',import.meta.url);
  const popup=new JSDOM(readFileSync(new URL('ext/popup.html',root),'utf8')).window.document;
  const search=new JSDOM(readFileSync(new URL('ext/search.html',root),'utf8')).window.document;
- assert.equal(popup.querySelectorAll('#study-open-detail').length,1);assert.equal(popup.querySelectorAll('[data-study-view]').length,0);
+ assert.equal(popup.querySelectorAll('#study-open-detail').length,0);assert.ok(popup.querySelector('.study-toolbar #close-button'));assert.equal(popup.querySelectorAll('[data-study-view]').length,0);
  assert.ok(search.querySelector('link[href="/css/study-card.css"]'));assert.equal(search.querySelectorAll('#study-context').length,1);assert.ok(search.querySelector('#search-textbox'));
 });
