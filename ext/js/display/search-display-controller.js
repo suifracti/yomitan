@@ -566,7 +566,7 @@ export class SearchDisplayController {
 
     /** */
     _updateClipboardMonitorEnabled() {
-        const enabled = this._clipboardMonitorEnabled;
+        const enabled = this._clipboardMonitorEnabled && document.documentElement.dataset.studyDetail !== 'true';
         this._clipboardMonitorEnableCheckbox.checked = enabled;
         if (enabled && this._canEnableClipboardMonitor()) {
             this._clipboardMonitor.start();

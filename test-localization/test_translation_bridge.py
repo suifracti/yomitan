@@ -10,6 +10,16 @@ class BridgeTests(unittest.TestCase):
   self.assertEqual(m.normalize_request({'action':'translate','sentence':' Hello. ','word':'Hello'})['sentence'],'Hello.')
   for bad in [{'action':'exec','sentence':'pwd','word':'x'}, {'action':'translate','sentence':'x'*2401,'word':'x'}, {'action':'explain','sentence':'x','word':'x','command':'rm'}, {'action':'translate','sentence':['x'],'word':'x'}]:
    with self.assertRaises(ValueError):m.normalize_request(bad)
+ def test_dictionary_batch_is_bounded_aligned_and_untrusted(self):
+  m=self.module();p={'action':'dictionary','word':'just','items':[{'id':'0','text':'Only, simply, merely.'},{'id':'1','text':'Fair; morally right.'}]}
+  self.assertEqual(m.normalize_request(p),p)
+  params=m.turn_params('t',p);self.assertEqual(params['outputSchema']['required'],['items']);self.assertEqual(params['environments'],[])
+  good={'items':[{'id':'0','translation':'只是、仅仅。'},{'id':'1','translation':'公正、正当。'}]}
+  self.assertEqual(m.parse_answer(json.dumps(good),p),good)
+  for bad in [{**p,'url':'file:///secret'},{**p,'items':[{'id':'0','text':'x'*1801}]},{**p,'items':[{'id':str(i),'text':'x'} for i in range(7)]}]:
+   with self.assertRaises(ValueError):m.normalize_request(bad)
+  with self.assertRaises(ValueError):m.parse_answer(json.dumps({'items':list(reversed(good['items']))}),p)
+  with self.assertRaises(ValueError):m.parse_answer(json.dumps({'items':[{'id':'0','translation':'','command':'exec'}]}),p)
  def test_utf8_length_and_partial_reads(self):
   m=self.module();out=io.BytesIO();m.write_frame(out,{'text':'中文'})
   raw=out.getvalue();self.assertEqual(struct.unpack('=I',raw[:4])[0],len(raw)-4)
@@ -43,7 +53,7 @@ class BridgeTests(unittest.TestCase):
 class ProtocolFixtureTests(unittest.TestCase):
  def module(self):
   spec=importlib.util.spec_from_file_location('study_translator',PATH);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
- def run_fixture(self, word):
+ def run_fixture(self, word, dictionary=False):
   import tempfile,os
   m=self.module()
   with tempfile.TemporaryDirectory() as tmp:
@@ -68,14 +78,17 @@ for line in sys.stdin:
   elif payload['word']=='__RPC__':
    emit({'id':55,'method':'item/commandExecution/requestApproval','params':{}})
   else:
-   emit({'method':'item/completed','params':{'item':{'type':'agentMessage','text':json.dumps({'translation':'演示译文','meaning':'演示含义','notes':''})}}})
+   answer={'items':[{'id':row['id'],'translation':'演示词典中文'} for row in payload['items']]} if payload['action']=='dictionary' else {'translation':'演示译文','meaning':'演示含义','notes':''}
+   emit({'method':'item/completed','params':{'item':{'type':'agentMessage','text':json.dumps(answer)}}})
    emit({'method':'turn/completed','params':{'turn':{'status':'completed'}}})
   continue
  emit({'id':identifier,'result':result})
 ''');path.chmod(0o700)
    server=m.AppServer(str(path),tmp,tmp)
-   try:return server.translate({'action':'translate','sentence':'Test only.','word':word},tmp)
+   payload={'action':'dictionary','word':word,'items':[{'id':'0','text':'Only, simply, merely.'}]} if dictionary else {'action':'translate','sentence':'Test only.','word':word}
+   try:return server.translate(payload,tmp)
    finally:server.close()
+ def test_dictionary_fixture_full_response(self):self.assertEqual(self.run_fixture('just',True)['items'][0]['translation'],'演示词典中文')
  def test_fixture_full_response(self):self.assertEqual(self.run_fixture('Test')['translation'],'演示译文')
  def test_fixture_tools_and_approval_fail_closed(self):
   for word in ['__TOOL__','__RPC__']:

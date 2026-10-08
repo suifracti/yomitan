@@ -27,9 +27,13 @@ import {DisplayAudio} from './display-audio.js';
 import {Display} from './display.js';
 import {SearchActionPopupController} from './search-action-popup-controller.js';
 import {SearchDisplayController} from './search-display-controller.js';
+import {prepareStudyCard} from './study-card.js';
+import {studyCall} from '../study/study-client.js';
 import {SearchPersistentStateController} from './search-persistent-state-controller.js';
 
 await Application.main(true, async (application) => {
+    const detailId = new URL(location.href).searchParams.get('studyDetail');
+    if (detailId) { document.documentElement.dataset.studyDetail = 'true'; }
     const documentFocusController = new DocumentFocusController('#search-textbox');
     documentFocusController.prepare();
 
@@ -67,7 +71,29 @@ await Application.main(true, async (application) => {
 
     documentFocusController.focusElement();
 
-    display.initializeState();
+    if (detailId) {
+        prepareStudyCard(display, true);
+        const heading = document.querySelector('#study-detail-heading');
+        if (heading instanceof HTMLElement) { heading.hidden = false; }
+        const search = document.querySelector('#search-textbox');
+        if (search instanceof HTMLTextAreaElement) { search.placeholder = '查另一个词（新查词不沿用上一句语境）'; }
+        try {
+            const snapshot = /** @type {?import('study').DetailSnapshot} */ (await studyCall('detail', {id: detailId}));
+            if (!snapshot) { throw new Error('此详解的本地语境已过期；请从原网页重新打开。'); }
+            const s = snapshot.source;
+            display.setContent({focus: false,
+                historyMode: 'overwrite',
+                params: {type: 'terms', query: s.word, studyDetail: detailId},
+                state: {sentence: {text: s.sentence, offset: s.offset, adjacent: s.context},
+                    url: s.url,
+                    documentTitle: s.title,
+                    videoTime: s.videoTime,
+                    optionsContext: s.profileIndex === void 0 ? {url: s.url, depth: 0} : {index: s.profileIndex}},
+                content: {}});
+        } catch (error) {
+            if (heading instanceof HTMLElement) { heading.textContent = error instanceof Error ? error.message : '无法恢复详解语境。'; }
+        }
+    } else { display.initializeState(); }
 
     document.documentElement.dataset.loaded = 'true';
 });

@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import {CACHE_KEY, CACHE_LIMIT, isStudyResult, resultKey, SAVED_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
+import {CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
 import {nativeStudyCall} from './study-client.js';
 
 export class StudyService {
@@ -32,6 +32,8 @@ export class StudyService {
         this.native = native;
         /** @type {Map<string, {promise: Promise<import('study').Result>, cancel: () => void}>} */
         this.pending = new Map();
+        /** @type {Map<string, {promise: Promise<import('study').DictionaryResult>, cancel: () => void, lookup: import('study').DictionaryLookup}>} */
+        this.dictionaryPending = new Map();
         /** @type {number} */
         this.epoch = 0;
         /** @type {Promise<void>} */
@@ -92,6 +94,7 @@ export class StudyService {
             if (!config.cacheEnabled) {
                 ++this.epoch;
                 await this.write(CACHE_KEY, () => []);
+                await this.write(DICTIONARY_CACHE_KEY, () => []);
             }
             await this.write(SETTINGS_KEY, () => config);
             return config;
@@ -106,8 +109,21 @@ export class StudyService {
         if (action === 'clearCache') {
             ++this.epoch;
             await this.write(CACHE_KEY, () => []);
+            await this.write(DICTIONARY_CACHE_KEY, () => []);
             return true;
         }
+        if (action === 'storeDetail') {
+            const row = {id: crypto.randomUUID(), source: detailSource(value), created: Date.now()};
+            await this.write(DETAIL_KEY, (v) => [...(/** @type {import('study').DetailSnapshot[]} */ (Array.isArray(v) ? v : [])).filter((r) => r.created > Date.now() - TTL), row].slice(-20));
+            return row;
+        }
+        if (action === 'detail') {
+            const id = (/** @type {{id?: unknown}} */ (value ?? {})).id;
+            if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) { throw new Error('详解编号无效。'); }
+            const rows = await this.read(DETAIL_KEY);
+            return (Array.isArray(rows) ? rows : []).find((r) => r.id === id && r.created > Date.now() - TTL) ?? null;
+        }
+        if (['dictionaryPeek', 'dictionaryGenerate', 'dictionaryCancel'].includes(action)) { return this.dictionary(action, value); }
         if (action === 'saved') {
             const rows = await this.read(SAVED_KEY);
             return Array.isArray(rows) ? rows : [];
@@ -196,6 +212,43 @@ export class StudyService {
         }
         return {result: await this.pending.get(key)?.promise, cached: false};
     }
+
+    /**
+     * @param {string} action
+     * @param {unknown} value
+     * @returns {Promise<unknown>}
+     */
+    async dictionary(action, value) {
+        const lookup = dictionaryLookup(value);
+        const config = studyConfig(await this.read(SETTINGS_KEY));
+        const key = dictionaryKey(lookup, config);
+        const stored = await this.read(DICTIONARY_CACHE_KEY);
+        const rows = /** @type {import('study').DictionaryCacheEntry[]} */ (Array.isArray(stored) ? stored : []);
+        const exact = config.cacheEnabled ? [...rows].reverse().find((r) => r.key === key && r.created > Date.now() - TTL && isDictionaryResult(r.result, lookup)) : void 0;
+        if (action === 'dictionaryPeek') { return {result: exact?.result ?? null, busy: this.dictionaryPending.has(key)}; }
+        if (action === 'dictionaryCancel') {
+            for (const call of this.dictionaryPending.values()) {
+                if (JSON.stringify(call.lookup) === JSON.stringify(lookup)) { call.cancel(); }
+            }
+            return true;
+        }
+        if (exact) { return {result: exact.result, cached: true}; }
+        if (!this.dictionaryPending.has(key)) {
+            const epoch = this.epoch;
+            const {cacheEnabled, ...nativeConfig} = config;
+            const call = this.native({action: 'dictionary', ...lookup, config: nativeConfig});
+            const promise = call.promise.then(async (response) => {
+                if (!response.ok || !isDictionaryResult(response.result, lookup)) { throw new Error(response.error ?? 'AI 词典翻译未能逐段对齐；原英文保留。'); }
+                const result = response.result;
+                if (cacheEnabled && epoch === this.epoch) {
+                    await this.write(DICTIONARY_CACHE_KEY, (v) => (epoch !== this.epoch ? v : [...(/** @type {import('study').DictionaryCacheEntry[]} */ (Array.isArray(v) ? v : [])).filter((r) => r.key !== key && r.created > Date.now() - TTL), {key, lookup, created: Date.now(), result}].slice(-CACHE_LIMIT)));
+                }
+                return result;
+            }).finally(() => { this.dictionaryPending.delete(key); });
+            this.dictionaryPending.set(key, {promise, cancel: call.cancel, lookup});
+        }
+        return {result: await this.dictionaryPending.get(key)?.promise, cached: false};
+    }
 }
 
 /**
@@ -224,6 +277,15 @@ export function prepareStudyService() {
         if (['saveSettings', 'clearCache', 'clearSaved', 'removeWord', 'models'].includes(studyAction) && pathname !== 'study-settings.html') {
             reply({ok: false, error: '请在 AI 设置页管理本地数据。'});
             return false;
+        }
+        if (studyAction === 'openDetail') {
+            void service.handle('storeDetail', data).then(async (value) => {
+                const {id} = /** @type {import('study').DetailSnapshot} */ (value);
+                // Constant extension page only. No website URL or source sentence in navigation.
+                await chrome.tabs.create({url: chrome.runtime.getURL(`search.html?studyDetail=${id}`), active: true});
+                reply({ok: true, value: {id}});
+            }).catch((error) => reply({ok: false, error: error instanceof Error ? error.message : '无法打开详解。'}));
+            return true;
         }
         void service.handle(studyAction, data).then((result) => reply({ok: true, value: result}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '学习操作失败。'}));
         return true;

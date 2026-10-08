@@ -38,7 +38,7 @@ export function renderStudyResult(output, result, cached) {
     meaning.textContent = result.meaning;
     const details = d.createElement('details');
     details.className = 'study-ai-details';
-    details.open = d.documentElement.dataset.studyView === 'usage';
+    details.open = d.documentElement.dataset.studyDetail === 'true';
     const summary = d.createElement('summary');
     summary.textContent = '查看用法分析';
     const notes = d.createElement('p');
@@ -48,7 +48,7 @@ export function renderStudyResult(output, result, cached) {
 }
 
 /**
- * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {url?: string, title?: string, context?: string, videoTime?: number}) => void}}
+ * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {url?: string, title?: string, context?: string, videoTime?: number, contextSelected?: boolean}) => void}}
  */
 export function prepareStudyTranslation() {
     let generation = 0;
@@ -79,6 +79,7 @@ export function prepareStudyTranslation() {
             const context = d.createElement('textarea');
             context.className = 'study-source-editor';
             context.maxLength = 1200;
+            context.value = source.contextSelected ? source.context?.slice(0, 1200) ?? '' : '';
             context.placeholder = '可选：前后句或相邻字幕，最多 1200 字。不默认发送全文。';
             context.setAttribute('aria-label', '补充语境（可选）');
             const useContext = d.createElement('button');
@@ -97,7 +98,7 @@ export function prepareStudyTranslation() {
             output.setAttribute('role', 'status');
             const notice = d.createElement('p');
             notice.className = 'study-privacy-note';
-            notice.textContent = '点击发送原句、查词及所选语境/偏好；缓存有效 30 天。';
+            notice.textContent = d.documentElement.dataset.studyDetail === 'true' ? '点击发送原句、查词及所选语境/偏好；缓存有效 30 天。' : 'AI 点击才发送所选句/词 · 缓存 30 天';
             /** @type {HTMLButtonElement[]} */
             const buttons = [];
             let busy = false;

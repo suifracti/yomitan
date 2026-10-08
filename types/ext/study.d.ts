@@ -1,9 +1,14 @@
 export type StudyConfig = {model: string; effort: string; level: string; goal: string; style: string; memoryEnabled: boolean; cacheEnabled: boolean};
 export type Lookup = {sentence: string; word: string; context: string; mode?: string};
 export type Result = {translation: string; meaning: string; notes: string};
-export type NativeResult = {ok?: boolean; error?: string; result?: Result; models?: Model[]};
+export type NativeResult = {ok?: boolean; error?: string; result?: Result | DictionaryResult; models?: Model[]};
 export type Model = {model: string; displayName: string; efforts: string[]; defaultEffort: string};
 export type SavedWord = {id: string; word: string; sentence: string; context: string; url: string; title: string; created: number; videoTime?: number};
 export type CacheEntry = {key: string; sentenceKey: string; created: number; result: Result};
 export type NativeCall = (payload: object) => {promise: Promise<NativeResult>; cancel: () => void};
 export type Storage = {get: (key: string) => Promise<Record<string, unknown>>; set: (value: Record<string, unknown>) => Promise<void>};
+export type DictionaryLookup = {word: string; items: {id: string; text: string}[]};
+export type DictionaryResult = {items: {id: string; translation: string}[]};
+export type DictionaryCacheEntry = {key: string; created: number; lookup: DictionaryLookup; result: DictionaryResult};
+export type DetailSource = {word: string; sentence: string; offset: number; context: string; url: string; title: string; videoTime?: number; profileIndex?: number};
+export type DetailSnapshot = {id: string; source: DetailSource; created: number};

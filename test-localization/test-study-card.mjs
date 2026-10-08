@@ -44,7 +44,7 @@ test('upgrade disables only identified bundled predecessor and preserves user ch
 });
 function setupDisplay() {
  const dom=new JSDOM('<div class="content-body-inner"><input id="study-auto-size" type="checkbox" checked><section id="study-context"></section><div id="dictionary-entries"></div></div>');
- for(const key of ['document','HTMLElement','HTMLDetailsElement','MouseEvent','MutationObserver'])globalThis[key]=dom.window[key];
+ for(const key of ['document','HTMLElement','HTMLDetailsElement','HTMLTextAreaElement','MouseEvent','MutationObserver'])globalThis[key]=dom.window[key];
  globalThis.ResizeObserver=class {observe(){}};
  globalThis.requestAnimationFrame=()=>{};
  const callbacks=new Map();
@@ -82,14 +82,16 @@ test('translation is click-only, bounded editable source and stale responses do 
  finish({ok:true,value:{result:{translation:'STALE',meaning:'old',notes:''},cached:false}});await new Promise(r=>setImmediate(r));
  assert.doesNotMatch(document.querySelector('#study-context').textContent,/STALE/);
 });
-test('low-value metadata is collapsed together, original meanings and POS retained',async()=>{
+test('metadata is directly visible without nested disclosures, original meanings and POS retained',async()=>{
  const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
  const {callbacks,display}=setupDisplay();prepareStudyCard(display);
  const element=document.createElement('div');element.innerHTML='<div data-sc-study-role="card"><div data-sc-study-role="meaning"><div>a. 疲累的, 疲乏的, 厌倦的</div></div><details data-sc-study-role="english"><summary>英文解释</summary><div>depleted of strength</div></details><details data-sc-study-role="forms"><summary>词形变化</summary><div>tire</div></details><div data-sc-study-role="tags">高考</div><details data-sc-study-role="frequency"><summary>词频资料</summary><div>101</div></details></div>';
  callbacks.get('contentUpdateEntry')({element,dictionaryEntry:{type:'term',headwords:[{term:'tired'}]},index:0});
- assert.ok(element.querySelector('.study-word-details'),'compact metadata disclosure');
- assert.equal(element.querySelector('.study-word-details').open,false);
- assert.equal(element.querySelector('[data-sc-study-role=english]').closest('.study-word-details'),null);
+ assert.ok(element.querySelector('.study-metadata'),'visible metadata strip');
+ assert.equal(element.querySelector('.study-metadata details'),null);
+ assert.match(element.querySelector('.study-metadata').textContent,/高考/);
+ assert.match(element.querySelector('.study-metadata').textContent,/101/);
+ assert.equal(element.querySelector('[data-sc-study-role=english]').closest('.study-metadata'),null);
  assert.match(element.querySelector('[data-sc-study-role=meaning]').textContent,/疲累的, 疲乏的, 厌倦的/);
  assert.equal(element.querySelector('.study-pos').textContent,'a.');
 });
@@ -103,7 +105,7 @@ test('mouse-selected secondary can still collapse; keyboard navigation explicitl
  assert.equal(element.dataset.studyExpanded,'false');
  element.dispatchEvent(new document.defaultView.Event('study-entry-focus'));
  assert.equal(element.dataset.studyExpanded,'true');
- assert.equal(document.documentElement.dataset.studyView,'dictionary','keyboard navigation reveals the destination view');
+ assert.equal(document.documentElement.dataset.studyView,'expanded','keyboard navigation reveals the destination entry');
 });
 test('cancelling before permission resolves never starts a model connection',async()=>{
  const {prepareStudyCard}=await import('../ext/js/display/study-card.js');

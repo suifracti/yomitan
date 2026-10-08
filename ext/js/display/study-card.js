@@ -17,6 +17,8 @@
  */
 
 import {prepareStudyTranslation} from './study-translation.js';
+import {prepareStudyDictionary} from './study-dictionary.js';
+import {studyCall} from '../study/study-client.js';
 
 /**
  * Display-only context: never treats a dictionary example as the user's source.
@@ -47,35 +49,56 @@ export function appendStudyContext(entry, sentence, query) {
     entry.append(context);
 }
 
-/** @param {import('./display.js').Display} display */
-export function prepareStudyCard(display) {
+/**
+ * @param {import('./display.js').Display} display
+ * @param {boolean} [detail]
+ */
+export function prepareStudyCard(display, detail = false) {
     const inner = document.querySelector('.content-body-inner');
     const autoSize = /** @type {?HTMLInputElement} */ (document.querySelector('#study-auto-size'));
-    if (!(inner instanceof HTMLElement) || !autoSize) { return; }
+    if (!(inner instanceof HTMLElement) || (!detail && !autoSize)) { return; }
+    document.documentElement.dataset.studyDetail = `${detail}`;
+    /** @type {(() => void)[]} */
+    let dictionaryViews = [];
     const context = document.querySelector('#study-context');
     const translation = prepareStudyTranslation();
-    const viewButtons = document.querySelectorAll('[data-study-view]');
     /** @param {string} view */
-    const setView = (view) => {
-        document.documentElement.dataset.studyView = view;
-        for (const details of document.querySelectorAll('.study-ai-details')) {
-            if (details instanceof HTMLDetailsElement) { details.open = view === 'usage'; }
-        }
-        for (const button of viewButtons) { button.setAttribute('aria-pressed', `${(/** @type {HTMLElement} */ (button)).dataset.studyView === view}`); }
-        const scroll = document.querySelector('#content-scroll');
-        if (scroll) { scroll.scrollTop = 0; }
-    };
-    setView('overview');
-    for (const button of viewButtons) {
-        button.addEventListener('click', () => { setView((/** @type {HTMLElement} */ (button)).dataset.studyView ?? 'overview'); });
-    }
+    const setView = (view) => { document.documentElement.dataset.studyView = detail ? 'detail' : view; };
+    setView('compact');
+    const detailButton = document.querySelector('#study-open-detail');
+    detailButton?.addEventListener('click', () => {
+        const state = display.history.state;
+        const selected = display.selectedIndex > 0 ? display.dictionaryEntries[display.selectedIndex] : null;
+        const selectedWord = selected?.type === 'term' ? selected.headwords[0]?.term ?? display.query : display.query;
+        const editor = document.querySelector('.study-source-editor');
+        const contextEditor = document.querySelectorAll('.study-source-editor')[1];
+        const options = display.getOptionsContext?.();
+        const sentence = editor instanceof HTMLTextAreaElement ? editor.value : state?.sentence?.text ?? display.query;
+        const contextText = contextEditor instanceof HTMLTextAreaElement ? contextEditor.value : state?.sentence?.adjacent ?? '';
+        detailButton.textContent = '正在打开…';
+        detailButton.setAttribute('disabled', '');
+        void studyCall('openDetail', {word: selectedWord,
+            sentence,
+            offset: state?.sentence?.offset ?? 0,
+            context: contextText,
+            url: state?.url,
+            title: state?.documentTitle,
+            videoTime: state?.videoTime,
+            profileIndex: options && 'index' in options ? options.index : void 0}).then(() => {
+            detailButton.textContent = '固定详解 ↗';
+        }).catch((error) => {
+            detailButton.textContent = '重试打开详解 ↗';
+            detailButton.setAttribute('title', error instanceof Error ? error.message : '无法打开');
+        })
+            .finally(() => { detailButton.removeAttribute('disabled'); });
+    });
     let manual = false;
     let generation = 0;
     let pending = false;
     const fit = async () => {
         const token = generation;
         const id = display.parentPopupId;
-        if (!id || manual || !autoSize.checked || document.documentElement.dataset.isResizing === 'true') { return; }
+        if (!id || manual || !autoSize || !autoSize.checked || document.documentElement.dataset.isResizing === 'true') { return; }
         try {
             /** @type {import('popup').ValidSize} */
             const size = await display.invokeParentFrame('popupFactoryGetFrameSize', {id});
@@ -94,7 +117,7 @@ export function prepareStudyCard(display) {
         });
     };
     new ResizeObserver(schedule).observe(inner);
-    autoSize.addEventListener('change', () => {
+    autoSize?.addEventListener('change', () => {
         manual = false;
         schedule();
     });
@@ -106,7 +129,9 @@ export function prepareStudyCard(display) {
         ++generation;
         manual = false;
         translation.cancel();
-        setView('overview');
+        setView('compact');
+        for (const dispose of dictionaryViews) { dispose(); }
+        dictionaryViews = [];
         if (context instanceof HTMLElement) {
             context.replaceChildren();
             context.hidden = true;
@@ -120,12 +145,26 @@ export function prepareStudyCard(display) {
         for (const card of element.querySelectorAll('[data-sc-study-role=card]')) {
             const metadata = card.querySelectorAll('[data-sc-study-role=forms], [data-sc-study-role=tags], [data-sc-study-role=frequency]');
             if (metadata.length > 0) {
-                const details = document.createElement('details');
-                details.className = 'study-word-details';
-                const summary = document.createElement('summary');
-                summary.textContent = '词形 · 考试标签 · 词频';
-                details.append(summary, ...metadata);
-                card.append(details);
+                const strip = document.createElement('div');
+                strip.className = 'study-metadata';
+                for (const node of metadata) {
+                    if (node instanceof HTMLDetailsElement) {
+                        const label = document.createElement('span');
+                        label.className = 'study-meta-text';
+                        label.textContent = [...node.children].filter((c) => c.tagName !== 'SUMMARY' && !c.textContent?.startsWith('原数据语料排名')).map((c) => c.textContent).join(' · ')
+                            .replace('原数据语料排名，不代表难度或掌握程度。', '')
+                            .trim();
+                        label.title = node.querySelector('summary')?.textContent ?? '';
+                        strip.append(label);
+                        node.remove();
+                    } else { strip.append(node); }
+                }
+                const header = element.querySelector('.entry-header');
+                if (header) {
+                    header.append(strip);
+                } else {
+                    card.prepend(strip);
+                }
             }
             for (const row of card.querySelectorAll('[data-sc-study-role=meaning]>div:not([data-sc-study-role=label])')) {
                 const text = row.textContent ?? '';
@@ -136,6 +175,14 @@ export function prepareStudyCard(display) {
                     pos.textContent = match[1];
                     row.replaceChildren(pos, document.createTextNode(text.slice(match[0].length)));
                 }
+            }
+        }
+        if (!detail) {
+            const phonetic = element.querySelector('[data-sc-study-role=phonetic]');
+            if (phonetic) {
+                const pronunciation = phonetic.cloneNode(true);
+                if (pronunciation instanceof HTMLElement) { pronunciation.classList.add('study-quick-phonetic'); }
+                element.querySelector('.entry-header')?.append(pronunciation);
             }
         }
         if (index > 0) {
@@ -157,10 +204,45 @@ export function prepareStudyCard(display) {
                 if (event.target !== toggle) { expand(true); }
             });
             element.addEventListener('study-entry-focus', () => {
-                setView('dictionary');
+                setView('expanded');
                 expand(true);
             });
             element.prepend(toggle);
+        }
+        if (detail) {
+            for (const disclosure of element.querySelectorAll('[data-sc-study-role=english], [data-sc-study-role=more]')) {
+                if (disclosure instanceof HTMLDetailsElement) {
+                    const supplement = disclosure.dataset.scStudyRole === 'english' && element.querySelector('[data-sc-content=glosses]') !== null;
+                    disclosure.open = !supplement;
+                    if (supplement) {
+                        disclosure.classList.add('study-extra-english');
+                        const summary = disclosure.querySelector('summary');
+                        if (summary) { summary.textContent = '原词库英英简释（参考）'; }
+                    }
+                }
+            }
+            for (const label of element.querySelectorAll('[data-sc-content=summary-entry]')) {
+                if (label.textContent === 'Grammar') { label.textContent = '词形与语法'; }
+                if (label.textContent === 'Etymology') { label.textContent = '词源'; }
+            }
+            dictionaryViews.push(prepareStudyDictionary(element, dictionaryEntry.headwords[0]?.term ?? display.query));
+        } else {
+            const meaning = element.querySelector('[data-sc-study-role=meaning]');
+            const quick = document.createElement('div');
+            quick.className = 'study-quick-meaning';
+            const rows = meaning ? [...meaning.children].filter((r) => !(r instanceof HTMLElement) || r.dataset.scStudyRole !== 'label') : [];
+            for (const row of rows.slice(0, 3)) { quick.append(row.cloneNode(true)); }
+            if (quick.childNodes.length === 0) {
+                const gloss = element.querySelector('.gloss-content');
+                const text = document.createElement('p');
+                text.textContent = gloss?.textContent?.slice(0, 200) ?? '完整释义请打开固定详解。';
+                quick.append(text);
+            }
+            const caption = document.createElement('span');
+            caption.className = 'study-quick-label';
+            caption.textContent = '常用义 · 完整义项与例句在固定详解';
+            quick.append(caption);
+            element.querySelector('.entry-body')?.before(quick);
         }
         const audio = element.querySelector('.actions [data-action="play-audio"]');
         const sources = element.querySelector('.study-audio-sources');
@@ -186,7 +268,7 @@ export function prepareStudyCard(display) {
             appendStudyContext(context, sentence, display.query);
             if (sentence && sentence.text.trim() && sentence.text.trim() !== display.query.trim()) {
                 context.hidden = false;
-                translation.render(context, sentence.text, display.query, {url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime});
+                translation.render(context, sentence.text, display.query, {contextSelected: detail, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime});
             }
         }
         schedule();

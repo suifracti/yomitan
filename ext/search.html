@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-page-type="search">
+<html lang="zh-CN" data-page-type="search">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Yomitan Search</title>
+    <title>Yomitan 查词</title>
     <link rel="icon" type="image/png" href="/images/icon16.png" sizes="16x16">
     <link rel="icon" type="image/png" href="/images/icon19.png" sizes="19x19">
     <link rel="icon" type="image/png" href="/images/icon32.png" sizes="32x32">
@@ -17,6 +17,7 @@
     <link rel="stylesheet" type="text/css" href="/css/structured-content.css">
     <link rel="stylesheet" type="text/css" href="/css/search.css">
     <link rel="stylesheet" type="text/css" href="/css/search-settings.css">
+    <link rel="stylesheet" type="text/css" href="/css/study-card.css">
     <script src="/js/display/search-main.js" type="module"></script>
 </head>
 <body hidden>
@@ -54,7 +55,7 @@
             <div class="search-header-wrapper" id="sticky-search-header">
                 <div class="search-header">
                     <div class="search-textbox-container">
-                        <textarea id="search-textbox" class="scrollbar" placeholder="Input a term, expression, sentence, or block of text" autocomplete="off" lang="ja" autocapitalize="off" autofocus></textarea>
+                        <textarea id="search-textbox" class="scrollbar" placeholder="输入单词、短语或句子" autocomplete="off" lang="ja" autocapitalize="off" autofocus></textarea>
                         <button type="button" id="clear-button" class="clear-button"><span class="icon" data-icon="cross"></span></button>
                         <button type="button" id="search-back-button" class="search-button" hidden><span class="icon" data-icon="left-chevron"></span></button>
                         <button type="button" id="search-button" class="search-button"><span class="icon" data-icon="magnifying-glass"></span></button>
@@ -66,10 +67,15 @@
             </div>
             <div class="content-body" id="content-body">
                 <div class="content-body-inner">
+        <div class="study-detail-heading scan-disable" hidden id="study-detail-heading">
+            <span>固定详解</span><span class="study-detail-hint">鼠标移开不会关闭 · 原文保留，AI 点击才生成</span>
+            <a href="/study-settings.html" target="_blank" rel="noopener noreferrer">AI 设置 ↗</a>
+        </div>
 
                     <span tabindex="-1" id="content-scroll-focus"></span>
 
                     <div id="dictionary-entries"></div>
+        <section id="study-context" class="scan-disable" hidden aria-label="原句与学习语境"></section>
 
                     <div id="no-results" hidden>
                         <div class="entry">

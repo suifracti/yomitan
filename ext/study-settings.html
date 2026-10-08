@@ -24,7 +24,7 @@
                     <label>解释风格<select id="style"><option value="brief">简明中文，抓住重点</option><option value="detailed">中文解释，补充必要搭配</option></select></label>
                 </div><button type="button" id="reset-memory">清空学习偏好</button>
             </section>
-            <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>最多 100 条、有效期 30 天；模型、推理或语境变化会区分缓存。缓存包含你点击发送的句子，不保存整篇文章。关闭后立即清空并停止保存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
+            <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>原句缓存最多 100 条，词典辅助中文另存最多 100 批，均有效 30 天；原文、模型、推理或偏好变化会区分缓存。只含点击发送的句子/词典段落，不保存全文。关闭后清空两类缓存并停止保存。固定详解仅在本机保留最近 20 次打开的语境，30 天过期，不代表已保存到词库。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
             <div class="save-bar"><button type="submit" class="primary">保存设置</button><span>模型调用仅在你点击查词卡的 AI 按钮时发生。</span></div>
         </form>
         <section><div class="section-heading"><h2>收藏的语境</h2><div><button type="button" id="export-saved">导出 JSON</button><button type="button" id="clear-saved">清空收藏</button></div></div><p>仅记录你主动点击“收藏语境”的词和句子，附可用来源链接。最多 200 条，满后提示导出清理，不自动删除旧收藏；不会扫描全文或制作复习卡。</p><div id="saved"></div></section>

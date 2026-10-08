@@ -22,6 +22,10 @@ export const CACHE_KEY = 'studyCacheV2';
 
 export const SAVED_KEY = 'studySavedWordsV1';
 
+export const DETAIL_KEY = 'studyDetailSnapshotsV1';
+
+export const DICTIONARY_CACHE_KEY = 'studyDictionaryCacheV1';
+
 /** @type {import('study').StudyConfig} */
 export const DEFAULTS = {model: 'gpt-6.1-sol', effort: 'low', level: 'unspecified', goal: 'general', style: 'brief', memoryEnabled: true, cacheEnabled: true};
 
@@ -115,4 +119,72 @@ export function adjacentSentences(before, after) {
         .slice(-550) ?? '';
     const next = after.match(/[^.!?\n]+[.!?]+/)?.[0]?.trim().slice(0, 550) ?? '';
     return [previous ? `前句：${previous}` : '', next ? `后句：${next}` : ''].filter(Boolean).join('\n');
+}
+
+/**
+ * @param {unknown} value
+ * @throws {Error} Invalid dictionary source.
+ * @returns {import('study').DictionaryLookup}
+ */
+export function dictionaryLookup(value) {
+    const v = /** @type {import('study').DictionaryLookup} */ (value ?? {});
+    if (Object.keys(v).some((k) => !['word', 'items'].includes(k)) || typeof v.word !== 'string' || !v.word.trim() || v.word.length > 128 ||
+    !Array.isArray(v.items) || v.items.length === 0 || v.items.length > 6) { throw new Error('词典翻译每批 1–6 段。'); }
+    const ids = new Set();
+    let length = 0;
+    const items = v.items.map((row) => {
+        if (!row || Object.keys(row).some((k) => !['id', 'text'].includes(k)) || typeof row.id !== 'string' || !/^\d{1,6}$/.test(row.id) || ids.has(row.id) ||
+        typeof row.text !== 'string' || !row.text.trim() || row.text.length > 1800) { throw new Error('词典段落格式或长度无效。'); }
+        ids.add(row.id);
+        length += row.text.length;
+        return {id: row.id, text: row.text.trim()};
+    });
+    if (length > 4000) { throw new Error('词典翻译每批最多 4000 字。'); }
+    return {word: v.word.trim(), items};
+}
+
+/**
+ * @param {unknown} value
+ * @param {import('study').DictionaryLookup} lookup
+ * @returns {value is import('study').DictionaryResult}
+ */
+export function isDictionaryResult(value, lookup) {
+    if (!value || typeof value !== 'object' || Object.keys(value).join(',') !== 'items') { return false; }
+    const v = /** @type {import('study').DictionaryResult} */ (value);
+    return Array.isArray(v.items) && v.items.length === lookup.items.length && v.items.every((r, i) => r && Object.keys(r).every((k) => ['id', 'translation'].includes(k)) &&
+    r.id === lookup.items[i].id && typeof r.translation === 'string' && !!r.translation.trim() && r.translation.length <= 2400);
+}
+
+/**
+ * @param {import('study').DictionaryLookup} lookup
+ * @param {import('study').StudyConfig} config
+ * @returns {string}
+ */
+export function dictionaryKey(lookup, config) {
+    return JSON.stringify(['dictionary6', lookup, config.model, config.effort, config.memoryEnabled ? [config.level, config.goal, config.style] : null]);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {import('study').DetailSource}
+ */
+export function detailSource(value) {
+    const v = /** @type {import('study').DetailSource} */ (value ?? {});
+    const {sentence, word, context} = studyLookup({sentence: v.sentence || v.word, word: v.word, context: v.context});
+    let url = '';
+    if (typeof v.url === 'string' && v.url.length <= 2000) {
+        try {
+            const u = new URL(v.url);
+            if (['http:', 'https:'].includes(u.protocol)) { url = u.href; }
+        } catch { /* No web source. */ }
+    }
+    const offset = Number.isInteger(v.offset) && v.offset >= 0 && v.offset <= sentence.length ? v.offset : 0;
+    return {word,
+        sentence,
+        offset,
+        context,
+        url,
+        title: typeof v.title === 'string' ? v.title.slice(0, 300) : '',
+        ...(typeof v.videoTime === 'number' && Number.isFinite(v.videoTime) && v.videoTime >= 0 ? {videoTime: Math.floor(v.videoTime)} : {}),
+        ...(Number.isInteger(v.profileIndex) && (v.profileIndex ?? -1) >= 0 ? {profileIndex: v.profileIndex} : {})};
 }
