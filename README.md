@@ -6,7 +6,7 @@
 
 当前 `zh-study6` 本地构建已放在 `/Users/apple/backup/english-study-extensions/`，下载包在 Downloads 的 `english-study-extensions-2026-10-08-study6.zip`。已安装的这台 Mac 在 Chrome 扩展页重载 Yomitan 并刷新网页即可，勿卸载或清数据。不要同时启用商店原版。
 
-公开包只以 [本仓库 Releases](https://github.com/suifracti/yomitan/releases) / [统一包 Releases](https://github.com/suifracti/asbplayer/releases) 的实际可见内容为准；上次 GitHub receive-pack 返回 500，不能把本地完成等同已发布。Code → Download ZIP 是需构建的源码，不是加载包。
+公开包：[Yomitan study6](https://github.com/suifracti/yomitan/releases/tag/v2026.10.08-zh-study6) · [两扩展统一包 study6](https://github.com/suifracti/asbplayer/releases/tag/v2026.10.08-zh-study6)。Code → Download ZIP 是需构建的源码，不是加载包。源码 main 已恢复正常推送，不再沿用旧 500 故障状态。
 
 新安装已预设中文界面、AnkiConnect `127.0.0.1:8766`、牌组 `外语::英语语境`、笔记类型 `外语语境卡` 和七个字段；不会迁移或覆盖旧扩展数据。Yomitan 随包提供增强 ECDICT 英语学习词典，首次入门/设置页会自动导入，请等待提示就绪。Chrome 首次加载/授权须人工确认。Anki Desktop 必须运行且安装 AnkiConnect；此包不自动改任意机器的 Anki 数据库。
 
