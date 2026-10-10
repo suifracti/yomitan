@@ -21,7 +21,7 @@
 
 **版本身份注意（2026-10-10 文档整理）**：为建立唯一主规划，本轮在两个公开仓库增加/更新了 **AGENTS.md、README 导航**，并在 Yomitan 新增此规划文件。这些是**文档专用 Git 提交**，因此远端 `main` 的最新提交号已向前移动；下文 `e466da6d…` / `1bf1cdf2…` 表示**审计时的运行源码基线**，不再表示当前远端 `main` HEAD，也不表示本地 PR1 的代码已同步、提交或安装。后续接手必须实时查 GitHub / 本地代码身份，不能因纯文档提交就把 PR1 工作树重建、变基或覆盖。
 
-**近期实际下一步（2026-10-10，任务细化）**：`ENG-BASELINE-002` 只读对齐分两条独立并行工作：A（`ENG-BASELINE-002A`）核对 Yomitan 本机完整 UI/媒体、PR1、日常扩展的版本身份及「记住它」三文件真实调用链；C（`ENG-VIDEO-BASELINE-001`，**仅在确有本机只读权限时**）核对 asbplayer 当前字幕/时间/来源/视频接口的增量和真实版本。**两者不改代码**，A仍是未来唯一源码写入岗位；结果回到 [Issue #1 本批协调评论](https://github.com/suifracti/yomitan/issues/1#issuecomment-6099205099)，合流后再安排最小实现 `ENG-FLOW-002`。当前执行模型完成并交接后，可由用户手动切回 Sol 接续**同一 A 工作树与任务**，不得并行写入。详见第24章；不创建第二份总规划。
+**当前下一步（2026-10-10，基线完成后的任务）**：A的 Yomitan `ENG-BASELINE-002A` 与 C 的 asbplayer `ENG-VIDEO-BASELINE-001` **均已回报 READ_ONLY_DONE**（[A证据](https://github.com/suifracti/yomitan/issues/1#issuecomment-6099353677)／[C证据](https://github.com/suifracti/yomitan/issues/1#issuecomment-6099329246)），但**日常 Chrome 实际加载身份仍未知**。A现为唯一源码写入者，进入 `ENG-FLOW-002` 的最小 Yomitan 真实UI→服务接缝整合；C可独立只读执行 `ENG-IINA-BASELINE-001`（IINA/iinatan 本地字幕接入基线），不得同时写A工作树。任务详见[本批协调评论](https://github.com/suifracti/yomitan/issues/1#issuecomment-6099431288)。以后由用户手动切回 Sol 接续**同一A逻辑岗位/工作树**，不并发写入、不重新造一套计划。
 
 ---
 
@@ -275,6 +275,19 @@ API 是另一个决策：Oxford Dictionaries API 官方列明的是 ODE/NOAD 等
 
 测试分两个层次：先一段自有/获许可的本地短视频＋SRT 证明协议与流程，再一个真实支持的网站证明页面适配。两者都不需要整集反复播放或大量真实卡片。
 
+
+### IINA / iinatan：本地视频输入端（2026-10-10 新增方向；未实施）
+
+**用户真实使用反馈**：已安装 IINA 1.4.4、iinatan 2.1.7，有英语／日语分立 Profile、WTY/Jitendex 词典与直连 AnkiConnect 的历史配置。新截图中的日语查词 popup 能显示词头、读音、英文释义、词典例句，但**不能以词典例句当当前台词**；用户希望把它接入同一 AI 问答／Obsidian 学习过程／选择性 Anki 复习，而非继续“查一下→死板地送 Basic 卡”。截图另见 `deck was not found`，属于旧 Profile **本次 Anki 写入目标未就绪的现场异常**，需要按实时 deck/model/field 核对后修复，不在研究时自行创建牌组或制卡。
+
+**拟采用的最小架构**：IINA/iinatan 只负责播放器字幕来源、当前悬停的词／读音／活用、原始文字字幕、可验证的前后上下文、实际字幕起止／播放位置和本地来源身份；依托已有**受控学习 Bridge 与记录契约**保存，Obsidian 保存完整问答、AI 按语言选择0或1个必要复习点、Anki 做新鲜查重／读回。与 Yomitan/web 和 asbplayer/video 共用稳定学习点关联，但**英语与日语词典、Prompt、牌组和模板隔离**；媒体片段／截图须显式触发、遵守原有长度/来源限制。用户应能回到 IINA 的对应时间点，而不是只得到一个孤立词条。
+
+**界面要求**：不丢原有快速查词与词典深查功能；第一层先显示词头+读音+本句来源短句和易对应的辅助中文，次级“问AI／记住它”按需触发。原日语词形/振假名/音调由有来源资料呈现，AI解释标注来源而非伪词典；原 popup 不能常驻遮住字幕或任意视频内容。弹窗位置、停播状态与关闭层级先以实际代码/操作判断，不先设计大量按钮或三栏。
+
+**可行性与权限门禁**：上游 [afn478/iinatan](https://github.com/afn478/iinatan) 是 **GPL-3.0-only** 的 IINA JS 插件，公开架构包含 `src/main/50_overlay_bridge_pause.js`、`src/overlay/overlay.js`、独立 WebSocket overlay 与 HoshiDicts 本地查询后端；公开 README 的“Anki export not supported yet”与本机 2.1.7 的 Anki 设置不一致，**本机代码为准**。IINA 不具备 Chrome 扩展专属 Native Messaging API；应先核对能否通过许可范围内的本机适配（如显式允许的 localhost／固定命令接口）进入既有 Bridge，而不能假定现有 overlay WebSocket 已兼容。任何本机适配必须有本地身份与权限校验，不把 token、任意路径或影片全文暴露给公开仓库／第三方服务。若以后公开分发修改版须复查 GPL 和第三方词典／媒体许可。
+
+**任务及顺序**：C 先执行 `ENG-IINA-BASELINE-001` **只读现有 2.1.7 代码、字幕/Anki接口/版本与错误证据**，输出最多三份所需源文件及最小适配契约；待同一主开发A完成英语主流程 `ENG-FLOW-002`、统一学习输入契约稳定后，再决定 `ENG-IINA-ADAPTER-001` 是否值得做最小补丁。IINA 的接入**不阻塞2027英语V1核心闭环**，也不单开第三套规划。
+
 ## 14｜Obsidian 内外都能记：这项不能被永久推迟
 
 此前“不要重造 Obsidian 工作台”的约束，不能误读为“不做 Ob 内入口”。用户的目标是地点自由、记录一致。
@@ -355,6 +368,8 @@ A 在原工作树只读核对公开基线、完整功能工作树、24 路径候
 
 **完成条件**：本地短 SRT 和一个受支持网站各能完成最小闭环；字幕原文/译文/时间一致；暂停/切换材料不串任务；失败保留原文，重试不重复扣费或错配附件。
 
+**本地播放器并行入口**：IINA/iinatan（见第13章新增小节）作为独立的本地字幕输入端先做只读技术盘点，不把它误算为浏览器视频已经接通，也不要求英语V1等待所有日语词典/制卡功能落地；后续最小适配只复用同一学习记录/Bridge。
+
 ### 阶段 M4：一次受控的日常环境验收
 
 **目标**：确认不是只在 fake 环境可用。
@@ -398,6 +413,8 @@ A 在原工作树只读核对公开基线、完整功能工作树、24 路径候
 | ENG-READ-002 | 英中来源、本句义、长词条与短吸顶 | FLOW；最新UI源码 | A；C仅必要时对照 | M | 真实歧义词句与窄卡观察 |
 | ENG-DICT-003 | 剑桥默认/牛津次级外查入口 | 已有入口核对 | A | S | 词形/短语/返回父卡不丢 |
 | ENG-VIDEO-002 | 本地asb增量接齐、来源时间与回放 | BASELINE；FLOW | A | M | SRT＋真实站点词句保存 |
+| ENG-IINA-BASELINE-001 | IINA/iinatan 2.1.7 当前字幕、Popup、Anki与本地桥适配只读审查 | C具备本机只读权限 | C（只读） | S | 精确函数路径与版本、字段、来源／时间、deck未找到原因范围 |
+| ENG-IINA-ADAPTER-001 | IINA本地字幕 → 统一AI问答/Ob记录/按需0–1 Anki最小适配 | IINA-BASELINE；FLOW稳定 | A单写入 | M | 合成视频/词句的跨入口保存、来源回跳、失败恢复 |
 | ENG-LIVE-001 | 受控日常环境一条完整记录 | FLOW/READ/VIDEO；相应授权 | A＋用户操作，ChatGPT判断 | M | 真模型/真笔记/真卡/读回 |
 | ENG-OB-001 | Obsidian 内最小学习入口 | 来源契约明确 | A | M | Ob笔记选句→同库→回源 |
 | ENG-REVIEW-FEEDBACK-001 | 复习信息与新困惑按需回看 | LIVE | A | M | 真实卡关联，排程不变 |
