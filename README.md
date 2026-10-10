@@ -1,5 +1,7 @@
 # yomitan 中文学习定制版
 
+> **跨工具英语学习系统唯一主项目规划：** [ENGLISH_LEARNING_PLAN.md](https://github.com/suifracti/yomitan/blob/main/ENGLISH_LEARNING_PLAN.md)。新 Agent 请先读该文档及本仓库 `AGENTS.md`，再读对应 [Issue #1](https://github.com/suifracti/yomitan/issues/1) 的当前任务；**此 README 仅说明 Yomitan 公开仓库版本，历史发布说明不代表本机最新工作树／日常加载状态**。不要从此 README 另建立项目总规划。
+
 仅维护 [suifracti/yomitan](https://github.com/suifracti/yomitan)，不向官方仓库推送或提 PR。
 
 ## 下载与加载
