@@ -31,7 +31,14 @@
 
 **分批可用，不等于缩减范围。** R1 完成可先用于阅读；R2、R3 分别交付，不必等所有路线一起上线才学习。但只有三条路线各自达到第19章验收条件，才可以称“三入口学习闭环完成”。Obsidian 内入口、复习反馈和主动表达仍是第14–15、17章的后续范围，不能因补进 IINA 而删除。
 
-### 2026-10-11 最新里程碑与模型分工（覆盖下方较早回报）
+### 2026-10-11 最新一批回报与下一批R2任务（覆盖较早阶段总结）
+
+- **A/Sol / ENG-R1-PERMISSION-001 = BLOCKED_USER_PERMISSION（无新源码改动）。** [原回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105816997)：正式原manifest未经修改，已经在全新隔离Chrome加载，并确认 `nativeMessaging` 仍是可选且未授权；macOS原生窗口绑定到了另一既存CfT进程，故未点击授权/拒绝，也未执行本批真实Native连接。**此为安全的人工权限门禁，不是权限流程已PASS，也不是产品缺陷已证实。** 已通过的R1三P1隔离实机修复不因此倒退，日常安装/真模型/真Vault/Anki仍未验。
+- **D/Luna / ENG-R1-UX-001 = READ_ONLY_DONE。** [截图审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105802829)未确认首屏P0/P1，发现极端1128字符原句在420px窗口遮挡首屏释义/主操作的**P2**；限于合成文章截图与静态源码，不等于320px初始首屏/真实日常学习体验完整通过。P2进入后续UI小批次，不阻塞R2开始。
+- **当前执行任务（仅已发布，不等于自动运行）**：[A/Sol / ENG-VIDEO-002A](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105894306)，开始R2**原文字幕确认选词与稳定来源快照**的最小隔离实现；复用[B已完成接缝盘点](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105332675)，保护原Yomitan/asbplayer dirty工作树。先解决原始cue时间、偏移、轨道、语言、有限上下文和当前查询身份，不重做整轨归档，也不把来源展示误报为Python持久化/Anki/真实站点闭环。
+- **分工与额度规则保持**：Sol或Luna由ChatGPT按批次难度选择，只有用户明确说“没额度了”才全面交由Luna。现批A/Sol是唯一源码写入者；B/C/D/E此前研究已结项，E宿主隔离仍BLOCKED；不并发修改同一活动工程，不发布/推送未审业务代码。
+
+### 2026-10-11 最新里程碑与模型分工（较早阶段，供追溯）
 
 - **A/Sol 当前PR1候选已完成三个P1的定向隔离修复与真实Chrome定向验证**：保存意图在回执丢失/完整Chrome进程重启后恢复、生成中Q1取消不误用Q2草稿、同卡mini不覆盖原句/滚动/草稿与分层Esc。该批29/29定向测试、30条有效Chrome/Native/临时Vault/fake Anki断言由Agent报告通过；**并非正式manifest首次可选权限/日常Chrome/真实模型/Anki使用验收**。[原始回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105734977)。
 - **B/C/D只读任务已有报告，E宿主隔离探针BLOCKED_ISOLATED_HOST**：E仅核安全隔离门禁，未执行IINA真实手势，不代表B1失败；R2/R3均未进入正式用户日常全闭环。[E回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105442895)。
@@ -608,6 +615,8 @@ A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必
 
 ## 24｜当前交给执行Agent的任务
 
+> **2026-10-11 本轮任务变更：** [A/Sol｜ENG-VIDEO-002A](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105894306)，先接可靠网页原文字幕选择与cue来源快照（隔离实现），不宣称R2已完。R1正式manifest权限仍BLOCKED_USER_PERMISSION，D极长原句P2待小批修；此前Sol权限与Luna首屏任务已各自回报，以下为历史。
+>
 > **2026-10-11 13:15 CST最新任务覆盖下方旧派工：** [Sol／ENG-R1-PERMISSION-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105762955)为原manifest首次可选Native Messaging权限的隔离验收（唯一业务源码写入者）；[Luna／ENG-R1-UX-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105763217)为受控合成Chrome截图的独立UI审查（只读）。原Sol三P1定向实机已PASS，不重复；日常安装、真模型/真数据未验。用户明确说“没额度了”才全面转Luna，否则按任务选择；所有交接维持单工作树单写入者。
 >
 > **以下2026-10-11较早派工仅供历史追溯。**
