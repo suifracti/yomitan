@@ -31,6 +31,13 @@
 
 **分批可用，不等于缩减范围。** R1 完成可先用于阅读；R2、R3 分别交付，不必等所有路线一起上线才学习。但只有三条路线各自达到第19章验收条件，才可以称“三入口学习闭环完成”。Obsidian 内入口、复习反馈和主动表达仍是第14–15、17章的后续范围，不能因补进 IINA 而删除。
 
+### 2026-10-11 最新里程碑与模型分工（覆盖下方较早回报）
+
+- **A/Sol 当前PR1候选已完成三个P1的定向隔离修复与真实Chrome定向验证**：保存意图在回执丢失/完整Chrome进程重启后恢复、生成中Q1取消不误用Q2草稿、同卡mini不覆盖原句/滚动/草稿与分层Esc。该批29/29定向测试、30条有效Chrome/Native/临时Vault/fake Anki断言由Agent报告通过；**并非正式manifest首次可选权限/日常Chrome/真实模型/Anki使用验收**。[原始回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105734977)。
+- **B/C/D只读任务已有报告，E宿主隔离探针BLOCKED_ISOLATED_HOST**：E仅核安全隔离门禁，未执行IINA真实手势，不代表B1失败；R2/R3均未进入正式用户日常全闭环。[E回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105442895)。
+- **本轮最新派工（已发布，尚非Agent启动/完成）**：[Sol / ENG-R1-PERMISSION-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105762955) 在正式原manifest下仅隔离验首次可选Native权限与代表性保存；[Luna / ENG-R1-UX-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105763217) 独立只读审查现有合成文章真实Chrome截图的首屏学习效率。两项不同文件权限，可并行，不把截图审查冒充实机使用。
+- **用户新模型分工规则（2026-10-11）**：由ChatGPT按每批需求选择Sol或Luna，不固定只用Sol。**只有当用户明确说“没额度了”时，才将之后工作全面转由Luna承担**；不由我们猜测剩余额度或自行触发全量切换。任务派工仅指定建议执行模型，不能自动改变用户对话中的模型。**同一个活动业务worktree同一时间仅一个写入者**；模型切换前停写→读回本轮Issue/真实dirty/恢复点→接手原岗位及分支，不重建、不reset/rebase或覆盖。允许另一模型做独立只读UI/代码审查。
+
 ### 2026-10-11 最新执行状态与 Sol 交接
 
 **A / ENG-FLOW-002 = ISOLATED_PASS**：[最新回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6100464905)。原PR1隔离候选已最小接入“记住它”前端；JSDOM真实控件事件→StudyService/Python临时Vault→fake Anki覆盖0卡、1卡与失败恢复3场景，定向检查和开发构建通过。**尚未用新版候选在真实Chrome扩展与Native Messaging宿主中操作，未验日常Chrome/正式模型/真实Anki**。
@@ -46,7 +53,7 @@
 
 以上两项盘点结项，**不再把它们原样重新派一轮**。本轮读取的 Issue 中尚无 `ENG-FLOW-002` 整合交付或 `ENG-IINA-BASELINE-001` 完成回报；不得把这两个后续任务也标完成。
 
-**当前执行安排**：A 继续 `ENG-FLOW-002`，在原候选做最小网页文字 UI→服务整合；C 可并行只读执行 `ENG-IINA-BASELINE-001`，追加本机选词、关闭、焦点与暂停专项。B只读核对网页视频Native接收端，D独立审查IINA至共享服务的安全契约；均不得修改A的业务工作树。网页视频 `ENG-VIDEO-002` 与IINA `ENG-IINA-ADAPTER-001` 复用共享FLOW，IINA分B1选择交互与B2生态接入分别验收。只读可以并行，业务源码同一时间仍只有 A 写入。Sol 额度恢复后由用户手动切换并接替同一岗位、工作树和任务，不重建项目。
+**当前执行安排**：A 继续 `ENG-FLOW-002`，在原候选做最小网页文字 UI→服务整合；C 可并行只读执行 `ENG-IINA-BASELINE-001`，追加本机选词、关闭、焦点与暂停专项。B只读核对网页视频Native接收端，D独立审查IINA至共享服务的安全契约；均不得修改A的业务工作树。网页视频 `ENG-VIDEO-002` 与IINA `ENG-IINA-ADAPTER-001` 复用共享FLOW，IINA分B1选择交互与B2生态接入分别验收。只读可以并行，业务源码同一时间仍只有 A 写入。以后由ChatGPT按任务复杂度选择Sol或Luna；用户明确告知没额度后才全面交给Luna。每次转岗保持原工作树、任务、dirty和单写入者，不重建项目。
 
 **版本身份注意（2026-10-10 起的文档整理）**：两个公开仓库增加/更新了 AGENTS.md、README 导航，Yomitan 增加并持续更新本规划；这些纯文档 Git 提交也会推进远端 main。下文 `e466da6d…` / `1bf1cdf2…` 是运行源码审计基线，不是当前远端 main HEAD，也不证明本地 PR1 已提交或安装。不能因为纯文档提交就重建、变基或覆盖 dirty 工作树。
 
@@ -553,7 +560,7 @@ A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必
 
 主规划不按每条评论全量改写；相关阶段完成时原位更新。用户只需通知相应Agent读取当前任务，完成后说“做完了”；GitHub回报由ChatGPT核实。发布评论不自动唤醒Agent，不创建轮询/监听或自动部署。
 
-只读IINA与A的网页文字整合可并行；后续asb/IINA实现由同一A岗位分批接续，不让多模型同时改共享服务。切回Sol保持同一工作树、dirty差异与任务，先交接并停止旧执行者写入，不重建分支。
+只读IINA与A的网页文字整合可并行；后续asb/IINA实现由同一A岗位分批接续，不让多模型同时改共享服务。Sol和Luna按任务有界切换，切换模型不等于更换项目/分支；先交接并停止原业务写入者，沿用现有工作树、dirty差异与任务。只有用户明确说没额度了才将后续工作全部改由Luna，其他时候可按任务混合分工。
 
 规划更新、代码副本修改、隔离运行、日常部署、真实模型/记录、公开发布分层授权。已批准的小范围操作不每步反复问；“全做完”不等于无限权限。
 
@@ -600,6 +607,10 @@ A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必
 | 本机/远端/安装版本分叉 | A/C盘点有未知 | 保留映射，按需补运行身份，不全盘重做 |
 
 ## 24｜当前交给执行Agent的任务
+
+> **2026-10-11 13:15 CST最新任务覆盖下方旧派工：** [Sol／ENG-R1-PERMISSION-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105762955)为原manifest首次可选Native Messaging权限的隔离验收（唯一业务源码写入者）；[Luna／ENG-R1-UX-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105763217)为受控合成Chrome截图的独立UI审查（只读）。原Sol三P1定向实机已PASS，不重复；日常安装、真模型/真数据未验。用户明确说“没额度了”才全面转Luna，否则按任务选择；所有交接维持单工作树单写入者。
+>
+> **以下2026-10-11较早派工仅供历史追溯。**
 
 > **2026-10-11新接手覆盖下方历史派工。** 唯一实际任务协调在[GitHub Issue #1](https://github.com/suifracti/yomitan/issues/1)。Sol接手原A唯一源码写入岗位，优先[ENG-R1-CHROME-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259593)；并行只读：[B ENG-VIDEO-FLOW-PREP-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259793)、[C ENG-IINA-B1-PREP-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259979)、[D ENG-R1-REVIEW-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105260147)。旧A/C的以下步骤为历史任务原文，不应重复派工或替代最新评论。Sol本轮在隔离Chrome for Testing＋临时Vault/fake Anki验证已整合新UI的真实Chrome/Native链路，严格保留原代码与数据；不操作日常环境、正式模型/Anki或公开推送未审业务源码。
 
