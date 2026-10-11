@@ -31,12 +31,15 @@
 
 **分批可用，不等于缩减范围。** R1 完成可先用于阅读；R2、R3 分别交付，不必等所有路线一起上线才学习。但只有三条路线各自达到第19章验收条件，才可以称“三入口学习闭环完成”。Obsidian 内入口、复习反馈和主动表达仍是第14–15、17章的后续范围，不能因补进 IINA 而删除。
 
-### 2026-10-11 最新一批回报与下一批R2任务（覆盖较早阶段总结）
+### 2026-10-11 最新回报与独立模型编号（本节覆盖更早计划状态）
 
-- **A/Sol / ENG-R1-PERMISSION-001 = BLOCKED_USER_PERMISSION（无新源码改动）。** [原回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105816997)：正式原manifest未经修改，已经在全新隔离Chrome加载，并确认 `nativeMessaging` 仍是可选且未授权；macOS原生窗口绑定到了另一既存CfT进程，故未点击授权/拒绝，也未执行本批真实Native连接。**此为安全的人工权限门禁，不是权限流程已PASS，也不是产品缺陷已证实。** 已通过的R1三P1隔离实机修复不因此倒退，日常安装/真模型/真Vault/Anki仍未验。
-- **D/Luna / ENG-R1-UX-001 = READ_ONLY_DONE。** [截图审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105802829)未确认首屏P0/P1，发现极端1128字符原句在420px窗口遮挡首屏释义/主操作的**P2**；限于合成文章截图与静态源码，不等于320px初始首屏/真实日常学习体验完整通过。P2进入后续UI小批次，不阻塞R2开始。
-- **当前执行任务（仅已发布，不等于自动运行）**：[A/Sol / ENG-VIDEO-002A](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105894306)，开始R2**原文字幕确认选词与稳定来源快照**的最小隔离实现；复用[B已完成接缝盘点](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105332675)，保护原Yomitan/asbplayer dirty工作树。先解决原始cue时间、偏移、轨道、语言、有限上下文和当前查询身份，不重做整轨归档，也不把来源展示误报为Python持久化/Anki/真实站点闭环。
-- **分工与额度规则保持**：Sol或Luna由ChatGPT按批次难度选择，只有用户明确说“没额度了”才全面交由Luna。现批A/Sol是唯一源码写入者；B/C/D/E此前研究已结项，E宿主隔离仍BLOCKED；不并发修改同一活动工程，不发布/推送未审业务代码。
+**用户最新协作规则：Agent身份由“模型＋编号”联合唯一确定。** **Sol A ≠ Luna A；Sol B ≠ Luna B**。每个模型各自可以有A/B/C/D…；不同模型同字母不能混同或自动接手。并发Agent数量不设人为上限，按可独立交付的工作、资源和风险安排，**相同worktree/共享文件仍不得同时写入**。只有用户明确说“没额度了”，后续才全面交Luna；通常按任务复杂度混用。
+
+- **Sol A / ENG-VIDEO-002A = PARTIAL**：[源码和Chrome实测报告](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106166301)。ASB原cue文字、轨道、可证语言、原始起止毫秒/偏移、有限同轨邻句已进入Yomitan卡内**display-only**，并拦截字幕阶段不应触发的旧Anki入口；Node9/9、asb控制器16/16、最终Chrome11通过1失败。反复关卡后重新拖选词/短语有间歇性失败或旧快照残留。未接共享AI/保存/Anki持久化，也未通过真实站点。
+- **Luna B / ENG-SENSE-ACCEPT-001 = READ_ONLY_DONE**：[10条原创英语理解及虚构视频cue验收样本](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106136129)已交付，不是现实模型质量评测，也未造卡。
+- **Luna D / ENG-R2-TRUST-REVIEW-001 = PARTIAL/STALE_SNAPSHOT**：[只读审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106117192)指出网页DOM cue属性不能作为已认证asb来源，审查过程中Anki门禁文件变化；Sol A后来报告针对通用按钮/热键的定向隔离回归，但不能将旧审查认作最终新代码已全审。
+- **接下来已发布的独立任务**：[Sol A/R2重复选区可靠性修复](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106261995)（独占当前Yomitan/asb活动dirty树）；[Luna A/同一问题独立只读复现](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262259)；[Sol B/IINA现包源码的离线隔离补丁](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262522)（仅独立临时代码副本，不动已安装IINA）；[Luna C/R2字幕可信来源与向后兼容持久化前置](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262793)（只读）。发布任务不等于相应对话的Agent已经自动启动。
+- **其他边界未改变**：R1的三个P1在合成Chrome/Native/临时Vault/fake Anki下定向验收通过；正式manifest首次可选权限仍`BLOCKED_USER_PERMISSION`。R3真实IINA宿主隔离仍`BLOCKED_ISOLATED_HOST`；离线补丁不等于实际宿主功能验证。日常Chrome、真实模型/Obsidian/Anki、网页视频全闭环及IINA全闭环均未验收。
 
 ### 2026-10-11 最新里程碑与模型分工（较早阶段，供追溯）
 
@@ -563,17 +566,15 @@ B两轮词典研究足够决定当前入口，D两项旧风险已收口，不循
 
 ## 20｜Agent分工与授权：减少人工调度
 
-**2026-10-11 当前英文项目跨AI派工命名**：每次对用户说明时固定用「**模型前缀 + 现有Agent旧对话编号**」（如 **Sol A、Luna B、Luna D**），并直接附任务链接/说明发送给哪个旧对话；不要只说A/B，也不把其他项目的Issue编号移植过来。允许多个独立任务并行，但应有真实价值、不重复既有研究。模型可按任务选Sol/Luna；仅当用户明确说“没额度了”才全面分配Luna。**业务活动工作树每一时刻仍仅一个写入者**，其余并行研究/审查只读，不触碰该dirty树或真实学习数据。换执行模型需先停原写入并核对实际版本与工作树，不因改了模型前缀就复制工程。
+**2026-10-11用户明确规则：各模型独立编号，Agent并发不设人为上限。** 身份使用复合键`(model,agentId)`，例如`Sol A`和`Luna A`是两个Agent，`Sol B`和`Luna B`也是两个Agent；每个模型各有自己的A/B/C/D…，不能把两者按相同字母合并。历史未注明模型的回报先核对来源，不能反推同一个A/B。每次向用户派工，明示“发给哪个模型的哪个旧对话、任务链接及状态”，不移用其他项目Issue号。
 
-A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必要审查。B词典研究结项，C旧asb盘点结项后可只读核对iinatan，D只审新的高风险边界，不循环全量复核。
+**并发按实际可独立执行的任务分配，不设置最多3/5人的硬上限。** 可以同时对不同模块、明确隔离的本地代码副本、测试和UX独立评审工作；但每个活动worktree与任何共享文件在同一时刻仍只能有一个写入者，并先分清依赖、版本hash、合流责任，不能让多个Agent同时重写dirty或配置。当前Sol A拥有原Yomitan/asb活动树；Sol B只允许在一次性隔离的iinatan源码副本中开发，不修改已安装IINA；Luna A/C只读，各自独立于Sol同字母Agent。模型前缀不仅是展示标签，也是独立对话和任务所有权。
 
-主规划不按每条评论全量改写；相关阶段完成时原位更新。用户只需通知相应Agent读取当前任务，完成后说“做完了”；GitHub回报由ChatGPT核实。发布评论不自动唤醒Agent，不创建轮询/监听或自动部署。
+模型按任务难度选Sol或Luna；只有用户明确告知“没额度了”才将后续工作全面交由Luna，不能推测额度或自动切换用户App模型。**不同模型同字母并行存在**与**同一任务换模型接手**是不同操作：接手须先停原作者、读Issue/版本/dirty/恢复点，沿原工程继续，不建重复工作树。
 
-只读IINA与A的网页文字整合可并行；后续asb/IINA实现由同一A岗位分批接续，不让多模型同时改共享服务。Sol和Luna按任务有界切换，切换模型不等于更换项目/分支；先交接并停止原业务写入者，沿用现有工作树、dirty差异与任务。只有用户明确说没额度了才将后续工作全部改由Luna，其他时候可按任务混合分工。
+ChatGPT负责产品取舍与证据分层；主规划只原位维护，Issue记录执行和回报。每一批清楚区分源码存在、隔离测试、真实浏览器、正式安装与日常实际学习，不能因构建/盘点/发表任务自动标PASS。发布Issue评论不会启动远程Agent；用户转发到指定旧对话后才可能执行。
 
-规划更新、代码副本修改、隔离运行、日常部署、真实模型/记录、公开发布分层授权。已批准的小范围操作不每步反复问；“全做完”不等于无限权限。
-
-工程验收不擅自造真实卡；用户在说明过用途的产品里点“记住它”是显式保存及择要动作，不再加逐卡确认负担。
+规划、代码副本、隔离运行、日常部署、真实模型/学习数据和公开发布分别授权。不主动覆盖Vault/Anki、修改排程/凭据、公开push/merge或发布。用户显式点击“记住它”是单次保存授权，工程测试不据此自动创建真实Anki卡。
 
 ## 21｜工程维护与数据安全
 
@@ -616,6 +617,10 @@ A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必
 | 本机/远端/安装版本分叉 | A/C盘点有未知 | 保留映射，按需补运行身份，不全盘重做 |
 
 ## 24｜当前交给执行Agent的任务
+
+> **2026-10-11 14:26+最新，任务评论已建立、等待各模型独立对话执行：** **Sol A**→[ENG-VIDEO-002B：反复关闭卡后字幕拖选稳定性修复](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106261995)；**Luna A**→[ENG-R2-GESTURE-QA-001：独立只读复现/事件证据](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262259)；**Sol B**→[ENG-IINA-B1-OFFLINE-001：仅IINA源码临时副本的手势/关闭/旧回包补丁](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262522)；**Luna C**→[ENG-R2-SOURCE-TRUST-001：字幕来源身份与持久化前置只读审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262793)。**Sol A≠Luna A、Sol B≠Luna B**；并发不设数量上限，但不能并发修改同一worktree。Luna B原创质量样本已结项，Luna D旧审查STALE/PARTIAL；C/E旧编号按原回报模型核查，不自动归入当前某模型。R2为display-only PARTIAL，IINA真实宿主仍BLOCKED，不授权真实Vault/Anki/付费模型/日常部署或发布。
+>
+> **以下为更早的任务记录，仅供追溯，不要根据旧评论重开已完成工作。**
 
 > **2026-10-11 最新并行（均已发布，尚待转发/执行）**：**Sol A**继续[ENG-VIDEO-002A](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105894306)，当前已交[4文件实施前门禁](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105970089)，不要重复派工；新增**Luna B**的[ENG-SENSE-ACCEPT-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106028275)限一次合成英语理解验收样本；新增**Luna D**的[ENG-R2-TRUST-REVIEW-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106028479)限一次网页字幕来源身份和跨扩展边界独立只读审查。旧C/E暂不派任务。三个旧对话可同时执行，只有Sol A修改业务源码；B/D不对当前工程做并发补丁。模型与编号同时报给用户，任务不能自动开始。
 
