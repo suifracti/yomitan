@@ -31,7 +31,15 @@
 
 **分批可用，不等于缩减范围。** R1 完成可先用于阅读；R2、R3 分别交付，不必等所有路线一起上线才学习。但只有三条路线各自达到第19章验收条件，才可以称“三入口学习闭环完成”。Obsidian 内入口、复习反馈和主动表达仍是第14–15、17章的后续范围，不能因补进 IINA 而删除。
 
-### 已收到的两个 Agent 回报
+### 2026-10-11 最新执行状态与 Sol 交接
+
+**A / ENG-FLOW-002 = ISOLATED_PASS**：[最新回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6100464905)。原PR1隔离候选已最小接入“记住它”前端；JSDOM真实控件事件→StudyService/Python临时Vault→fake Anki覆盖0卡、1卡与失败恢复3场景，定向检查和开发构建通过。**尚未用新版候选在真实Chrome扩展与Native Messaging宿主中操作，未验日常Chrome/正式模型/真实Anki**。
+
+**C / ENG-IINA-BASELINE-001 = READ_ONLY_DONE**：[本机回报](https://github.com/suifracti/yomitan/issues/1#issuecomment-6100235393)确认IINA1.5.0、iinatan2.1.8及hover误触/根卡退出代码证据，优先局部改造；并不证明当前加载插件或实机操作。**B接收端只读 = READ_ONLY_DONE**，[证据](https://github.com/suifracti/yomitan/issues/1#issuecomment-6100059366)；**D安全审查 = PARTIAL**，[原因](https://github.com/suifracti/yomitan/issues/1#issuecomment-6100005453)。
+
+**新任务均已在原Issue #1发布、待各Agent接手**：[Sol主开发/真实隔离Chrome](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259593)；[B网页字幕→共同FLOW只读接缝](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259793)；[C IINA交互局部改造预备](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259979)；[D新UI整合定向代码审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105260147)。Sol继续同一A岗位及本机dirty worktree，必须确保前任已停止写入；仅Sol可改业务源码，B/C/D只读。发布任务评论不等于Agent已启动，下一阶段R2/R3实现仍需相应前置结果。
+
+### 较早的两个 Agent 基线回报（仅供历史追溯）
 
 - **A / ENG-BASELINE-002A：READ_ONLY_DONE。** 已盘点完整功能树、PR1 和保存调用链；PR1 缺 `study-library.js`，现有按钮仍走 `saveWord`。日常 Chrome 实际加载身份未确认；没有提供源码正文附件，也没有实施接缝整合。[G12]
 - **C / ENG-VIDEO-BASELINE-001：READ_ONLY_DONE。** 已盘点 asbplayer 本地 1.22.2 包/相关源码与11项变更、字幕时间和 Native 消息；没有核对接收端完整保存行为，也没有进行日常视频验收。[G13]
@@ -592,6 +600,9 @@ A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必
 | 本机/远端/安装版本分叉 | A/C盘点有未知 | 保留映射，按需补运行身份，不全盘重做 |
 
 ## 24｜当前交给执行Agent的任务
+
+> **2026-10-11新接手覆盖下方历史派工。** 唯一实际任务协调在[GitHub Issue #1](https://github.com/suifracti/yomitan/issues/1)。Sol接手原A唯一源码写入岗位，优先[ENG-R1-CHROME-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259593)；并行只读：[B ENG-VIDEO-FLOW-PREP-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259793)、[C ENG-IINA-B1-PREP-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105259979)、[D ENG-R1-REVIEW-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105260147)。旧A/C的以下步骤为历史任务原文，不应重复派工或替代最新评论。Sol本轮在隔离Chrome for Testing＋临时Vault/fake Anki验证已整合新UI的真实Chrome/Native链路，严格保留原代码与数据；不操作日常环境、正式模型/Anki或公开推送未审业务源码。
+
 
 **原ENG-BASELINE-002A与ENG-VIDEO-BASELINE-001盘点已收到并结项。** 不再把此前要求的相同盘点重复发给A/C；不因为用户说两个Agent做完，就将后续整合与视频功能自动标PASS。
 
