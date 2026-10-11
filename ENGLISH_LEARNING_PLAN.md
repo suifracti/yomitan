@@ -563,6 +563,8 @@ B两轮词典研究足够决定当前入口，D两项旧风险已收口，不循
 
 ## 20｜Agent分工与授权：减少人工调度
 
+**2026-10-11 当前英文项目跨AI派工命名**：每次对用户说明时固定用「**模型前缀 + 现有Agent旧对话编号**」（如 **Sol A、Luna B、Luna D**），并直接附任务链接/说明发送给哪个旧对话；不要只说A/B，也不把其他项目的Issue编号移植过来。允许多个独立任务并行，但应有真实价值、不重复既有研究。模型可按任务选Sol/Luna；仅当用户明确说“没额度了”才全面分配Luna。**业务活动工作树每一时刻仍仅一个写入者**，其余并行研究/审查只读，不触碰该dirty树或真实学习数据。换执行模型需先停原写入并核对实际版本与工作树，不因改了模型前缀就复制工程。
+
 A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必要审查。B词典研究结项，C旧asb盘点结项后可只读核对iinatan，D只审新的高风险边界，不循环全量复核。
 
 主规划不按每条评论全量改写；相关阶段完成时原位更新。用户只需通知相应Agent读取当前任务，完成后说“做完了”；GitHub回报由ChatGPT核实。发布评论不自动唤醒Agent，不创建轮询/监听或自动部署。
@@ -614,6 +616,8 @@ A是唯一业务源码写入者，ChatGPT负责产品取舍、证据分层与必
 | 本机/远端/安装版本分叉 | A/C盘点有未知 | 保留映射，按需补运行身份，不全盘重做 |
 
 ## 24｜当前交给执行Agent的任务
+
+> **2026-10-11 最新并行（均已发布，尚待转发/执行）**：**Sol A**继续[ENG-VIDEO-002A](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105894306)，当前已交[4文件实施前门禁](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105970089)，不要重复派工；新增**Luna B**的[ENG-SENSE-ACCEPT-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106028275)限一次合成英语理解验收样本；新增**Luna D**的[ENG-R2-TRUST-REVIEW-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106028479)限一次网页字幕来源身份和跨扩展边界独立只读审查。旧C/E暂不派任务。三个旧对话可同时执行，只有Sol A修改业务源码；B/D不对当前工程做并发补丁。模型与编号同时报给用户，任务不能自动开始。
 
 > **2026-10-11 本轮任务变更：** [A/Sol｜ENG-VIDEO-002A](https://github.com/suifracti/yomitan/issues/1#issuecomment-6105894306)，先接可靠网页原文字幕选择与cue来源快照（隔离实现），不宣称R2已完。R1正式manifest权限仍BLOCKED_USER_PERMISSION，D极长原句P2待小批修；此前Sol权限与Luna首屏任务已各自回报，以下为历史。
 >
