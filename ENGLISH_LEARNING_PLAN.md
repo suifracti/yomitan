@@ -31,7 +31,17 @@
 
 **分批可用，不等于缩减范围。** R1 完成可先用于阅读；R2、R3 分别交付，不必等所有路线一起上线才学习。但只有三条路线各自达到第19章验收条件，才可以称“三入口学习闭环完成”。Obsidian 内入口、复习反馈和主动表达仍是第14–15、17章的后续范围，不能因补进 IINA 而删除。
 
-### 2026-10-11 最新回报与独立模型编号（本节覆盖更早计划状态）
+### 2026-10-11 当前进度与待交付门禁（取代下方较早阶段安排）
+
+**进度按真实证据分层**：R1文本学习的三个P1已通过合成Chrome/Native/临时Vault/fake Anki定向验证，但**正式Chrome原manifest的可选nativeMessaging首次人工授权仍未完成**，日常真实模型、真实Vault/Anki尚未验。**R2网页视频**已完成可信ASB内部逐cue确认（隔离双扩展Chrome）和版本化来源/记录的内部持久化契约（真实Python临时Vault、合成transport），并修复未知字幕来源冒充普通文章导致写卡的P1（隔离Chrome）；**字幕UI仍display-only**，没有用户可用的AI→完整问答→记住→Anki闭环。**R3 IINA**离线选择/关闭/暂停及P2修复完成，但未安装或隔离IINA实机，旧E宿主安全隔离阻塞仍有效。三路线未整体交付。
+
+- [Sol A R2身份持久化合成契约](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107254708)为`CONTRACT_ISOLATED_PASS`、[Sol A未知来源禁写P1](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107541661)为定向`ISOLATED_PASS`，报告Chrome中还有两条未定位pageerror，不能断言完全无浏览器异常。
+- [Sol B IINA第三层离线补丁](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107454694)为`OFFLINE_PASS`（69/69），原B1→暂停增量→两处P2修复三个固定补丁各自保留，尚未独立审核最新复合补丁及真实宿主验证。
+- [Luna C R2持久化只读审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107451787)标`STALE_SNAPSHOT`，在冻结版确认1个P1：`resumeCueSaves()`手动测试通过，但生产`prepareStudyService()`不触发自动恢复。须先核活动最新版再修，不等于当前源码必然仍有缺口。
+- **当前已发布、待Agent执行**：**Sol A** [ENG-R2-STARTUP-RESUME-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107603895)恢复已存在R2保存意图的生产启动接线及隔离重启验收；**Luna B** [ENG-IINA-B1-FIX-STACK-REVIEW-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107604276)独立只读审核固定三补丁组合；**Luna A** [ENG-R2-POPUP-ERROR-TRIAGE-001](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107604572)只读定位未知`undefined.length`浏览器错误。此前Sol B修复任务已交付，本批不用再重写。发布评论不启动Agent。
+- **协作不变**：Agent身份由模型+字母复合构成（Sol A≠Luna A；Sol B≠Luna B），并发按需不限固定人数，但同一工作树/共享文件每刻只能有一个写入者。只有用户明确说“没额度了”才全面转Luna；未增加日常安装、真实学习数据、推送/合并权限。
+
+### 2026-10-11 最新回报与独立模型编号（较早阶段，供追溯）
 
 **用户最新协作规则：Agent身份由“模型＋编号”联合唯一确定。** **Sol A ≠ Luna A；Sol B ≠ Luna B**。每个模型各自可以有A/B/C/D…；不同模型同字母不能混同或自动接手。并发Agent数量不设人为上限，按可独立交付的工作、资源和风险安排，**相同worktree/共享文件仍不得同时写入**。只有用户明确说“没额度了”，后续才全面交Luna；通常按任务复杂度混用。
 
@@ -618,6 +628,8 @@ ChatGPT负责产品取舍与证据分层；主规划只原位维护，Issue记�
 
 ## 24｜当前交给执行Agent的任务
 
+> **2026-10-11最新派工**：**Sol A** [R2生产启动恢复](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107603895)（独占现有Yomitan/asb活动dirty工作树；在实际入口重放已确认且已经持久化的保存意图，UI仍禁写）；**Luna B** [IINA三补丁叠加独立离线审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107604276)（冻结指纹、独立临时副本、不修改已安装IINA）；**Luna A** [未知Chrome pageerror复现与归因](https://github.com/suifracti/yomitan/issues/1#issuecomment-6107604572)（只读，不修改Sol A活动树）。此前P1未知字幕门禁与Sol B两项IINA P2已按各自限定范围PASS，不重复派工；R2字幕AI/记住/Anki UI、真实Chrome Native首次可选授权、真实IINA宿主仍未验。其他历史任务如下，勿反向恢复旧安排。
+>
 > **2026-10-11 14:26+最新，任务评论已建立、等待各模型独立对话执行：** **Sol A**→[ENG-VIDEO-002B：反复关闭卡后字幕拖选稳定性修复](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106261995)；**Luna A**→[ENG-R2-GESTURE-QA-001：独立只读复现/事件证据](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262259)；**Sol B**→[ENG-IINA-B1-OFFLINE-001：仅IINA源码临时副本的手势/关闭/旧回包补丁](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262522)；**Luna C**→[ENG-R2-SOURCE-TRUST-001：字幕来源身份与持久化前置只读审查](https://github.com/suifracti/yomitan/issues/1#issuecomment-6106262793)。**Sol A≠Luna A、Sol B≠Luna B**；并发不设数量上限，但不能并发修改同一worktree。Luna B原创质量样本已结项，Luna D旧审查STALE/PARTIAL；C/E旧编号按原回报模型核查，不自动归入当前某模型。R2为display-only PARTIAL，IINA真实宿主仍BLOCKED，不授权真实Vault/Anki/付费模型/日常部署或发布。
 >
 > **以下为更早的任务记录，仅供追溯，不要根据旧评论重开已完成工作。**
