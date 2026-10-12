@@ -1,3 +1,20 @@
+# 外语学习系统｜2026-10-11 旧规划归档（ARCHIVED）
+
+> **此文件自 2026-10-12 起不再是 CURRENT / CANONICAL，也不是新 AI 的执行入口。**
+>
+> 用户已将 **外语学习系统（原英语学习系统）** 的现行决定和当前交接统一到 Obsidian：
+> - Vault 根 `AGENTS.md` → `03-项目与工程/外语学习系统/README.md`（唯一工程入口）。
+> - 同目录 `Decisions.md`：最终架构、保留功能与不做事项。
+> - 同目录 `Handoff.md`：最新进度、已验/未验与连续实施顺序。
+> - 同目录 `资料与来源.md`：[Google Drive 附件](https://drive.google.com/drive/folders/1yj5UZvKGsyrgHpmdNRoEv3ixyK-hG-kZ)、源码与历史证据链接。
+>
+> **不要按下方 2026-10-11 旧路线图、模型预算、Sol/Luna 派工、72h 阶段或“最小下一步”自动执行。** 本仓库用于代码及历史提交；当前工作必须从 Obsidian Handoff 重新核对本机最新工作树、实际安装版本和用户授权。无法访问 Vault 时先获取其当前三篇正文，不要用本文件替代。
+>
+> 本次只更正文档路由；没有改变 Yomitan/asbplayer/IINA 功能、真实笔记、Anki 或桌面 App 验收。原文保留如下，供追溯。
+
+<details>
+<summary>展开 2026-10-11 旧规划原文（全部为历史记录，不再具有执行效力）</summary>
+
 # 英语学习系统｜唯一主规划
 
 > CURRENT / CANONICAL · 2026-10-11 重新编排。
@@ -111,3 +128,6 @@ Sol A、Luna A是不同Agent，Sol B、Luna B也是不同Agent；每模型独立
 主规划只保留当前目标与做法；历史阶段、旧SHA、RED/GREEN和全部测试数留在Issue/Git历史，不再每一轮把几百行“最新状态覆盖历史”叠进本文。旧M0–M7章节和72h任务留作历史，不自动再派发。
 
 当前执行：Sol A交付可用的文章/网页字幕流程；Sol B交付可用的IINA改造/适配；Luna在有待交付候选时独立核查。只有一个[协调Issue #1](https://github.com/suifracti/yomitan/issues/1)，不重开规划、仓库或复制现有工作树。已创建的旧72h截止/检查点由原创建线程按本次纠偏核对停用，不能在后台继续据旧截止中止工作；本次文档更新不声称已操作其它线程调度。
+
+
+</details>
