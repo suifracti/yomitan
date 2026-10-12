@@ -1,10 +1,12 @@
-# yomitan 中文学习定制版
+# Yomitan 中文学习定制版
 
-> **跨工具英语学习系统唯一主项目规划：** [ENGLISH_LEARNING_PLAN.md](https://github.com/suifracti/yomitan/blob/main/ENGLISH_LEARNING_PLAN.md)。新 Agent 请先读该文档及本仓库 `AGENTS.md`，再读对应 [Issue #1](https://github.com/suifracti/yomitan/issues/1) 的当前任务；**此 README 仅说明 Yomitan 公开仓库版本，历史发布说明不代表本机最新工作树／日常加载状态**。不要从此 README 另建立项目总规划。
+> **跨工具外语学习系统当前接手：先读本仓库 [AGENTS.md](AGENTS.md)，再通过 Obsidian MCP 读取 Vault `03-项目与工程/外语学习系统/README.md` → `Decisions.md`（现行方案）→ `Handoff.md`（最新实际进度）。** 2026-10-11 的 [旧工程规划](ENGLISH_LEARNING_PLAN.md) 与 [旧 Issue #1](https://github.com/suifracti/yomitan/issues/1) 已降为历史证据，不得据其自动派工、迁移或重置测试额度。报告/HTML/补丁等文件留 [Google Drive 原交接文件夹](https://drive.google.com/drive/folders/1yj5UZvKGsyrgHpmdNRoEv3ixyK-hG-kZ)。
+>
+> **以下「下载、使用、当前版本」部分是 2026-10-08 发布包的历史说明**，不是 2026-10-12 用户日常运行版或 Mac 伴学 App 的交付证明。除实际发生该版本回退/安装需求外，不要按旧步骤反复重载、重装或清理扩展。
 
 仅维护 [suifracti/yomitan](https://github.com/suifracti/yomitan)，不向官方仓库推送或提 PR。
 
-## 下载与加载
+## 2026-10-08 发布包下载与加载（历史）
 
 当前 `zh-study7` 本地构建已放在 `/Users/apple/backup/english-study-extensions/`，下载包在 Downloads 的 `english-study-extensions-2026-10-08-study7.zip`。已安装的这台 Mac 在 Chrome 扩展页重载 Yomitan 并刷新网页即可，勿卸载或清数据。不要同时启用商店原版。
 
@@ -12,14 +14,14 @@
 
 新安装已预设中文界面、AnkiConnect `127.0.0.1:8766`、牌组 `外语::英语语境`、笔记类型 `外语语境卡` 和七个字段；不会迁移或覆盖旧扩展数据。Yomitan 随包提供增强 ECDICT 英语学习词典，首次入门/设置页会自动导入，请等待提示就绪。Chrome 首次加载/授权须人工确认。Anki Desktop 必须运行且安装 AnkiConnect；此包不自动改任意机器的 Anki 数据库。
 
-## 使用
+## 2026-10-08 发布包使用方法（历史）
 
 - 文章/字幕：按住 **Shift** 悬停查词；中文释义由内置 ECDICT 提供。
 - 视频：asbplayer 使用平台可检测字幕，或拖入自己的 SRT/VTT；不保证任意网站字幕自动可读。
 - 视频语境制卡：使用 asbplayer 的制卡入口，或在 Yomitan 加词后用 asbplayer 更新上一张卡片补入音频/截图。普通查词制卡无需额外服务。
 - **高级词汇状态标色依赖额外 yomitan-api 本机组件，当前包不启用。** 已预设 Word 字段和目标牌组，但不把配置称为已完成 Anki 复习回流。21 天等“成熟”阈值是软件规则，不是真实掌握。
 
-## 当前版本：同一张卡连续理解
+## 2026-10-08 历史版本：同一张卡连续理解
 
 `zh-study7` / `26.10.8.3` 不再提供固定详解的新标签、第二弹窗、侧栏或速览/用法模式切换。当前查词卡直接放完整 ECDICT 中文释义、IPA、顶部词形/考试标签/原始语料词频、原句与 AI 结果；Wiktionary 英英与源例句接在同一卡内。鼠标移开不再关闭，点 **×** 或 **Esc** 退出；卡内再查词复用当前卡，来源标为词典解释，不冒充网页原句。长词条仍可能滚动，但语境与常用操作不在所有词典内容之后。
 
