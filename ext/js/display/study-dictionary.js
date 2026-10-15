@@ -69,7 +69,8 @@ export function dictionaryText(element) {
 export function prepareStudyDictionary(entry, word) {
     const d = entry.ownerDocument;
     const raw = [...entry.querySelectorAll('[data-sc-content=glosses]>li')];
-    const candidates = raw.length > 0 ? raw : [...entry.querySelectorAll('[data-sc-study-role=english]>div>div, [data-sc-study-role=english]>div:not(:has(div))')];
+    const phrases = [...entry.querySelectorAll('.definition-item ul>li')].filter((node) => !node.closest('[data-sc-content=glosses], [data-sc-content=extra-info], [data-sc-content=tags], details'));
+    const candidates = raw.length > 0 ? [...raw, ...phrases] : [...entry.querySelectorAll('[data-sc-study-role=english]>div>div, [data-sc-study-role=english]>div:not(:has(div))')];
     const senses = candidates.filter((n) => n instanceof HTMLElement).map((node, i) => ({node: /** @type {HTMLElement} */ (node), id: `${i}`, text: dictionaryText(/** @type {HTMLElement} */ (node))}));
     if (senses.length === 0) { return () => {}; }
     for (const details of entry.querySelectorAll('[data-sc-content=details-entry-examples]')) {
@@ -111,7 +112,8 @@ export function prepareStudyDictionary(entry, word) {
     for (const b of [prev, next, translate, stop]) { b.type = 'button'; }
     prev.textContent = '上一组';
     next.textContent = '下一组';
-    translate.textContent = 'AI 中文 · 本组';
+    translate.textContent = '翻译本组英文';
+    translate.title = '仅翻译当前组的释义、短语和首个例句；其他组需切换后再点';
     stop.textContent = '取消';
     stop.hidden = true;
     const label = d.createElement('span'),
@@ -120,7 +122,17 @@ export function prepareStudyDictionary(entry, word) {
     status.className = 'study-dictionary-status';
     status.setAttribute('role', 'status');
     bar.append(label, prev, next, translate, stop, status);
-    entry.querySelector('.entry-body')?.prepend(bar);
+    const original = entry.querySelector('.entry-body-section[data-section-type=definitions], .entry-body>.definition-list');
+    const fold = d.createElement('details');
+    fold.className = 'study-original-dictionary';
+    fold.open = true;
+    const foldLabel = d.createElement('summary');
+    foldLabel.className = 'scan-disable';
+    foldLabel.textContent = '英英词典与例句';
+    if (original) {
+        original.before(fold);
+        fold.append(foldLabel, bar, original);
+    } else { entry.querySelector('.entry-body')?.prepend(bar); }
     let page = 0,
         version = 0,
         active = true;
@@ -144,12 +156,15 @@ export function prepareStudyDictionary(entry, word) {
             row.append(badge, d.createTextNode(result.items[i].translation));
             sense.node.append(row);
         }
-        status.textContent = (cached ? '已缓存' : '本次生成') + (pages[page].some((s) => s.text.length > 1800) ? ' · 超长段仅翻译前 1800 字，原文保留' : ' · 义项与首个例句');
+        status.textContent = (cached ? '已缓存' : '本次生成') + (pages[page].some((s) => s.text.length > 1800) ? ' · 超长段仅翻译前 1800 字，原文保留' : ' · 本组释义、短语与首例已译；其他例句保留原文');
         stop.hidden = true;
-        translate.disabled = false;
+        translate.disabled = true;
+        translate.textContent = '本组已译';
+        if (original) { fold.open = true; }
     };
     const restore = async () => {
         const token = ++version;
+        translate.textContent = '翻译本组英文';
         if (poll !== null) {
             clearTimeout(poll);
             poll = null;
@@ -168,7 +183,7 @@ export function prepareStudyDictionary(entry, word) {
             } else {
                 translate.disabled = false;
                 stop.hidden = true;
-                status.textContent = pages[page].some((s) => s.text.length > 1800) ? '超长段仅发送前 1800 字；不发送网页' : '点击翻译本组义项与首个例句，不发送网页';
+                status.textContent = pages[page].some((s) => s.text.length > 1800) ? '超长段仅发送前 1800 字；不发送网页' : '只翻译本组释义、短语与首例；更多例句保留英文';
             }
         } catch { if (active && token === version) { status.textContent = '缓存不可用；原英文仍可阅读。'; } }
     };
@@ -181,7 +196,7 @@ export function prepareStudyDictionary(entry, word) {
         }
         prev.disabled = page === 0; next.disabled = page === pages.length - 1;
         prev.hidden = next.hidden = pages.length === 1;
-        label.textContent = `英英 ${page + 1}/${pages.length} · ${senses.length} 义`;
+        label.textContent = `第 ${page + 1}/${pages.length} 组 · ${senses.length} 条释义/短语`;
         void restore();
     };
     prev.addEventListener('click', () => {
@@ -202,7 +217,9 @@ export function prepareStudyDictionary(entry, word) {
         translate.disabled = true;
         stop.hidden = false;
         running = payload;
+        translate.textContent = '翻译中…';
         status.textContent = '正在翻译本组…';
+        if (original) { fold.open = true; }
         void chrome.permissions.request({permissions: ['nativeMessaging']}).then(async (allowed) => {
             if (!active || token !== version) { return; }
             if (!allowed) { throw new Error('未授予本机通信权限。'); }
@@ -211,6 +228,7 @@ export function prepareStudyDictionary(entry, word) {
         }).catch((error) => {
             if (!active || token !== version) { return; }
             translate.disabled = false;
+            translate.textContent = '重试翻译本组';
             stop.hidden = true;
             status.textContent = error instanceof Error ? error.message : '翻译失败；原英文保留。';
         });
@@ -224,6 +242,7 @@ export function prepareStudyDictionary(entry, word) {
         if (running) { void studyCall('dictionaryCancel', running).catch(() => {}); }
         translate.disabled = false;
         stop.hidden = true;
+        translate.textContent = '翻译本组英文';
         status.textContent = '已取消（已消耗额度无法撤回）';
     });
     show();

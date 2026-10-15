@@ -4,7 +4,7 @@ node_modules/
 
 builds/
 
-dictionaries/
+/dictionaries/
 
 /test-results/
 /playwright-report/
@@ -17,3 +17,35 @@ ext/lib/*
 
 # Python local bridge/converter/test caches
 __pycache__/
+
+# Local credentials and signing material. These rules do not untrack files
+# already committed; inspect tracked matches before treating a file as protected.
+**/.env
+**/.env.*
+!**/.env.example
+# The root .env is already tracked and contains a non-secret Playwright toggle.
+# Keep it visibly tracked; never put credentials in this file.
+!/.env
+**/.git-credentials
+**/credentials*.json
+**/secrets*.json
+**/*.pem
+**/*.key
+**/*.p8
+**/*.p12
+**/*.pfx
+**/*.ppk
+**/*.jks
+**/*.keystore
+**/*.mobileprovision
+
+# Local databases, Anki collections, and exported packages
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+**/*.anki2
+**/*.colpkg
+**/*.apkg
+
+# Local one-time companion acceptance grant (not a learning database)
+companion-app/acceptance-grant.json*

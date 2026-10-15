@@ -17,7 +17,7 @@
  */
 
 import {studyCall} from '../study/study-client.js';
-import {DEFAULTS} from '../study/study-data.js';
+import {DEFAULTS, SAVED_KEY} from '../study/study-data.js';
 
 const status = /** @type {HTMLElement} */ (document.querySelector('#status'));
 const model = /** @type {HTMLSelectElement} */ (document.querySelector('#model'));
@@ -83,7 +83,7 @@ async function showSaved() {
     const list = /** @type {HTMLElement} */ (document.querySelector('#saved'));
     list.replaceChildren();
     if (rows.length === 0) {
-        list.textContent = '还没有收藏。查词卡点击 ☆ 收藏语境即可。';
+        list.textContent = '还没有收藏。点击查词卡右上角 ☆ 即可收藏当前词、原句和来源；不调用 AI、不制卡。';
     }
     for (const row of [...rows].reverse()) {
         const item = document.createElement('div');
@@ -194,4 +194,18 @@ void run(async () => {
     fill(/** @type {import('study').StudyConfig} */ (await studyCall('settings')));
     await showSaved();
     status.textContent = '本地设置已读取。首次选择其他模型，请先读取可用模型。';
+});
+
+document.querySelector('#prepare-japanese')?.addEventListener('click', () => {
+    void chrome.permissions.request({permissions: ['nativeMessaging']}).then(async (allowed) => {
+        if (!allowed) { throw new Error('尚未允许本机通信。'); }
+        status.textContent = '正在准备独立日语空牌组，请保持 Anki 运行…';
+        const result = /** @type {{message: string}} */ (await studyCall('libraryPrepareJapanese', {language: 'ja'}));
+        status.textContent = result.message;
+    }).catch((error) => { status.textContent = error instanceof Error ? error.message : '准备失败，未开始日语学习。'; });
+});
+
+// Keep an already-open collection view in sync with card stars/removals.
+chrome.storage?.onChanged.addListener((changes, area) => {
+    if (area === 'local' && SAVED_KEY in changes) { void run(showSaved); }
 });

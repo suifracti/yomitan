@@ -57,6 +57,7 @@ export class PopupFactory {
             ['popupFactoryContainsPoint',        this._onApiContainsPoint.bind(this)],
             ['popupFactoryShowContent',          this._onApiShowContent.bind(this)],
             ['popupFactorySetCustomCss',         this._onApiSetCustomCss.bind(this)],
+            ['popupFactoryToggleStudyLayer',      this._onApiToggleStudyLayer.bind(this)],
             ['popupFactoryClearAutoPlayTimer',   this._onApiClearAutoPlayTimer.bind(this)],
             ['popupFactorySetContentScale',      this._onApiSetContentScale.bind(this)],
             ['popupFactoryUpdateTheme',          this._onApiUpdateTheme.bind(this)],
@@ -314,6 +315,11 @@ export class PopupFactory {
     async _onApiSetCustomCss({id, css}) {
         const popup = this._getPopup(id);
         await popup.setCustomCss(css);
+    }
+
+    /** @type {import('cross-frame-api').ApiHandler<'popupFactoryToggleStudyLayer'>} */
+    async _onApiToggleStudyLayer({id}) {
+        return await this._getPopup(id).toggleStudyLayer();
     }
 
     /** @type {import('cross-frame-api').ApiHandler<'popupFactoryClearAutoPlayTimer'>} */

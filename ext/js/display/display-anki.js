@@ -613,10 +613,25 @@ export class DisplayAnki {
         }
     }
 
+    /** @returns {boolean} */
+    _subtitleSnapshotOnly() {
+        const sentence = /** @type {(import('display').HistoryStateSentence & {studySubtitle?: unknown}) | null | undefined} */ (this._display.history.state?.sentence);
+        return Boolean(sentence?.studySubtitle);
+    }
+
     /**
      * @param {import('display-anki').DictionaryEntryDetails[]} dictionaryEntryDetails
      */
     _updateSaveButtons(dictionaryEntryDetails) {
+        if (this._subtitleSnapshotOnly()) {
+            for (const button of document.querySelectorAll('[data-action=save-note]')) {
+                if (button instanceof HTMLButtonElement) {
+                    button.disabled = true;
+                    button.hidden = true;
+                }
+            }
+            return;
+        }
         if (this._checkForDuplicates && this._noteDupeCheckFirst) { this._removeDupeIndicators(); }
         const displayTagsAndFlags = this._displayTagsAndFlags;
         for (let entryIndex = 0, entryCount = dictionaryEntryDetails.length; entryIndex < entryCount; ++entryIndex) {
@@ -762,6 +777,7 @@ export class DisplayAnki {
      * @param {unknown} cardFormatStringIndex
      */
     _hotkeySaveAnkiNoteForSelectedEntry(cardFormatStringIndex) {
+        if (this._subtitleSnapshotOnly()) { return; }
         if (typeof cardFormatStringIndex !== 'string') { return; }
         const cardFormatIndex = Number.parseInt(cardFormatStringIndex, 10);
         if (Number.isNaN(cardFormatIndex)) { return; }
@@ -781,6 +797,8 @@ export class DisplayAnki {
      * @param {number} cardFormatIndex
      */
     async _saveAnkiNote(dictionaryEntryIndex, cardFormatIndex) {
+        if (this._subtitleSnapshotOnly()) { return; }
+        const sourceState = this._display.history.state;
         const dictionaryEntries = this._display.dictionaryEntries;
         const dictionaryEntryDetails = this._dictionaryEntryDetails;
         if (!(
@@ -805,7 +823,8 @@ export class DisplayAnki {
 
         button.disabled = true;
         setTimeout(() => {
-            if (this._duplicateBehavior !== 'prevent' || allErrors.length > 0) {
+            if (this._display.history.state === sourceState && !this._subtitleSnapshotOnly() &&
+            (this._duplicateBehavior !== 'prevent' || allErrors.length > 0)) {
                 button.disabled = false;
             }
         }, 2500);
@@ -816,12 +835,14 @@ export class DisplayAnki {
         const overrideToken = progressIndicatorVisible.setOverride(true);
         try {
             const {note, errors, requirements: outputRequirements} = await this._createNote(dictionaryEntry, cardFormatIndex, requirements);
+            if (this._display.history.state !== sourceState || this._subtitleSnapshotOnly()) { return; }
             allErrors.push(...errors);
 
             const error = this._getAddNoteRequirementsError(requirements, outputRequirements);
             if (error !== null) { allErrors.push(error); }
             if (button.dataset.overwrite) {
                 const overwrittenNote = await this._getOverwrittenNote(note, dictionaryEntryIndex, cardFormatIndex);
+                if (this._display.history.state !== sourceState || this._subtitleSnapshotOnly()) { return; }
                 await this._updateAnkiNote(overwrittenNote, allErrors);
             } else {
                 await this._addNewAnkiNote(note, allErrors, button, dictionaryEntryIndex);
@@ -922,6 +943,7 @@ export class DisplayAnki {
      * @param {number} dictionaryEntryIndex
      */
     async _addNewAnkiNote(note, allErrors, button, dictionaryEntryIndex) {
+        if (this._subtitleSnapshotOnly()) { return; }
         let noteId = null;
         let addNoteOkay = false;
         try {
@@ -1000,6 +1022,7 @@ export class DisplayAnki {
      * @param {Error[]} allErrors
      */
     async _updateAnkiNote(noteWithId, allErrors) {
+        if (this._subtitleSnapshotOnly()) { return; }
         if (noteWithId === null) { return; }
 
         try {

@@ -928,4 +928,15 @@ export default [
             }],
         },
     },
+    {
+        files: [
+            'test-localization/test-study-journal.mjs',
+        ],
+
+        languageOptions: {
+            parserOptions: {
+                project: false,
+            },
+        },
+    },
 ];

@@ -173,6 +173,10 @@ export type EventArgument<TName extends EventNames<Events>> = BaseEventArgument<
 // Direct API
 
 export type DirectApiSurface = {
+    displayToggleStudyLayer: {
+        params: void;
+        return: boolean;
+    };
     displayAudioClearAutoPlayTimer: {
         params: void;
         return: void;

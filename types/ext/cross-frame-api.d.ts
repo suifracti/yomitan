@@ -89,6 +89,10 @@ export type ApiSurface = {
         params: DisplayDirectApiMessageAny;
         return: DisplayDirectApiReturnAny;
     };
+    frontendStudyShortcut: {
+        params: {usePointer: boolean};
+        return: void;
+    };
     frontendClosePopup: {
         params: void;
         return: void;
@@ -189,6 +193,10 @@ export type ApiSurface = {
             css: string;
         };
         return: void;
+    };
+    popupFactoryToggleStudyLayer: {
+        params: {id: string};
+        return: boolean;
     };
     popupFactoryClearAutoPlayTimer: {
         params: {

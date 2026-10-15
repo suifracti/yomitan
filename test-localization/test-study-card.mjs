@@ -93,7 +93,7 @@ test('metadata is directly visible without nested disclosures, original meanings
  assert.match(element.querySelector('.study-metadata').textContent,/101/);
  assert.equal(element.querySelector('[data-sc-study-role=english]').closest('.study-metadata'),null);
  assert.match(element.querySelector('[data-sc-study-role=meaning]').textContent,/疲累的, 疲乏的, 厌倦的/);
- assert.equal(element.querySelector('.study-pos').textContent,'a.');
+ assert.equal(element.querySelector('.study-pos').textContent,'a. 形容词');
 });
 
 test('mouse-selected secondary can still collapse; keyboard navigation explicitly expands',async()=>{
@@ -148,4 +148,23 @@ test('looking up inside the card reuses the original popup and labels dictionary
  let shown;Object.assign(owner,{_application:{frameId:2},_showPopupContent:(_source,_options,details)=>{shown=details;},_popup:{},_getContentOrigin:()=>({})});
  Frontend.prototype._showContent.call(owner,{text:()=> 'morally'},false,[],'terms',{text:'morally right',offset:0},'Private article',{url:'https://example.com/article'},'light');
  assert.equal(shown.state.url,'');assert.equal(shown.state.sentence.sourceKind,'dictionary');assert.equal(shown.state.documentTitle,'词典解释');
+});
+
+test('article expressions without a dictionary hit stay in the plugin learning flow, not the stopped App', async () => {
+ const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
+ for(const withEntry of [false,true]){
+  const {dom,callbacks,display}=setupDisplay();
+  display.query='rocket fuel';display.history.state.sentence={text:'rocket fuel',offset:0};
+  display.history.state.url='https://example.org/article';
+  if(withEntry)document.querySelector('#dictionary-entries').innerHTML='<div class="study-entry"><header class="entry-header"></header></div>';
+  globalThis.chrome={runtime:{sendMessage:async()=>({ok:true,value:{result:null}})}};
+  prepareStudyCard(display);callbacks.get('contentUpdateComplete')();
+  const context=document.querySelector('#study-context');
+  assert.equal(context.hidden,false);
+  if(!withEntry)assert.match(context.textContent,/rocket fuel/);
+  assert.ok(context.querySelector('[data-study-translate="explain"]'),'local ask button remains available');
+  assert.match(context.textContent,/记住它/);
+  assert.doesNotMatch(context.textContent,/伴学 App|Niratan/);
+  callbacks.get('contentClear')();dom.window.close();delete globalThis.chrome;
+ }
 });

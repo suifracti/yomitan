@@ -18,6 +18,9 @@
 
 import {prepareStudyTranslation} from './study-translation.js';
 import {prepareStudyDictionary} from './study-dictionary.js';
+import {prepareStudyMini} from './study-mini.js';
+import {studyPartOfSpeech} from './study-labels.js';
+import {studyCall} from '../study/study-client.js';
 
 /**
  * Display-only context: never treats a dictionary example as the user's source.
@@ -57,14 +60,85 @@ export function prepareStudyCard(display, detail = false) {
     const autoSize = /** @type {?HTMLInputElement} */ (document.querySelector('#study-auto-size'));
     if (!(inner instanceof HTMLElement) || (!detail && !autoSize)) { return; }
     document.documentElement.dataset.studyDetail = `${detail}`;
+    const closeMini = prepareStudyMini(display);
     /** @type {(() => void)[]} */
     let dictionaryViews = [];
     const context = document.querySelector('#study-context');
+    // Only the inputs/actions are scan-disabled, not the user's original sentence.
+    context?.classList.remove('scan-disable');
     const translation = prepareStudyTranslation();
     document.documentElement.dataset.studyView = 'single';
     let manual = false;
     let generation = 0;
     let pending = false;
+    const toolbar = document.querySelector('.study-toolbar');
+    const favorite = toolbar ? document.createElement('button') : null;
+    /** @type {import('study').SavedWord|null} */
+    let favoriteRow = null;
+    /** @type {{word: string, sentence: string, language: string, url: string, title: string, videoTime?: number}|null} */
+    let favoriteSource = null;
+    if (favorite) {
+        favorite.type = 'button';
+        favorite.className = 'study-favorite scan-disable';
+        favorite.textContent = '☆';
+        favorite.disabled = true;
+        favorite.title = '收藏语境到本地；不调用 AI、不保存到 Obsidian 或 Anki';
+        favorite.setAttribute('aria-label', '收藏语境');
+        favorite.setAttribute('aria-pressed', 'false');
+        const before = toolbar?.querySelector('.study-settings, #close-button');
+        if (before) {
+            before.before(favorite);
+        } else {
+            toolbar?.append(favorite);
+        }
+        favorite.addEventListener('click', () => {
+            if (!favoriteSource || favorite.disabled) { return; }
+            const token = generation;
+            const source = favoriteSource;
+            const existing = favoriteRow;
+            favorite.disabled = true;
+            void (existing ? studyCall('removeWord', {id: existing.id}) : studyCall('saveWord', source)).then((value) => {
+                if (token !== generation) { return; }
+                favoriteRow = existing ? null : /** @type {import('study').SavedWord} */ (value);
+                favorite.textContent = favoriteRow ? '★' : '☆';
+                favorite.setAttribute('aria-pressed', `${!!favoriteRow}`);
+                favorite.setAttribute('aria-label', favoriteRow ? '取消收藏语境' : '收藏语境');
+                favorite.title = favoriteRow ? '已收藏到扩展本地；再次点击取消收藏' : '收藏语境到本地；不调用 AI、不保存到 Obsidian 或 Anki';
+            }).catch((error) => {
+                if (token === generation) {
+                    favorite.textContent = '!';
+                    favorite.title = `收藏未完成：${error instanceof Error ? error.message : '请重试'}`;
+                    favorite.setAttribute('aria-label', '收藏未完成，点击重试');
+                }
+            }).finally(() => { if (token === generation) { favorite.disabled = false; } });
+        });
+    }
+    const refreshFavorite = () => {
+        if (!favorite || !favoriteSource) { return; }
+        const token = generation;
+        const source = favoriteSource;
+        let url = '';
+        try {
+            const link = new URL(source.url);
+            if (['http:', 'https:'].includes(link.protocol)) {
+                if (typeof source.videoTime === 'number' && ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(link.hostname)) {
+                    link.searchParams.set('t', `${Math.floor(source.videoTime)}s`);
+                }
+                url = link.href.slice(0, 2000);
+            }
+        } catch { /* Local dictionary context has no web URL. */ }
+        void studyCall('saved').then((value) => {
+            if (token !== generation) { return; }
+            favoriteRow = /** @type {import('study').SavedWord[]} */ (value).find((r) => r.word === source.word && r.sentence === source.sentence && r.url === url && (r.language ?? 'en') === source.language) ?? null;
+            favorite.textContent = favoriteRow ? '★' : '☆';
+            favorite.setAttribute('aria-pressed', `${!!favoriteRow}`);
+            favorite.setAttribute('aria-label', favoriteRow ? '取消收藏语境' : '收藏语境');
+            favorite.title = favoriteRow ? '已收藏到扩展本地；再次点击取消收藏' : '收藏语境到本地；不调用 AI、不保存到 Obsidian 或 Anki';
+            favorite.disabled = false;
+        }).catch(() => {
+            if (token === generation) { favorite.disabled = false; }
+        });
+    };
     const fit = async () => {
         const token = generation;
         const id = display.parentPopupId;
@@ -96,7 +170,15 @@ export function prepareStudyCard(display, detail = false) {
         handle?.addEventListener(event, () => { manual = true; }, {capture: true, passive: true});
     }
     const clear = () => {
+        closeMini();
         ++generation;
+        favoriteRow = null;
+        favoriteSource = null;
+        if (favorite) {
+            favorite.disabled = true;
+            favorite.textContent = '☆';
+            favorite.setAttribute('aria-pressed', 'false');
+        }
         translation.cancel();
         for (const dispose of dictionaryViews) { dispose(); }
         dictionaryViews = [];
@@ -141,7 +223,7 @@ export function prepareStudyCard(display, detail = false) {
                 if (match) {
                     const pos = document.createElement('span');
                     pos.className = 'study-pos';
-                    pos.textContent = match[1];
+                    pos.textContent = `${match[1]} ${studyPartOfSpeech(match[1])}`;
                     row.replaceChildren(pos, document.createTextNode(text.slice(match[0].length)));
                 }
             }
@@ -188,6 +270,8 @@ export function prepareStudyCard(display, detail = false) {
                     const supplement = disclosure.dataset.scStudyRole === 'english' && element.querySelector('[data-sc-content=glosses]') !== null;
                     disclosure.open = !supplement;
                     if (supplement) {
+                        // The full English dictionary is below; avoid a second one-line disclosure.
+                        disclosure.hidden = true;
                         disclosure.classList.add('study-extra-english');
                         const summary = disclosure.querySelector('summary');
                         if (summary) { summary.textContent = '原词库英英简释（参考）'; }
@@ -212,10 +296,33 @@ export function prepareStudyCard(display, detail = false) {
             const sentence = display.history.state?.sentence ?? null;
             const header = document.querySelector('.study-entry .entry-header');
             header?.after(context);
+            if (!header && sentence?.text.trim()) {
+                const selected = document.createElement('p');
+                selected.className = 'study-missing-target';
+                selected.textContent = display.query;
+                context.append(selected);
+            }
             appendStudyContext(context, sentence, display.query);
-            if (sentence && sentence.text.trim() && sentence.text.trim() !== display.query.trim()) {
+            const subtitleSnapshot = /** @type {(typeof sentence & {studySubtitle?: import('../app/frontend.js').StudySubtitle})} */ (sentence)?.studySubtitle;
+            if (sentence?.text.trim() && display.query.trim()) {
+                favoriteSource = {word: subtitleSnapshot?.word || display.query,
+                    sentence: sentence.text,
+                    language: subtitleSnapshot?.language ?? 'en',
+                    url: display.history.state?.url ?? '',
+                    title: display.history.state?.documentTitle ?? '',
+                    ...(typeof display.history.state?.videoTime === 'number' ? {videoTime: display.history.state.videoTime} : {})};
+                refreshFavorite();
+            }
+            if (subtitleSnapshot) {
+                for (const action of document.querySelectorAll('[data-action=save-note], [data-action=add-note]')) {
+                    if (action instanceof HTMLElement) { action.hidden = true; }
+                }
+            }
+            // An expression need not have a dictionary hit to be understood here.
+            // Keep learning in this plugin; the standalone App route is stopped.
+            if (sentence && sentence.text.trim()) {
                 context.hidden = false;
-                translation.render(context, sentence.text, display.query, {contextSelected: false, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime});
+                translation.render(context, sentence.text, subtitleSnapshot?.word || display.query, {subtitleSnapshot, ...(subtitleSnapshot?.language ? {language: subtitleSnapshot.language} : {}), contextSelected: false, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime});
             }
         }
         schedule();

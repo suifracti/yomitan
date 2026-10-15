@@ -13,7 +13,8 @@
 
 - 原 [ENGLISH_LEARNING_PLAN.md](https://github.com/suifracti/yomitan/blob/main/ENGLISH_LEARNING_PLAN.md) 已是**2026-10-11 历史规划快照**；[Issue #1](https://github.com/suifracti/yomitan/issues/1) 保存旧执行报告/评论。二者都不是新的派工、模型费用、真实数据写入或发布授权。
 - 代码仍在 [suifracti/yomitan](https://github.com/suifracti/yomitan)、[suifracti/asbplayer](https://github.com/suifracti/asbplayer) 与本机既有工作树；交接文件正文在 Obsidian，报告/HTML/补丁/包等附件在 [既有 Google Drive 文件夹](https://drive.google.com/drive/folders/1yj5UZvKGsyrgHpmdNRoEv3ixyK-hG-kZ)。
-- 现在的定案是**复用 Yomitan/asbplayer/IINA 与既有 StudyService、Python 保存链，增量做 Electron 薄伴学 App**；不自行重建播放器、浏览器、词典或复习系统。应用是否真正做完，以 Handoff 所列实机验收为准。
+- **2026-10-15 当前决定**：独立 App 已停止，只优化现有 Yomitan/asbplayer/IINA 与 StudyService、Python 保存链；不恢复历史 App 规划，具体状态读取上述 Obsidian Handoff。
+- **用户明确只用 `main`**：沿原工作树直接小改、自检后 commit/push 到个人仓库现有 main，不新开分支或 PR，不强推覆盖远端；冲突先保留本机改动处理。源码同步不等于发布或真实学习数据写入授权。
 - 默认不开 PR、不派 Agent 任务、不因历史“做完了”重新启动工作包。修改代码、安装、付费调用、真实笔记/Anki 读写、推送或发布以当前用户明确授权为准；不得删除学习数据、卡片、复习排程。一个实际工作树同一时刻仅一名写入者。
 
 此路由更新不代表本机扩展、Mac App 或任何真实学习链路已完成验收。

@@ -33,7 +33,8 @@ import {SearchPersistentStateController} from './search-persistent-state-control
 
 await Application.main(true, async (application) => {
     const detailId = new URL(location.href).searchParams.get('studyDetail');
-    if (detailId) { document.documentElement.dataset.studyDetail = 'true'; }
+    // The normal search window and old saved detail links share the current card.
+    document.documentElement.dataset.studyDetail = 'true';
     const documentFocusController = new DocumentFocusController('#search-textbox');
     documentFocusController.prepare();
 
@@ -48,6 +49,18 @@ await Application.main(true, async (application) => {
 
     const display = new Display(application, 'search', documentFocusController, hotkeyHandler);
     await display.prepare();
+    prepareStudyCard(display, true);
+    const searchOptions = document.querySelector('.search-options');
+    if (searchOptions instanceof HTMLElement) {
+        const extras = document.createElement('details');
+        extras.className = 'study-search-options scan-disable';
+        const label = document.createElement('summary');
+        label.textContent = '搜索选项';
+        searchOptions.before(extras);
+        extras.append(label, searchOptions);
+        const clipboardLabel = extras.querySelector('#search-option-clipboard-monitor-container .search-option-label');
+        if (clipboardLabel) { clipboardLabel.textContent = '剪贴板监控'; }
+    }
 
     const displayAudio = new DisplayAudio(display);
     displayAudio.prepare();
@@ -72,7 +85,6 @@ await Application.main(true, async (application) => {
     documentFocusController.focusElement();
 
     if (detailId) {
-        prepareStudyCard(display, true);
         const heading = document.querySelector('#study-detail-heading');
         if (heading instanceof HTMLElement) { heading.hidden = false; }
         const search = document.querySelector('#search-textbox');

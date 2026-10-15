@@ -1,7 +1,36 @@
 import unittest, importlib.util, pathlib, io, json, struct
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 PATH=ROOT/'local-bridge/study_translator.py'
+import sys
+sys.path.insert(0,str(ROOT/'local-bridge'))
 class BridgeTests(unittest.TestCase):
+ def test_model_input_has_single_instruction_copy_and_keeps_questions_when_compacting_metadata(self):
+  m=self.module();self.assertEqual(m.thread_params('/tmp')['baseInstructions'],'')
+  memory={'saved':{'coverage':{'status':'partial','scope':'bounded','asOf':1},'anki':{'status':'unavailable'}},'recent':[{'question':'Why?','meaning':'Fair.','feedback':'unconfirmed','id':'opaque','at':'now','usage':{'inputTokens':100}}]}
+  p={'action':'explain','sentence':'It is a just decision.','word':'just','context':'','question':'Only?','learningMemory':json.dumps(memory)}
+  value=json.loads(m.turn_params('t',p)['input'][0]['text']);compact=json.loads(value['learningMemory'])
+  self.assertEqual(compact['recent'][0],{'question':'Why?','meaning':'Fair.','feedback':'unconfirmed'})
+  self.assertEqual(compact['saved']['coverage']['status'],'partial');self.assertEqual(compact['saved']['anki']['status'],'unavailable');self.assertIn('usage',memory['recent'][0])
+ def test_organize_and_question_are_bounded_and_ids_must_match(self):
+  m=self.module();ident='a'*32
+  p={'action':'organize','items':[{'id':ident,'word':'just','sentence':'It is just.','context':'','meaning':'公正的','translation':'这是公正的。','notes':''}]}
+  self.assertEqual(m.normalize_request(p),p)
+  self.assertEqual(m.parse_answer(json.dumps({'items':[{'id':ident,'text':'形容词，表示公正。'}]}),p)['items'][0]['id'],ident)
+  with self.assertRaises(ValueError):m.normalize_request({**p,'url':'https://private.example'})
+  with self.assertRaises(ValueError):m.parse_answer(json.dumps({'items':[{'id':'b'*32,'text':'错误关联'}]}),p)
+  q=m.normalize_request({'action':'explain','sentence':'I just arrived.','word':'just','question':'为什么不是公正？'})
+  self.assertEqual(q['question'],'为什么不是公正？')
+ def test_learning_memory_and_card_preview_have_strict_boundaries(self):
+  m=self.module()
+  p={'action':'explain','sentence':'It is just.','word':'just','learningMemory':'本人仍然不懂：形容词和副词。'}
+  self.assertEqual(m.normalize_request(p)['learningMemory'],p['learningMemory'])
+  with self.assertRaises(ValueError):m.normalize_request({**p,'learningMemory':'x'*50001})
+  draft={'action':'cards','items':[{'id':'a'*32,'word':'just','text':'原句及我的问题'}]}
+  self.assertEqual(m.normalize_request(draft),draft)
+  good={'items':[{'id':'a'*32,'cards':[{'front':'这里为什么不是刚刚？','back':'因为修饰名词。'}],'reason':'针对已记录的困惑。'}]}
+  self.assertEqual(m.parse_answer(json.dumps(good),draft),good)
+  with self.assertRaises(ValueError):m.parse_answer(json.dumps({'items':[]}),draft)
+  with self.assertRaises(ValueError):m.parse_answer(json.dumps({'items':[{'id':'b'*32,'cards':good['items'][0]['cards'],'reason':'x'}]}),draft)
  def module(self):
   self.assertTrue(PATH.exists(), 'bridge missing')
   spec=importlib.util.spec_from_file_location('study_translator',PATH);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
@@ -26,7 +55,7 @@ class BridgeTests(unittest.TestCase):
   class Partial(io.BytesIO):
    def read(self,n=-1):return super().read(min(n,2))
   self.assertEqual(m.read_frame(Partial(raw)),{'text':'中文'})
-  with self.assertRaises(ValueError):m.read_frame(io.BytesIO(struct.pack('=I',20000)))
+  with self.assertRaises(ValueError):m.read_frame(io.BytesIO(struct.pack('=I',6000001)))
  def test_thread_no_environment_no_tools_no_persistence(self):
   m=self.module();thread=m.thread_params('/tmp/isolated-test')
   self.assertEqual(thread['environments'],[]);self.assertEqual(thread['dynamicTools'],[])
@@ -79,14 +108,18 @@ for line in sys.stdin:
    emit({'id':55,'method':'item/commandExecution/requestApproval','params':{}})
   else:
    answer={'items':[{'id':row['id'],'translation':'演示词典中文'} for row in payload['items']]} if payload['action']=='dictionary' else {'translation':'演示译文','meaning':'演示含义','notes':''}
+   emit({'method':'thread/tokenUsage/updated','params':{'threadId':'fixture-thread','turnId':'fixture-turn','tokenUsage':{'total':{'inputTokens':100,'outputTokens':30,'totalTokens':130,'cachedInputTokens':60,'reasoningOutputTokens':20}}}})
    emit({'method':'item/completed','params':{'item':{'type':'agentMessage','text':json.dumps(answer)}}})
    emit({'method':'turn/completed','params':{'turn':{'status':'completed'}}})
   continue
  emit({'id':identifier,'result':result})
 ''');path.chmod(0o700)
-   server=m.AppServer(str(path),tmp,tmp)
+   server=m.AppServer(str(path),tmp,tmp,pathlib.Path(tmp)/'usage.sqlite3')
    payload={'action':'dictionary','word':word,'items':[{'id':'0','text':'Only, simply, merely.'}]} if dictionary else {'action':'translate','sentence':'Test only.','word':word}
-   try:return server.translate(payload,tmp)
+   try:
+    result=server.translate(payload,tmp)
+    self.assertEqual(server.usage()['totalTokens'],130)
+    return result
    finally:server.close()
  def test_dictionary_fixture_full_response(self):self.assertEqual(self.run_fixture('just',True)['items'][0]['translation'],'演示词典中文')
  def test_fixture_full_response(self):self.assertEqual(self.run_fixture('Test')['translation'],'演示译文')

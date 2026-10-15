@@ -196,9 +196,14 @@ export class PopupWindow extends EventDispatcher {
     }
 
     /**
-     * Stops the audio auto-play timer, if one has started.
-     * @returns {Promise<void>}
+     * Toggle the top study layer, preserving its parent conversation.
+     * @returns {Promise<boolean>}
      */
+    async toggleStudyLayer() {
+        return await this._invoke(false, 'displayToggleStudyLayer', void 0) === true;
+    }
+
+    /** @returns {Promise<void>} */
     async clearAutoPlayTimer() {
         await this._invoke(false, 'displayAudioClearAutoPlayTimer', void 0);
     }

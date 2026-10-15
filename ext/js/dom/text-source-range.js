@@ -71,6 +71,11 @@ export class TextSourceRange {
         return 'range';
     }
 
+    /** @returns {boolean} Whether this is an exact, explicitly selected range. */
+    get disallowExpandSelection() {
+        return this._disallowExpandSelection;
+    }
+
     /**
      * The internal range object.
      * @type {Range}

@@ -176,6 +176,28 @@
 .study-privacy-note { color: var(--study-muted); font-size: 10px; margin: 8px 0 0; }
 .study-match-toggle:focus-visible,
 .study-translation-actions button:focus-visible { outline: 2px solid var(--study-accent); outline-offset: 2px; }
+.study-save-actions { margin-top: 8px; }
+.study-translation-actions .study-save-actions { display: contents; }
+.study-learning-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.study-learning-actions button {
+    padding: 6px 9px;
+    border: 1px solid var(--study-border);
+    background: var(--study-soft);
+    border-radius: 7px;
+    color: var(--study-accent);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.study-learning-actions button[data-study-save=note] { background: var(--study-accent); color: var(--background-color); font-weight: 600; }
+.study-learning-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.study-learning-actions button:focus-visible { outline: 2px solid var(--study-accent); outline-offset: 2px; }
+.study-library-status { margin: 6px 0; color: var(--study-accent); font-size: 12px; overflow-wrap: anywhere; }
+.study-library-status:empty { display: none; }
+.study-save-destination,
+.study-pending-recovery { margin: 4px 0; color: var(--study-muted); font-size: 11px; overflow-wrap: anywhere; }
+.study-pending-recovery button { margin-left: 4px; font-size: inherit; }
+.study-pending-recovery[hidden] { display: none; }
 
 [data-sc-study-role=meaning]>[data-sc-study-role=label] { display: none; }
 .study-pos { display: inline-block; margin-right: 6px; color: var(--study-accent); font-weight: 600; font-size: 12px; }
@@ -264,3 +286,111 @@
     .study-entry { padding: 10px 12px; }
     .study-entry .actions { gap: 4px; }
 }
+
+.study-mini {
+    position: fixed;
+    z-index: 10000;
+    box-sizing: border-box;
+    max-height: min(190px, 42vh);
+    padding: 10px 12px;
+    border: 1px solid var(--study-border);
+    border-radius: 10px;
+    background: var(--background-color);
+    color: var(--text-color);
+    box-shadow: 0 4px 18px #0002;
+    display: flex;
+    flex-direction: column;
+    font-size: 14px;
+    line-height: 1.5;
+}
+.study-mini header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.study-mini strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 17px;
+}
+.study-mini button {
+    flex-shrink: 0;
+    padding: 0 5px;
+    border: 0;
+    background: transparent;
+    color: var(--study-muted);
+    font-size: 20px;
+    cursor: pointer;
+}
+.study-mini-meanings {
+    min-height: 0;
+    overflow: auto;
+    overflow-wrap: anywhere;
+}
+.study-mini p {
+    margin: 5px 0 0;
+}
+.study-mini-pos {
+    color: var(--study-accent);
+    font-weight: 600;
+}
+
+/* Small follow-up composer; optional usage stays out of the reading flow. */
+.study-followup {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 58px;
+    max-height: 150px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--study-border);
+    border-radius: 10px;
+    background: var(--background-color);
+    color: var(--text-color);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+}
+.study-followup::placeholder { color: var(--study-muted); }
+.study-followup:focus { outline: 2px solid var(--study-accent); outline-offset: 1px; }
+.study-followup-footer { display: flex; align-items: flex-start; gap: 8px; margin: 5px 0 8px; font-size: 10px; color: var(--study-muted); }
+.study-followup-footer>span { margin-right: auto; }
+.study-token-summary { position: relative; font-size: 10px; color: var(--study-muted); text-align: right; }
+.study-token-summary>summary { cursor: pointer; list-style: none; font-size: 10px; white-space: nowrap; }
+.study-token-summary>summary::-webkit-details-marker { display: none; }
+.study-token-summary>summary::after { content: ' ▾'; }
+.study-token-summary p { margin: 5px 0; font-size: 10px; }
+.study-token-summary button { padding: 2px 4px; border: 1px solid var(--study-border); border-radius: 4px; background: var(--study-soft); color: var(--study-muted); font: inherit; cursor: pointer; }
+.study-token-summary[open] { max-width: 200px; }
+.study-request-status:empty { display: none; }
+.study-request-status { font-size: 11px; color: var(--study-muted); }
+.study-original-dictionary { border-top: 1px solid var(--study-border); margin-top: 6px; }
+.study-original-dictionary>summary { padding: 9px 0; font-size: 12px; color: var(--study-accent); cursor: pointer; }
+.study-original-dictionary>summary::after { content: ' · 展开'; font-size: 10px; color: var(--study-muted); }
+.study-original-dictionary[open]>summary::after { content: ' · 收起'; }
+.study-original-dictionary .study-dictionary-controls { border-top: 0; padding-top: 0; }
+.study-mini strong { margin-right: auto; }
+.study-mini .study-mini-full { font: inherit; font-size: 11px; color: var(--study-accent); white-space: nowrap; padding: 3px 5px; border: 1px solid var(--study-border); border-radius: 5px; }
+.study-mini button:focus-visible { outline: 2px solid var(--study-accent); outline-offset: 1px; }
+
+/* The complete dictionary window uses the same card, not the legacy search view. */
+:root[data-study-detail=true] #intro { display: none; }
+:root[data-study-detail=true] .search-header-wrapper { max-width: 680px; margin: auto; }
+:root[data-study-detail=true] .search-textbox-container { box-sizing: border-box; margin: 8px 0; border: 1px solid var(--study-border); border-radius: 9px; overflow: hidden; background: var(--study-soft); }
+:root[data-study-detail=true] #search-textbox { background: transparent; font: inherit; font-size: 14px; }
+:root[data-study-detail=true] .search-button { background: transparent; }
+.study-search-options { font-size: 11px; color: var(--study-muted); margin: 7px 0 0; }
+.study-search-options>summary { cursor: pointer; }
+.study-search-options .search-options { padding: 6px 0; }
+
+/* Small local bookmark; separate from the explicit learning/save action. */
+.study-favorite { border: 0; padding: 0; min-width: 22px; min-height: 24px; background: transparent; color: var(--study-muted); font: inherit; font-size: 20px; line-height: 1; cursor: pointer; }
+.study-favorite[aria-pressed="true"] { color: var(--study-accent); }
+.study-favorite:hover, .study-favorite:focus-visible { background: var(--study-soft); border-radius: 5px; }
+.study-favorite:disabled { opacity: .45; cursor: default; }

@@ -25,6 +25,11 @@
 <div class="content-outer">
     <div class="content">
         <div class="content-scroll scrollbar" id="content-scroll">
+            <div class="study-toolbar scan-disable">
+                <span class="study-toolbar-title">完整词卡</span>
+                <a href="/study-settings.html" target="_blank" rel="noopener noreferrer" class="study-settings">AI 设置 ↗</a>
+                <button type="button" class="study-close" id="close-button" aria-label="关闭完整词卡" title="关闭完整词卡（Esc）">×</button>
+            </div>
             <div id="above-sticky-header">
                 <div class="top-progress-bar-container"><div class="progress-bar-indeterminant" id="progress-indicator" hidden></div></div>
                 <div class="search-header-wrapper">
@@ -42,7 +47,7 @@
                                 </div>
                                 <label class="search-option" id="search-option-clipboard-monitor-container">
                                     <label class="toggle"><input type="checkbox" id="clipboard-monitor-enable"><span class="toggle-body"><span class="toggle-track"></span><span class="toggle-knob"></span></span></label>
-                                    <span class="search-option-label">Clipboard monitor</span>
+                                    <span class="search-option-label">剪贴板监控</span>
                                 </label>
                                 <div class="search-options-right">
                                     <div class="search-option" id="search-settings-button" data-modal-action="show,search-settings"><span class="icon" data-icon="cog"></span></div>

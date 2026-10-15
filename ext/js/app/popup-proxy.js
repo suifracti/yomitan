@@ -226,9 +226,14 @@ export class PopupProxy extends EventDispatcher {
     }
 
     /**
-     * Stops the audio auto-play timer, if one has started.
-     * @returns {Promise<void>}
+     * Toggle the top study layer, preserving its parent conversation.
+     * @returns {Promise<boolean>}
      */
+    async toggleStudyLayer() {
+        return await this._invokeSafe('popupFactoryToggleStudyLayer', {id: this._id}, false);
+    }
+
+    /** @returns {Promise<void>} */
     async clearAutoPlayTimer() {
         await this._invokeSafe('popupFactoryClearAutoPlayTimer', {id: this._id}, void 0);
     }

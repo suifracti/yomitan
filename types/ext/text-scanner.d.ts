@@ -119,6 +119,7 @@ export type InputInfoDetail = {
 };
 
 export type Events = {
+    selectionShortcut: {event: KeyboardEvent};
     clear: {
         reason: ClearReason;
     };

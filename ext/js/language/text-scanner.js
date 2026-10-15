@@ -24,6 +24,7 @@ import {safePerformance} from '../core/safe-performance.js';
 import {clone} from '../core/utilities.js';
 import {anyNodeMatchesSelector, everyNodeMatchesSelector, getActiveModifiers, getActiveModifiersAndButtons, isPointInSelection} from '../dom/document-util.js';
 import {TextSourceElement} from '../dom/text-source-element.js';
+import {TextSourceRange} from '../dom/text-source-range.js';
 
 const SCAN_RESOLUTION_EXCLUDED_LANGUAGES = new Set(['ja', 'zh', 'yue', 'ko']);
 
@@ -99,6 +100,8 @@ export class TextScanner extends EventDispatcher {
 
         /** @type {PointerEvent | null} */
         this._lastMouseMove = null;
+        /** @type {boolean} */
+        this._selectionShortcutActive = false;
 
         /** @type {boolean} */
         this._deepContentScan = false;
@@ -382,13 +385,13 @@ export class TextScanner extends EventDispatcher {
     clearSelection() {
         if (!this._canClearSelection) { return; }
         if (this._textSourceCurrent !== null) {
-            if (this._textSourceCurrentSelected) {
+            if (this.isSelectionFromLookup()) {
                 this._textSourceCurrent.deselect();
                 if (this._selectionRestoreInfo !== null) {
                     this._restoreSelection(this._selectionRestoreInfo);
-                    this._selectionRestoreInfo = null;
                 }
             }
+            this._selectionRestoreInfo = null;
             this._textSourceCurrent = null;
             this._textSourceCurrentSelected = false;
             this._inputInfoCurrent = null;
@@ -405,6 +408,43 @@ export class TextScanner extends EventDispatcher {
      */
     getCurrentTextSource() {
         return this._textSourceCurrent;
+    }
+
+    /**
+     * @param {boolean} [includeManual] Also recognize a manual range already consumed by lookup.
+     * @returns {boolean}
+     */
+    isSelectionFromLookup(includeManual = false) {
+        const source = this._textSourceCurrent;
+        const selection = window.getSelection();
+        if ((!includeManual && !this._textSourceCurrentSelected) || !(source instanceof TextSourceRange) ||
+        !selection || selection.isCollapsed || selection.rangeCount !== 1) { return false; }
+        const range = selection.getRangeAt(0);
+        const previous = source.range;
+        // The flag can outlive its highlight: a later user range always takes priority.
+        return range.startContainer === previous.startContainer && range.startOffset === previous.startOffset &&
+        range.endContainer === previous.endContainer && range.endOffset === previous.endOffset &&
+        range.toString() === source.text();
+    }
+
+    /** @returns {{x: number, y: number}|null} */
+    getPointerPosition() {
+        const point = this._lastMouseMove;
+        return point ? {x: point.clientX, y: point.clientY} : null;
+    }
+
+    /** @returns {?import('text-source').TextSource} */
+    getTextSourceAtPointer() {
+        const point = this._lastMouseMove;
+        if (point === null) { return null; }
+        const hit = document.elementFromPoint(point.clientX, point.clientY);
+        if (this._excludeSelector && hit?.closest(this._excludeSelector)) { return null; }
+        return this._textSourceGenerator.getRangeFromPoint(point.clientX, point.clientY, {
+            deepContentScan: this._deepContentScan,
+            normalizeCssZoom: this._normalizeCssZoom,
+            language: this._language,
+            browser: this._browser,
+        });
     }
 
     /**
@@ -618,6 +658,14 @@ export class TextScanner extends EventDispatcher {
      */
     _onKeyDown(e) {
         const modifiers = getActiveModifiers(e);
+        if (['ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight', 'ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight'].includes(e.code) &&
+        modifiers.length > 0 && this._modifierKeySet(modifiers) && !this._inputtingText()) {
+            this.trigger('selectionShortcut', {event: e});
+            if (e.defaultPrevented) {
+                this._selectionShortcutActive = true;
+                return;
+            }
+        }
         if (this._lastMouseMove !== null && modifiers.length > 0 && this._modifierKeySet(modifiers)) {
             if (this._inputtingText()) { return; }
             const syntheticMousePointerEvent = new PointerEvent(this._lastMouseMove.type, {
@@ -944,6 +992,8 @@ export class TextScanner extends EventDispatcher {
      * @returns {void}
      */
     _onMousePointerMove(e) {
+        if (this._selectionShortcutActive && this._modifierKeySet(getActiveModifiers(e))) { return; }
+        this._selectionShortcutActive = false;
         this._scanTimerClear();
         this._lastMouseMove = e;
 
@@ -1131,7 +1181,7 @@ export class TextScanner extends EventDispatcher {
         eventListenerInfos.push(...this._getClickEventListeners(capture));
         if (!this._searchOnClickOnly) {
             eventListenerInfos.push(...this._getPointerEventListeners(capture));
-            if (this._scanWithoutMousemove) {
+            if (this._scanWithoutMousemove || this.hasListeners('selectionShortcut')) {
                 eventListenerInfos.push(...this._getKeyboardEventListeners(capture));
             }
         }
@@ -1174,6 +1224,7 @@ export class TextScanner extends EventDispatcher {
     _getKeyboardEventListeners(capture) {
         return [
             [this._node, 'keydown', this._onKeyDown.bind(this), capture],
+            [this._node, 'keyup', () => { this._selectionShortcutActive = false; }, capture],
         ];
     }
 
@@ -1259,7 +1310,11 @@ export class TextScanner extends EventDispatcher {
         const sentenceForwardQuoteMap = this._sentenceForwardQuoteMap;
         const sentenceBackwardQuoteMap = this._sentenceBackwardQuoteMap;
         const layoutAwareScan = this._layoutAwareScan;
-        const searchText = this.getTextSourceContent(textSource, scanLength, layoutAwareScan, optionsContext.pointerType);
+        let searchText = this.getTextSourceContent(textSource, scanLength, layoutAwareScan, optionsContext.pointerType);
+        if (this._language === 'en' && !(textSource instanceof TextSourceRange && textSource.disallowExpandSelection)) {
+            // Default to the pointed word; phrases require an explicit native selection.
+            searchText = /^[\p{L}\p{N}][\p{L}\p{M}\p{N}]*(?:['’-][\p{L}\p{M}\p{N}]+)*/u.exec(searchText)?.[0] ?? '';
+        }
         if (searchText.length === 0) { return null; }
 
         /** @type {import('api').FindTermsDetails} */

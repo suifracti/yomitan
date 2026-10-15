@@ -586,7 +586,13 @@ export class Display extends EventDispatcher {
     close() {
         switch (this._pageType) {
             case 'popup':
-                void this.invokeContentOrigin('frontendClosePopup', void 0);
+                void this.invokeContentOrigin('frontendClosePopup', void 0).catch(async () => {
+                    // Closing the host must still work if an old empty lookup lost its origin.
+                    const id = this._parentPopupId;
+                    if (id !== null) {
+                        await this.invokeParentFrame('popupFactoryHide', {id, changeFocus: true, force: true});
+                    }
+                }).catch((error) => { log.error(error); });
                 break;
             case 'search':
                 void this._closeTab();
@@ -2279,6 +2285,9 @@ export class Display extends EventDispatcher {
 
     /** */
     _onHotkeyClose() {
+        const closeMini = new CustomEvent('study-mini-close', {cancelable: true});
+        document.dispatchEvent(closeMini);
+        if (closeMini.defaultPrevented) { return; }
         if (this._closeSinglePopupMenu()) { return; }
         this.close();
     }

@@ -213,3 +213,9 @@ Files：固定学习档案读接口、模型请求数据/缓存键与设置 UI�
 
 - 自有本机桥 installer 冲突检查通过，安装只执行 CLI --version；已安装 study_translator.py 与运行源 SHA256 同为 df7a1df06eeccaa26339b65a9867f5a160d3ea3a6f56292e1deb3a99190614f1，未读取/输出认证原值或调用模型。
 - 固定目录部署前原摘要全部匹配，619 个自有文件部署后逐项 verified，未知文件不覆盖；asbplayer 新独立包 SHA 与 study6 完全相同。统一包 english-study-extensions-2026-10-08-study7.zip，157969148 bytes，SHA256 135285e4c1de25d9fa9afac7fbf0d5080b76135a2bfc726f4e8e0bb8522cf0fb；Yomitan 独立包 153432426 bytes，SHA256 2e8524d60589a0bd01714b3f5907ecd5130a158d76d13b5347f0b10af43d6565；asbplayer 4468541 bytes，SHA256 9457cc099efb799ed6e038b3d15961a4539af47610d2b5ab8223f59b597b3aba。运行源码 b0b8285c92adb342ff9aa12e42cee33cb9137477 / 26.10.8.3；asbplayer 文档 1bf1cdf2bd1f673c80e3cb8526e1ef8bcf77cb53，运行产物仍 3406409abcb3df770c631c40e34f17a17c9db790 / 1.22.0。两自有 main 已推送；两个自有 study7 Release 的 7 个资产大小/SHA256 全部经 API 核对后已发布，无上游写入。旧 study6 Downloads 统一包在已知 SHA 匹配且新包验证后删除。Raw 独立创建、唯一当前主源 CAS 更新并回读通过；保留真实 Chrome/模型/媒体与 Obsidian→Anki 未验/未实现边界。
+
+## 2026-10-15 · 原插件源码同步（非发布）
+
+仅使用个人仓库 `main`，不新开分支或 PR。补回近期本机 Yomitan 学习/保存/可信字幕适配与词卡交互源码；词卡工具栏的小星标复用原本地收藏，设置页随收藏变化刷新。默认英语指针查单词，主动多词选区才查词组，保留主会话/草稿及来源门禁。
+
+这是源码同步与现有解包目录的小改，不是新发布、全量功能验收或真实学习数据写入。必要验证采用合成语境、替身宿主/词典与临时数据，不调用付费模型。独立 App 已停止，`companion-app/`、本机授权配置、词典包、学习数据和浏览器配置不随此次提交上传。旧入口接头源码如被插件导入则保留，避免提交后模块缺失，不恢复 App 开发。

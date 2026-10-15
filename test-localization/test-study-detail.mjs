@@ -57,7 +57,7 @@ test('same-card senses page without AI; examples already readable and stale gene
  const entry=dom.window.document.querySelector('#entry'),dispose=prepareStudyDictionary(entry,'just');
  await new Promise(r=>setImmediate(r));assert.equal(generated,0);assert.equal(entry.querySelectorAll('[data-study-sense-hidden=false]').length,3);
  assert.equal(entry.querySelector('details').open,true);
- const buttons=[...entry.querySelectorAll('.study-dictionary-controls button')];buttons.find(b=>b.textContent==='AI 中文 · 本组').click();
+ const buttons=[...entry.querySelectorAll('.study-dictionary-controls button')];buttons.find(b=>b.textContent==='翻译本组英文').click();
  grant(true);await new Promise(r=>setImmediate(r));assert.equal(generated,1);
  buttons.find(b=>b.textContent==='下一组').click();await new Promise(r=>setImmediate(r));assert.equal(entry.querySelectorAll('[data-study-sense-hidden=false]').length,3);
  finish();await new Promise(r=>setImmediate(r));assert.doesNotMatch(entry.textContent,/OLD PAGE 中文/);dispose();

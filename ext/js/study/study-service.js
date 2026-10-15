@@ -16,10 +16,49 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {log} from '../core/log.js';
+import {rememberSaved} from './study-remember.js';
 import {CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
+import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
+import {attestStudyCue} from './study-cue-attestation.js';
+import {prepareStudyCompanion} from './study-companion.js';
+
+/** @type {WeakSet<object>} */
+const preparedRuntimes = new WeakSet();
+
+/**
+ * Chrome storage may reorder object keys; compare the complete JSON snapshot structurally.
+ * @param {unknown} value
+ * @returns {string|undefined}
+ */
+const cueIntentFingerprint = (value) => JSON.stringify(value, (_key, /** @type {unknown} */ part) => {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) { return part; }
+    return Object.fromEntries(Object.entries(/** @type {Record<string, unknown>} */ (part)).sort(([a], [b]) => a.localeCompare(b)));
+});
 
 export class StudyService {
+    /** @type {Map<string, {entry: import('study').LibraryEntry, owner: string, sender: chrome.runtime.MessageSender}>} */
+    #verifiedCues = new Map();
+    /** @type {Map<number, string>} */
+    #cueQueries = new Map();
+    /** @type {Map<string, Promise<import('study').LibraryRecord>>} */
+    #cueSaves = new Map();
+    /** @type {Promise<import('study').LibraryRecord[]> | null} */
+    #cueResume = null;
+    /** @type {Map<string, string>} */
+    #cueSessions = new Map();
+    /** @type {Map<string, {requestId: string, cancelled: boolean, cancel: () => void}>} */
+    #cueRuns = new Map();
+    /** @type {Map<string, Promise<import('study').LibraryRecord>>} */
+    #cueSaving = new Map();
+    /** @type {Map<string, () => Promise<void>>} */
+    #cueSaveGuards = new Map();
+    /** @type {Map<string, Promise<void>>} */
+    #cueChecks = new Map();
+    /** @type {(() => boolean)|null} */
+    #cueJournalGuard = null;
+
     /**
      *
      * @param {import('study').Storage} storage
@@ -38,6 +77,377 @@ export class StudyService {
         this.epoch = 0;
         /** @type {Promise<void>} */
         this.writes = Promise.resolve();
+        /** @type {StudyJournal} */
+        this.journal = new StudyJournal(this);
+        /** @type {Map<string, {generation: number, active: number}>} */
+        this.cancelScopes = new Map();
+        /** @type {Map<string, Promise<import('study').LibraryRecord>>} */
+        this.rememberPending = new Map();
+        /** @type {Map<string, Promise<import('study').LibraryRecord>>} */
+        this.rememberSavePending = new Map();
+    }
+
+    /**
+     * Only the existing private consume chain can populate this store. No save endpoint is installed.
+     * @param {Pick<typeof chrome.runtime, 'id'|'sendMessage'>} runtime
+     * @param {chrome.runtime.MessageSender} sender
+     * @param {{queryId?: string, cue?: Record<string, unknown>}} data
+     * @returns {Promise<Record<string, unknown>>}
+     */
+    async attestCue(runtime, sender, data) {
+        const denied = {ok: false, writeAuthorized: false};
+        const tab = sender.tab?.id;
+        if (sender.id !== runtime.id || !Number.isInteger(tab) || sender.frameId !== 0 || !sender.documentId || !data.queryId) { return denied; }
+        const slot = /** @type {number} */ (tab);
+        const generation = crypto.randomUUID();
+        this.#cueQueries.set(slot, generation);
+        for (const [key, row] of this.#verifiedCues) {
+            if (row.entry.subtitleSource?.provenance.tabId === slot) {
+                this.#cueRuns.get(key)?.cancel();
+                this.#verifiedCues.delete(key);
+                this.#cueSessions.delete(key);
+            }
+        }
+        const result = await attestStudyCue(runtime, sender, data);
+        if (!result.ok || this.#cueQueries.get(slot) !== generation) { return denied; }
+        const c = /** @type {Record<string, unknown>} */ (result.cue);
+        const fields = ['version', 'sourceRevision', 'text', 'cueIndex', 'trackIndex', 'trackName', 'language', 'originalStartMs', 'originalEndMs', 'subtitleOffsetMs', 'url', 'selectionStart', 'selectionEnd', 'word'];
+        if (!c || Object.keys(c).length !== fields.length || fields.some((k) => !(k in c)) || c.version !== 1 ||
+        !['en', 'ja'].includes(/** @type {string} */ (c.language)) ||
+        ['text', 'word', 'trackName', 'sourceRevision'].some((k) => typeof c[k] !== 'string' || !c[k].trim()) ||
+        ['cueIndex', 'trackIndex', 'originalStartMs', 'originalEndMs', 'subtitleOffsetMs', 'selectionStart', 'selectionEnd'].some((k) => !Number.isSafeInteger(c[k])) ||
+        /** @type {number} */ (c.trackIndex) < 0 || /** @type {number} */ (c.cueIndex) < 0 ||
+        /** @type {number} */ (c.originalStartMs) < 0 || /** @type {number} */ (c.originalEndMs) <= /** @type {number} */ (c.originalStartMs) ||
+        /** @type {number} */ (c.selectionStart) < 0 || /** @type {number} */ (c.selectionEnd) <= /** @type {number} */ (c.selectionStart)) { return denied; }
+        const text = /** @type {string} */ (c.text),
+            word = /** @type {string} */ (c.word);
+        if (text.length > 2400 || word.length > 128 || word !== word.trim() || text.slice(/** @type {number} */ (c.selectionStart), /** @type {number} */ (c.selectionEnd)) !== word) { return denied; }
+        const url = new URL(/** @type {string} */ (c.url));
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) { return denied; }
+        url.hash = '';
+        const source = /** @type {import('study').SubtitleSourceV1} */ ({version: 1,
+            url: url.href,
+            language: c.language,
+            trackIndex: c.trackIndex,
+            trackName: c.trackName,
+            text,
+            originalStartMs: c.originalStartMs,
+            originalEndMs: c.originalEndMs,
+            subtitleOffsetMs: c.subtitleOffsetMs,
+            selectionStart: c.selectionStart,
+            selectionEnd: c.selectionEnd,
+            word,
+            provenance: {queryId: data.queryId,
+                sourceRevision: c.sourceRevision,
+                cueIndex: c.cueIndex,
+                tabId: slot,
+                frameId: 0,
+                documentId: sender.documentId}});
+        const returned = /** @type {{title?: string}} */ (result.source);
+        const entry = {word,
+            sentence: text,
+            language: source.language,
+            context: '',
+            meaning: '',
+            translation: '',
+            notes: '',
+            url: source.url,
+            title: (returned.title ?? '').slice(0, 300),
+            subtitleSource: source};
+        if (this.#verifiedCues.size >= 128) { return denied; }
+        this.#verifiedCues.set(data.queryId, {entry: structuredClone(entry), sender: structuredClone(sender), owner: JSON.stringify([sender.id, slot, sender.frameId, sender.documentId, sender.url])});
+        return result; // still writeAuthorized:false; the page never receives an internal save capability.
+    }
+
+    /**
+     * Revalidate the original top-level document and private ASB cue; no UI source fields are accepted.
+     * @param {Pick<typeof chrome.runtime, 'id'|'sendMessage'>} runtime
+     * @param {string} queryId
+     * @returns {Promise<void>}
+     */
+    async #liveCue(runtime, queryId) {
+        let checking = this.#cueChecks.get(queryId);
+        if (!checking) {
+            checking = this.#checkCueLive(runtime, queryId).finally(() => { this.#cueChecks.delete(queryId); });
+            this.#cueChecks.set(queryId, checking);
+        }
+        await checking;
+    }
+
+    /**
+     * @param {Pick<typeof chrome.runtime, 'id'|'sendMessage'>} runtime
+     * @param {string} queryId
+     * @param {'revalidate'|'seek'} [phase]
+     * @returns {Promise<void>}
+     */
+    async #checkCueLive(runtime, queryId, phase = 'revalidate') {
+        const row = this.#verifiedCues.get(queryId);
+        const s = row?.entry.subtitleSource;
+        if (!row || !s || s.language !== 'en') { throw new Error('当前英文字幕来源未确认或查询已失效。'); }
+        const p = s.provenance;
+        const live = /** @type {{ok?: boolean}|undefined} */ (await chrome.tabs.sendMessage(
+            p.tabId,
+            {action: 'studyCueValidate', params: {queryId}},
+            {frameId: 0, documentId: p.documentId},
+        ));
+        const cue = {version: 1,
+            sourceRevision: p.sourceRevision,
+            text: s.text,
+            cueIndex: p.cueIndex,
+            trackIndex: s.trackIndex,
+            trackName: s.trackName,
+            language: s.language,
+            originalStartMs: s.originalStartMs,
+            originalEndMs: s.originalEndMs,
+            subtitleOffsetMs: s.subtitleOffsetMs,
+            url: row.sender.url,
+            selectionStart: s.selectionStart,
+            selectionEnd: s.selectionEnd,
+            word: s.word};
+        const confirmed = live?.ok ? await attestStudyCue(runtime, row.sender, {queryId, cue, phase: /** @type {'revalidate'|'seek'} */ (phase)}) : null;
+        if (!confirmed?.ok || this.#verifiedCues.get(queryId) !== row) {
+            this.#verifiedCues.delete(queryId);
+            this.#cueRuns.get(queryId)?.cancel();
+            throw new Error('字幕选区、轨道或所属页面已改变；没有写入新的学习结果。');
+        }
+    }
+
+    /**
+     * Narrow popup reference-only actions; public R1 dispatch never accepts subtitle payloads.
+     * @param {Pick<typeof chrome.runtime, 'id'|'sendMessage'|'getURL'>} runtime
+     * @param {chrome.runtime.MessageSender} sender
+     * @param {unknown} value
+     * @returns {Promise<unknown>}
+     */
+    async cueAction(runtime, sender, value) {
+        const data = /** @type {{queryId?: string, action?: string, question?: string, requestId?: string}} */ (value ?? {});
+        const row = this.#verifiedCues.get(data.queryId ?? '');
+        const queryId = data.queryId ?? '';
+        if (!value || typeof value !== 'object' || Object.keys(value).some((k) => !['queryId', 'action', 'question', 'requestId'].includes(k)) ||
+        !row || sender.id !== runtime.id || sender.url !== runtime.getURL('popup.html') ||
+        sender.tab?.id !== row.entry.subtitleSource?.provenance.tabId || !sender.documentId || !Number.isInteger(sender.frameId) || /** @type {number} */ (sender.frameId) <= 0 ||
+        !['open', 'generate', 'save', 'remember', 'cancel', 'return'].includes(data.action ?? '')) { throw new Error('字幕学习会话身份无效；没有调用模型或保存。'); }
+        const owner = JSON.stringify([sender.id, sender.tab?.id, sender.frameId, sender.documentId, sender.url]);
+        const bound = this.#cueSessions.get(queryId);
+        if (bound && bound !== owner) { throw new Error('字幕学习弹窗身份已改变。'); }
+        if (data.action === 'cancel') {
+            const run = this.#cueRuns.get(queryId);
+            if (bound === owner && run && run.requestId === data.requestId) { run.cancel(); }
+            return true;
+        }
+        /** @type {{requestId: string, cancelled: boolean, cancel: () => void}|null} */
+        let run = null;
+        if (data.action === 'generate') {
+            if (typeof data.question !== 'string' || data.question.length > 500 || typeof data.requestId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(data.requestId)) { throw new Error('字幕追问参数无效。'); }
+            if (this.#cueRuns.has(queryId) || this.#cueSaving.has(queryId)) { throw new Error('本句操作尚未完成，请稍后。'); }
+            const pending = {requestId: data.requestId, cancelled: false, cancel: () => {}};
+            pending.cancel = () => { pending.cancelled = true; };
+            run = pending;
+            this.#cueRuns.set(queryId, pending);
+            this.#cueSessions.set(queryId, owner);
+        }
+        try {
+            await this.#liveCue(runtime, queryId);
+            if (data.action === 'return') {
+                await this.#checkCueLive(runtime, queryId, 'seek');
+                return true;
+            }
+            if (run?.cancelled) { throw new Error('已取消，未启动模型请求。'); }
+            if (this.#cueSessions.has(queryId) && this.#cueSessions.get(queryId) !== owner) { throw new Error('字幕弹窗已失效。'); }
+            this.#cueSessions.set(queryId, owner);
+            if (data.action === 'open') { return {turns: await this.journal.conversation(row.entry)}; }
+            if (data.action === 'save' || data.action === 'remember') {
+                let saving = this.#cueSaving.get(queryId);
+                if (!saving) {
+                    saving = (async () => {
+                        if (this.#cueRuns.has(queryId)) { throw new Error('请先完成或取消当前回答；草稿不会保存。'); }
+                        if ((await this.journal.conversation(row.entry)).length === 0) { throw new Error('请先完成本句问答，再显式保存学习记录。'); }
+                        this.#cueSaveGuards.set(queryId, () => this.#liveCue(runtime, queryId));
+                        const saved = await this.saveVerifiedCue(queryId, row.sender);
+                        if (data.action !== 'remember') { return saved; }
+                        await this.#liveCue(runtime, queryId);
+                        const source = saved.entry.subtitleSource;
+                        if (!source) { throw new Error('字幕保存回执缺少可信身份。'); }
+                        const task = {id: saved.id, language: 'en', key: sourceKey(saved.entry), source};
+                        await this.write('studyCueRememberIntentsV1', (v) => {
+                            const rows = /** @type {typeof task[]} */ (Array.isArray(v) ? v : []);
+                            return [...rows.filter((r) => r.id !== task.id), task];
+                        });
+                        return await this.#rememberCue(task, () => this.#liveCue(runtime, queryId));
+                    })().finally(() => { this.#cueSaving.delete(queryId); this.#cueSaveGuards.delete(queryId); });
+                    this.#cueSaving.set(queryId, saving);
+                }
+                return await saving;
+            }
+            if (!run || typeof data.question !== 'string') { throw new Error('字幕追问参数无效。'); }
+            const config = studyConfig(await this.read(SETTINGS_KEY));
+            const recent = await this.journal.conversation(row.entry);
+            await this.#liveCue(runtime, queryId);
+            if (run.cancelled) { throw new Error('已取消。'); }
+            const call = this.native({action: 'explain',
+                language: 'en',
+                word: row.entry.word,
+                sentence: row.entry.sentence,
+                context: '',
+                question: data.question.trim(),
+                config: {model: config.model, effort: config.effort},
+                learningMemory: JSON.stringify({saved: {items: [], total: 0}, recent: recent.slice(-6), earlierLocalTurnsNotIncluded: Math.max(0, recent.length - 6)})});
+            run.cancel = () => {
+                run.cancelled = true;
+                call.cancel();
+            };
+            const response = await call.promise;
+            if (run.cancelled || response.ok !== true || !isStudyResult(response.result)) { throw new Error(response.error ?? '回答未完成；已完成问答保留。'); }
+            await this.#liveCue(runtime, queryId);
+            if (run.cancelled) { throw new Error('已取消，未写入迟到回答。'); }
+            // append enters service.write synchronously; write captures this guard before its storage awaits.
+            this.#cueJournalGuard = () => !run.cancelled && this.#verifiedCues.get(queryId) === row;
+            const appending = this.journal.append({...row.entry, question: data.question.trim()}, response.result, 'unconfirmed', response.usage);
+            this.#cueJournalGuard = null;
+            await appending;
+            return response.result;
+        } finally {
+            if (run && this.#cueRuns.get(queryId) === run) { this.#cueRuns.delete(queryId); }
+        }
+    }
+
+    /**
+     * Internal contract only, deliberately absent from receive/handle dispatch.
+     * @param {string} queryId
+     * @param {chrome.runtime.MessageSender} sender
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    async saveVerifiedCue(queryId, sender) {
+        const row = this.#verifiedCues.get(queryId);
+        if (!row || row.owner !== JSON.stringify([sender.id, sender.tab?.id, sender.frameId, sender.documentId, sender.url])) {
+            throw new Error('字幕来源未确认或当前查询已失效；没有保存。');
+        }
+        const key = sourceKey(row.entry);
+        const turns = structuredClone(await this.journal.get(row.entry));
+        await this.#cueSaveGuards.get(queryId)?.();
+        /** @type {import('study').CueSaveIntent} */
+        let task = {key, entry: structuredClone(row.entry), turns};
+        await this.write('studyCueSaveIntentsV1', (value) => {
+            if (this.#verifiedCues.get(queryId) !== row) { throw new Error('字幕查询已失效；没有排入保存意图。'); }
+            const rows = /** @type {import('study').CueSaveIntent[]} */ (Array.isArray(value) ? value : []);
+            const previous = rows.find((r) => r.key === key);
+            if (previous) {
+                task = previous;
+                return rows;
+            }
+            const next = [...rows, task];
+            if (new TextEncoder().encode(JSON.stringify(next)).length > 2000000) { throw new Error('字幕待保存意图已满，请先恢复。'); }
+            return next;
+        });
+        return await this.resumeCueIntent(task);
+    }
+
+    /**
+     * @param {{id: string, language: string, key: string, source: NonNullable<import('study').LibraryEntry['subtitleSource']>}} task
+     * @param {(() => Promise<unknown>) | null} [check]
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    async #rememberCue(task, check = null) {
+        if (!task || Object.keys(task).sort().join(',') !== 'id,key,language,source' || !/^[a-f0-9]{32}$/.test(task.id) ||
+        task.language !== 'en' || task.source?.version !== 1 || !task.key?.startsWith('r2:')) { throw new Error('字幕记住意图无效，未制卡。'); }
+        await check?.();
+        const read = await this.native({action: 'libraryRead', ids: [task.id], language: task.language}).promise;
+        const materials = /** @type {{items?: import('study').LearningMaterial[]}} */ (read.library);
+        const entry = materials?.items?.[0]?.record?.entry;
+        if (!read.ok || !entry || sourceKey(entry) !== task.key ||
+        sourceKey({...entry, subtitleSource: task.source}) !== task.key || !entry.subtitleSource) { throw new Error('字幕记住意图与记录来源不一致。'); }
+        const record = materials?.items?.[0]?.record;
+        if (!check && !record?.reviewDraft && !record?.cards?.length && !record?.noteId) { throw new Error('复习判断尚未持久确认；请重新从同一字幕点击记住，不自动重发 AI。'); }
+        if (!check && record?.reviewDraft && (record.draftStale || record.reviewDraft.cards.length > 1)) { throw new Error('复习草稿已失效；须重新从同一字幕确认，不自动重发 AI。'); }
+        const authority = {id: task.id, source: entry.subtitleSource, check};
+        const row = await rememberSaved(this, task, (action, value) => {
+            // Recovery may replay a durable decision, never silently create a new one.
+            if (!check && (action === 'draftCards' || action === 'libraryDraftDiscard')) { throw new Error('启动恢复不能重新判断；请现场确认字幕。'); }
+            return this.handleRequest(action, value, null, authority);
+        });
+        if (row.ankiState !== 'pending') {
+            await this.write('studyCueRememberIntentsV1', (v) => (/** @type {typeof task[]} */ (Array.isArray(v) ? v : [])).filter((r) => r.id !== task.id || cueIntentFingerprint(r) !== cueIntentFingerprint(task)));
+        }
+        return row;
+    }
+
+    /** @returns {Promise<void>} */
+    async resumeCueRemembers() {
+        const tasks = await this.read('studyCueRememberIntentsV1');
+        if (typeof tasks === 'undefined') { return; }
+        if (!Array.isArray(tasks)) { throw new Error('字幕记住队列损坏，原值保留。'); }
+        /** @type {string[]} */
+        const errors = [];
+        const rows = /** @type {{id: string, language: string, key: string, source: NonNullable<import('study').LibraryEntry['subtitleSource']>}[]} */ (tasks);
+        for (const task of rows) {
+            try { await this.#rememberCue(task); } catch (error) {
+                errors.push(error instanceof Error ? error.message : '字幕记住未确认');
+            }
+        }
+        await this.write('studyCueRememberResumeErrorsV1', () => errors);
+    }
+
+    /**
+     * @param {import('study').CueSaveIntent} task
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    async resumeCueIntent(task) {
+        // Durable intent is historical authority, not a new DOM/query capability. Never downgrade it to R1.
+        const s = task?.entry?.subtitleSource,
+            p = s?.provenance;
+        if (!task || Object.keys(task).sort().join(',') !== 'entry,key,turns' || !Array.isArray(task.turns) ||
+        !s || s.version !== 1 || !p || p.frameId !== 0 || !Number.isSafeInteger(p.tabId) || p.tabId < 0 ||
+        ![p.documentId, p.queryId, p.sourceRevision].every((v) => typeof v === 'string' && v.length > 0) ||
+        !Number.isSafeInteger(p.cueIndex) || p.cueIndex < 0 ||
+        task.key !== sourceKey(task.entry) || !task.key.startsWith('r2:') ||
+        task.entry.word !== s.word || task.entry.sentence !== s.text || task.entry.url !== s.url || task.entry.language !== s.language ||
+        !['en', 'ja'].includes(s.language)) {
+            throw new Error('字幕保存意图损坏、版本不支持或来源身份不一致；保留意图，不降级为文章。');
+        }
+        let operation = this.#cueSaves.get(task.key);
+        if (!operation) {
+            operation = (async () => {
+                const saved = /** @type {import('study').LibraryRecord} */ (await this.journal.save(task.entry, false, task.turns));
+                if (saved.entry?.subtitleSource?.version !== 1 || sourceKey(saved.entry) !== task.key || !saved.vaultSaved) {
+                    throw new Error('字幕保存身份回执不一致；意图保留，可重试。');
+                }
+                await this.write('studyCueSaveIntentsV1', (value) => (/** @type {import('study').CueSaveIntent[]} */ (Array.isArray(value) ? value : [])).filter((r) => cueIntentFingerprint(r) !== cueIntentFingerprint(task)));
+                return saved;
+            })().finally(() => { this.#cueSaves.delete(task.key); });
+            this.#cueSaves.set(task.key, operation);
+        }
+        return await operation;
+    }
+
+    /**
+     * Recovery of a previously explicit internal save; no re-attest against the new playing cue.
+     * @returns {Promise<import('study').LibraryRecord[]>}
+     */
+    async resumeCueSaves() {
+        if (!this.#cueResume) {
+            this.#cueResume = (async () => {
+                const value = await this.read('studyCueSaveIntentsV1');
+                const result = [];
+                /** @type {{index: number, error: string}[]} */
+                const errors = [];
+                if (typeof value !== 'undefined' && !Array.isArray(value)) {
+                    errors.push({index: -1, error: '字幕保存意图队列格式损坏；原队列保留。'});
+                } else {
+                    const tasks = /** @type {import('study').CueSaveIntent[]} */ (value ?? []);
+                    for (const [index, task] of tasks.entries()) {
+                        try {
+                            result.push(await this.resumeCueIntent(task));
+                        } catch (error) {
+                            errors.push({index, error: error instanceof Error ? error.message : '字幕保存未确认，意图保留。'});
+                        }
+                    }
+                }
+                await this.write('studyCueSaveRecoveryV1', () => ({checkedAt: new Date().toISOString(), errors}));
+                await this.resumeCueRemembers();
+                return result;
+            })().finally(() => { this.#cueResume = null; });
+        }
+        return await this.#cueResume;
     }
 
     /**
@@ -55,12 +465,103 @@ export class StudyService {
      * @param {(value: unknown) => unknown} change
      */
     async write(key, change) {
+        const guard = key === 'studyLearningJournalV1' ? this.#cueJournalGuard : null;
         const operation = this.writes.then(async () => {
             const value = (await this.storage.get(key))[key];
-            await this.storage.set({[key]: change(value)});
+            const next = change(value);
+            if (guard && !guard()) { throw new Error('字幕请求已取消或失效，未写入迟到回答。'); }
+            await this.storage.set({[key]: next});
         });
         this.writes = operation.catch(() => {});
         await operation;
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {{id: string, language: string}[]}
+     */
+    outboxRows(value) {
+        if (!Array.isArray(value)) { return []; }
+        return /** @type {unknown[]} */ (value).flatMap((v) => {
+            if (!v || typeof v !== 'object') { return []; }
+            const {id, language} = /** @type {{id?: unknown, language?: unknown}} */ (v);
+            return (typeof id === 'string' && /^[a-f0-9]{32}$/.test(id) && typeof language === 'string' && ['en', 'ja'].includes(language)) ? [{id, language}] : [];
+        });
+    }
+
+    /** @returns {Promise<{id: string, language: string}[]>} */
+    async outbox() {
+        return this.outboxRows(await this.read('studyRememberOutbox'));
+    }
+
+    /**
+     * @param {{id: string, language: string}} task
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    async remember(task) {
+        await this.write('studyRememberOutbox', (v) => {
+            const rows = this.outboxRows(v);
+            return rows.some((r) => r.id === task.id && r.language === task.language) ? rows : [...rows, task];
+        });
+        const row = await rememberSaved(this, task);
+        if (row.ankiState !== 'pending') {
+            await this.write('studyRememberOutbox', (v) => this.outboxRows(v).filter((r) => r.id !== task.id || r.language !== task.language));
+        }
+        return row;
+    }
+
+    /** @returns {Promise<import('study').RememberSaveIntent[]>} */
+    async saveIntents() {
+        const value = await this.read('studyRememberSaveIntents');
+        return /** @type {import('study').RememberSaveIntent[]} */ (Array.isArray(value) ? value : []);
+    }
+
+    /**
+     * Persist explicit intent before the first native write, including the frozen Q/A snapshot.
+     * @param {import('study').LibraryEntry} entry
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    async rememberEntry(entry) {
+        studyLookup(entry); // Reject invalid language/word/sentence before queueing.
+        const turns = structuredClone(await this.journal.get(entry));
+        /** @type {import('study').RememberSaveIntent} */
+        let task = {key: crypto.randomUUID(), entry: structuredClone(entry), turns};
+        await this.write('studyRememberSaveIntents', (value) => {
+            const rows = /** @type {import('study').RememberSaveIntent[]} */ (Array.isArray(value) ? value : []);
+            const existing = rows.find((r) => JSON.stringify([r.entry, r.turns]) === JSON.stringify([task.entry, task.turns]));
+            if (existing) {
+                task = existing;
+                return rows;
+            }
+            const next = [...rows, task];
+            if (new TextEncoder().encode(JSON.stringify(next)).length > 2000000) {
+                throw new Error('待保存学习较多，请先继续补齐；不会自动丢弃保存意图。');
+            }
+            return next;
+        });
+        return await this.resumeSaveIntent(task);
+    }
+
+    /**
+     * @param {import('study').RememberSaveIntent} task
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    async resumeSaveIntent(task) {
+        let operation = this.rememberSavePending.get(task.key);
+        if (!operation) {
+            operation = (async () => {
+                const saved = /** @type {import('study').LibraryRecord} */ (await this.journal.save(task.entry, false, task.turns));
+                // The id-based outbox becomes durable before any model/Anki work.
+                const row = /** @type {import('study').LibraryRecord} */ (await this.handle('remember', {id: saved.id, language: task.entry.language ?? 'en'}));
+                await this.write('studyRememberSaveIntents', (value) => {
+                    const rows = /** @type {import('study').RememberSaveIntent[]} */ (Array.isArray(value) ? value : []);
+                    return rows.filter((r) => r.key !== task.key);
+                });
+                return row;
+            })().finally(() => { this.rememberSavePending.delete(task.key); });
+            this.rememberSavePending.set(task.key, operation);
+        }
+        return await operation;
     }
 
     /**
@@ -80,12 +581,181 @@ export class StudyService {
     }
 
     /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    cancelScopeKey(value) {
+        const lookup = studyLookup(value);
+        const source = /** @type {Partial<import('study').LibraryEntry>} */ (value ?? {});
+        return JSON.stringify([
+            lookup.language,
+            lookup.word,
+            lookup.sentence,
+            lookup.context,
+            lookup.question ?? '',
+            lookup.dictionaryNotes ?? '',
+            source.url ?? '',
+            source.url ? '' : source.title ?? '',
+            source.videoTime ?? null,
+        ]);
+    }
+
+    /**
      *
      * @param {string} action
      * @param {unknown} value
      * @returns {Promise<unknown>}
      */
     async handle(action, value) {
+        if (action !== 'generate') { return await this.handleRequest(action, value); }
+        const scopeKey = this.cancelScopeKey(value);
+        let scope = this.cancelScopes.get(scopeKey);
+        if (!scope) {
+            scope = {generation: 0, active: 0};
+            this.cancelScopes.set(scopeKey, scope);
+        }
+        ++scope.active;
+        try {
+            return await this.handleRequest(action, value, scope);
+        } finally {
+            --scope.active;
+            if (scope.active === 0 && this.cancelScopes.get(scopeKey) === scope) { this.cancelScopes.delete(scopeKey); }
+        }
+    }
+
+    /**
+     * @param {string} action
+     * @param {unknown} value
+     * @param {{generation: number, active: number} | null} [requestScope]
+     * @param {{id: string, source: NonNullable<import('study').LibraryEntry['subtitleSource']>, check: (() => Promise<unknown>) | null} | null} [authority]
+     * @returns {Promise<unknown>}
+     */
+    async handleRequest(action, value, requestScope = null, authority = null) {
+        const containsCue = (/** @type {unknown} */ v) => v && typeof v === 'object' &&
+        (['subtitleSource', 'subtitle', 'studySubtitle', 'sourceConfirmed', 'cueAuthorization'].some((k) => k in v) || Object.values(v).some(containsCue));
+        if (containsCue(value)) { throw new Error('字幕来源只允许内部可信契约；当前未开放字幕 AI、记住或 Anki。'); }
+        if (authority) {
+            await authority.check?.();
+            const v = /** @type {{ids?: string[], items?: {id: string}[]}} */ (value ?? {});
+            const ids = v.ids ?? v.items?.map((r) => r.id);
+            if (!['libraryRead', 'librarySync', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'draftCards'].includes(action) ||
+            !Array.isArray(ids) || ids.length !== 1 || ids[0] !== authority.id) { throw new Error('字幕动作超出已确认单条记录。'); }
+        }
+
+
+        if (action === 'pendingPeek' || action === 'retryPending') {
+            const {language = 'en'} = /** @type {{language?: string}} */ (value ?? {});
+            if (!['en', 'ja'].includes(language)) { throw new Error('学习语言无效。'); }
+            const tasks = (await this.outbox()).filter((r) => r.language === language);
+            const saves = (await this.saveIntents()).filter((r) => (r.entry.language ?? 'en') === language);
+            if (action === 'pendingPeek') { return {count: tasks.length + saves.length}; }
+            if (saves.length > 0) { return await this.resumeSaveIntent(saves[0]); }
+            return tasks.length > 0 ? await this.handle('remember', tasks[0]) : null;
+        }
+        if (action === 'rememberEntry') {
+            if (!value || typeof value !== 'object' || Object.keys(value).some((k) => k !== 'entry')) { throw new Error('学习保存参数无效。'); }
+            return await this.rememberEntry(/** @type {{entry: import('study').LibraryEntry}} */ (value).entry);
+        }
+        if (action === 'remember') {
+            const {id, language = 'en'} = /** @type {{id: string, language?: string}} */ (value ?? {});
+            if (!/^[a-f0-9]{32}$/.test(id) || !['en', 'ja'].includes(language)) { throw new Error('学习记录编号或语言无效。'); }
+            const key = `${language}:${id}`;
+            let operation = this.rememberPending.get(key);
+            if (!operation) {
+                operation = this.remember({id, language}).finally(() => { this.rememberPending.delete(key); });
+                this.rememberPending.set(key, operation);
+            }
+            return await operation;
+        }
+        if (action === 'journalConversation') { return await this.journal.conversation(value); }
+        if (action === 'conversationUsage') { return this.journal.usage(value); }
+        if (action === 'usageStats') {
+            const response = await this.native({action: 'usageStats'}).promise;
+            if (!response.ok) { throw new Error(response.error ?? '用量暂不可读'); }
+            return response.usageStats;
+        }
+        if (action === 'cancel') {
+            const scope = this.cancelScopes.get(this.cancelScopeKey(value));
+            if (scope) { ++scope.generation; }
+        }
+        const requestEpoch = requestScope?.generation;
+        if (action === 'journalPeek') { return await this.journal.get(value); }
+        if (action === 'journalFeedback') { return await this.journal.feedback(value, /** @type {{feedback?: unknown}} */ (value ?? {}).feedback); }
+        if (action === 'librarySave') {
+            if (!value || typeof value !== 'object' || Object.keys(value).some((k) => !['entry', 'makeCard'].includes(k))) { throw new Error('学习保存参数无效。'); }
+            const {entry, makeCard} = /** @type {{entry: import('study').LibraryEntry; makeCard: boolean}} */ (value);
+            if (typeof makeCard !== 'boolean') { throw new Error('保存方式无效。'); }
+            return await this.journal.save(entry, makeCard);
+        }
+        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit'].includes(action)) {
+            if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
+            const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
+            if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
+            return response.library;
+        }
+        if (action === 'draftCards') {
+            const {ids, language = 'en', automatic = false} = /** @type {{ids: string[], language?: string, automatic?: boolean}} */ (value ?? {});
+            if (!Array.isArray(ids) || ids.length === 0 || ids.length > 5 || new Set(ids).size !== ids.length || ids.some((id) => !/^[a-f0-9]{32}$/.test(id))) { throw new Error('每批生成 1–5 条记录的制卡草稿。'); }
+            const read = await this.native({action: 'libraryRead', ids, language}).promise;
+            if (!read.ok || !read.library) { throw new Error(read.error ?? '笔记读取未完成。'); }
+            const {items: materials} = /** @type {{items: import('study').LearningMaterial[]}} */ (read.library);
+            if (!Array.isArray(materials) || materials.length !== ids.length || materials.some((r, i) => r.id !== ids[i])) { throw new Error('笔记读取关联不一致。'); }
+            if (materials.some((m) => !m.record || m.record.id !== m.id)) { throw new Error('本机桥尚未提供持久草稿，请更新后再操作。'); }
+            if (materials.some((m) => m.record?.entry?.subtitleSource) && !authority) { throw new Error('字幕须通过私有可信记住动作。'); }
+            const pending = materials.filter((m) => !m.record?.reviewDraft);
+            if (pending.length === 0) { return {items: materials.map((m) => m.record)}; }
+            const {model, effort} = studyConfig(await this.read(SETTINGS_KEY));
+            const usageSource = automatic && pending.length === 1 ? pending[0].record?.entry : null;
+            const attemptId = crypto.randomUUID();
+            if (usageSource) { await this.journal.recordUsage(usageSource, attemptId, {status: 'running'}); }
+            const response = await this.native({action: 'cards',
+                language,
+                items: pending.map(({id, word, text, confirmedCards, relatedMemory}) => ({id,
+                    word,
+                    text: `${automatic ? '本人点了记住它：只选择最值得复习的0或1张。优先记词和实际用法，原句作例句，不机械拆语法题；熟词新用法不可只因词拼写已有就跳过。\n' : ''}${text.length > 2800 ? `${text.slice(0, 600)}\n[较早正文省略，保留开头与近期内容]\n${text.slice(-2100)}` : text}\n${(confirmedCards ?? '本记录无已确认卡摘要。').slice(0, 900)}\n${(relatedMemory ?? 'Obsidian/Anki相关历史未核对，不代表未学过。').slice(0, 2400)}`})),
+                config: {model, effort}}).promise.catch(async (error) => {
+                if (usageSource) { await this.journal.recordUsage(usageSource, attemptId, {status: 'incomplete'}); }
+                throw error;
+            });
+            if (usageSource) { await this.journal.recordUsage(usageSource, attemptId, response.usage ?? {status: 'unknown'}); }
+            const result = /** @type {import('study').CardsResult | undefined} */ (response.result);
+            if (!response.ok || !result || !Array.isArray(result.items) || result.items.length !== pending.length || result.items.some((r, i) => r.id !== pending[i].id || typeof r.reason !== 'string' || !Array.isArray(r.cards) || r.cards.length > 4 || r.cards.some((c) => typeof c.front !== 'string' || !c.front.trim() || c.front.length > 1000 || typeof c.back !== 'string' || !c.back.trim() || c.back.length > 2400))) { throw new Error(response.error ?? '制卡草稿遗漏或关联错误；没有保存和制卡。'); }
+            // A model response is not a durable draft until the fixed-Vault write is acknowledged.
+            await authority?.check?.();
+            const saved = await this.native({action: 'libraryDraftSave', language, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {}), items: result.items.map((r, i) => ({id: r.id, version: pending[i].version, reason: r.reason, cards: (automatic ? r.cards.slice(0, 1) : r.cards).map((card) => ({...card, selected: true}))}))}).promise;
+            if (!saved.ok || !saved.library) { throw new Error(saved.error ?? '草稿未能保存到 Obsidian；未送入 Anki。'); }
+            const rows = /** @type {{items: import('study').LibraryRecord[]}} */ (saved.library).items;
+            if (!Array.isArray(rows) || rows.length !== pending.length || rows.some((r, i) => r.id !== pending[i].id || !r.reviewDraft)) { throw new Error('草稿保存关联不一致，请重新读取笔记。'); }
+            return {items: materials.map((m) => rows.find((r) => r.id === m.id) ?? m.record)};
+        }
+        if (action === 'organize') {
+            const {records} = /** @type {{records: import('study').LibraryRecord[]}} */ (value ?? {});
+            if (!Array.isArray(records) || records.length === 0 || records.length > 10) { throw new Error('请选择 1–10 条记录整理。'); }
+            const language = records[0].entry.language ?? 'en';
+            if (records.some((r) => (r.entry.language ?? 'en') !== language)) { throw new Error('不同语言请分别整理。'); }
+            const read = await this.native({action: 'libraryRead', language, ids: records.map((r) => r.id)}).promise;
+            if (!read.ok || !read.library) { throw new Error(read.error ?? '完整学习笔记读取失败。'); }
+            const materials = /** @type {{items: import('study').LearningMaterial[]}} */ (read.library).items;
+            if (materials.some((m) => m.record?.entry?.subtitleSource)) { throw new Error('字幕尚未开放 AI 整理。'); }
+            if (materials.some((r, i) => r.id !== records[i]?.id || r.version !== records[i]?.version) || materials.length !== records.length) { throw new Error('笔记已更新，请重新展开记录后再整理。'); }
+            const ids = new Set();
+            const items = records.map(({id, entry}) => {
+                if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id) || ids.has(id)) { throw new Error('记录编号无效或重复。'); }
+                ids.add(id);
+                const {word, sentence, context} = studyLookup(entry);
+                const {meaning = '', translation = ''} = entry;
+                const notes = materials.find((r) => r.id === id)?.text ?? '';
+                return {id, word, sentence, context, meaning, translation, notes};
+            });
+            const {model, effort} = studyConfig(await this.read(SETTINGS_KEY));
+            const config = {model, effort};
+            const response = await this.native({action: 'organize', language, items, config}).promise;
+            const result = /** @type {import('study').OrganizationResult | undefined} */ (response.result);
+            if (!response.ok || !result || !Array.isArray(result.items) || result.items.length !== items.length || result.items.some((r, i) => r.id !== items[i].id || typeof r.text !== 'string' || !r.text.trim() || r.text.length > 5000)) {
+                throw new Error(response.error ?? 'AI 整理未能逐条对应；未保存。');
+            }
+            return result;
+        }
         if (action === 'settings') {
             return studyConfig(await this.read(SETTINGS_KEY));
         }
@@ -139,7 +809,14 @@ export class StudyService {
         }
         const lookup = studyLookup(value);
         const config = studyConfig(await this.read(SETTINGS_KEY));
-        const key = resultKey(lookup, config);
+        const originSource = /** @type {Partial<import('study').LibraryEntry>} */ (value ?? {});
+        const origin = JSON.stringify([originSource.url ?? '', originSource.url ? '' : originSource.title ?? '', originSource.videoTime ?? null]);
+        const key = resultKey(lookup, config) + origin;
+        /**
+         * @param {string} mode
+         * @returns {string}
+         */
+        const modeKey = (mode) => resultKey({...lookup, mode}, config) + origin;
         const skey = sentenceKey(lookup, config);
         if (action === 'saveWord') {
             const source = /** @type {{url?: string, title?: string, videoTime?: number}} */ (value);
@@ -167,36 +844,68 @@ export class StudyService {
             return row;
         }
         const cache = config.cacheEnabled ? await this.cache() : [];
-        const exact = [...cache].reverse().find((r) => r.key === key) ??
-        (lookup.mode ? void 0 : [...cache].reverse().find((r) => r.key === resultKey({...lookup, mode: 'translate'}, config)));
+        let exact = [...cache].reverse().find((r) => r.key === key) ??
+        (lookup.mode ? void 0 : [...cache].reverse().find((r) => r.key === modeKey('translate')));
         if (action === 'peek') {
             return {result: exact?.result ?? null,
                 translation: [...cache].reverse().find((r) => r.sentenceKey === skey)?.result.translation ?? null,
-                busy: this.pending.has(key) || this.pending.has(resultKey({...lookup, mode: 'translate'}, config))};
+                busy: this.pending.has(key) || this.pending.has(modeKey('translate')),
+                localTurns: (await this.journal.get(value)).length};
         }
         if (action === 'cancel') {
             for (const mode of ['translate', 'explain']) {
-                this.pending.get(resultKey({...lookup, mode}, config))?.cancel();
+                this.pending.get(modeKey(mode))?.cancel();
             }
             return true;
         }
         if (action !== 'generate') {
             throw new Error('未知的学习操作。');
         }
+        await this.journal.checkRoom();
+        let learningMemory = '';
+        if (lookup.mode !== 'translate') {
+            const response = await this.native({action: 'libraryMemory', word: lookup.word, language: lookup.language ?? 'en', ...(/** @type {import('study').LibraryEntry} */ (value).lemma ? {lemma: /** @type {import('study').LibraryEntry} */ (value).lemma} : {})}).promise;
+            if (!response.ok || !response.library) { throw new Error(response.error ?? '历史学习记录暂不可读；未假装已读取。'); }
+            const memory = /** @type {{items: import('study').LearningMaterial[]; total: number}} */ (response.library);
+            const recent = await this.journal.get(value);
+            learningMemory = JSON.stringify({saved: memory, recent: recent.slice(-6), earlierLocalTurnsNotIncluded: Math.max(0, recent.length - 6)});
+            if (learningMemory.length > 50000) { throw new Error('相关学习过程过长，请先保存后继续；完整记录没有删除。'); }
+            // Teaching must see changed notes/feedback, not return an old context-free cached explanation.
+            exact = void 0;
+        }
+        if (requestScope && requestScope.generation !== requestEpoch) { throw new Error('已取消，未启动后续模型请求。'); }
         if (exact) {
+            await this.journal.append(value, exact.result, 'unconfirmed', {status: 'cached', inputTokens: 0, outputTokens: 0, totalTokens: 0});
             return {result: exact.result, cached: true};
         }
         const sharedTranslation = [...cache].reverse().find((r) => r.sentenceKey === skey)?.result.translation;
         if (lookup.mode === 'translate' && sharedTranslation) {
-            return {result: {translation: sharedTranslation, meaning: '', notes: ''}, cached: true};
+            const result = {translation: sharedTranslation, meaning: '', notes: ''};
+            await this.journal.append(value, result, 'unconfirmed', {status: 'cached', inputTokens: 0, outputTokens: 0, totalTokens: 0});
+            return {result, cached: true};
         }
         if (!this.pending.has(key)) {
             const epoch = this.epoch;
             const {cacheEnabled, ...nativeConfig} = config;
-            const payload = {action: lookup.mode ?? 'explain', sentence: lookup.sentence, word: lookup.word, context: lookup.context, config: nativeConfig};
+            const payload = {...(lookup.dictionaryNotes ? {dictionaryNotes: lookup.dictionaryNotes} : {}), language: lookup.language ?? 'en', action: lookup.mode ?? 'explain', sentence: lookup.sentence, word: lookup.word, context: lookup.context, question: lookup.question ?? '', config: nativeConfig, ...(learningMemory ? {learningMemory} : {})};
             const reuse = sharedTranslation && sharedTranslation.length <= 600 ? {cachedTranslation: sharedTranslation} : {};
-            const call = this.native({...payload, ...reuse});
-            const promise = call.promise.then(async (response) => {
+            const attemptId = crypto.randomUUID();
+            /** @type {ReturnType<import('study').NativeCall> | null} */
+            let call = null;
+            let reportedUsage = false;
+            const promise = (async () => {
+                await this.journal.recordUsage(value, attemptId, {status: 'running'});
+                if (requestScope && requestScope.generation !== requestEpoch) {
+                    await this.journal.recordUsage(value, attemptId, {status: 'cached', inputTokens: 0, outputTokens: 0, totalTokens: 0});
+                    reportedUsage = true;
+                    throw new Error('已取消，未启动模型请求。');
+                }
+                call = this.native({...payload, ...reuse});
+                return await call.promise;
+            })().then(async (response) => {
+                await this.journal.recordUsage(value, attemptId, response.usage ?? {status: 'unknown'});
+                reportedUsage = true;
+                if (requestScope && requestScope.generation !== requestEpoch) { throw new Error('已取消，未保存返回结果。'); }
                 if (response.ok !== true || !isStudyResult(response.result)) {
                     throw new Error(response.error ?? 'AI 返回了无效文本。');
                 }
@@ -204,11 +913,16 @@ export class StudyService {
                     const row = {key, sentenceKey: skey, created: Date.now(), result: response.result};
                     await this.write(CACHE_KEY, (v) => (epoch !== this.epoch ? v : [...this.rows(v).filter((r) => r.key !== key && r.created > Date.now() - TTL), row].slice(-CACHE_LIMIT)));
                 }
+                await this.journal.append(value, response.result, 'unconfirmed', response.usage);
                 return response.result;
-            }).finally(() => {
-                this.pending.delete(key);
-            });
-            this.pending.set(key, {promise, cancel: call.cancel});
+            }).catch(async (error) => {
+                if (!reportedUsage) { await this.journal.recordUsage(value, attemptId, {status: 'incomplete'}); }
+                throw error;
+            })
+                .finally(() => {
+                    this.pending.delete(key);
+                });
+            this.pending.set(key, {promise, cancel: () => call?.cancel()});
         }
         return {result: await this.pending.get(key)?.promise, cached: false};
     }
@@ -254,9 +968,13 @@ export class StudyService {
 /**
  * Register independently of upstream APIs;
  * only our extension documents may call it.
+ * @param {((text: string, optionsContext: import('settings').OptionsContext, sender: chrome.runtime.MessageSender) => Promise<unknown>) | null} [lookupDictionary]
  */
-export function prepareStudyService() {
+export function prepareStudyService(lookupDictionary = null) {
+    if (preparedRuntimes.has(chrome.runtime)) { return; }
+    preparedRuntimes.add(chrome.runtime);
     const service = new StudyService(chrome.storage.local);
+    const companionOpen = prepareStudyCompanion(service, lookupDictionary);
     /**
      * @param {unknown} message
      * @param {chrome.runtime.MessageSender} sender
@@ -264,6 +982,16 @@ export function prepareStudyService() {
      * @returns {boolean}
      */
     const receive = (message, sender, reply) => {
+        const cueActionMessage = /** @type {{studyCueAction?: boolean, data?: unknown}} */ (message ?? {});
+        if (cueActionMessage.studyCueAction === true) {
+            void service.cueAction(chrome.runtime, sender, cueActionMessage.data).then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '字幕操作失败。'}));
+            return true;
+        }
+        const cueMessage = /** @type {{studyCueAttest?: boolean, data?: {queryId?: string, cue?: Record<string, unknown>}}} */ (message ?? {});
+        if (cueMessage.studyCueAttest === true) {
+            void service.attestCue(chrome.runtime, sender, cueMessage.data ?? {}).then(reply, () => reply({ok: false, writeAuthorized: false}));
+            return true;
+        }
         const {studyAction, data} = /** @type {{studyAction?: string, data?: unknown}} */ (/** @type {unknown} */ (message ?? {}));
         if (typeof studyAction !== 'string') {
             return false;
@@ -274,7 +1002,7 @@ export function prepareStudyService() {
             reply({ok: false, error: '不允许此页面访问学习组件。'});
             return false;
         }
-        if (['saveSettings', 'clearCache', 'clearSaved', 'removeWord', 'models'].includes(studyAction) && pathname !== 'study-settings.html') {
+        if (['libraryPrepareJapanese', 'saveSettings', 'clearCache', 'clearSaved', 'removeWord', 'models'].includes(studyAction) && pathname !== 'study-settings.html') {
             reply({ok: false, error: '请在 AI 设置页管理本地数据。'});
             return false;
         }
@@ -282,8 +1010,14 @@ export function prepareStudyService() {
             reply({ok: false, error: '详解已留在当前查词卡，不再打开其他页面。'});
             return false;
         }
+        if (studyAction === 'companionOpen') {
+            void companionOpen(data, sender).then(value => reply({ok: true, value}), error => reply({ok: false, error: error.message}));
+            return true;
+        }
         void service.handle(studyAction, data).then((result) => reply({ok: true, value: result}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '学习操作失败。'}));
         return true;
     };
     chrome.runtime.onMessage.addListener(receive);
+    // Startup is the only automatic R2 recovery entry; listeners remain available while I/O settles.
+    void service.resumeCueSaves().catch((error) => { log.warn(error instanceof Error ? error : new Error('字幕保存启动恢复未完成；意图保留。')); });
 }

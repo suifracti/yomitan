@@ -53,6 +53,8 @@ export function studyConfig(value) {
  */
 export function studyLookup(value) {
     const v = /** @type {Partial<import('study').Lookup>} */ (value ?? {});
+    const language = v.language ?? 'en';
+    if (!['en', 'ja'].includes(language)) { throw new Error('请选择英语或日语配置；不支持的语言不会存入英语库。'); }
     if (typeof v.sentence !== 'string' || typeof v.word !== 'string' || !v.sentence.trim() || !v.word.trim() || v.sentence.length > 2400 || v.word.length > 128) {
         throw new Error('原句须为 1–2400 字，查词内容须为 1–128 字。');
     }
@@ -62,7 +64,9 @@ export function studyLookup(value) {
     if (v.mode !== void 0 && !['translate', 'explain'].includes(v.mode)) {
         throw new Error('只允许翻译或语境解释。');
     }
-    return {sentence: v.sentence.trim(), word: v.word.trim(), context: v.context?.trim() ?? '', mode: v.mode};
+    if (v.question !== void 0 && (typeof v.question !== 'string' || v.question.length > 500)) { throw new Error('追问最多 500 字。'); }
+    if (v.dictionaryNotes !== void 0 && (typeof v.dictionaryNotes !== 'string' || v.dictionaryNotes.length > 4000)) { throw new Error('词典资料最多 4000 字。'); }
+    return {language, ...(v.dictionaryNotes ? {dictionaryNotes: v.dictionaryNotes} : {}), sentence: v.sentence.trim(), word: v.word.trim(), context: v.context?.trim() ?? '', mode: v.mode, ...(v.question ? {question: v.question.trim()} : {})};
 }
 
 /**
@@ -86,7 +90,7 @@ export function isStudyResult(value) {
  */
 export function sentenceKey(lookup, config) {
     // URL is intentionally absent; changing the source does not waste another translation.
-    return JSON.stringify(['study5.1',
+    return JSON.stringify([lookup.language === 'ja' ? 'study10-ja' : 'study9',
         lookup.sentence,
         lookup.context,
         config.model,
@@ -101,7 +105,7 @@ export function sentenceKey(lookup, config) {
  * @returns {string}
  */
 export function resultKey(lookup, config) {
-    return JSON.stringify([sentenceKey(lookup, config), lookup.word, lookup.mode ?? 'explain']);
+    return JSON.stringify([sentenceKey(lookup, config), lookup.word, lookup.mode ?? 'explain', lookup.question ?? '', ...(lookup.dictionaryNotes ? [lookup.dictionaryNotes] : [])]);
 }
 
 /**
@@ -111,9 +115,9 @@ export function resultKey(lookup, config) {
  * @returns {string}
  */
 export function adjacentSentences(before, after) {
-    const previous = before.match(/[^.!?\n]+[.!?]+/g)?.at(-1)?.trim()
+    const previous = before.match(/[^.!?。！？\n]+[.!?。！？]+/g)?.at(-1)?.trim()
         .slice(-550) ?? '';
-    const next = after.match(/[^.!?\n]+[.!?]+/)?.[0]?.trim().slice(0, 550) ?? '';
+    const next = after.match(/[^.!?。！？\n]+[.!?。！？]+/)?.[0]?.trim().slice(0, 550) ?? '';
     return [previous ? `前句：${previous}` : '', next ? `后句：${next}` : ''].filter(Boolean).join('\n');
 }
 
@@ -124,7 +128,7 @@ export function adjacentSentences(before, after) {
  */
 export function dictionaryLookup(value) {
     const v = /** @type {import('study').DictionaryLookup} */ (value ?? {});
-    if (Object.keys(v).some((k) => !['word', 'items'].includes(k)) || typeof v.word !== 'string' || !v.word.trim() || v.word.length > 128 ||
+    if (Object.keys(v).some((k) => !['word', 'items', 'language'].includes(k)) || typeof v.word !== 'string' || !v.word.trim() || v.word.length > 128 ||
     !Array.isArray(v.items) || v.items.length === 0 || v.items.length > 6) { throw new Error('词典翻译每批 1–6 段。'); }
     const ids = new Set();
     let length = 0;
@@ -136,7 +140,8 @@ export function dictionaryLookup(value) {
         return {id: row.id, text: row.text.trim()};
     });
     if (length > 4000) { throw new Error('词典翻译每批最多 4000 字。'); }
-    return {word: v.word.trim(), items};
+    if (!['en', 'ja'].includes(v.language ?? 'en')) { throw new Error('不支持的学习语言。'); }
+    return {word: v.word.trim(), items, ...(v.language === 'ja' ? {language: v.language} : {})};
 }
 
 /**
@@ -166,7 +171,7 @@ export function dictionaryKey(lookup, config) {
  */
 export function detailSource(value) {
     const v = /** @type {import('study').DetailSource} */ (value ?? {});
-    const {sentence, word, context} = studyLookup({sentence: v.sentence || v.word, word: v.word, context: v.context});
+    const {sentence, word, context} = studyLookup({sentence: v.sentence || v.word, word: v.word, context: v.context, language: v.language});
     let url = '';
     if (typeof v.url === 'string' && v.url.length <= 2000) {
         try {
@@ -176,6 +181,7 @@ export function detailSource(value) {
     }
     const offset = Number.isInteger(v.offset) && v.offset >= 0 && v.offset <= sentence.length ? v.offset : 0;
     return {word,
+        ...(v.language === 'ja' ? {language: 'ja'} : {}),
         sentence,
         offset,
         context,

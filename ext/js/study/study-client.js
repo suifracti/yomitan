@@ -32,6 +32,9 @@ export async function studyCall(action, data = {}) {
 
 /** @type {import('study').NativeCall} */
 export function nativeStudyCall(payload) {
+    if (typeof chrome.runtime.connectNative !== 'function') {
+        throw new Error('本机通信接口尚未就绪；请先授予权限。若刚完成首次授权，请重新加载扩展并刷新网页，无需再次授权。');
+    }
     const port = chrome.runtime.connectNative('com.suifracti.study_translator');
     let settled = false;
     /** @type {(value: import('study').NativeResult) => void} */

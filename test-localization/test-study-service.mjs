@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 async function fixture(){
  const {StudyService}=await import('../ext/js/study/study-service.js');
- const data={};let calls=0,resolve;
+ const data={};let calls=0;const resolvers=new Map();
  const storage={get:async key=>({[key]:structuredClone(data[key])}),set:async value=>Object.assign(data,structuredClone(value))};
- const service=new StudyService(storage,()=>{calls++;return {promise:new Promise(r=>resolve=r),cancel:()=>resolve({ok:false,error:'取消'})};});
- return {service,data,calls:()=>calls,finish:()=>resolve({ok:true,result:{translation:'你反复做什么，就会成为什么样的人。',meaning:'反复地',notes:'副词修饰 do。'}})};
+ const service=new StudyService(storage,p=>{if(p.action==='libraryMemory')return {promise:Promise.resolve({ok:true,library:{items:[],total:0}}),cancel(){}};calls++;return {promise:new Promise(r=>resolvers.set(p.word,r)),cancel:()=>resolvers.get(p.word)?.({ok:false,error:'取消'})};});
+ return {service,data,calls:()=>calls,finish:(word=lookup.word,result={translation:'你反复做什么，就会成为什么样的人。',meaning:'反复地',notes:'副词修饰 do。'})=>resolvers.get(word)?.({ok:true,result})};
 }
 const lookup={sentence:'You are what you repeatedly do.',word:'repeatedly',context:''};
 test('completed translation survives popup replacement without a new model call, sentence reuse is distinct from word meaning',async()=>{
@@ -21,6 +21,19 @@ test('inflight is shared across popup instances; explicit cancel stops it and ne
  assert.equal((await f.service.handle('peek',lookup)).busy,true);
  await f.service.handle('cancel',lookup);await assert.rejects(p);await assert.rejects(q);
  assert.equal((await f.service.handle('peek',lookup)).result,null);
+});
+test('cancelling one lookup leaves a concurrent lookup able to save its result',async()=>{
+ const f=await fixture();
+ const other={...lookup,word:'do',mode:'explain'};
+ const cancelled=f.service.handle('generate',{...lookup,mode:'explain'});
+ const preserved=f.service.handle('generate',other);
+ await new Promise(r=>setImmediate(r));assert.equal(f.calls(),2);
+ await f.service.handle('cancel',lookup);
+ f.finish('do',{translation:'你反复做什么，就会成为什么样的人。',meaning:'做',notes:'此处是动词。'});
+ await assert.rejects(cancelled);
+ const result=await preserved;assert.equal(result.result.meaning,'做');
+ assert.equal((await f.service.handle('peek',lookup)).result,null);
+ assert.equal((await f.service.handle('peek',other)).result.meaning,'做');
 });
 test('settings and context invalidate cache, clearing it cannot be undone by an in-flight completion',async()=>{
  const f=await fixture();const p=f.service.handle('generate',{...lookup,mode:'translate'});await new Promise(r=>setImmediate(r));
@@ -60,4 +73,26 @@ test('saving at collection capacity never silently deletes an older favourite',a
  const f=await fixture();f.data.studySavedWordsV1=Array.from({length:200},(_,i)=>({id:String(i),word:`word${i}`,sentence:'Saved sentence.',url:'https://example.com',title:'',context:'',created:1}));
  await assert.rejects(f.service.handle('saveWord',{...lookup,url:'https://other.example'}),/收藏.*满/);
  assert.equal((await f.service.handle('saved',{}))[0].id,'0');
+});
+
+test('library saving forwards only the fixed library action and never invokes AI generation',async()=>{
+ const {StudyService}=await import('../ext/js/study/study-service.js');
+ const captured=[];
+ const s=new StudyService({get:async()=>({}),set:async()=>{}},p=>{captured.push(p);return {promise:Promise.resolve({ok:true,library:{vaultSaved:true,ankiState:'pending'}}),cancel(){}};});
+ const entry={...lookup,meaning:'反复地',translation:'',notes:'',url:'https://example.com',title:'阅读'};
+ const result=await s.handle('librarySave',{entry,makeCard:true});
+ assert.equal(result.vaultSaved,true);assert.equal(result.ankiState,'pending');
+ assert.equal(captured[0].action,'librarySave');assert.equal(captured[0].entry.sentence,lookup.sentence);
+ await assert.rejects(s.handle('librarySave',{action:'generate',entry,makeCard:true}));
+});
+
+test('AI organisation has selected records only, strips source URLs, aligns IDs and does not write notes',async()=>{
+ const {StudyService}=await import('../ext/js/study/study-service.js');
+ let captured;
+ const id='a'.repeat(32);
+ const s=new StudyService({get:async()=>({}),set:async()=>{}},p=>{captured=p;return {promise:Promise.resolve(p.action==='libraryRead'?{ok:true,library:{items:[{id,version:'b'.repeat(64),word:'repeatedly',text:'学习正文',truncated:false}]}}:{ok:true,result:{items:[{id,text:'学习解释'}]}}),cancel(){}};});
+ const result=await s.handle('organize',{records:[{id,version:'b'.repeat(64),entry:{...lookup,meaning:'反复地',translation:'句子译文',notes:'',url:'https://private.example',title:'private'}}]});
+ assert.equal(result.items[0].text,'学习解释');assert.equal(captured.action,'organize');
+ assert.doesNotMatch(JSON.stringify(captured),/private|url|title/);
+ await assert.rejects(s.handle('organize',{records:[]}));
 });

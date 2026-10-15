@@ -23,11 +23,11 @@ import {Backend} from './backend.js';
 
 /** Entry point. */
 async function main() {
-    prepareStudyService();
     const webExtension = new WebExtension();
     log.configure(webExtension.extensionName);
 
     const backend = new Backend(webExtension);
+    prepareStudyService(async (text, optionsContext, sender) => await backend._onApiTermsFind({text, details: {}, optionsContext}, sender));
     await backend.prepare();
 }
 

@@ -34,6 +34,8 @@ import {ThemeController} from './theme-controller.js';
  * @augments EventDispatcher<import('popup').Events>
  */
 export class Popup extends EventDispatcher {
+    /** @type {boolean} */
+    _studyHasContent = false;
     /**
      * @param {import('../application.js').Application} application The main application instance.
      * @param {string} id The identifier of the popup.
@@ -354,6 +356,7 @@ export class Popup extends EventDispatcher {
         await this._show(sourceRects, writingMode);
 
         if (displayDetails !== null) {
+            this._studyHasContent = true;
             safePerformance.mark('invokeDisplaySetContent:start');
             void this._invokeSafe('displaySetContent', {details: displayDetails});
         }
@@ -368,8 +371,21 @@ export class Popup extends EventDispatcher {
     }
 
     /**
-     * Stops the audio auto-play timer, if one has started.
+     * Toggle the top study layer, preserving its parent conversation.
+     * @returns {Promise<boolean>}
      */
+    async toggleStudyLayer() {
+        if (!this._studyHasContent || this._frameClient === null || !this._frameClient.isConnected() || !this._frame.isConnected) { return false; }
+        if (!this.isVisibleSync()) {
+            this.stopHideDelayed();
+            this._setVisible(true);
+            this._frame.contentWindow?.focus();
+            return true;
+        }
+        return await this._invokeSafe('displayToggleStudyLayer', void 0) === true;
+    }
+
+    /** @returns {Promise<void>} */
     async clearAutoPlayTimer() {
         if (this._frameConnected) {
             await this._invokeSafe('displayAudioClearAutoPlayTimer', void 0);

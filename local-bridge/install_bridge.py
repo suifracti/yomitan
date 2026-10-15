@@ -11,14 +11,14 @@ import shlex
 import shutil
 import subprocess
 import sys
-from study_translator import HOST_NAME, ORIGIN
+from study_translator import ASB_ORIGIN, HOST_NAME, ORIGIN
 
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def install(home, codex, python):
+def install(home, codex, python, vault=None):
     home = pathlib.Path(home)
     codex = pathlib.Path(codex).resolve()
     if not codex.is_file() or not os.access(codex, os.X_OK):
@@ -31,13 +31,27 @@ def install(home, codex, python):
     registry = home / 'Library/Application Support/Google/Chrome/NativeMessagingHosts' / (HOST_NAME + '.json')
     marker = runtime / 'install-metadata.json'
     previous = json.loads(marker.read_text()) if marker.exists() else {'files': {}}
+    config = {'codex': str(codex)}
+    if vault is None and (runtime / 'bridge-config.json').is_file():
+        vault = json.loads((runtime / 'bridge-config.json').read_text()).get('vault')
+    if vault is not None:
+        vault = pathlib.Path(vault)
+        if not vault.is_absolute() or not vault.is_dir() or vault.is_symlink():
+            raise ValueError('--vault 必须是已存在的真实 Vault 绝对路径。')
+        config['vault'] = str(vault)
     content = {
         runtime / 'study_translator.py': (pathlib.Path(__file__).parent / 'study_translator.py').read_bytes(),
-        runtime / 'bridge-config.json': (json.dumps({'codex': str(codex)}, indent=2) + '\n').encode(),
+        runtime / 'study_library.py': (pathlib.Path(__file__).parent / 'study_library.py').read_bytes(),
+        runtime / 'study_japanese.py': (pathlib.Path(__file__).parent / 'study_japanese.py').read_bytes(),
+        runtime / 'study_video.py': (pathlib.Path(__file__).parent / 'study_video.py').read_bytes(),
+        runtime / 'study_memory.py': (pathlib.Path(__file__).parent / 'study_memory.py').read_bytes(),
+        runtime / 'study_usage.py': (pathlib.Path(__file__).parent / 'study_usage.py').read_bytes(),
+        runtime / 'study_media.py': (pathlib.Path(__file__).parent / 'study_media.py').read_bytes(),
+        runtime / 'bridge-config.json': (json.dumps(config, indent=2) + '\n').encode(),
         runtime / 'launch-host': ('#!/bin/sh\nexec ' + shlex.quote(str(python)) + ' ' + shlex.quote(str(runtime / 'study_translator.py')) + ' "$@"\n').encode(),
         registry: (json.dumps({'name': HOST_NAME, 'description': '点击式英语翻译（本机 Codex）',
                               'path': str(runtime / 'launch-host'), 'type': 'stdio',
-                              'allowed_origins': [ORIGIN]}, ensure_ascii=False, indent=2) + '\n').encode(),
+                              'allowed_origins': [ORIGIN, ASB_ORIGIN]}, ensure_ascii=False, indent=2) + '\n').encode(),
     }
     for path in content:
         if path.exists() and previous.get('files', {}).get(str(path)) != digest(path):
@@ -75,12 +89,13 @@ def install(home, codex, python):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--codex')
+    parser.add_argument('--vault', help='明确选择保存学习记录的 Obsidian Vault 绝对路径')
     args = parser.parse_args()
     candidates = [args.codex, '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex', shutil.which('codex')]
     codex = next((p for p in candidates if p and pathlib.Path(p).is_file()), None)
     if codex is None:
         raise ValueError('未找到 Codex CLI；不会自动下载安装或登录。')
-    runtime, auth = install(pathlib.Path.home(), codex, pathlib.Path(sys.executable).resolve())
+    runtime, auth = install(pathlib.Path.home(), codex, pathlib.Path(sys.executable).resolve(), args.vault)
     print('本机翻译桥已安装。Chrome 中重新加载 Yomitan；点击翻译时同意本机通信权限。')
     print('本机认证可用（是否有效尚未调用模型验证）。' if auth else '尚未找到本机文件认证；需为受限 profile 登录：')
     if not auth:
