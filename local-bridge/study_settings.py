@@ -122,7 +122,7 @@ class YomitanLibrary:
         if ident not in self.targets:
             raise ValueError('保存目的地已失效；未改投当前目录。')
         return StudyLibrary(self.targets[ident]['vault'], self.anki, cache_dir=self.cache_dir,
-                            target=self.settings(ident))
+                            target=self.settings(ident), group_words=True)
 
     def locate(self, ident):
         found = []
@@ -299,9 +299,7 @@ class YomitanLibrary:
                 seen.add(folder)
                 lib = self.library_for(target_id)
                 if not lib.records.is_dir(): continue
-                for file in lib.records.glob('*.md'):
-                    ident = file.stem.split('--')[-1] if '--' in file.stem else file.stem[2:] if file.stem.startswith('s-') else ''
-                    if not ID_RE.fullmatch(ident): continue
+                for file, ident in lib.record_files():
                     row = self.locate(ident).result(ident)
                     e = row['entry']
                     match = row['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title'])

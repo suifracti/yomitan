@@ -271,12 +271,14 @@ def paragraph(s):
 
 
 class StudyLibrary:
-    def __init__(self, vault, anki=anki_call, lang='en', cache_dir=None, target=None):
+    def __init__(self, vault, anki=anki_call, lang='en', cache_dir=None, target=None, group_words=False):
         self.cache_dir = cache_dir
         self.vault = pathlib.Path(vault)
         if not self.vault.is_absolute() or not self.vault.is_dir():
             raise ValueError('未配置可用的 Obsidian Vault；请重新运行安装脚本并指定 --vault。')
         self.language = language(lang)
+        # Yomitan English opts in; existing IINA and Japanese callers keep their format.
+        self.group_words = group_words and self.language == 'en'
         self.relative = JAPANESE_RELATIVE if self.language == 'ja' else RELATIVE
         self.deck = '外语::日语语境' if self.language == 'ja' else '外语::英语语境'
         self.model = '日语语境卡' if self.language == 'ja' else '外语语境卡'
@@ -315,10 +317,26 @@ class StudyLibrary:
         legacy = self.records / ('s-' + ident + '.md')
         if legacy.exists() or legacy.is_symlink():
             matches.append(legacy)
+        for p in self.records.glob('*--w*.md'):
+            try:
+                ids = self.file_ids(p) if re.search(r'--w[a-f0-9]{32}\.md$', p.name) else []
+            except (OSError, ValueError, KeyError):
+                # A damaged unrelated word must not disable healthy records.
+                # Saving that word still resolves its hash below and refuses overwrite.
+                continue
+            if ident in ids:
+                matches.append(p)
         if len(matches) > 1:
             raise ValueError('同一学习编号存在多份记录，停止自动修改。')
         if matches:
             p = matches[0]
+        elif entry and self.group_words:
+            word_id = self.word_id(entry)
+            grouped = list(self.records.glob('*--w' + word_id + '.md'))
+            if len(grouped) > 1:
+                raise ValueError('同一个单词存在多篇文档，请先人工确认。')
+            label = re.sub(r'[\\/:*?"<>|\x00-\x1f]', ' ', entry['word'].casefold()[:48]).strip(' .') or '学习记录'
+            p = grouped[0] if grouped else self.records / (label + '--w' + word_id + '.md')
         elif entry:
             label = ' · '.join(filter(None, [entry['word'][:24], entry['title'][:24]]))
             label = re.sub(r'[\\/:*?"<>|\x00-\x1f]', ' ', label).strip(' .') or '学习记录'
@@ -328,8 +346,66 @@ class StudyLibrary:
         self.check_path(p)
         return p
 
+    def word_id(self, entry):
+        return hashlib.sha256(json.dumps([self.language, entry['word'].casefold()], ensure_ascii=False).encode()).hexdigest()[:32]
+
+    def metadata(self, record):
+        return json.dumps(record, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
+
+    def word_header(self, entry):
+        metadata = {'word': entry['word'], 'language': self.language}
+        return (f'---\ntype: english-study-word\nword: {json.dumps(entry["word"], ensure_ascii=False)}\n'
+                f'language: {self.language}\nword_id: {self.word_id(entry)}\n---\n'
+                f'<!-- english-study-word-v1:{self.metadata(metadata)} -->\n\n# {safe_markdown(entry["word"])}\n\n')
+
+    def context_block(self, record, body):
+        return (f'<!-- english-study-context-v1:{self.metadata(record)} -->\n' + body +
+                f'\n<!-- english-study-context-end:{record["id"]} -->\n')
+
+    def word_contexts(self, content):
+        document = re.search(r'^<!-- english-study-word-v1:(.+) -->$', content, re.M)
+        if not document:
+            raise ValueError('已有同名文件不是单词文档，不会覆盖。')
+        metadata = json.loads(document[1])
+        if metadata.get('language') != self.language or not isinstance(metadata.get('word'), str):
+            raise ValueError('单词文档的语言或词面无效。')
+        pattern = r'^<!-- english-study-context-v1:([^\n]+) -->\n(.*?)\n<!-- english-study-context-end:([a-f0-9]{32}) -->\n'
+        contexts = {}
+        for match in re.finditer(pattern, content, re.M | re.S):
+            record = json.loads(match[1])
+            ident = record['id']
+            if (ident != match[3] or ident in contexts or record['entry']['word'].casefold() != metadata['word'].casefold()
+                    or record['entry'].get('language', 'en') != self.language or match[1] != self.metadata(record)):
+                raise ValueError('语境元数据不一致，停止自动覆盖。')
+            contexts[ident] = (record, match[2], hashlib.sha256(match[0].encode()).hexdigest(), match.span())
+        if (not contexts or content.count('<!-- english-study-context-v1:') != len(contexts)
+                or content.count('<!-- english-study-context-end:') != len(contexts)):
+            raise ValueError('单词文档语境分节不完整，停止自动覆盖。')
+        return contexts
+
+    def file_content(self, p):
+        self.check_path(p)
+        if p.stat().st_size > 2000000:
+            raise ValueError('学习记录过大，停止自动处理。')
+        return p.read_text()
+
+    def file_ids(self, p):
+        if re.search(r'--w[a-f0-9]{32}\.md$', p.name):
+            return list(self.word_contexts(self.file_content(p)))
+        ident = p.stem.split('--')[-1] if '--' in p.stem else p.stem[2:] if p.stem.startswith('s-') else ''
+        return [ident] if ID_RE.fullmatch(ident) else []
+
+    def record_files(self):
+        for p in sorted(self.records.glob('*.md')):
+            try:
+                ids = self.file_ids(p)
+            except (OSError, ValueError, KeyError):
+                continue
+            for ident in ids:
+                yield p, ident
+
     def header(self, record):
-        metadata = json.dumps(record, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
+        metadata = self.metadata(record)
         return (f'---\ntype: {"japanese-study" if self.language == "ja" else "english-study"}\nword: {json.dumps(record["entry"]["word"], ensure_ascii=False)}\n'
                 f'source_title: {json.dumps(record["entry"]["title"], ensure_ascii=False)}\n'
                 f'study_id: {record["id"]}\nanki_state: {record["ankiState"]}\n'
@@ -339,10 +415,12 @@ class StudyLibrary:
         return self.read_file(self.path(ident), ident)
 
     def read_file(self, p, ident):
-        self.check_path(p)
-        if p.stat().st_size > 2000000:
-            raise ValueError('学习记录过大，停止自动处理。')
-        content = p.read_text()
+        content = self.file_content(p)
+        if re.search(r'--w[a-f0-9]{32}\.md$', p.name):
+            contexts = self.word_contexts(content)
+            if ident not in contexts:
+                raise FileNotFoundError('单词文档尚无该语境。')
+            return contexts[ident][:3]
         match = re.search(r'^<!-- english-study-v1:(.+) -->$', content, re.M)
         if not match:
             raise ValueError('已有同名文件不是本程序记录，不会覆盖。')
@@ -355,6 +433,29 @@ class StudyLibrary:
     def write(self, record, body, expected=None):
         p = self.path(record['id'], record['entry'])
         value = self.header(record) + body
+        if re.search(r'--w[a-f0-9]{32}\.md$', p.name):
+            block = self.context_block(record, body)
+            if p.exists():
+                content = self.file_content(p)
+                contexts = self.word_contexts(content)
+                if next(iter(contexts.values()))[0]['entry']['word'].casefold() != record['entry']['word'].casefold():
+                    raise ValueError('已有同名单词文档的词面不同，不会覆盖。')
+                context = contexts.get(record['id'])
+                if expected is None:
+                    if context:
+                        raise ValueError('语境已存在，请重新读取；未重复写入。')
+                    value = content + '\n' + block
+                else:
+                    if not context or context[2] != expected:
+                        raise ValueError('笔记已发生变化，请刷新后再操作；没有覆盖你的修改。')
+                    start, end = context[3]
+                    value = content[:start] + block + content[end:]
+                # Context versions are independent; atomic replacement still checks the whole file.
+                expected = hashlib.sha256(content.encode()).hexdigest()
+            else:
+                if expected is not None:
+                    raise ValueError('原单词文档已不存在，停止自动重建。')
+                value = self.word_header(record['entry']) + block
         if len(value.encode()) > 2000000:
             raise ValueError('单条学习笔记超过 2MB，停止写入；原文保留，请拆分材料后继续。')
         if expected is None:
@@ -514,7 +615,7 @@ class StudyLibrary:
         confirmed = re.sub(r'(?:https?://|obsidian://)\S+|\[\[.*?\]\]', '[来源省略]', confirmed)
         confirmed = confirmed[:2400] + ('\n[历史卡摘要截断]' if len(confirmed) > 2400 else '')
         # Send learning prose, including user edits, but not metadata, source URLs or vault paths.
-        body = re.sub(r'^## 来源\n.*?(?=^## |\Z)', '', body, flags=re.M | re.S)
+        body = re.sub(r'^#{2,3} 来源\n.*?(?=^#{2,3} |\Z)', '', body, flags=re.M | re.S)
         body = re.sub(r'\[\[.*?\]\]', '', body)
         body = re.sub(r'(?:https?://|obsidian://)\S+', '[来源链接省略]', body)
         truncated = len(body) > 6000
@@ -700,18 +801,22 @@ class StudyLibrary:
                     raise ValueError('字幕契约尚未开放 Anki；记录未保存。')
                 ident = entry_id(e)
                 target = self.path(ident, e)
-                if not target.exists():
+                grouped = bool(re.search(r'--w[a-f0-9]{32}\.md$', target.name))
+                heading = '###' if grouped else '##'
+                if not target.exists() or ident not in self.file_ids(target):
                     r = {'id': ident, 'entry': e, 'ankiState': 'saved', 'noteId': None,
                          'created': datetime.datetime.now().astimezone().isoformat()}
                     if self.target_id:
                         r['targetId'] = self.target_id
                         r['savedTarget'] = self.target_details()
-                    body = f'\n# {safe_markdown(e["word"])}\n\n[[{self.relative}/语境词库|语境词库]]\n\n'
+                    body = (f'\n## 语境 · {safe_markdown(e["title"] or e["sentence"][:80])}\n' if grouped
+                            else f'\n# {safe_markdown(e["word"])}\n')
+                    body += f'\n[[{self.relative}/语境词库|语境词库]]\n\n'
                     body += '解释来源：' + safe_markdown(e['explanationSource'] or '保存时的解释，来源未标明') + '。\n\n'
                     for label, key in [('原句', 'sentence'), ('补充语境', 'context'), ('含义（保存时的解释）', 'meaning'), ('译文', 'translation'), ('学习提示', 'notes'), ('词典原形', 'lemma'), ('假名读音' if self.language == 'ja' else '词典读音', 'reading'), ('词典形态与读音资料（非 AI）', 'dictionaryNotes'), ('词典原文与 AI 辅助中文（非语境解释）', 'dictionaryTranslation')]:
                         if e.get(key):
-                            body += f'## {label}\n\n{paragraph(e[key])}\n\n'
-                    body += f'## 来源\n\n{paragraph(e["title"])}\n\n{paragraph(e["url"])}\n'
+                            body += f'{heading} {label}\n\n{paragraph(e[key])}\n\n'
+                    body += f'{heading} 来源\n\n{paragraph(e["title"])}\n\n{paragraph(e["url"])}\n'
                     if 'videoTime' in e:
                         body += f'\n视频位置：{e["videoTime"]} 秒\n'
                     if e.get('subtitleSource'):
@@ -719,13 +824,13 @@ class StudyLibrary:
                         body += ('\n字幕原始时间（ms）：' + str(c['originalStartMs']) + '–' + str(c['originalEndMs']) +
                                  '；偏移（ms，仅回源加一次）：' + str(c['subtitleOffsetMs']) +
                                  '；轨道：' + safe_markdown(c['trackName']) + ' [' + str(c['trackIndex']) + ']；语言：' + c['language'] + '\n')
-                    body += '\n## 我的理解与问题\n\n'
+                    body += f'\n{heading} 我的理解与问题\n\n'
                     self.write(r, body)
                 old, body, version = self.read(ident)
                 changed = {k: e[k] for k in ('meaning', 'translation', 'notes', 'context', 'explanationSource', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation') if e.get(k) and e[k] != old['entry'].get(k)}
                 if changed:
                     old['entry'].update(changed)
-                    body += '\n## 后续学习补充（再次主动保存）\n\n' + paragraph('\n'.join(changed.values())) + '\n'
+                    body += f'\n{heading} 后续学习补充（再次主动保存）\n\n' + paragraph('\n'.join(changed.values())) + '\n'
                 seen = old.setdefault('turnIds', [])
                 added = False
                 if e.get('url'):
@@ -749,7 +854,7 @@ class StudyLibrary:
                     added = True
                     seen.append(turn['id'])
                     feedback = {'unconfirmed': '尚未确认理解', 'understood': '本人反馈：这次解释我懂了', 'unclear': '本人反馈：仍然不懂'}[turn['feedback']]
-                    body += '\n## ' + ('理解反馈' if turn.get('kind') == 'feedback' else '学习过程') + ' · ' + safe_markdown(turn['at']) + '\n\n'
+                    body += '\n' + heading + ' ' + ('理解反馈' if turn.get('kind') == 'feedback' else '学习过程') + ' · ' + safe_markdown(turn['at']) + '\n\n'
                     body += '轮次 ID：' + safe_markdown(turn.get('relatedTurnId', turn['id'])) + '\n\n'
                     for label, key in [('我的问题', 'question'), ('原句翻译', 'translation'), ('这里的含义', 'meaning'), ('AI 的解释（非权威原文）', 'notes')]:
                         if turn[key]:
@@ -765,10 +870,7 @@ class StudyLibrary:
                 return self.sync(ident) if p['makeCard'] else self.result(ident)
             if p['action'] == 'libraryList':
                 rows = []
-                for f in sorted(self.records.glob('*.md')):
-                    ident = f.stem.split('--')[-1] if '--' in f.stem else f.stem[2:] if f.stem.startswith('s-') else ''
-                    if not ID_RE.fullmatch(ident):
-                        continue
+                for f, ident in self.record_files():
                     r = self.result(ident)
                     e = r['entry']
                     match = r['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title'])

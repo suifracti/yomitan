@@ -75,7 +75,7 @@ class SettingsTests(unittest.TestCase):
             rows = self.library.handle({'action': 'libraryRead', 'ids': [fresh['id'], old['id']]})['items']
         self.assertEqual([r['id'] for r in rows], [fresh['id'], old['id']])
         self.assertEqual(rows[1]['record']['targetId'], old['targetId'])
-        self.assertEqual(len(list(self.vault.glob('**/*--' + old['id'] + '.md'))), 1)
+        self.assertEqual(len(list(self.vault.glob('**/' + pathlib.Path(old['path']).name))), 1)
 
     def test_disabled_preserves_pending_and_drafts_without_anki(self):
         row = self.save()

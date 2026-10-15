@@ -79,9 +79,14 @@ class MemoryIndex:
         # Cold libraries do not repeatedly spend the budget on the same prefix.
         paths = sorted(self.lib.records.glob('*.md'), key=lambda p:p.name)
         identities = {}
+        file_ids = {}
         for p in paths:
-            ident = p.stem.split('--')[-1] if '--' in p.stem else p.stem[2:] if p.stem.startswith('s-') else ''
-            if re.fullmatch('[a-f0-9]{32}', ident): identities.setdefault(ident, []).append(p.name)
+            try:
+                file_ids[p.name] = self.lib.file_ids(p)
+            except (OSError, ValueError, KeyError):
+                file_ids[p.name] = []
+            for ident in file_ids[p.name]:
+                identities.setdefault(ident, []).append(p.name)
         self.db.executemany('DELETE FROM records WHERE id=?', [(r[0],) for r in self.db.execute('SELECT id FROM records').fetchall() if len(identities.get(r[0], [])) != 1])
         self.db.execute('DELETE FROM points WHERE record NOT IN (SELECT id FROM records)')
         for p in paths:
@@ -89,26 +94,33 @@ class MemoryIndex:
             if time.monotonic() - start >= budget:
                 complete = False; break
             cursor = p.name
-            ident = p.stem.split('--')[-1] if '--' in p.stem else p.stem[2:] if p.stem.startswith('s-') else ''
-            if len(identities.get(ident, [])) != 1:
+            ids = file_ids[p.name]
+            if not ids:
                 failed += 1; continue
             try:
                 if p.is_symlink(): raise ValueError('学习记录不能是符号链接')
                 stat = p.stat(); stamp = f'{stat.st_mtime_ns}:{stat.st_ctime_ns}:{stat.st_size}'
-                old = self.db.execute('SELECT path,stamp FROM records WHERE id=?', (ident,)).fetchone()
-                if old == (p.name, stamp): continue
-                r, body, _ = self.lib.read_file(p, ident)
-                content = norm(body[:3000] + '\n' + body[-3000:])
-                self.db.execute('INSERT OR REPLACE INTO records VALUES(?,?,?,?,?,?,?)',
-                    (ident, p.name, stamp, norm(r['entry']['word']), norm(r['entry'].get('lemma', '')), content, r.get('updated', r['created'])))
-                self.db.execute('DELETE FROM points WHERE record=?', (ident,))
-                for card in r.get('cards', []):
-                    if type(card.get('noteId')) is int:
-                        self.db.execute('INSERT OR IGNORE INTO points VALUES(?,?,?)',
-                            (ident, point_id(self.lib, r['entry'], card['front'], card['back']), card['noteId']))
-                changed += 1
+                file_changed = False
+                for ident in ids:
+                    if len(identities.get(ident, [])) != 1:
+                        failed += 1; continue
+                    old = self.db.execute('SELECT path,stamp FROM records WHERE id=?', (ident,)).fetchone()
+                    if old == (p.name, stamp): continue
+                    r, body, _ = self.lib.read_file(p, ident)
+                    content = norm(body[:3000] + '\n' + body[-3000:])
+                    self.db.execute('INSERT OR REPLACE INTO records VALUES(?,?,?,?,?,?,?)',
+                        (ident, p.name, stamp, norm(r['entry']['word']), norm(r['entry'].get('lemma', '')), content, r.get('updated', r['created'])))
+                    self.db.execute('DELETE FROM points WHERE record=?', (ident,))
+                    for card in r.get('cards', []):
+                        if type(card.get('noteId')) is int:
+                            self.db.execute('INSERT OR IGNORE INTO points VALUES(?,?,?)',
+                                (ident, point_id(self.lib, r['entry'], card['front'], card['back']), card['noteId']))
+                    file_changed = True
+                changed += int(file_changed)
             except (OSError, ValueError, KeyError):
-                failed += 1; self.db.execute('DELETE FROM records WHERE id=?', (ident,)); self.db.execute('DELETE FROM points WHERE record=?', (ident,))
+                failed += 1
+                for ident in ids:
+                    self.db.execute('DELETE FROM records WHERE id=?', (ident,)); self.db.execute('DELETE FROM points WHERE record=?', (ident,))
         self.db.executemany('INSERT OR REPLACE INTO progress VALUES(?,?)',
             [('cursor', '' if complete else cursor), ('errors', str(failed)), ('asOf', str(as_of))])
         self.db.commit()
