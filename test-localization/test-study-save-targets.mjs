@@ -56,3 +56,12 @@ test('remember UI distinguishes note-only from normal zero-card completion',asyn
  assert.equal(box.querySelector('.study-library-status').textContent,'笔记已保存 · Anki 未启用');
  assert.equal(h.calls.some(p=>p.action==='cards'),false);
 });
+
+test('folder discovery uses the existing settings transport and never selects a new save target',async()=>{
+ const settings={ankiEnabled:false,targetId:'a'.repeat(32),vault:'/tmp/fixture-vault',directory:'Study',deck:'Fixture',model:'Fixture'};
+ const db={studySaveTargetsV1:structuredClone(settings)},calls=[];
+ const service=new StudyService({get:async k=>({[k]:db[k]}),set:async v=>Object.assign(db,v)},p=>({cancel(){},promise:Promise.resolve().then(()=>{calls.push(p);return {ok:true,library:{...settings,items:[{path:'Another folder',label:'Another folder'}]}};})}));
+ const result=await service.handle('librarySettingsOpen',{folderAction:'detect',kind:'directory',vault:settings.vault,directory:settings.directory});
+ assert.equal(result.items[0].path,'Another folder');assert.deepEqual(db.studySaveTargetsV1,settings);
+ assert.deepEqual(calls.map(p=>p.action),['librarySettingsOpen']);
+});

@@ -14,13 +14,24 @@ from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, no
 FIELDS = ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
 EDITABLE = {'ankiEnabled', 'vault', 'directory', 'deck', 'model'}
 SETTINGS_ACTIONS = {'librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck',
-                    'librarySettingsPrepare', 'librarySettingsOpen', 'libraryTargetResolve'}
+                    'librarySettingsPrepare', 'librarySettingsOpen', 'libraryTargetResolve',
+                    'librarySettingsDetect', 'librarySettingsPick'}
 
 
 def normalize_settings_request(p):
     action = p.get('action')
+    # Reuse the already-loaded extension's folder action transport; no extension reload is needed.
+    if action == 'librarySettingsOpen' and 'folderAction' in p:
+        actions = {'detect': 'librarySettingsDetect', 'pick': 'librarySettingsPick'}
+        if p['folderAction'] not in actions:
+            raise ValueError('未知的文件夹操作。')
+        return normalize_settings_request({**{k: v for k, v in p.items() if k != 'folderAction'}, 'action': actions[p['folderAction']]})
     if action in ('librarySettingsGet', 'librarySettingsCheck', 'librarySettingsOpen') and set(p) == {'action'}:
         return p
+    if action in ('librarySettingsDetect', 'librarySettingsPick') and set(p) == {'action', 'kind', 'vault', 'directory'}:
+        if p['kind'] not in ('vault', 'directory'):
+            raise ValueError('请选择 Vault 或语境目录。')
+        return {**p, 'vault': text(p['vault'], 4000), 'directory': text(p['directory'], 2000)}
     if action == 'librarySettingsSave' and set(p) == {'action', 'settings'}:
         s = p['settings']
         if not isinstance(s, dict) or not EDITABLE <= set(s) or set(s) - EDITABLE - {'targetId'} or type(s['ankiEnabled']) is not bool:
@@ -191,11 +202,74 @@ class YomitanLibrary:
         result['prepared'] = result['status']['deckExists'] and result['status']['modelCompatible']
         return result
 
+    def folder_root(self, value):
+        folder = pathlib.Path(value)
+        if not folder.is_absolute() or not folder.is_dir() or folder.is_symlink():
+            raise ValueError('请先选择已存在的 Vault 文件夹。')
+        return folder
+
+    def detect_folders(self, p):
+        candidates = []
+        if p['kind'] == 'vault':
+            candidates = [p['vault']] + [t['vault'] for t in self.targets.values()]
+            registry = pathlib.Path.home() / 'Library/Application Support/obsidian/obsidian.json'
+            try:
+                registered = json.loads(registry.read_text()).get('vaults', {})
+                candidates += [v.get('path', '') for v in registered.values() if isinstance(v, dict)]
+            except (OSError, ValueError, AttributeError):
+                pass
+            items = [{'path': value, 'label': pathlib.Path(value).name + ' · ' + value}
+                     for value in dict.fromkeys(c for c in candidates if isinstance(c, str)) if value and
+                     pathlib.Path(value).is_absolute() and pathlib.Path(value).is_dir() and not pathlib.Path(value).is_symlink()]
+            return {'items': items, 'message': '只读取本机已登记和已配置的 Vault；其他位置可点选择文件夹。'}
+        vault = self.folder_root(p['vault'])
+        candidates = [p['directory']] + [t['directory'] for t in self.targets.values() if t['vault'] == str(vault)]
+        candidates += [str(child.relative_to(vault)) for child in sorted(vault.iterdir(), key=lambda x: x.name.casefold())
+                       if not child.name.startswith('.') and child.is_dir() and not child.is_symlink()][:100]
+        items = []
+        for value in dict.fromkeys(candidates):
+            folder = vault / value
+            if not value or not folder.is_dir() or folder.is_symlink(): continue
+            try:
+                relative = folder.resolve().relative_to(vault.resolve())
+            except ValueError:
+                continue
+            items.append({'path': str(relative), 'label': str(relative)})
+        return {'items': items, 'message': '列出已有保存位置和库内一级文件夹；更深的目录可点选择文件夹，不扫描笔记正文。'}
+
+    def pick_folder(self, p):
+        vault = self.folder_root(p['vault']) if p['kind'] == 'directory' else None
+        default = vault / p['directory'] if vault else pathlib.Path(p['vault'])
+        if not default.is_absolute() or not default.is_dir(): default = vault or pathlib.Path.home()
+        prompt = '选择 Obsidian Vault 文件夹' if vault is None else '选择 Vault 内的语境根目录（笔记存入其下的记录文件夹）'
+        script = ('on run argv\n'
+                  'set picked to choose folder with prompt (item 1 of argv) default location (POSIX file (item 2 of argv))\n'
+                  'return POSIX path of picked\nend run')
+        try:
+            result = subprocess.run(['/usr/bin/osascript', '-e', script, '--', prompt, str(default)],
+                                    capture_output=True, text=True, timeout=90)
+        except subprocess.TimeoutExpired:
+            raise ValueError('选择文件夹已超时；原设置没有改变，可重新选择。') from None
+        if result.returncode:
+            if '-128' in result.stderr: return {'cancelled': True}
+            raise ValueError('系统文件夹选择器未完成；原设置没有改变。')
+        chosen = self.folder_root(result.stdout.strip())
+        if vault:
+            try:
+                chosen = chosen.resolve().relative_to(vault.resolve())
+            except ValueError:
+                raise ValueError('语境目录必须位于当前选定的 Vault 内；原设置未改变。') from None
+        return {'path': str(chosen), 'cancelled': False}
+
     def handle(self, payload):
         p = normalize_request(payload)
         self.reload()
         action = p['action']
         if action in SETTINGS_ACTIONS:
+            if action in ('librarySettingsDetect', 'librarySettingsPick'):
+                result = self.detect_folders(p) if action == 'librarySettingsDetect' else self.pick_folder(p)
+                self.reload()
+                return {**self.settings(), **result}
             if action == 'librarySettingsGet': return self.settings()
             if action == 'librarySettingsSave': return self.save_settings(p['settings'])
             if action == 'librarySettingsCheck': return self.check()

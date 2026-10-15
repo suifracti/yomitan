@@ -63,3 +63,39 @@ test('save/review panel edits targets, checks readonly, and creates only on sepa
     assert.ok($('#model') && $('#cacheEnabled') && $('#saved'), 'existing settings and favorites remain');
     dom.window.close();
 });
+
+test('both destination fields detect and select folders without saving, and cancel preserves the draft', async () => {
+    const dom = new JSDOM(readFileSync(new URL('../ext/study-settings.html', import.meta.url), 'utf8'));
+    globalThis.document = dom.window.document;
+    const calls = [];
+    let cancel = false;
+    globalThis.chrome = {permissions: {contains: async () => true, request: async () => true}, storage: {onChanged: {addListener() {}}}, runtime: {sendMessage: async ({studyAction, data}) => {
+        calls.push(studyAction);
+        let value = {};
+        if (studyAction === 'settings') value = {model: 'fixture', effort: 'low', cacheEnabled: true};
+        if (studyAction === 'saved') value = [];
+        if (studyAction === 'librarySettingsGet') value = {vault: '/tmp/old-fixture', directory: 'Study', ankiEnabled: false, deck: 'Fixture', model: 'Fixture'};
+        if (studyAction === 'librarySettingsOpen' && data.folderAction === 'detect') value = {items: [{path: data.kind === 'vault' ? '/tmp/chosen-fixture' : 'Notes/English', label: 'Detected folder'}]};
+        if (studyAction === 'librarySettingsOpen' && data.folderAction === 'pick') value = cancel ? {cancelled: true} : {path: data.kind === 'vault' ? '/tmp/picked-fixture' : 'Chosen/Study'};
+        return {ok: true, value};
+    }}};
+    await import('../ext/js/pages/study-settings-main.js?folder-choices'); await flush();
+    const $ = (selector) => document.querySelector(selector);
+    for (const kind of ['vault', 'directory']) {
+        assert.ok($(`#library-${kind}-detect`));
+        $(`#library-${kind}-detect`).click(); await flush();
+        const options = $(`#library-${kind}-options`);
+        assert.equal(options.hidden, false);
+        options.value = options.options[1].value;
+        options.dispatchEvent(new dom.window.Event('change'));
+        assert.equal($(`#library-${kind}`).value, kind === 'vault' ? '/tmp/chosen-fixture' : 'Notes/English');
+        $(`#library-${kind}-pick`).click(); await flush();
+        assert.equal($(`#library-${kind}`).value, kind === 'vault' ? '/tmp/picked-fixture' : 'Chosen/Study');
+    }
+    cancel = true;
+    $('#library-directory-pick').click(); await flush();
+    assert.equal($('#library-directory').value, 'Chosen/Study');
+    assert.equal(calls.includes('librarySettingsSave'), false);
+    assert.equal(calls.some((a) => ['generate', 'rememberEntry', 'librarySave', 'librarySettingsPrepare'].includes(a)), false);
+    dom.window.close();
+});

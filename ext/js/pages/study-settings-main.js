@@ -321,6 +321,49 @@ async function runLibrary(operation) {
     }
 }
 
+/** @typedef {{items?: {path: string, label: string}[], message?: string, path?: string, cancelled?: boolean}} FolderChoice */
+for (const kind of ['vault', 'directory']) {
+    const input = check(`library-${kind}`);
+    const choices = /** @type {HTMLSelectElement} */ (document.getElementById(`library-${kind}-options`));
+    /** @param {string} path */
+    const choose = (path) => {
+        input.value = path;
+        choices.value = path;
+        if (kind === 'vault') {
+            /** @type {HTMLElement} */ (document.querySelector('#library-directory-options')).hidden = true;
+        }
+        libraryStatus.textContent = '目录已填入，点击「保存目标」才生效；没有移动或保存任何学习记录。';
+    };
+    choices.addEventListener('change', () => {
+        if (choices.value) { choose(choices.value); }
+    });
+    for (const operation of ['detect', 'pick']) {
+        document.getElementById(`library-${kind}-${operation}`)?.addEventListener('click', () => {
+            void runLibrary(async () => {
+                const result = /** @type {FolderChoice} */ (await studyCall(
+                    'librarySettingsOpen',
+                    {folderAction: operation, kind, vault: check('library-vault').value.trim(), directory: check('library-directory').value.trim()},
+                ));
+                if (operation === 'pick') {
+                    if (result.cancelled) {
+                        libraryStatus.textContent = '已取消选择；原设置和当前输入均未改变。';
+                        return;
+                    }
+                    if (typeof result.path !== 'string' || !result.path) { throw new Error('未取得所选文件夹，原设置未改变。'); }
+                    choose(result.path);
+                    return;
+                }
+                choices.replaceChildren();
+                const items = result.items ?? [];
+                option(choices, '', `检测到 ${items.length} 个目录，请选择…`);
+                for (const item of items) { option(choices, item.path, item.label); }
+                choices.hidden = items.length === 0;
+                libraryStatus.textContent = items.length > 0 ? `${result.message ?? '检测完成，请从下拉列表选择。'} 点击保存目标才生效。` : '没有检测到可用目录，可点「选择文件夹」手动选择。';
+            });
+        });
+    }
+}
+
 libraryDeck.addEventListener('change', showNewDeck);
 document.querySelector('#library-settings-form')?.addEventListener('submit', (event) => {
     event.preventDefault();

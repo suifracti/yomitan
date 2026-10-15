@@ -138,7 +138,7 @@ def _normalize_request(p):
     if not isinstance(p, dict):
         raise ValueError('学习库请求无效。')
     action = p.get('action')
-    if action in ('librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck', 'librarySettingsPrepare', 'librarySettingsOpen', 'libraryTargetResolve'):
+    if action in ('librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck', 'librarySettingsPrepare', 'librarySettingsOpen', 'libraryTargetResolve', 'librarySettingsDetect', 'librarySettingsPick'):
         from study_settings import normalize_settings_request
         return normalize_settings_request(p)
     if 'targetId' in p:

@@ -27,3 +27,7 @@ footer { margin-top: 24px; } @media (width <= 560px) { main { margin: 20px auto;
 #library-new-deck-label[hidden] { display: none; }
 #library-settings .check { margin-top: 18px; }
 input[readonly] { color: var(--muted); }
+
+.folder-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.folder-actions button { padding: 5px 10px; font-size: 12px; }
+.folder-choices[hidden] { display: none; }

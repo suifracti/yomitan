@@ -211,5 +211,46 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(row['vaultSaved'])
         self.assertFalse(row['ankiEnabled'])
 
+    def test_folder_detection_uses_local_vault_registry_and_keeps_config_unchanged(self):
+        home = self.root / 'home'
+        registry = home / 'Library/Application Support/obsidian/obsidian.json'
+        registry.parent.mkdir(parents=True)
+        other = self.root / 'Other Vault'
+        other.mkdir()
+        registry.write_text(json.dumps({'vaults': {'one': {'path': str(other)}, 'gone': {'path': str(self.root / 'gone')}}}))
+        before = self.config.read_bytes()
+        with patch('study_settings.pathlib.Path.home', return_value=home):
+            result = self.library.handle({'action': 'librarySettingsDetect', 'kind': 'vault', 'vault': '', 'directory': ''})
+        self.assertIn(str(other), [item['path'] for item in result['items']])
+        self.assertIn(str(self.vault), [item['path'] for item in result['items']])
+        (self.vault / 'Articles').mkdir()
+        result = self.library.handle({'action': 'librarySettingsDetect', 'kind': 'directory', 'vault': str(self.vault), 'directory': ''})
+        self.assertIn('Articles', [item['path'] for item in result['items']])
+        wire = self.library.handle({'action': 'librarySettingsOpen', 'folderAction': 'detect', 'kind': 'directory', 'vault': str(self.vault), 'directory': ''})
+        self.assertIn('Articles', [item['path'] for item in wire['items']])
+        self.assertEqual(wire['targetId'], self.settings()['targetId'])
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(self.calls, [])
+
+    def test_both_folder_pickers_only_return_drafts_and_reject_outside_vault(self):
+        import subprocess
+        chosen = self.vault / 'Study Folder'
+        chosen.mkdir()
+        before = self.config.read_bytes()
+        request = {'action': 'librarySettingsPick', 'kind': 'directory', 'vault': str(self.vault), 'directory': ''}
+        with patch('study_settings.subprocess.run', return_value=subprocess.CompletedProcess([], 0, str(chosen) + '/', '')) as run:
+            result = self.library.handle(request)
+            self.assertEqual(result['path'], 'Study Folder')
+            self.assertEqual(run.call_args.args[0][0], '/usr/bin/osascript')
+        with patch('study_settings.subprocess.run', return_value=subprocess.CompletedProcess([], 0, str(self.root), '')):
+            with self.assertRaisesRegex(ValueError, 'Vault'):
+                self.library.handle(request)
+            result = self.library.handle({**request, 'kind': 'vault'})
+            self.assertEqual(result['path'], str(self.root))
+        with patch('study_settings.subprocess.run', return_value=subprocess.CompletedProcess([], 1, '', 'User canceled. (-128)')):
+            self.assertTrue(self.library.handle(request)['cancelled'])
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(self.calls, [])
+
 
 if __name__ == '__main__': unittest.main()
