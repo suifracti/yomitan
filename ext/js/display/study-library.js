@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {SAVE_TARGETS_KEY} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 
 /**
@@ -33,10 +34,16 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
     save.className = 'scan-disable';
     save.dataset.studySave = 'note';
     save.textContent = '记住它';
-    save.title = '保存本次学习到 Obsidian，并由 AI 选择最多一张新卡加入 Anki；已有精确相同内容则关联';
+    save.title = '保存本次完整学习到 Obsidian；是否安排 Anki 复习以“保存与复习”设置为准。';
     const destination = d.createElement('p');
     destination.className = 'study-save-destination';
-    destination.textContent = `Obsidian + Anki · ${getEntry().language === 'ja' ? '日语' : '英语'}`;
+    destination.textContent = `Obsidian · ${getEntry().language === 'ja' ? '日语 + Anki' : '英语 · 按保存与复习设置'}`;
+    if (getEntry().language !== 'ja') {
+        void chrome.storage?.local?.get(SAVE_TARGETS_KEY).then((value) => {
+            const settings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
+            if (isCurrent() && settings?.ankiEnabled === false) { destination.textContent = 'Obsidian · 英语 · Anki 未启用'; }
+        });
+    }
     const openNote = d.createElement('a');
     openNote.textContent = '查看学习记录 ↗';
     openNote.hidden = true;
@@ -89,7 +96,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         pendingLabel.textContent = '正在继续上次未完成的学习…';
         const row = /** @type {?import('study').LibraryRecord} */ (await studyCall('retryPending', {language}));
         if (!row || !isCurrent()) { return; }
-        status.textContent = `${row.entry.word} · ${row.ankiState === 'pending' ? '仍待补齐；记录已保留' : '已补齐'}${row.error ? `：${row.error}` : ''}`;
+        status.textContent = row.ankiEnabled === false ? '笔记已保存 · Anki 未启用；原待补齐内容已保留。' : `${row.entry.word} · ${row.ankiState === 'pending' ? '仍待补齐；记录已保留' : '已补齐'}${row.error ? `：${row.error}` : ''}`;
         if (row.openUrl?.startsWith('obsidian://open?')) {
             openNote.href = row.openUrl;
             openNote.textContent = `查看 ${row.entry.word} 的记录 ↗`;
@@ -115,6 +122,10 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
                 status.textContent = '笔记已保存，正在安排复习；可以继续阅读。';
             }
             if (!isCurrent()) { return; }
+            if (row.ankiEnabled === false) {
+                status.textContent = '笔记已保存 · Anki 未启用';
+                return;
+            }
             status.textContent = row.ankiState === 'pending' ?
                 '笔记已保存；稍后点“继续补齐”，不用重找原网页。' :
                 (row.ankiState === 'synced' ? `已记住 · Anki ${row.target?.deck ?? ''}` : '已记下 · 本次不需要新增复习卡');

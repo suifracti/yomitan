@@ -188,6 +188,7 @@ async function createHarness(t, {cards = [], loseSaveReply = false} = {}) {
     let holdExplain = null;
     let nativeCancels = 0;
     const native = (payload) => ({cancel() { nativeCancels += 1; }, promise: (async () => {
+        if (payload.action === 'libraryTargetResolve') { return {ok: true, library: {targetId: 'd'.repeat(32)}}; }
         nativeCalls.push(structuredClone(payload));
         if (payload.action === 'explain') {
             modelCalls.push(structuredClone(payload));
@@ -268,8 +269,8 @@ test('editing the PR1 source updates its own visible sentence without a reading-
     other.className = 'study-source';
     other.innerHTML = '<p>Unrelated source must remain unchanged.</p>';
     d.body.prepend(other);
-    await waitFor(() => container.querySelector('textarea'), 'source editor');
-    const editor = container.querySelector('textarea');
+    await waitFor(() => container.querySelector('.study-source-editor'), 'source editor');
+    const editor = container.querySelector('.study-source-editor');
     const edited = 'After considering all the evidence, it is a just decision.';
     editor.value = edited;
     editor.dispatchEvent(new dom.window.Event('change', {bubbles: true}));

@@ -78,7 +78,7 @@ test('saving at collection capacity never silently deletes an older favourite',a
 test('library saving forwards only the fixed library action and never invokes AI generation',async()=>{
  const {StudyService}=await import('../ext/js/study/study-service.js');
  const captured=[];
- const s=new StudyService({get:async()=>({}),set:async()=>{}},p=>{captured.push(p);return {promise:Promise.resolve({ok:true,library:{vaultSaved:true,ankiState:'pending'}}),cancel(){}};});
+ const s=new StudyService({get:async()=>({}),set:async()=>{}},p=>{if(p.action==='libraryTargetResolve')return {promise:Promise.resolve({ok:true,library:{targetId:'d'.repeat(32)}}),cancel(){}};captured.push(p);return {promise:Promise.resolve({ok:true,library:{vaultSaved:true,ankiState:'pending'}}),cancel(){}};});
  const entry={...lookup,meaning:'反复地',translation:'',notes:'',url:'https://example.com',title:'阅读'};
  const result=await s.handle('librarySave',{entry,makeCard:true});
  assert.equal(result.vaultSaved,true);assert.equal(result.ankiState,'pending');

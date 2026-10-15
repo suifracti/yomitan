@@ -14,6 +14,7 @@ function setup() {
     const storage = {get: async (k) => ({[k]: data[k]}), set: async (o) => Object.assign(data, o)};
     const native = (p) => ({cancel() {},
         promise: Promise.resolve().then(() => {
+            if (p.action === 'libraryTargetResolve') { return {ok: true, library: {targetId: 'd'.repeat(32)}}; }
             calls.push(p);
             if (p.action === 'libraryMemory') { return {ok: true, library: {items: [{id: 'a'.repeat(32), text: '我以前把 just 都当成刚刚。', version: 'b'.repeat(64), word: 'just', truncated: false}], total: 1}}; }
             if (p.action === 'librarySave') { return {ok: true, library: {id: 'a'.repeat(32), vaultSaved: true}}; }
@@ -153,7 +154,7 @@ test('feedback binds to one turn, repeats do not duplicate answers, saved conver
 test('feedback changed during save ack remains pending without copying the answer', async () => {
     const {service} = setup(); await service.journal.append({...source, question: 'race'}, result);
     const turn = (await service.handle('journalPeek', source))[0]; let done;
-    service.native = () => ({cancel() {}, promise: new Promise((r) => { done = r; })});
+    service.native = (p) => ({cancel() {}, promise: p.action === 'libraryTargetResolve' ? Promise.resolve({ok: true, library: {targetId: 'd'.repeat(32)}}) : new Promise((r) => { done = r; })});
     const save = service.handle('librarySave', {entry: {...source, ...result}, makeCard: false});
     await new Promise((resolve) => { setTimeout(resolve, 0); });
     await service.handle('journalFeedback', {...source, turnId: turn.id, feedback: 'understood'});

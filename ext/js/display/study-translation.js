@@ -162,8 +162,9 @@ export function prepareStudyTranslation() {
                 evidence.dataset.studySubtitle = JSON.stringify(s);
                 const language = s.language === 'en' ? '英语' : (s.language === 'ja' ? '日语' : '语言未识别');
                 const ms = s.originalStartMs;
-                const time = typeof ms === 'number' && Number.isFinite(ms) && ms >= 0
-                    ? `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` : '时间未识别';
+                const time = typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 ?
+                    `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` :
+'时间未识别';
                 evidence.textContent = `${language}字幕 · ${time}${s.trackName ? ` · ${s.trackName}` : ''}`;
                 const details = d.createElement('details');
                 details.className = 'study-subtitle-details scan-disable';
@@ -180,16 +181,17 @@ export function prepareStudyTranslation() {
                 details.append(label, raw);
                 const gate = d.createElement('p');
                 gate.className = 'study-request-status';
-                gate.textContent = s.language === 'ja' ? '日语字幕目前可以查词，尚未接入学习保存。'
-                    : '这条字幕尚未接入学习，目前可以查词；请在 asbplayer 选择英文字幕轨道。';
+                gate.textContent = s.language === 'ja' ?
+'日语字幕目前可以查词，尚未接入学习保存。' :
+                    '这条字幕尚未接入学习，目前可以查词；请在 asbplayer 选择英文字幕轨道。';
                 container.append(evidence, details, gate);
                 if (s.sourceConfirmed !== true || s.language !== 'en' || !s.queryId) { return; }
                 gate.textContent = '围绕这句继续问；点「记住它」保存完整理解，只留必要复习卡。';
-                const makeButton = (/** @type {string} */ label) => {
+                const makeButton = (/** @type {string} */ caption) => {
                     const b = d.createElement('button');
                     b.type = 'button';
                     b.className = 'scan-disable';
-                    b.textContent = label;
+                    b.textContent = caption;
                     return b;
                 };
                 const ask = makeButton('问 AI');
@@ -316,7 +318,10 @@ export function prepareStudyTranslation() {
                     status.textContent = '保存完整学习过程并判断必要复习…';
                     void call('remember').then((value) => {
                         const row = /** @type {import('study').LibraryRecord} */ (value);
-                        if (isCurrent() && operation === id) { status.textContent = row.ankiState === 'pending' ? '学习记录已保留；复习送卡尚未确认，可重试。' : (row.reviewDraft?.cards.length === 0 ? '学习记录已保存；本次判断无需新增复习卡。' : '学习记录与必要复习已确认。'); }
+                        if (isCurrent() && operation === id) {
+                            status.textContent = row.ankiState === 'pending' ? '学习记录已保留；复习送卡尚未确认，可重试。' : (row.reviewDraft?.cards.length === 0 ? '学习记录已保存；本次判断无需新增复习卡。' : '学习记录与必要复习已确认。');
+                            if (row.ankiEnabled === false) { status.textContent = '笔记已保存 · Anki 未启用'; }
+                        }
                     }).catch((e) => {
                         if (isCurrent() && operation === id) { status.textContent = e instanceof Error ? e.message : '保存回执未确认；已提交意图保留。'; }
                     })

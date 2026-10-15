@@ -372,9 +372,10 @@ test('toolbar favorite saves/removes local context, survives reopening and never
 });
 
 test('the already-open collection page refreshes when a card favorite changes', async () => {
-    const dom = setup('<p id="status"></p><select id="model"></select><select id="effort"></select><input id="cacheEnabled"><div id="saved"></div>');
+    const {readFileSync} = await import('node:fs');
+    const dom = setup(readFileSync(new URL('../ext/study-settings.html', import.meta.url), 'utf8'));
     let changed, rows = [];
-    globalThis.chrome = {runtime: {sendMessage: async ({studyAction}) => ({ok: true, value: studyAction === 'settings' ? {model:'gpt-6.1-sol',effort:'low',cacheEnabled:true} : rows})}, storage: {onChanged: {addListener: listener => changed = listener}}};
+    globalThis.chrome = {permissions: {contains: async () => false}, runtime: {sendMessage: async ({studyAction}) => ({ok: true, value: studyAction === 'settings' ? {model:'gpt-6.1-sol',effort:'low',cacheEnabled:true} : rows})}, storage: {onChanged: {addListener: listener => changed = listener}}};
     await import('../ext/js/pages/study-settings-main.js?favorite-refresh');await tick();
     assert.match(document.querySelector('#saved').textContent, /右上角 ☆/);
     rows = [{id:'fixture',word:'absolutely',sentence:'A public fixture.',url:'https://example.test/article',title:'Fixture'}];

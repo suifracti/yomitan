@@ -32,7 +32,7 @@ export type SubtitleSourceV1 = {
     provenance: {queryId: string; sourceRevision: string; cueIndex: number; tabId: number; frameId: 0; documentId: string};
 };
 
-export type CueSaveIntent = {key: string; entry: LibraryEntry; turns: LearningTurn[]};
+export type CueSaveIntent = {targetId?: string; key: string; entry: LibraryEntry; turns: LearningTurn[]};
 
 export type LibraryEntry = {
     subtitleSource?: SubtitleSourceV1;
@@ -65,7 +65,11 @@ export type StudyTarget = {
     model: string;
 };
 
+export type SaveTargetSettings = {ankiEnabled: boolean; targetId: string; vault: string; directory: string; deck: string; model: string};
+
 export type LibraryRecord = {
+    ankiEnabled?: boolean;
+    targetId?: string;
     reviewDraft?: ReviewDraft;
     draftStale?: boolean;
     target?: StudyTarget;
@@ -217,4 +221,4 @@ export type MiniLookup = {
     };
 };
 
-export type RememberSaveIntent = {key: string; entry: LibraryEntry; turns: LearningTurn[]};
+export type RememberSaveIntent = {targetId?: string; key: string; entry: LibraryEntry; turns: LearningTurn[]};

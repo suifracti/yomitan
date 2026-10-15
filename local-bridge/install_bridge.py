@@ -31,9 +31,11 @@ def install(home, codex, python, vault=None):
     registry = home / 'Library/Application Support/Google/Chrome/NativeMessagingHosts' / (HOST_NAME + '.json')
     marker = runtime / 'install-metadata.json'
     previous = json.loads(marker.read_text()) if marker.exists() else {'files': {}}
-    config = {'codex': str(codex)}
-    if vault is None and (runtime / 'bridge-config.json').is_file():
-        vault = json.loads((runtime / 'bridge-config.json').read_text()).get('vault')
+    config_path = runtime / 'bridge-config.json'
+    old_config = json.loads(config_path.read_text()) if config_path.is_file() else {}
+    config = {**old_config, 'codex': str(codex)}
+    if vault is None:
+        vault = old_config.get('vault')
     if vault is not None:
         vault = pathlib.Path(vault)
         if not vault.is_absolute() or not vault.is_dir() or vault.is_symlink():
@@ -41,6 +43,7 @@ def install(home, codex, python, vault=None):
         config['vault'] = str(vault)
     content = {
         runtime / 'study_translator.py': (pathlib.Path(__file__).parent / 'study_translator.py').read_bytes(),
+        runtime / 'study_settings.py': (pathlib.Path(__file__).parent / 'study_settings.py').read_bytes(),
         runtime / 'study_library.py': (pathlib.Path(__file__).parent / 'study_library.py').read_bytes(),
         runtime / 'study_japanese.py': (pathlib.Path(__file__).parent / 'study_japanese.py').read_bytes(),
         runtime / 'study_video.py': (pathlib.Path(__file__).parent / 'study_video.py').read_bytes(),
@@ -54,7 +57,7 @@ def install(home, codex, python, vault=None):
                               'allowed_origins': [ORIGIN, ASB_ORIGIN]}, ensure_ascii=False, indent=2) + '\n').encode(),
     }
     for path in content:
-        if path.exists() and previous.get('files', {}).get(str(path)) != digest(path):
+        if path != config_path and path.exists() and previous.get('files', {}).get(str(path)) != digest(path):
             raise ValueError('存在未知或已手动修改的本机桥文件，停止覆盖：' + str(path))
     codex_home = runtime / 'codex-home'
     auth = codex_home / 'auth.json'

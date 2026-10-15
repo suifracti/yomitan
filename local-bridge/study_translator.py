@@ -56,6 +56,9 @@ ORGANIZE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': 
 
 
 def normalize_request(value):
+    if isinstance(value, dict) and value.get('action') == 'niratanCapture':
+        from niratan_capture import normalize_request as capture_request
+        return capture_request(value)
     if isinstance(value, dict) and str(value.get('action', '')).startswith('video'):
         from study_video import normalize_request as video_request
         return video_request(value)
@@ -484,6 +487,12 @@ def main():
         payload = normalize_request(read_frame(sys.stdin.buffer))
         if sys.argv[1] == ASB_ORIGIN and not payload['action'].startswith('video'):
             raise ValueError('asbplayer 只允许视频字幕记录，不允许词库/Anki/任意模型动作。')
+        if payload['action'] == 'niratanCapture':
+            from niratan_capture import capture
+            config = json.loads((pathlib.Path(__file__).parent / 'bridge-config.json').read_text())
+            result = capture(payload, config.get('niratan'))
+            write_frame(sys.stdout.buffer, {'ok': True, 'capture': result})
+            return 0
         if payload['action'] == 'usageStats':
             from study_usage import Ledger
             write_frame(sys.stdout.buffer, {'ok': True, 'usageStats': Ledger().stats()})
@@ -523,11 +532,9 @@ def main():
             write_frame(sys.stdout.buffer, {'ok': True, 'result': result})
             return 0
         if payload['action'].startswith('library'):
-            from study_library import StudyLibrary
-            config = json.loads((pathlib.Path(__file__).parent / 'bridge-config.json').read_text())
-            if not config.get('vault'):
-                raise ValueError('尚未连接 Obsidian，请用 --vault 重新安装本机桥。')
-            result = StudyLibrary(config['vault'], cache_dir=pathlib.Path(__file__).parent / 'learning-cache').handle(payload)
+            from study_settings import YomitanLibrary
+            result = YomitanLibrary(pathlib.Path(__file__).parent / 'bridge-config.json',
+                                   cache_dir=pathlib.Path(__file__).parent / 'learning-cache').handle(payload)
             write_frame(sys.stdout.buffer, {'ok': True, 'library': result})
             return 0
         codex = configured_codex()

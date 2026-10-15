@@ -207,9 +207,10 @@ export class StudyJournal {
      * @param {import('study').LibraryEntry} entry
      * @param {boolean} makeCard
      * @param {import('study').LearningTurn[]} [frozenTurns]
+     * @param {string} [targetId]
      * @returns {Promise<unknown>}
      */
-    async save(entry, makeCard, frozenTurns) {
+    async save(entry, makeCard, frozenTurns, targetId) {
         const turns = frozenTurns ?? await this.get(entry);
         /**
          * @type {unknown}
@@ -218,7 +219,7 @@ export class StudyJournal {
         // Small frames also keep long answers below the native-message byte budget.
         for (let i = 0; i < Math.max(1, turns.length); i += 4) {
             const batch = turns.slice(i, i + 4);
-            const response = await this.service.native({action: 'librarySave', entry, makeCard: makeCard && i + 4 >= turns.length, turns: batch}).promise;
+            const response = await this.service.native({action: 'librarySave', entry, makeCard: makeCard && i + 4 >= turns.length, turns: batch, ...(targetId ? {targetId} : {})}).promise;
             if (!response.ok || !response.library) {
                 throw new Error(response.error ?? '保存未确认，问答仍在本地待保存。');
             }

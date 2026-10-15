@@ -11,11 +11,19 @@ section { background: var(--card); border: 1px solid var(--line); border-radius:
 a { color: var(--accent); } small, footer { color: var(--muted); font-size: 12px; } small { display: block; margin-top: 10px; }
 .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
 label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; } .check { flex-direction: row; align-items: center; }
-input { accent-color: var(--accent); } select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 10px; font: inherit; }
+input { accent-color: var(--accent); } select, input[type='text'] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 10px; font: inherit; }
 button { background: var(--card); color: var(--accent); border: 1px solid var(--line); border-radius: 7px; padding: 8px 14px; cursor: pointer; font: inherit; }
 button:disabled { opacity: 0.6; cursor: wait; } button.primary { background: var(--accent); color: var(--card); border-color: transparent; } button:hover { filter: brightness(0.95); }
-button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .save-bar { position: sticky; bottom: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 20px; z-index: 1; }
 .save-bar span { font-size: 12px; color: var(--muted); } #status { background: var(--card); border-left: 3px solid var(--accent); padding: 12px 16px; min-height: 48px; }
 .saved-word { border-top: 1px solid var(--line); padding: 14px 0; overflow-wrap: anywhere; } .saved-word strong { font-size: 17px; } .saved-word p { white-space: pre-wrap; margin: 5px 0; } .saved-word button { float: right; font-size: 12px; }
 footer { margin-top: 24px; } @media (width <= 560px) { main { margin: 20px auto; padding: 0 14px; } section { padding: 18px; } .fields { grid-template-columns: 1fr; } }
+
+.library-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+#library-status { margin-bottom: 12px; }
+#library-check-result { margin-top: 18px; white-space: pre-line; overflow-wrap: anywhere; color: var(--muted); }
+#library-new-deck-label { margin-top: 12px; }
+#library-new-deck-label[hidden] { display: none; }
+#library-settings .check { margin-top: 18px; }
+input[readonly] { color: var(--muted); }

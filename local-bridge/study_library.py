@@ -138,6 +138,13 @@ def _normalize_request(p):
     if not isinstance(p, dict):
         raise ValueError('学习库请求无效。')
     action = p.get('action')
+    if action in ('librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck', 'librarySettingsPrepare', 'librarySettingsOpen', 'libraryTargetResolve'):
+        from study_settings import normalize_settings_request
+        return normalize_settings_request(p)
+    if 'targetId' in p:
+        if action != 'librarySave' or not isinstance(p['targetId'], str) or not ID_RE.fullmatch(p['targetId']):
+            raise ValueError('保存目的地编号无效。')
+        return {**normalize_request({k: v for k, v in p.items() if k != 'targetId'}), 'targetId': p['targetId']}
     if 'cueAuthorization' in p:
         grant = p['cueAuthorization']
         if action not in ('libraryRead', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'librarySync') or not isinstance(grant, dict) or set(grant) != {'id', 'source'} or not ID_RE.fullmatch(str(grant['id'])) or not isinstance(grant['source'], dict):
@@ -233,6 +240,15 @@ def _normalize_request(p):
     raise ValueError('不支持的学习库操作或字段。')
 
 
+def entry_id(e):
+    identity = [e['word'].casefold(), e['sentence'], e['url'], e['title'] if not e['url'] else '', e.get('videoTime')]
+    if e.get('subtitleSource'):
+        identity = subtitle_identity(e['subtitleSource'])
+    elif e.get('language', 'en') != 'en':
+        identity.insert(0, e['language'])
+    return hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()[:32]
+
+
 def anki_call(action, params, timeout=5):
     data = json.dumps({'action': action, 'version': 6, 'params': params}).encode()
     request = urllib.request.Request('http://127.0.0.1:8766', data=data, headers={'Content-Type': 'application/json'})
@@ -255,7 +271,7 @@ def paragraph(s):
 
 
 class StudyLibrary:
-    def __init__(self, vault, anki=anki_call, lang='en', cache_dir=None):
+    def __init__(self, vault, anki=anki_call, lang='en', cache_dir=None, target=None):
         self.cache_dir = cache_dir
         self.vault = pathlib.Path(vault)
         if not self.vault.is_absolute() or not self.vault.is_dir():
@@ -264,6 +280,11 @@ class StudyLibrary:
         self.relative = JAPANESE_RELATIVE if self.language == 'ja' else RELATIVE
         self.deck = '外语::日语语境' if self.language == 'ja' else '外语::英语语境'
         self.model = '日语语境卡' if self.language == 'ja' else '外语语境卡'
+        self.target_id = target['targetId'] if target else None
+        self.anki_enabled = target.get('ankiEnabled', True) if target else True
+        if target and self.language == 'en':
+            self.relative = pathlib.Path(target['directory'])
+            self.deck, self.model = target['deck'], target['model']
         self.base = self.vault / self.relative
         self.records = self.base / '记录'
         self.anki = anki
@@ -402,11 +423,18 @@ class StudyLibrary:
             body += self.draft_block(draft)
         return body
 
+    def target_details(self):
+        details = {'deck': self.deck, 'model': self.model}
+        if self.target_id:
+            details.update({'targetId': self.target_id, 'vault': str(self.vault), 'directory': str(self.relative), 'ankiEnabled': self.anki_enabled})
+        return details
+
     def result(self, ident):
         r, body, version = self.read(ident)
         stale = bool(r.get('reviewDraft')) and r['reviewDraft']['sourceHash'] != hashlib.sha256(self.without_draft(r, body).encode()).hexdigest()
         return {**r, 'version': version, 'path': str(self.path(ident).relative_to(self.vault)),
-                'target': {'deck': self.deck, 'model': self.model}, 'draftStale': stale,
+                'target': self.target_details(), 'draftStale': stale,
+                **({'targetId': self.target_id, 'ankiEnabled': self.anki_enabled} if self.target_id else {}),
                 'vaultSaved': True, 'openUrl': self.open_url(ident)}
 
     def open_url(self, ident):
@@ -421,6 +449,8 @@ class StudyLibrary:
         return fields
 
     def sync(self, ident):
+        if not self.anki_enabled:
+            return self.result(ident)
         r, body, version = self.read(ident)
         if r.get('cards'):
             return self.sync_cards(r, body, version)
@@ -494,6 +524,8 @@ class StudyLibrary:
                 'truncated': truncated, 'confirmedCards': confirmed, 'updated': r.get('updated', r['created'])}
 
     def sync_cards(self, r, body, version):
+        if not self.anki_enabled:
+            return self.result(r['id'])
         for card in r['cards']:
             card['state'] = 'pending'
             card.pop('error', None)
@@ -570,6 +602,9 @@ class StudyLibrary:
         if p['action'] == 'libraryMemory':
             from study_memory import memory
             return memory(self, p['word'], p.get('lemma', ''), p.get('fresh', False))
+        if not self.anki_enabled and p['action'] in ('libraryCards', 'libraryDraftCommit', 'librarySync'):
+            ids = p.get('ids', []) or [x['id'] for x in p.get('items', [])]
+            return {'items': [self.result(i) for i in ids], 'ankiEnabled': False}
         if p['action'] == 'libraryList' and not self.records.exists():
             self.check_path(self.records)
             return {'items': [], 'total': 0, 'target': {'deck': self.deck, 'model': self.model}}
@@ -598,9 +633,9 @@ class StudyLibrary:
                     for i in p['ids']:
                         record = self.result(i)
                         e = record['entry']
-                        evidence = {'unavailable': True} if e.get('subtitleSource') else memory(self, e['word'], e.get('lemma', ''))
+                        evidence = {'unavailable': True} if e.get('subtitleSource') or not self.anki_enabled else memory(self, e['word'], e.get('lemma', ''))
                         items.append({**self.material(i), 'record': record, 'relatedMemory': compact(evidence)})
-                    return {'items': items}
+                    return {'items': items, **({'ankiEnabled': self.anki_enabled} if self.target_id else {})}
                 finally:
                     del self.memory_deadline
             if p['action'] in ('libraryDraftSave', 'libraryDraftDiscard'):
@@ -661,18 +696,16 @@ class StudyLibrary:
                 return {'items': [self.sync(r['id']) for r, _, _ in staged]}
             if p['action'] == 'librarySave':
                 e = p['entry']
-                identity = [e['word'].casefold(), e['sentence'], e['url'], e['title'] if not e['url'] else '', e.get('videoTime')]
-                if e.get('subtitleSource'):
-                    identity = subtitle_identity(e['subtitleSource'])
-                    if p['makeCard']:
-                        raise ValueError('字幕契约尚未开放 Anki；记录未保存。')
-                elif self.language != 'en':
-                    identity.insert(0, self.language)
-                ident = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()[:32]
+                if e.get('subtitleSource') and p['makeCard']:
+                    raise ValueError('字幕契约尚未开放 Anki；记录未保存。')
+                ident = entry_id(e)
                 target = self.path(ident, e)
                 if not target.exists():
                     r = {'id': ident, 'entry': e, 'ankiState': 'saved', 'noteId': None,
                          'created': datetime.datetime.now().astimezone().isoformat()}
+                    if self.target_id:
+                        r['targetId'] = self.target_id
+                        r['savedTarget'] = self.target_details()
                     body = f'\n# {safe_markdown(e["word"])}\n\n[[{self.relative}/语境词库|语境词库]]\n\n'
                     body += '解释来源：' + safe_markdown(e['explanationSource'] or '保存时的解释，来源未标明') + '。\n\n'
                     for label, key in [('原句', 'sentence'), ('补充语境', 'context'), ('含义（保存时的解释）', 'meaning'), ('译文', 'translation'), ('学习提示', 'notes'), ('词典原形', 'lemma'), ('假名读音' if self.language == 'ja' else '词典读音', 'reading'), ('词典形态与读音资料（非 AI）', 'dictionaryNotes'), ('词典原文与 AI 辅助中文（非语境解释）', 'dictionaryTranslation')]:

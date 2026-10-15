@@ -190,3 +190,6 @@ export function detailSource(value) {
         ...(typeof v.videoTime === 'number' && Number.isFinite(v.videoTime) && v.videoTime >= 0 ? {videoTime: Math.floor(v.videoTime)} : {}),
         ...(Number.isInteger(v.profileIndex) && (v.profileIndex ?? -1) >= 0 ? {profileIndex: v.profileIndex} : {})};
 }
+
+// Shared with the native direct-card controls; no learning data is stored here.
+export const SAVE_TARGETS_KEY = 'studySaveTargetsV1';

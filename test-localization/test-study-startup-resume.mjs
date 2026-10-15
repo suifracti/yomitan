@@ -21,7 +21,7 @@ except Exception as e: print(json.dumps({'ok':False,'error':str(e)}))`,new URL('
 }
 async function wait(f){for(let i=0;i<60;i++){if(f())return;await new Promise(r=>setTimeout(r,10));}assert.ok(f(),'normal production prepare must resume queued R2 intent');}
 test('normal prepare recovers explicit lost-reply save into same temp Vault once; repeated boot is idempotent',async t=>{
- const h=fixture(t);const first=new StudyService(h.storage,p=>({cancel(){},promise:Promise.resolve().then(()=>{const r=h.native(p);assert.equal(r.ok,true,r.error);return {ok:false,error:'lost saved response'};})}));
+ const h=fixture(t);const first=new StudyService(h.storage,p=>({cancel(){},promise:Promise.resolve().then(()=>{if(p.action==='libraryTargetResolve')return {ok:true,library:{targetId:'d'.repeat(32)}};const r=h.native(p);assert.equal(r.ok,true,r.error);return {ok:false,error:'lost saved response'};})}));
  globalThis.chrome={runtime:{}};const c=entry.subtitleSource;const sender={id:'self',tab:{id:3,url:entry.url},frameId:0,documentId:'old-doc',url:entry.url};const cue={...c,sourceRevision:c.provenance.sourceRevision,cueIndex:1};delete cue.provenance;
  const rt={id:'self',sendMessage(id,m,cb){cb(m.phase==='prepare'?{ok:true,queryId:m.queryId,receipt:'single',expires:Date.now()+5000}:{ok:true,queryId:m.queryId,cue:m.cue,source:{...m.source,title:entry.title},expires:Date.now()+5000,writeAuthorized:false});}};
  assert.equal((await first.attestCue(rt,sender,{queryId:'submitted',cue})).ok,true);await assert.rejects(first.saveVerifiedCue('submitted',sender),/lost/);assert.equal(h.files().length,1);assert.equal(h.db.studyCueSaveIntentsV1.length,1);

@@ -383,7 +383,7 @@ class LibraryTests(unittest.TestCase):
         import json, shutil, struct, subprocess, sys
         runtime = self.vault / 'runtime'
         runtime.mkdir()
-        for name in ['study_translator.py', 'study_library.py', 'study_video.py']:
+        for name in ['study_translator.py', 'study_library.py', 'study_settings.py', 'study_video.py']:
             shutil.copyfile(ROOT / 'local-bridge' / name, runtime / name)
         (runtime / 'bridge-config.json').write_text(json.dumps({'vault': str(self.vault), 'codex': '/nonexistent/do-not-start'}))
         request = json.dumps({'action': 'librarySave', 'entry': ENTRY, 'makeCard': False}).encode()

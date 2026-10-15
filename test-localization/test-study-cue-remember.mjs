@@ -5,7 +5,7 @@ const cue={version:1,sourceRevision:'private',text:'Can you bank on him?',cueInd
 function setup(t){const db={},storage={get:async k=>({[k]:structuredClone(db[k])}),set:async v=>Object.assign(db,structuredClone(v))};const vault=mkdtempSync(path.join(os.tmpdir(),'cue-ui-'));t.after(()=>rmSync(vault,{recursive:true,force:true}));const calls=[];let live=true,hold=null,lost=false;
 const rt={id:'self',getURL:p=>'chrome-extension://self/'+p,sendMessage(id,m,cb){cb(m.phase==='prepare'?{ok:live,queryId:m.queryId,receipt:'single',expires:Date.now()+5000}:{ok:live,queryId:m.queryId,cue:m.cue,source:m.source,expires:Date.now()+5000,writeAuthorized:false});}};
 globalThis.chrome={runtime:rt,tabs:{sendMessage:async()=>({ok:live})}};
-const native=p=>{calls.push(structuredClone(p));let stop;const promise=new Promise((resolve,reject)=>{stop=()=>reject(Error('cancelled'));const run=()=>{if(p.action==='explain'){resolve({ok:true,result:{translation:'这是合成句',meaning:'rely on',notes:'ANSWER:'+p.question}});return;}const r=spawnSync('python3',['-B','-c',`import json,sys,pathlib
+const native=p=>{if(p.action==='libraryTargetResolve')return {promise:Promise.resolve({ok:true,library:{targetId:'d'.repeat(32)}}),cancel(){}};calls.push(structuredClone(p));let stop;const promise=new Promise((resolve,reject)=>{stop=()=>reject(Error('cancelled'));const run=()=>{if(p.action==='explain'){resolve({ok:true,result:{translation:'这是合成句',meaning:'rely on',notes:'ANSWER:'+p.question}});return;}const r=spawnSync('python3',['-B','-c',`import json,sys,pathlib
 sys.path.insert(0,sys.argv[1]);from study_library import StudyLibrary
 def no_anki(*a,**k): raise AssertionError('Anki forbidden')
 try: print(json.dumps({'ok':True,'library':StudyLibrary(pathlib.Path(sys.argv[2]),anki=no_anki).handle(json.loads(sys.stdin.read()))},ensure_ascii=False))
@@ -30,7 +30,7 @@ def anki(a,p):
 try:out={'ok':True,'library':StudyLibrary(v,anki=anki).handle(json.loads(sys.stdin.read()))}
 except Exception as e:out={'ok':False,'error':str(e)}
 state.write_text(json.dumps(s));print(json.dumps(out))`;
- h.service.native=p=>{h.calls.push(p);if(p.action==='cards'){if(change)h.live(false);return {promise:Promise.resolve({ok:true,result:{items:p.items.map(x=>({id:x.id,reason:'Useful collocation',cards:[{front:'What does bank on mean here?',back:'Rely on somebody.'}]}))}}),cancel(){}};}
+ h.service.native=p=>{if(p.action==='libraryTargetResolve')return {promise:Promise.resolve({ok:true,library:{targetId:'d'.repeat(32)}}),cancel(){}};h.calls.push(p);if(p.action==='cards'){if(change)h.live(false);return {promise:Promise.resolve({ok:true,result:{items:p.items.map(x=>({id:x.id,reason:'Useful collocation',cards:[{front:'What does bank on mean here?',back:'Rely on somebody.'}]}))}}),cancel(){}};}
  const r=spawnSync('python3',['-B','-c',python,new URL('../local-bridge',import.meta.url).pathname,h.vault,lose?'lose':'ok'],{input:JSON.stringify(p),encoding:'utf8'});assert.equal(r.status,0,r.stderr);return {promise:Promise.resolve(JSON.parse(r.stdout)),cancel(){}};};
  return ()=>JSON.parse(readFileSync(path.join(h.vault,'fake-anki.json'),'utf8'));
 }

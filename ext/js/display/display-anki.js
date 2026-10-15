@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {studyCall} from '../study/study-client.js';
+import {SAVE_TARGETS_KEY} from '../study/study-data.js';
 import {EventListenerCollection} from '../core/event-listener-collection.js';
 import {ExtensionError} from '../core/extension-error.js';
 import {log} from '../core/log.js';
@@ -96,6 +98,10 @@ export class DisplayAnki {
         this._targetTags = [];
         /** @type {import('settings').AnkiCardFormat[]} */
         this._cardFormats = [];
+        /** @type {boolean} */
+        this._studyAnkiEnabled = true;
+        /** @type {string | null} */
+        this._studyAnkiDeck = null;
         /** @type {import('settings').DictionariesOptions} */
         this._dictionaries = [];
         /** @type {HTMLElement} */
@@ -121,6 +127,9 @@ export class DisplayAnki {
     /** */
     prepare() {
         this._noteContext = this._getNoteContext();
+        chrome.storage?.onChanged.addListener((changes, area) => {
+            if (area === 'local' && SAVE_TARGETS_KEY in changes) { void this._updateDictionaryEntryDetails(); }
+        });
         /* eslint-disable @stylistic/no-multi-spaces */
         this._display.hotkeyHandler.registerActions([
             ['addNote',     this._hotkeySaveAnkiNoteForSelectedEntry.bind(this)],
@@ -516,8 +525,37 @@ export class DisplayAnki {
         }
     }
 
+    /**
+     * Only the English study target is unified; advanced models/field mappings remain intact.
+     * @param {boolean} [fresh] Check the native switch again immediately before a real write.
+     */
+    async _refreshStudyAnkiTarget(fresh = false) {
+        if (this._display.getOptions()?.general.language !== 'en') {
+            this._studyAnkiEnabled = true;
+            this._studyAnkiDeck = null;
+            return;
+        }
+        const settings = /** @type {import('study').SaveTargetSettings | undefined} */ (fresh ?
+            await studyCall('librarySettingsGet') :
+(await chrome.storage?.local?.get(SAVE_TARGETS_KEY))?.[SAVE_TARGETS_KEY]);
+        if (!settings) { return; } // Existing defaults work before the settings page is first opened.
+        this._studyAnkiEnabled = settings.ankiEnabled !== false;
+        this._studyAnkiDeck = settings.deck;
+        this._cardFormats = this._cardFormats.map((format) => (format.type === 'term' ? {...format, deck: settings.deck} : format));
+        if (!this._studyAnkiEnabled) {
+            for (const button of document.querySelectorAll('[data-action=save-note]')) {
+                if (button instanceof HTMLButtonElement) {
+                    button.hidden = true;
+                    button.disabled = true;
+                }
+            }
+        }
+    }
+
     /** */
     async _updateDictionaryEntryDetails() {
+        await this._refreshStudyAnkiTarget();
+        if (this._studyAnkiEnabled === false) { return; }
         if (!this._display.getOptions()?.anki.enable) { return; }
         const {dictionaryEntries} = this._display;
         /** @type {?import('core').TokenObject} */
@@ -623,7 +661,7 @@ export class DisplayAnki {
      * @param {import('display-anki').DictionaryEntryDetails[]} dictionaryEntryDetails
      */
     _updateSaveButtons(dictionaryEntryDetails) {
-        if (this._subtitleSnapshotOnly()) {
+        if (this._subtitleSnapshotOnly() || this._studyAnkiEnabled === false) {
             for (const button of document.querySelectorAll('[data-action=save-note]')) {
                 if (button instanceof HTMLButtonElement) {
                     button.disabled = true;
@@ -777,7 +815,7 @@ export class DisplayAnki {
      * @param {unknown} cardFormatStringIndex
      */
     _hotkeySaveAnkiNoteForSelectedEntry(cardFormatStringIndex) {
-        if (this._subtitleSnapshotOnly()) { return; }
+        if (this._subtitleSnapshotOnly() || this._studyAnkiEnabled === false) { return; }
         if (typeof cardFormatStringIndex !== 'string') { return; }
         const cardFormatIndex = Number.parseInt(cardFormatStringIndex, 10);
         if (Number.isNaN(cardFormatIndex)) { return; }
@@ -797,7 +835,7 @@ export class DisplayAnki {
      * @param {number} cardFormatIndex
      */
     async _saveAnkiNote(dictionaryEntryIndex, cardFormatIndex) {
-        if (this._subtitleSnapshotOnly()) { return; }
+        if (this._subtitleSnapshotOnly() || this._studyAnkiEnabled === false) { return; }
         const sourceState = this._display.history.state;
         const dictionaryEntries = this._display.dictionaryEntries;
         const dictionaryEntryDetails = this._dictionaryEntryDetails;
@@ -947,6 +985,9 @@ export class DisplayAnki {
         let noteId = null;
         let addNoteOkay = false;
         try {
+            await this._refreshStudyAnkiTarget(true);
+            if (this._studyAnkiEnabled === false) { throw new Error('Anki 未启用；未添加卡片。'); }
+            if (this._studyAnkiDeck) { note.deckName = this._studyAnkiDeck; }
             noteId = await this._display.application.api.addAnkiNote(note);
             addNoteOkay = true;
         } catch (e) {
@@ -1022,6 +1063,10 @@ export class DisplayAnki {
      * @param {Error[]} allErrors
      */
     async _updateAnkiNote(noteWithId, allErrors) {
+        try {
+            await this._refreshStudyAnkiTarget(true);
+            if (this._studyAnkiEnabled === false) { throw new Error('Anki 未启用；未修改卡片。'); }
+        } catch (error) { allErrors.push(toError(error)); return; }
         if (this._subtitleSnapshotOnly()) { return; }
         if (noteWithId === null) { return; }
 
