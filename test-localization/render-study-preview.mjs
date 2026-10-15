@@ -28,7 +28,7 @@ print(json.dumps(terms))`],{encoding:'utf8',maxBuffer:3000000}));
 for(const t of wty)entryData.definitions.push({headwordIndices:[0],dictionary:'wty-en-en',dictionaryAlias:'Wiktionary 英英详解',tags:[],entries:t[5],sequences:[t[6]],isPrimary:false});
 const entry=generator.createTermEntry(entryData,[]);entry.classList.add('study-entry');
 const save=generator.instantiateTemplate('action-button-container');save.querySelector('button').dataset.cardFormatIndex='0';entry.querySelector('.note-actions-container').append(save);
-const sentence=word==='just'?'But for some reason, you just can.':word.startsWith('tired')?'I am tired of doing the same thing every day.':word==='ourselves'?'Change can help us understand ourselves better.':'She opened a new bank account.';
+const sentence=word==='absolutely'?'Progress is absolutely possible, even when it takes time.':word==='just'?'But for some reason, you just can.':word.startsWith('tired')?'I am tired of doing the same thing every day.':word==='ourselves'?'Change can help us understand ourselves better.':'She opened a new bank account.';
 globalThis.ResizeObserver=class{observe(){}};
 globalThis.MutationObserver=dom.window.MutationObserver;
 globalThis.requestAnimationFrame=()=>{};
@@ -42,7 +42,8 @@ callbacks.get('contentUpdateEntry')({element:second,dictionaryEntry:entryData,in
 document.querySelector('#dictionary-entries').append(second);
 callbacks.get('contentUpdateComplete')();
 await new Promise(resolve=>setImmediate(resolve));
-renderStudyResult(document.querySelector('.study-translation-output'), {translation:word==='just'?'但不知为什么，你就是能做到。':'我厌倦了每天做同样的事。',meaning:word==='just'?'这里的 just 加强语气：就是能做到。':'这里指厌倦，而不是身体疲劳。',notes:'这是离线布局数据，不是实际模型调用。'},true);
+if(!process.argv.includes('--no-ai'))renderStudyResult(document.querySelector('.study-translation-output'), {translation:word==='just'?'但不知为什么，你就是能做到。':'我厌倦了每天做同样的事。',meaning:word==='just'?'这里的 just 加强语气：就是能做到。':'这里指厌倦，而不是身体疲劳。',notes:'这是离线布局数据，不是实际模型调用。'},true);
+if(process.argv.includes('--no-ai'))for(const details of document.querySelectorAll('.study-original-dictionary')){details.open=false;const suffix=details.querySelector('summary small');if(suffix)suffix.textContent=' · 展开';}
 if(detail){document.body.hidden=false;document.querySelector('#study-detail-heading').hidden=false;document.querySelector('#search-textbox').value=word;}
 for(const script of document.querySelectorAll('script'))script.remove();
 for(const link of document.querySelectorAll('link'))if(link.getAttribute('href').startsWith('/'))link.href='/ext'+link.getAttribute('href');
