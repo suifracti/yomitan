@@ -7,7 +7,7 @@ test('lookup actions use visible labels while preserving upstream selectors',()=
  const html=readFileSync(new URL('ext/templates-display.html',root),'utf8');
  const d=new JSDOM(html).window.document;
  const save=d.querySelector('#action-button-container-template').content.querySelector('[data-action="save-note"]');
- assert.match(save.textContent,/添加到 Anki/);
+ assert.match(save.textContent,/快速加卡/);
  const audio=d.querySelector('#audio-button-popup-menu-template').content;
  assert.match(audio.textContent,/选择发音来源/);
  assert.match(audio.textContent,/卡片音频/);
@@ -131,6 +131,48 @@ test('sentence translation stays manual and paints inline from the current saved
  assert.equal(draft.value,'我的另一个问题','a manual sentence translation does not erase the follow-up draft');
  assert.equal(document.querySelector('.study-source-translation')?.textContent,'我们已经厌倦了这件事。');
  assert.equal(translate.hidden,true,'cached translation replaces the action in the source card');
+});
+
+test('the latest AI explanation sits beside the actual sentence and expands without another request',async()=>{
+ const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
+ const {callbacks,display}=setupDisplay();
+ const turns=[{id:'recent-answer',at:'today',question:'这句话里的 ability 是什么意思？',
+  translation:'我开始认真做一件事之后，反而失去了入睡的能力。',
+  meaning:'这里的 ability 是名词，表示做某件事的能力。',
+  notes:'ability to fall asleep 指入睡的能力；整个表达不是形容词。',
+  feedback:'unconfirmed',saved:false}];
+ let generated=0;
+ globalThis.chrome={runtime:{sendMessage:async({studyAction})=>{
+  if(studyAction==='journalConversation')return {ok:true,value:turns};
+  if(studyAction==='conversationUsage')return {ok:true,value:[]};
+  if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};
+  if(studyAction==='peek')return {ok:true,value:{result:null,busy:false}};
+  if(studyAction==='saved')return {ok:true,value:[]};
+  if(studyAction==='generate')generated++;
+  return {ok:true,value:{result:null}};
+ }}};
+ prepareStudyCard(display);callbacks.get('contentUpdateStart')();
+ const element=document.createElement('div');
+ element.innerHTML='<div class="entry-header">ability</div><div class="entry-body"><div data-sc-study-role="card"><div data-sc-study-role="meaning"><div>n. 能力，才干</div></div></div></div>';
+ callbacks.get('contentUpdateEntry')({element,dictionaryEntry:{type:'term',headwords:[{term:'ability'}]},index:0});
+ document.querySelector('#dictionary-entries').append(element);
+ callbacks.get('contentUpdateComplete')();
+ await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));
+ const anchor=document.querySelector('.study-reading-anchor');
+ const source=anchor?.querySelector('.study-source');
+ const focus=anchor?.querySelector('.study-reading-ai-context');
+ assert.ok(anchor&&source&&focus,'current source and answer share one reading anchor');
+ assert.equal(focus.hidden,false);
+ assert.ok(source.compareDocumentPosition(focus)&Node.DOCUMENT_POSITION_FOLLOWING,'source immediately precedes context answer');
+ assert.ok(focus.compareDocumentPosition(anchor.querySelector('.study-reading-meaning'))&Node.DOCUMENT_POSITION_FOLLOWING,'dictionary senses no longer separate source and answer');
+ assert.match(focus.querySelector('.study-reading-ai-text').textContent,/ability 是名词/);
+ const full=focus.querySelector('.study-reading-ai-more');
+ assert.ok(full&&!full.hidden&&!full.open,'the completed explanation expands in place');
+ full.open=true;
+ assert.match(full.querySelector('.study-reading-ai-full').textContent,/入睡的能力/);
+ assert.match(full.querySelector('.study-reading-ai-full').textContent,/这句话里的 ability/);
+ assert.match(document.querySelector('.study-translation-output').textContent,/第 1 轮/,'full conversation and feedback are preserved');
+ assert.equal(generated,0,'showing prior learning never triggers model usage');
 });
 
 test('metadata is directly visible without nested disclosures, original meanings and POS retained',async()=>{
