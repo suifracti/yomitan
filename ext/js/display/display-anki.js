@@ -334,7 +334,8 @@ export class DisplayAnki {
         // Set button properties
         const cardFormat = this._cardFormats[cardFormatIndex];
         singleNoteActionButtons.dataset.cardFormatIndex = cardFormatIndex.toString();
-        saveButton.title = `Add ${cardFormat.name} note`;
+        saveButton.title = this._display.getOptions?.()?.general?.language === 'en' ?
+            `快速加卡 · ${cardFormat.name}（仅词典卡，不保存完整学习问答）` : `Add ${cardFormat.name} note`;
         saveButton.dataset.cardFormatIndex = cardFormatIndex.toString();
         iconSpan.dataset.icon = cardFormat.icon;
 
