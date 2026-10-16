@@ -352,6 +352,12 @@ export function prepareStudyTranslation() {
             status.setAttribute('role', 'status');
             const output = d.createElement('div');
             output.className = 'study-translation-output';
+            const history = d.createElement('details');
+            history.className = 'study-conversation-history scan-disable';
+            history.hidden = true;
+            const historyLabel = d.createElement('summary');
+            historyLabel.textContent = '问答历史';
+            history.append(historyLabel, output);
             const question = d.createElement('textarea');
             question.rows = 2;
             question.maxLength = 500;
@@ -476,6 +482,8 @@ export function prepareStudyTranslation() {
                 const opened = new Set([...output.querySelectorAll('details[open]')].map((e) => /** @type {HTMLElement} */ (e).dataset.turnId));
                 const oldLast = output.lastElementChild?.getAttribute('data-turn-id');
                 output.replaceChildren();
+                history.hidden = turns.length === 0;
+                historyLabel.textContent = `问答历史 · ${turns.length} 轮（含理解反馈）`;
                 latest = turns.at(-1) ?? null;
                 latestSource = identity();
                 paintSentenceTranslation(turns);
@@ -713,7 +721,7 @@ export function prepareStudyTranslation() {
             const hint = d.createElement('span');
             hint.textContent = '回车发送 · Shift+回车换行';
             footer.append(hint, tokens);
-            container.append(actions, status, output, question, footer, more);
+            container.append(actions, status, history, question, footer, more);
             mountStudyLibrary(container, () => {
                 const current = latestSource === identity() ? latest : null;
                 const english = container.closest('.study-entry')?.querySelector('.study-primary-english');
