@@ -369,6 +369,21 @@
     display: none;
 }
 
+/* The last answer is readable beside the source; full Q&A stays here when needed. */
+.study-conversation-history {
+    margin: 8px 0 10px;
+    border-top: 1px solid var(--study-border);
+    padding-top: 7px;
+}
+.study-conversation-history[hidden] { display: none; }
+.study-conversation-history>summary {
+    cursor: pointer;
+    color: var(--study-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.study-conversation-history>summary:focus-visible { outline: 2px solid var(--study-accent); outline-offset: 2px; }
+.study-conversation-history .study-translation-output { margin-top: 8px; }
 /* Study18: the conversation stays in place; only controls exclude recursive lookup. */
 .study-conversation-turn {
     margin: 0.6em 0;
