@@ -17,3 +17,28 @@ test('settings uses actual model capabilities, drops retired preferences, and cl
  const config=await service.handle('settings',{});assert.equal(config.model,'gpt-6-astra');assert.equal(config.effort,'medium');assert.deepEqual(Object.keys(config).sort(),['autoDictionaryTranslate','cacheEnabled','effort','model']);assert.equal(config.cacheEnabled,false);
  assert.equal(data.studySavedWordsV1[0].id,'keep');assert.deepEqual(Object.keys(data.studySettingsV2).sort(),['autoDictionaryTranslate','cacheEnabled','effort','model']);assert.equal(nativeCalls,1,'only model metadata, no translation calls');
 });
+
+test('native dictionary translation receives only model and effort, not UI preferences',async()=>{
+ for(const flags of [
+  {autoDictionaryTranslate:true,cacheEnabled:true},
+  {autoDictionaryTranslate:false,cacheEnabled:false}
+ ]){
+  const data={studySettingsV2:{model:'gpt-6-luna',effort:'max',...flags}};
+  const storage={get:async key=>({[key]:data[key]}),set:async value=>Object.assign(data,value)};
+  const calls=[];
+  const native=payload=>{
+   calls.push(payload);
+   return {promise:Promise.resolve({ok:true,result:{items:[{id:'0',translation:'智力'}]}}),cancel:()=>{}};
+  };
+  const service=new StudyService(storage,native);
+  const lookup={word:'intelligence',items:[{id:'0',text:'The ability to learn and understand.'}]};
+  const result=await service.handle('dictionaryGenerate',lookup);
+  assert.deepEqual(result.result,{items:[{id:'0',translation:'智力'}]});
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].action,'dictionary');
+  assert.deepEqual(calls[0].config,{model:'gpt-6-luna',effort:'max'});
+  assert.deepEqual(Object.keys(calls[0].config).sort(),['effort','model']);
+  assert.equal(data.studySettingsV2.autoDictionaryTranslate,flags.autoDictionaryTranslate,'do not rewrite user preferences');
+  assert.equal(data.studySettingsV2.cacheEnabled,flags.cacheEnabled,'keep local cache preference');
+ }
+});
