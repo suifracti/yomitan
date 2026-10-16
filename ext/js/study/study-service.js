@@ -990,6 +990,7 @@ export class StudyService {
             const epoch = this.epoch;
             // Native Python accepts exactly {model, effort}; UI/cache toggles
             // stay in extension storage and must never enter the AI request.
+            const {cacheEnabled} = config;
             const nativeConfig = {model: config.model, effort: config.effort};
             const call = this.native({action: 'dictionary', ...lookup, config: nativeConfig});
             const promise = call.promise.then(async (response) => {
