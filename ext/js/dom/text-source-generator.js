@@ -84,6 +84,11 @@ export class TextSourceGenerator {
             let c = text[cursorStart - 1];
             if (c === '\n' && terminateAtNewlines) { break; }
 
+            // Intra-word apostrophe check: contractions like I'm, don't, it's should not terminate sentence.
+            if ((c === '\'' || c === '’') && cursorStart > 1 && cursorStart < textLength && this._isWordChar(text[cursorStart - 2]) && this._isWordChar(text[cursorStart])) {
+                continue;
+            }
+
             if (quoteStack.length === 0) {
                 let terminatorInfo = terminatorMap.get(c);
                 if (typeof terminatorInfo !== 'undefined') {
@@ -129,6 +134,11 @@ export class TextSourceGenerator {
             // Check if the following character should be included.
             let c = text[cursorEnd];
             if (c === '\n' && terminateAtNewlines) { break; }
+
+            // Intra-word apostrophe check: contractions like don't, it's should not terminate sentence.
+            if ((c === '\'' || c === '’') && cursorEnd > 0 && cursorEnd + 1 < textLength && this._isWordChar(text[cursorEnd - 1]) && this._isWordChar(text[cursorEnd + 1])) {
+                continue;
+            }
 
             if (quoteStack.length === 0) {
                 let terminatorInfo = terminatorMap.get(c);
@@ -696,5 +706,13 @@ export class TextSourceGenerator {
      */
     _isWhitespace(string) {
         return string.trim().length === 0;
+    }
+
+    /**
+     * @param {string} char
+     * @returns {boolean}
+     */
+    _isWordChar(char) {
+        return typeof char === 'string' && /[\p{L}\p{N}]/u.test(char);
     }
 }

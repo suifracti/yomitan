@@ -396,5 +396,86 @@ class LibraryTests(unittest.TestCase):
         self.assertTrue((self.vault / answer['library']['path']).is_file())
 
 
+    def test_reading_field_omitted_when_same_as_word_and_included_when_phonetic(self):
+        saved_plain = self.save({**ENTRY, 'word': 'improve', 'reading': 'improve', 'lemma': 'improve'})
+        body_plain = (self.vault / saved_plain['path']).read_text()
+        self.assertNotIn('词典读音', body_plain, 'English reading matching headword must not be labeled as pronunciation')
+        self.assertEqual(saved_plain['entry']['reading'], 'improve', 'Raw metadata field remains preserved')
+
+        saved_ipa = self.save({**ENTRY, 'word': 'improve', 'reading': '/ɪmˈpruːv/', 'lemma': 'improve', 'url': 'https://example.com/ipa'})
+        body_ipa = (self.vault / saved_ipa['path']).read_text()
+        self.assertIn('词典读音', body_ipa)
+        self.assertIn('/ɪmˈpruːv/', body_ipa)
+
+    def test_review_draft_distinguishes_confirmed_pending_and_zero_card(self):
+        saved = self.save()
+        payload = {'action': 'libraryDraftSave', 'items': [{
+            'id': saved['id'], 'version': saved['version'], 'reason': '语境明确，选一张核心句型卡',
+            'cards': [
+                {'front': 'Q1: front', 'back': 'A1: back', 'selected': True},
+                {'front': 'Q2: unselected', 'back': 'A2: unselected', 'selected': False}
+            ]
+        }]}
+        draft = self.lib.handle(payload)['items'][0]
+        commit_payload = {'action': 'libraryDraftCommit', 'items': [{
+            'id': draft['id'], 'version': draft['version'], 'draftId': draft['reviewDraft']['id']
+        }]}
+        self.offline = True
+        pending = self.lib.handle(commit_payload)['items'][0]
+        body_pending = (self.vault / pending['path']).read_text()
+        self.assertIn('候选已确认（等待送入 Anki）', body_pending)
+        self.assertIn('候选未勾选', body_pending)
+        self.assertNotIn('候选未勾选\n\n> Q1: front', body_pending)
+
+        self.offline = False
+        synced = self.lib.handle({'action': 'librarySync', 'ids': [pending['id']]})['items'][0]
+        body_synced = (self.vault / synced['path']).read_text()
+        self.assertIn('候选已确认（Anki 已同步）', body_synced)
+
+        zero_saved = self.save({**ENTRY, 'url': 'https://example.com/zero'})
+        zero_payload = {'action': 'libraryDraftSave', 'items': [{
+            'id': zero_saved['id'], 'version': zero_saved['version'], 'reason': '用户已完全掌握，无需新卡',
+            'cards': []
+        }]}
+        zero_draft = self.lib.handle(zero_payload)['items'][0]
+        body_zero = (self.vault / zero_draft['path']).read_text()
+        self.assertIn('本次无需新增复习卡（正常零卡）。', body_zero)
+
+    def test_direct_save_without_ai_turns_writes_explicit_notice_and_no_blank_section(self):
+        saved = self.lib.handle({'action': 'librarySave', 'entry': ENTRY, 'makeCard': False, 'turns': []})
+        body = (self.vault / saved['path']).read_text()
+        self.assertIn('本次未进行 AI 语境消歧（直接以词典泛义保存）。', body)
+        self.assertNotIn('## 我的理解与问题\n\n##', body)
+        self.assertNotIn('### 我的理解与问题\n\n###', body)
+        self.assertIn('含义（保存时的解释）', body)
+        self.assertIn(ENTRY['meaning'], body)
+
+    def test_pending_card_resubmission_uses_original_ids_and_no_duplicates(self):
+        saved = self.save()
+        item = {'id': saved['id'], 'version': saved['version'], 'cards': [
+            {'front': 'Q: front', 'back': 'A: back'}
+        ]}
+        self.offline = True
+        pending = self.lib.handle({'action': 'libraryCards', 'items': [item]})['items'][0]
+        card_id = pending['cards'][0]['id']
+        self.assertEqual(pending['ankiState'], 'pending')
+        self.assertEqual(pending['cards'][0]['state'], 'pending')
+        self.assertIsNone(pending['cards'][0]['noteId'])
+
+        self.offline = False
+        synced = self.lib.handle({'action': 'librarySync', 'ids': [saved['id']]})['items'][0]
+        self.assertEqual(synced['id'], saved['id'])
+        self.assertEqual(synced['cards'][0]['id'], card_id)
+        self.assertEqual(synced['cards'][0]['state'], 'synced')
+        self.assertIsNotNone(synced['cards'][0]['noteId'])
+        self.assertEqual(len(self.cards), 1)
+
+        # Resync again must be completely idempotent, no duplicate cards created
+        resync = self.lib.handle({'action': 'librarySync', 'ids': [saved['id']]})['items'][0]
+        self.assertEqual(len(self.cards), 1)
+        self.assertEqual(resync['cards'][0]['noteId'], synced['cards'][0]['noteId'])
+
+
 if __name__ == '__main__':
     unittest.main()
+

@@ -29,6 +29,18 @@ FIELDS = {'word': 128, 'sentence': 2400, 'context': 1200, 'meaning': 5000,
           'translation': 5000, 'notes': 5000, 'url': 2000, 'title': 300, 'explanationSource': 40}
 
 
+def is_valid_reading(reading, entry, lang):
+    if not reading or not isinstance(reading, str) or not reading.strip():
+        return False
+    if lang == 'ja':
+        return True
+    r = reading.strip().lower()
+    w = entry.get('word', '').strip().lower()
+    l = entry.get('lemma', '').strip().lower()
+    return bool(r and r != w and r != l)
+
+
+
 def text(value, limit, required=False):
     if not isinstance(value, str) or len(value) > limit or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', value) or (required and not value.strip()):
         raise ValueError('学习记录字段为空、格式错误或超过长度限制。')
@@ -498,15 +510,36 @@ class StudyLibrary:
         if p.read_text() != value:
             raise ValueError('笔记写入后读回不一致。')
 
-    def draft_block(self, draft):
+    def draft_block(self, draft, record=None):
         content = '\n<!-- study-review-draft:start -->\n## 复习草稿（候选，未选内容不会送入 Anki）\n\n' + paragraph(draft['reason']) + '\n'
+        if not draft['cards']:
+            content += '\n本次无需新增复习卡（正常零卡）。\n'
+        confirmed_cards = (record.get('cards', []) if record else [])
         for card in draft['cards']:
-            content += '\n' + ('候选已勾选' if card['selected'] else '候选未勾选') + '\n\n' + paragraph(card['front']) + '\n\n' + paragraph(card['back']) + '\n'
+            confirmed = next((c for c in confirmed_cards if c['front'].strip() == card['front'].strip() and c['back'].strip() == card['back'].strip()), None)
+            if confirmed:
+                state_desc = 'Anki 已同步' if confirmed.get('state') == 'synced' else '等待送入 Anki'
+                label = f'候选已确认（{state_desc}）'
+            elif card.get('selected'):
+                label = '候选已勾选'
+            else:
+                label = '候选未勾选'
+            content += '\n' + label + '\n\n' + paragraph(card['front']) + '\n\n' + paragraph(card['back']) + '\n'
         return content + '\n<!-- study-review-draft:end -->\n'
 
     def without_draft(self, record, body):
         if record.get('reviewDraft'):
-            block = self.draft_block(record['reviewDraft'])
+            block = self.draft_block(record['reviewDraft'], record)
+            if body.count(block) == 1:
+                return body.replace(block, '', 1)
+            legacy_block = self.draft_block(record['reviewDraft'])
+            if body.count(legacy_block) == 1:
+                return body.replace(legacy_block, '', 1)
+            m = re.search(r'\n<!-- study-review-draft:start -->\n.*?<!-- study-review-draft:end -->\n', body, re.S)
+            if m:
+                candidate_body = body[:m.start()] + body[m.end():]
+                if hashlib.sha256(candidate_body.encode()).hexdigest() == record['reviewDraft'].get('sourceHash'):
+                    return candidate_body
             if body.count(block) != 1:
                 raise ValueError('草稿自动区被手动修改，请先核对；不会覆盖你的内容。')
             return body.replace(block, '', 1)
@@ -521,7 +554,7 @@ class StudyLibrary:
         else:
             draft = {**draft, 'sourceHash': hashlib.sha256(body.encode()).hexdigest()}
             record['reviewDraft'] = draft
-            body += self.draft_block(draft)
+            body += self.draft_block(draft, record)
         return body
 
     def target_details(self):
@@ -685,6 +718,8 @@ class StudyLibrary:
         r.pop('error', None)
         if r['ankiState'] == 'pending':
             r['error'] = '部分已确认卡片待补交；保存的草稿不会丢失。'
+        if r.get('reviewDraft'):
+            body = self.set_draft(r, body, r['reviewDraft'])
         self.write(r, body, version)
         return self.result(r['id'])
 
@@ -815,6 +850,8 @@ class StudyLibrary:
                     body += '解释来源：' + safe_markdown(e['explanationSource'] or '保存时的解释，来源未标明') + '。\n\n'
                     for label, key in [('原句', 'sentence'), ('补充语境', 'context'), ('含义（保存时的解释）', 'meaning'), ('译文', 'translation'), ('学习提示', 'notes'), ('词典原形', 'lemma'), ('假名读音' if self.language == 'ja' else '词典读音', 'reading'), ('词典形态与读音资料（非 AI）', 'dictionaryNotes'), ('词典原文与 AI 辅助中文（非语境解释）', 'dictionaryTranslation')]:
                         if e.get(key):
+                            if key == 'reading' and not is_valid_reading(e[key], e, self.language):
+                                continue
                             body += f'{heading} {label}\n\n{paragraph(e[key])}\n\n'
                     body += f'{heading} 来源\n\n{paragraph(e["title"])}\n\n{paragraph(e["url"])}\n'
                     if 'videoTime' in e:
@@ -824,10 +861,14 @@ class StudyLibrary:
                         body += ('\n字幕原始时间（ms）：' + str(c['originalStartMs']) + '–' + str(c['originalEndMs']) +
                                  '；偏移（ms，仅回源加一次）：' + str(c['subtitleOffsetMs']) +
                                  '；轨道：' + safe_markdown(c['trackName']) + ' [' + str(c['trackIndex']) + ']；语言：' + c['language'] + '\n')
-                    body += f'\n{heading} 我的理解与问题\n\n'
+                    if p['turns']:
+                        body += f'\n{heading} 我的理解与问题\n\n'
+                    else:
+                        body += f'\n{heading} 学习记录\n\n> 本次未进行 AI 语境消歧（直接以词典泛义保存）。\n\n'
                     self.write(r, body)
                 old, body, version = self.read(ident)
-                changed = {k: e[k] for k in ('meaning', 'translation', 'notes', 'context', 'explanationSource', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation') if e.get(k) and e[k] != old['entry'].get(k)}
+                changed = {k: e[k] for k in ('meaning', 'translation', 'notes', 'context', 'explanationSource', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation')
+                           if e.get(k) and e[k] != old['entry'].get(k) and not (k == 'reading' and not is_valid_reading(e[k], e, self.language))}
                 if changed:
                     old['entry'].update(changed)
                     body += f'\n{heading} 后续学习补充（再次主动保存）\n\n' + paragraph('\n'.join(changed.values())) + '\n'
@@ -851,6 +892,8 @@ class StudyLibrary:
                 for turn in p['turns']:
                     if turn['id'] in seen:
                         continue
+                    if f'{heading} 我的理解与问题' not in body:
+                        body += f'\n{heading} 我的理解与问题\n\n'
                     added = True
                     seen.append(turn['id'])
                     feedback = {'unconfirmed': '尚未确认理解', 'understood': '本人反馈：这次解释我懂了', 'unclear': '本人反馈：仍然不懂'}[turn['feedback']]

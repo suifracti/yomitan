@@ -427,3 +427,25 @@ test('the already-open collection page refreshes when a card favorite changes', 
     assert.match(document.querySelector('#saved').textContent, /还没有收藏/);
     dom.window.close();
 });
+
+test('extractSentence preserves leading contractions like I\'m without dropping initial characters', async () => {
+    const {TextSourceGenerator} = await import('../ext/js/dom/text-source-generator.js');
+    const {TextSourceRange} = await import('../ext/js/dom/text-source-range.js');
+    const dom = setup('<p>I\'m currently around 16, and i am trying to improve 3 major things in my life:</p>');
+    const p = document.querySelector('p');
+    const range = document.createRange();
+    const textNode = p.firstChild;
+    const wordStart = textNode.textContent.indexOf('improve');
+    range.setStart(textNode, wordStart);
+    range.setEnd(textNode, wordStart + 'improve'.length);
+    const source = TextSourceRange.create(range);
+    const gen = new TextSourceGenerator();
+    const forwardQuoteMap = new Map([['\'', ['\'', false]], ['"', ['"', false]]]);
+    const backwardQuoteMap = new Map([['\'', ['\'', false]], ['"', ['"', false]]]);
+    const terminatorMap = new Map([['.', [false, true]], ['!', [false, true]], ['?', [false, true]]]);
+    const extracted = gen.extractSentence(source, false, 200, true, terminatorMap, forwardQuoteMap, backwardQuoteMap);
+    assert.equal(extracted.text, 'I\'m currently around 16, and i am trying to improve 3 major things in my life:');
+    assert.ok(extracted.text.startsWith('I\'m'), 'contraction I\'m must keep its leading I');
+    dom.window.close();
+});
+
