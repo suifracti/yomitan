@@ -50,13 +50,35 @@ export function appendStudyContext(entry, sentence, query, asb = null) {
         context.append(badge);
     }
     const text = d.createElement('p');
-    const offset = sentence.offset;
-    if (query.length > 0 && Number.isInteger(offset) && offset >= 0 &&
-    sentence.text.slice(offset, offset + query.length).toLowerCase() === query.toLowerCase()) {
-        text.append(sentence.text.slice(0, offset));
+    // Prefer the capture's exact offset. If it is stale, only recover a
+    // unique whole-word match; never highlight a random repeated occurrence.
+    const target = query.trim();
+    const lower = sentence.text.toLowerCase();
+    const needle = target.toLowerCase();
+    const wordChar = (char) => Boolean(char) && /[\\p{L}\\p{M}\\p{N}_]/u.test(char);
+    const boundaryMatch = (at) => at >= 0 &&
+        lower.slice(at, at + target.length) === needle &&
+        !wordChar(sentence.text[at - 1]) && !wordChar(sentence.text[at + target.length]);
+    let at = -1;
+    if (target && Number.isInteger(sentence.offset) && boundaryMatch(sentence.offset)) {
+        at = sentence.offset;
+    } else if (target) {
+        let start = 0;
+        for (;;) {
+            const found = lower.indexOf(needle, start);
+            if (found < 0) { break; }
+            if (boundaryMatch(found)) {
+                if (at >= 0) { at = -1; break; } // Ambiguous: do not guess.
+                at = found;
+            }
+            start = found + Math.max(1, needle.length);
+        }
+    }
+    if (at >= 0) {
+        text.append(sentence.text.slice(0, at));
         const mark = d.createElement('mark');
-        mark.textContent = sentence.text.slice(offset, offset + query.length);
-        text.append(mark, sentence.text.slice(offset + query.length));
+        mark.textContent = sentence.text.slice(at, at + target.length);
+        text.append(mark, sentence.text.slice(at + target.length));
     } else {
         text.textContent = sentence.text;
     }
