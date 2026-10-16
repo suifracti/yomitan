@@ -28,6 +28,7 @@ import {Display} from './display.js';
 import {SearchActionPopupController} from './search-action-popup-controller.js';
 import {SearchDisplayController} from './search-display-controller.js';
 import {prepareStudyCard} from './study-card.js';
+import {prepareStudyFocus} from './study-focus.js';
 import {studyCall} from '../study/study-client.js';
 import {SearchPersistentStateController} from './search-persistent-state-controller.js';
 
@@ -50,6 +51,8 @@ await Application.main(true, async (application) => {
     const display = new Display(application, 'search', documentFocusController, hotkeyHandler);
     await display.prepare();
     prepareStudyCard(display, true);
+    // Lightweight host adapters without the options API keep the original view.
+    if (typeof display.getOptions === 'function') { prepareStudyFocus(display); }
     const searchOptions = document.querySelector('.search-options');
     if (searchOptions instanceof HTMLElement) {
         const extras = document.createElement('details');

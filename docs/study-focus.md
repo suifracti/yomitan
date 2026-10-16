@@ -1,0 +1,62 @@
+# 语境学习界面与双向读回
+
+本页是已实现功能的说明，不是新的项目总规划。项目决定和协作边界仍在 Obsidian。基于 `61e45104029edbd9757210f9b68010552c3b3c5f`，保留此前词典取消、重试、单词聚合和保存规则。本次只接入 Yomitan；不宣称已同步改造 IINA 或 asbplayer 的宿主 UI。
+
+## 从真实学习动作组织界面
+
+有原句时默认“读懂这句”：原句、译文与高亮位于不会随回答滚走的区域，正在理解的 AI 答案在旁边或下方单独滚动。窄窗上下排，宽窗左右排。源句确实超高才显示展开动作。没有真实原句时默认“查词典”，不制造一段语境。
+
+“查词典”保留全部词性、释义、词形、词频、英英参考和重试入口，也收纳 Token 与原句编辑。“我的记录”展示原词的 Obsidian 理解与已有 Anki 卡；缺权限或连接时明确说明，不显示伪造数量或掌握程度。
+
+“记住它”是主动作，仍调用原有完整学习保存与 0/1 择卡协议。快速词典卡留在词典页，不与完整学习保存争夺主按钮。输入、取消、反馈、音频和保存按钮都是原控件/原处理函数，不创建平行的学习状态。
+
+## 双向读回的准确范围
+
+界面调用既有 `libraryMemory` 和 `libraryRead`，读回当前词相关笔记正文、关联身份和 Anki 字段/状态。人工改过的 Markdown 通过真实正文读回；刷新时重新核对，不用旧 `entry.meaning` 冒充最新理解。Anki 卡片只在明确点击时通过原 `viewNotes` 接口打开编辑视图。
+
+这是“写入后能读回两端最新信息”，不是让三个程序任意覆盖彼此正文。Obsidian 拥有人工理解，Anki 拥有卡片与排程；界面不会据“查过”宣布“掌握”，也不自动把人改过的卡面重新覆盖。
+
+## Obsidian：正文在前，机器资料在后
+
+`study_library_core.py` 保留基线 `study_library.py` 的全部原字节，公共 `study_library.py` 仅继承其受控读写并挂接 `study_note_view.py`。没有第二数据库，没有新模型或排程服务。
+
+新的英语按词聚合文档将完整 context 元数据放在各语境正文末尾；仍在同一 Markdown 中，仍保留所有 ID、版本和来源。旧 v1、混合 v1/v2 文档可读取；只有明确写入时才更新相应块。已确认的复习问答不再在“复习判断”中重复打印，判断理由折叠，等待/已同步/正常零卡分别显示。
+
+HTML 注释不是加密，源码编辑模式仍能看到末尾元数据；阅读模式隐藏注释。不批量移动或改写旧笔记。
+
+现有笔记需调整位置时，工具默认只读：
+
+```sh
+python3 tools/reformat-study-note.py --vault '/实际/Vault' --file '语境目录/记录/word--w原ID.md'
+```
+
+只有用户明确决定整理该篇，才加 `--apply --expected <上次显示的SHA256>`。工具只处理选中的单词文档，保留原正文与 ID，检查版本并备份，不发 Anki/模型请求。
+
+## Anki：保留七字段，只换视图
+
+`assets/study-review/` 沿用 `Word / Sentence / Definition / Source / URL / Audio / Image`。正面只放回忆提示和原句；答案、完整词典和媒体在背面分层。现有字段、卡片 ID、笔记类型、音频、图片与排程不删除、不重建。
+
+已有模型不会因更新代码而静默改模板：
+
+```sh
+python3 tools/apply-study-card-view.py --model '外语语境卡'
+```
+
+默认仅检查。明确应用时加 `--apply --expected <检查所得fingerprint>`。工具先备份再改模板/CSS，并读回确认；拒绝字段不符、版本已变或包含多个模板的笔记类型，避免共享 CSS 影响其他卡型。它不调用添加卡片、修改字段、删除卡片或评分接口。
+
+## 本机接入
+
+保留当前工作树和用户配置，接入本次 main 的两个入口、`study-focus.js` 与 `study-focus.css`，不要用旧安装包覆盖。Python 原生桥需要一起更新公共 wrapper、原 core 和 note-view helper；安装器清单已包含三者。只复制一个 wrapper 会造成模块缺失。未授权时不改真实模板、旧笔记或系统权限。
+
+## 验证
+
+```sh
+python3 test-localization/test_study_readable_notes.py
+python3 test-localization/test_study_card_view.py
+CHROMIUM_EXECUTABLE=/实际/Chromium python3 test-localization/test_study_focus_browser.py
+CHROMIUM_EXECUTABLE=/实际/Chromium python3 test-localization/test_study_card_render.py
+```
+
+浏览器测试需要 Python Playwright 与现有 Chromium。组件用测试夹具模拟原 DOM/Native，执行真实新控制器/CSS和原源句高亮函数；不是用户 Mac 已加载扩展或付费模型验收。文件系统测试使用真实受控保存实现及临时 Vault，外部 Anki/媒体为替身。
+
+本轮：23 项浏览器组件检查、19 项保存与可读性测试、6 项模板安全应用测试、3 项实际模板浏览器渲染检查通过。原全项目 Node/JSDOM/类型检查、真实 macOS/Anki 宿主与跨应用现场未在此环境执行，不以本轮结果替代。

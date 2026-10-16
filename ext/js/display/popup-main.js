@@ -25,6 +25,7 @@ import {DisplayProfileSelection} from './display-profile-selection.js';
 import {DisplayResizer} from './display-resizer.js';
 import {Display} from './display.js';
 import {prepareStudyCard} from './study-card.js';
+import {prepareStudyFocus} from './study-focus.js';
 
 await Application.main(true, async (application) => {
     const documentFocusController = new DocumentFocusController();
@@ -49,6 +50,7 @@ await Application.main(true, async (application) => {
     displayResizer.prepare();
 
     prepareStudyCard(display);
+    prepareStudyFocus(display);
     display.initializeState();
 
     document.documentElement.dataset.loaded = 'true';

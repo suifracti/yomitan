@@ -1,0 +1,47 @@
+<article class="sr-card" data-side="back">
+  <div class="sr-eyebrow">语境回忆 · 对照自己的理解</div>
+  <h1 class="sr-question">{{Word}}</h1>
+  {{#Sentence}}<section class="sr-context"><div class="sr-label">原句</div><div class="sr-sentence">{{Sentence}}</div></section>{{/Sentence}}
+  <section id="answer" class="sr-answer"><div class="sr-label">答案与用法</div><div class="sr-definition">{{Definition}}</div></section>
+  <details class="sr-dictionary" hidden><summary>词典原文与例句</summary><div class="sr-reference"></div></details>
+  <footer class="sr-source">{{Source}}<span class="sr-url-value" hidden>{{URL}}</span></footer>
+  {{#Audio}}<details class="sr-media"><summary>听发音</summary><div>{{Audio}}</div></details>{{/Audio}}
+  {{#Image}}<details class="sr-media"><summary>查看当时的画面</summary><div>{{Image}}</div></details>{{/Image}}
+</article>
+<script>
+(function () {
+  var cards = document.querySelectorAll('.sr-card[data-side="back"]');
+  var card = cards[cards.length - 1];
+  if (!card || card.dataset.ready) return;
+  card.dataset.ready = 'true';
+  var answer = card.querySelector('.sr-definition');
+  var reference = card.querySelector('.sr-dictionary');
+  // A quick dictionary card may contain the upstream full glossary. Keep it
+  // available without allowing it to bury the remembered sentence and answer.
+  if (answer && answer.querySelector('[data-sc-study-role], ol, ul')) {
+    var gloss = answer.querySelector('[data-sc-study-role="meaning"]');
+    var summary = gloss ? gloss.textContent.trim() : '';
+    var fragment = document.createDocumentFragment();
+    while (answer.firstChild) fragment.appendChild(answer.firstChild);
+    reference.querySelector('.sr-reference').appendChild(fragment);
+    reference.hidden = false;
+    answer.textContent = summary || '这张是快速词典卡。展开下方词典，对照原句回忆含义。';
+    var source = document.createElement('div');
+    source.className = 'sr-quick-note';
+    source.textContent = '词典释义 · 未自动按当前句消歧';
+    answer.appendChild(source);
+  }
+  var urlText = card.querySelector('.sr-url-value');
+  if (urlText && urlText.textContent.trim()) {
+    try {
+      var url = new URL(urlText.textContent.trim());
+      if ((url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password) {
+        var link = document.createElement('a');
+        link.textContent = '回原文'; link.href = url.href;
+        link.target = '_blank'; link.rel = 'noopener noreferrer';
+        card.querySelector('.sr-source').appendChild(link);
+      }
+    } catch (_) { /* Invalid old URL remains data, never executable navigation. */ }
+  }
+})();
+</script>
