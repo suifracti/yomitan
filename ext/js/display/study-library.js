@@ -189,7 +189,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
             }
             status.textContent = row.ankiState === 'pending' ?
                 '笔记已保存；Anki 卡片待核对／补交，请用下方按钮继续。' :
-                (row.ankiState === 'synced' ? `已记住 · Anki ${row.target?.deck ?? ''}` : '已记下 · 本次不需要新增复习卡');
+                (row.ankiState === 'synced' ? `已记住 · Anki ${row.target?.deck ?? ''}` :
+                    (row.reviewDraft?.cards?.length === 0 ? '笔记已保存 · 本次无需新增复习卡' : '笔记已保存 · 复习结果尚未确认'));
             const card = row.cards?.find((item) => item.state === 'synced');
             if (card) {
                 status.textContent += ` · ${card.linkedExisting ? '关联已有卡' : '新卡'}：${card.front}`;
