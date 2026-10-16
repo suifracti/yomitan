@@ -129,17 +129,26 @@ export function pinStudyContext(inner, context, word) {
         anchor.append(reading);
     }
     if (info.childElementCount > 0) { anchor.append(info); }
-    if (meaning.childElementCount > 0) { anchor.append(meaning); }
-    const aiExplanation = d.createElement('div');
+    // The real source and its explanation form one learning focus. General
+    // dictionary senses follow them rather than separating the two.
+    const aiExplanation = d.createElement('section');
     aiExplanation.className = 'study-reading-ai-context';
     aiExplanation.hidden = true;
     const aiLabel = d.createElement('span');
     aiLabel.className = 'study-reading-caption';
-    aiLabel.textContent = 'AI 本句解释 · 全文在下方';
-    const aiText = d.createElement('span');
+    aiLabel.textContent = '这句话里的意思 · AI 辅助';
+    const aiText = d.createElement('p');
     aiText.className = 'study-reading-ai-text';
-    aiExplanation.append(aiLabel, aiText);
+    const aiMore = d.createElement('details');
+    aiMore.className = 'study-reading-ai-more scan-disable';
+    const aiMoreLabel = d.createElement('summary');
+    aiMoreLabel.textContent = '展开本轮解释';
+    const aiFull = d.createElement('div');
+    aiFull.className = 'study-reading-ai-full';
+    aiMore.append(aiMoreLabel, aiFull);
+    aiExplanation.append(aiLabel, aiText, aiMore);
     anchor.append(source, aiExplanation);
+    if (meaning.childElementCount > 0) { anchor.append(meaning); }
     // Preview the SAME English sense that is translated. The original DOM stays
     // in the entry header for dictionaryTranslation / Obsidian saving.
     const english = entry?.querySelector('.study-primary-english');
@@ -836,7 +845,7 @@ export function prepareStudyCard(display, detail = false) {
                         // separate choice. DisplayAnki still owns enablement,
                         // deck mapping, duplicate checks and trusted-cue limits.
                         legacy.hidden = false;
-                        legacy.title = '仅按 Yomitan 当前卡片格式添加到 Anki；若要保存完整理解，请点“记住它”。';
+                        legacy.title = '快速加卡只发送词典卡；“记住它”才会保留完整学习过程，并按设置决定是否复习。';
                     }
                 }
                 const subtitleSnapshot = /** @type {(typeof sentence & {studySubtitle?: import('../app/frontend.js').StudySubtitle})} */ (sentence)?.studySubtitle;
