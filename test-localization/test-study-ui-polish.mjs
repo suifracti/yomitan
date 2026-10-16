@@ -51,6 +51,48 @@ test('dictionary translation includes orphan phrases, names its scope and reveal
     assert.equal(button.textContent, '本组已译');
     dispose(); dom.window.close();
 });
+test('dictionary failure exposes an explicit retry button and preserves the current word', async () => {
+ const {mountOriginalEnglish}=await import('../ext/js/display/study-card.js');
+ const dom=setup('<section class="study-entry"><div class="study-primary-meaning">n. 脑</div><ol data-sc-content="glosses"><li>The organ controlling thought.</li></ol></section>');
+ let attempts=0;
+ globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async({studyAction})=>{
+  if(studyAction==='dictionaryPeek')return {ok:true,value:{result:null}};
+  if(studyAction==='dictionaryGenerate'){attempts++;return attempts===1?{ok:false,error:'Disconnected'}:{ok:true,value:{result:{items:[{id:'0',translation:'大脑器官'}]}}};}
+  throw Error('Unexpected action: '+studyAction);
+ }}};
+ const entry=document.querySelector('.study-entry');
+ const stop=mountOriginalEnglish(entry,'brain',false); await tick();
+ const retry=entry.querySelector('.study-english-retry');
+ assert.ok(retry&&!retry.hidden);assert.equal(attempts,0);
+ retry.click();await tick();await tick();assert.match(retry.textContent,/重试翻译/);
+ retry.click();await tick();await tick();assert.equal(attempts,2);
+ assert.equal(retry.hidden,true);assert.match(entry.querySelector('.study-english-chinese').textContent,/大脑器官/);
+ stop();dom.window.close();
+});
+
+test('pending Anki card shows a targeted safe resend without re-saving the learning note',async()=>{
+ const {mountStudyLibrary}=await import('../ext/js/display/study-library.js');
+ const dom=setup('<section id="current"><div class="study-translation-actions"></div></section>');
+ const id='a'.repeat(32), entry={word:'improve',language:'en',sentence:'I want to improve.',url:'https://example.com',title:'Example'};
+ const card={id:'card1',front:'improve?',back:'改善',state:'pending',noteId:null,error:'Anki not connected'};
+ const pending={id,entry,ankiEnabled:true,ankiState:'pending',path:'记录/improve.md',cards:[card]};
+ let saves=0,resumes=0;
+ globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async({studyAction,data})=>{
+  if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};
+  if(studyAction==='rememberEntry'){saves++;return {ok:true,value:pending};}
+  if(studyAction==='remember'){resumes++;assert.deepEqual(data,{id,language:'en'});return {ok:true,value:{...pending,ankiState:'synced',cards:[{...card,noteId:321,state:'synced'}]}};}
+  throw Error('Unexpected action '+studyAction);
+ }}};
+ const node=document.getElementById('current');
+ mountStudyLibrary(node,()=>entry,()=>true);
+ node.querySelector('[data-study-save=note]').click();await tick();await tick();
+ const anki=node.querySelector('.study-anki-status'),retry=anki.querySelector('button');
+ assert.match(anki.textContent,/1 张卡待核对/);assert.equal(retry.hidden,false);
+ retry.click();await tick();await tick();assert.equal(saves,1);assert.equal(resumes,1);
+ assert.match(anki.textContent,/已同步 1 张卡/);assert.equal(retry.hidden,true);
+ dom.window.close();
+});
+
 test('mini opens the existing complete dictionary window without changing the parent or draft', async () => {
     const dom = setup('<p id="parent">Original sentence</p><textarea>UNSENT</textarea>');
     const opened = [];
