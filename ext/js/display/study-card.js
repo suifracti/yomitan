@@ -151,12 +151,10 @@ export function pinStudyContext(inner, context, word) {
         summary.className = 'scan-disable';
         summary.textContent = '英英原义与辅助中文';
         disclosure.append(summary, preview);
-        const previewChinese = preview.querySelector('.study-english-chinese');
-        if (previewChinese) {
-            previewChinese.addEventListener('click', () => {
-                entry.querySelector('.study-primary-english .study-english-chinese')?.dispatchEvent(new MouseEvent('click'));
-            });
-        }
+        const previewRetry = preview.querySelector('.study-english-retry');
+        previewRetry?.addEventListener('click', () => {
+            /** @type {?HTMLButtonElement} */ (entry.querySelector('.study-primary-english .study-english-retry'))?.click();
+        });
         anchor.append(disclosure);
     }
     const toolbar = inner.querySelector('.study-toolbar');
@@ -326,7 +324,13 @@ export function mountOriginalEnglish(entry, word, automatic = true) {
     chinese.className = 'study-english-chinese';
     chinese.textContent = '正在读取中文…';
     chinese.title = 'AI 辅助词典翻译，不是按当前原句消歧的解释；用量计入两工具累计。';
-    panel.append(caption, original, chinese);
+    const retry = d.createElement('button');
+    retry.type = 'button';
+    retry.className = 'study-english-retry scan-disable';
+    retry.textContent = '翻译此义';
+    retry.hidden = true;
+    retry.title = '仅按下按钮才重新调用 AI 翻译当前词典首义；不会重复保存笔记或制卡。';
+    panel.append(caption, original, chinese, retry);
     entry.querySelector('.study-primary-meaning')?.after(panel);
     // The pinned reading area is a preview; keep its translation in sync with
     // the original node used by the existing save workflow.
@@ -354,58 +358,85 @@ export function mountOriginalEnglish(entry, word, automatic = true) {
         }
     };
     let active = true;
+    let running = false;
     const lookup = {word, language: 'en', items: [{id: '0', text: english}]};
+    /** @param {string} label */
+    const showRetry = (label) => {
+        retry.hidden = !label;
+        retry.textContent = label;
+        const preview = /** @type {?HTMLButtonElement} */ (d.querySelector('.study-reading-english .study-english-retry'));
+        if (preview) {
+            preview.hidden = retry.hidden;
+            preview.textContent = label;
+            preview.disabled = retry.disabled;
+        }
+    };
+    /** @param {boolean} userInitiated */
+    const generate = (userInitiated) => {
+        if (!active || running) { return; }
+        running = true;
+        retry.disabled = true;
+        showRetry('翻译中…');
+        showChinese('正在翻译当前词典首义…');
+        void (async () => {
+            if (userInitiated) {
+                const allowed = await chrome.permissions.request({permissions: ['nativeMessaging']});
+                if (!allowed) { throw new Error('尚未授权本机 AI 翻译'); }
+            }
+            const res = /** @type {{result?: import('study').DictionaryResult}} */ (await studyCall('dictionaryGenerate', lookup));
+            const translated = res?.result?.items?.find((item) => item.id === '0')?.translation?.trim();
+            if (!translated) { throw new Error('这次没有返回中文'); }
+            if (active) {
+                showChinese(translated, true);
+                showRetry('');
+            }
+        })().catch((error) => {
+            if (!active) { return; }
+            showChinese('中文暂未完成；原英文仍可阅读。');
+            retry.title = error instanceof Error ? error.message : 'AI 翻译未完成，可按需重试';
+            showRetry('重试翻译');
+        }).finally(() => {
+            running = false;
+            retry.disabled = false;
+            if (active) { showRetry(retry.hidden ? '' : retry.textContent); }
+        });
+    };
+    retry.addEventListener('click', () => { generate(true); });
     void (async () => {
         const cached = /** @type {{result?: import('study').DictionaryResult}} */ (await studyCall('dictionaryPeek', lookup));
         if (!active) { return; }
-        let result = cached?.result;
-        if (!result) {
-            let auto = automatic;
-            if (auto && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
-                try {
-                    const stored = await chrome.storage.local.get('studySettingsV2');
-                    const settings = stored?.studySettingsV2;
-                    if (settings && settings.autoDictionaryTranslate === false) {
-                        auto = false;
-                    }
-                } catch { /* ignore */ }
-            }
-            if (!auto) {
-                showChinese('点此 AI 翻译释义');
-                chinese.dataset.manualTrigger = 'true';
-                const trigger = async () => {
-                    chinese.removeEventListener('click', trigger);
-                    delete chinese.dataset.manualTrigger;
-                    showChinese('正在翻译这句词典释义…');
-                    try {
-                        const res = /** @type {{result?: import('study').DictionaryResult}} */ (await studyCall('dictionaryGenerate', lookup)).result;
-                        const text = res?.items?.find((item) => item.id === '0')?.translation;
-                        showChinese(text || '中文暂未返回，英文保留', Boolean(text));
-                    } catch {
-                        showChinese('中文暂未完成，英文保留；下次查词会重试');
-                    }
-                };
-                chinese.addEventListener('click', trigger);
-                return;
-            }
-            if (english.length > 1500) {
-                showChinese('这条释义较长，完整原文保留在词典内');
-                return;
-            }
-            const allowed = await chrome.permissions.contains?.({permissions: ['nativeMessaging']});
-            if (!active) { return; }
-            if (!allowed) {
-                showChinese('尚未授权本机翻译；可在“问 AI”时授权');
-                return;
-            }
-            showChinese('正在翻译这句词典释义…');
-            result = /** @type {{result?: import('study').DictionaryResult}} */ (await studyCall('dictionaryGenerate', lookup)).result;
+        const translated = cached?.result?.items?.find((item) => item.id === '0')?.translation?.trim();
+        if (translated) { showChinese(translated, true); showRetry(''); return; }
+        let auto = automatic;
+        if (auto && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+            try {
+                const stored = await chrome.storage.local.get('studySettingsV2');
+                if (stored?.studySettingsV2?.autoDictionaryTranslate === false) { auto = false; }
+            } catch { /* The lookup remains usable without settings. */ }
         }
+        if (english.length > 1500) {
+            showChinese('这条释义较长，完整英文保留在词典内。');
+            showRetry('');
+            return;
+        }
+        if (!auto) {
+            showChinese('词典英英首义可按需翻译。');
+            showRetry('翻译此义');
+            return;
+        }
+        const allowed = await chrome.permissions.contains?.({permissions: ['nativeMessaging']});
         if (!active) { return; }
-        const text = result?.items?.find((item) => item.id === '0')?.translation;
-        showChinese(text || '中文暂未返回，英文保留', Boolean(text));
-    })().catch(() => {
-        if (active) { showChinese('中文暂未完成，英文保留；下次查词会重试'); }
+        if (!allowed) {
+            showChinese('尚未授权本机翻译，英文原义仍可阅读。');
+            showRetry('翻译此义');
+            return;
+        }
+        generate(false);
+    })().catch((error) => {
+        if (!active) { return; }
+        showChinese('词典辅助中文暂不可用，英文原义保留。');
+        retry.title = error instanceof Error ? error.message : '读取词典翻译缓存失败';
+        showRetry('重试翻译');
     });
     return () => { active = false; };
 }
