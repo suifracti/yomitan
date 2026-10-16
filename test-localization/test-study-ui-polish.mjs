@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {JSDOM} from 'jsdom';
 import {prepareStudyCard} from '../ext/js/display/study-card.js';
 import {prepareStudyMini} from '../ext/js/display/study-mini.js';
@@ -50,6 +51,30 @@ test('dictionary translation includes orphan phrases, names its scope and reveal
     assert.equal(entry.querySelectorAll('.study-sense-translation').length, 3);
     assert.equal(button.textContent, '本组已译');
     dispose(); dom.window.close();
+});
+test('pinned Chinese senses are not clipped into their own scroller', () => {
+ const css = readFileSync(new URL('../ext/css/study-card.css', import.meta.url), 'utf8');
+ const rule = css.match(/\.study-reading-meaning \{[^}]+\}/);
+ assert.ok(rule);
+ assert.doesNotMatch(rule[0], /max-height|overflow-y/);
+});
+test('dictionary auto-translate waits for an explicit setting', async () => {
+ const {mountOriginalEnglish} = await import('../ext/js/display/study-card.js');
+ const dom = setup('<section class="study-entry"><div class="study-primary-meaning">n. 块</div><ol data-sc-content="glosses"><li>A part of something.</li></ol></section>');
+ let generates = 0;
+ globalThis.chrome = {storage: {local: {get: async () => ({studySettingsV2: {autoDictionaryTranslate: false}})}}, permissions: {contains: async () => true, request: async () => true}, runtime: {sendMessage: async ({studyAction}) => {
+  if (studyAction === 'dictionaryGenerate') { generates += 1; return {ok: true, value: {result: {items: [{id: '0', translation: '块'}]}}}; }
+  if (studyAction === 'dictionaryPeek') { return {ok: true, value: {result: null, busy: false}}; }
+  return {ok: true, value: null};
+ }}};
+ const entry = document.querySelector('.study-entry');
+ const stop = mountOriginalEnglish(entry, 'piece', true);
+ await tick();
+ await tick();
+ assert.equal(generates, 0);
+ assert.match(entry.querySelector('.study-english-retry').textContent, /翻译此义/);
+ stop();
+ dom.window.close();
 });
 test('dictionary failure exposes an explicit retry button and preserves the current word', async () => {
  const {mountOriginalEnglish}=await import('../ext/js/display/study-card.js');

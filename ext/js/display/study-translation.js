@@ -576,6 +576,8 @@ export function prepareStudyTranslation() {
                 lock(true);
                 status.textContent = mode === 'translate' ? '正在翻译当前原句…' : '正在连接本机 AI…已有回答保留在下方。';
                 void chrome.permissions.request({permissions: ['nativeMessaging']}).then(async (allowed) => {
+                    // Drop a dictionary translation that is holding the single native lock.
+                    await studyCall('cancel', payload);
                     if (!isCurrent() || id !== requestId) { return; }
                     if (!allowed) { throw new Error('未授予本机通信权限；普通查词仍可用。'); }
                     await studyCall('generate', {...payload, mode});
@@ -597,7 +599,9 @@ export function prepareStudyTranslation() {
                 }).finally(() => {
                     if (isCurrent() && id === requestId) {
                         activePayload = null;
+                        const blocked = /已有翻译正在进行/.test(status.textContent);
                         lock(false);
+                        if (blocked) { stop.hidden = false; }
                     }
                 });
             };
@@ -609,9 +613,9 @@ export function prepareStudyTranslation() {
                     clearTimeout(poll);
                     poll = null;
                 }
-                const target = activePayload;
+                const target = activePayload ?? lookup();
                 activePayload = null;
-                if (target) { void studyCall('cancel', target).catch(() => {}); }
+                void studyCall('cancel', target).catch(() => {});
                 status.textContent = '已取消。已消耗的 Token 不能撤回；未报告部分无法确知。';
                 lock(false);
                 void refresh().catch(() => {});

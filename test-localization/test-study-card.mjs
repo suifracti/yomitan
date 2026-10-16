@@ -91,7 +91,7 @@ test('one shared source, secondary matches collapsed, keyboard focus reveals the
 test('translation is click-only, bounded editable source and stale responses do not replace next query',async()=>{
  const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
  const {callbacks,display}=setupDisplay();let calls=0,finish;
- globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async ({studyAction,data})=>{if(['journalConversation','conversationUsage'].includes(studyAction))return {ok:true,value:[]};if(studyAction==='peek')return {ok:true,value:{result:null}};if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};assert.equal(studyAction,'generate');calls++;assert.equal(data.sentence,'A complete edited sentence.');return new Promise(resolve=>finish=resolve);}}};
+ globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async ({studyAction,data})=>{if(['journalConversation','conversationUsage'].includes(studyAction))return {ok:true,value:[]};if(studyAction==='peek')return {ok:true,value:{result:null}};if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};if(studyAction==='cancel')return {ok:true,value:true};assert.equal(studyAction,'generate');calls++;assert.equal(data.sentence,'A complete edited sentence.');return new Promise(resolve=>finish=resolve);}}};
  prepareStudyCard(display);callbacks.get('contentUpdateStart')();callbacks.get('contentUpdateComplete')();
  assert.equal(calls,0);
  const button=document.querySelector('[data-study-translate="explain"]');assert.ok(button,'explicit translate button');
@@ -110,6 +110,7 @@ test('sentence translation stays manual and paints inline from the current saved
    if(studyAction==='conversationUsage')return {ok:true,value:[]};
    if(studyAction==='peek')return {ok:true,value:{result:null,busy:false}};
    if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};
+   if(studyAction==='cancel')return {ok:true,value:true};
    if(studyAction==='generate'){
      modelCalls++;assert.equal(data.mode,'translate');assert.equal(data.sentence,'We are tired of this.');
      assert.equal(data.question,'','manual translation must not consume a typed follow-up');

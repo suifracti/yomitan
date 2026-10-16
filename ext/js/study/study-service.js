@@ -895,6 +895,11 @@ export class StudyService {
             for (const mode of ['translate', 'explain']) {
                 this.pending.get(modeKey(mode))?.cancel();
             }
+            // Dictionary and sentence translation share one native lock.
+            // Cancelling here releases that lock so the visible sentence action can run.
+            for (const call of this.dictionaryPending.values()) {
+                call.cancel();
+            }
             return true;
         }
         if (action !== 'generate') {

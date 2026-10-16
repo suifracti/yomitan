@@ -450,7 +450,7 @@
 
 .study-reading-anchor .study-reading-english .study-english-original { color: var(--text-color); font-size: 12px; line-height: 1.45; }
 .study-reading-caption { display: block; margin-bottom: 2px; color: var(--study-muted); font-size: 11px; font-weight: 500; line-height: 1.4; }
-.study-reading-meaning { flex-basis: 100%; min-width: 0; font-size: 12px; line-height: 1.55; color: var(--text-color); max-height: min(14vh, 6em); overflow-y: auto; }
+.study-reading-meaning { flex-basis: 100%; min-width: 0; font-size: 12px; line-height: 1.55; color: var(--text-color); }
 /* The full answer remains in the conversation; the pinned AI hint is one line. */
 .study-reading-ai-context { flex-basis: 100%; min-width: 0; display: flex; align-items: baseline; gap: 6px; border-left: 2px solid var(--study-accent); padding-left: 9px; font-size: 12px; line-height: 1.5; }
 .study-reading-ai-context .study-reading-caption { flex: none; font-size: 10px; margin-bottom: 0; }

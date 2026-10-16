@@ -407,12 +407,12 @@ export function mountOriginalEnglish(entry, word, automatic = true) {
         if (!active) { return; }
         const translated = cached?.result?.items?.find((item) => item.id === '0')?.translation?.trim();
         if (translated) { showChinese(translated, true); showRetry(''); return; }
-        let auto = automatic;
-        if (auto && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+        let auto = false;
+        if (automatic && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
             try {
                 const stored = await chrome.storage.local.get('studySettingsV2');
-                if (stored?.studySettingsV2?.autoDictionaryTranslate === false) { auto = false; }
-            } catch { /* The lookup remains usable without settings. */ }
+                auto = stored?.studySettingsV2?.autoDictionaryTranslate === true;
+            } catch { /* Missing settings stay manual; lookup still works. */ }
         }
         if (english.length > 1500) {
             showChinese('这条释义较长，完整英文保留在词典内。');

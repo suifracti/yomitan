@@ -22,6 +22,16 @@ test('inflight is shared across popup instances; explicit cancel stops it and ne
  await f.service.handle('cancel',lookup);await assert.rejects(p);await assert.rejects(q);
  assert.equal((await f.service.handle('peek',lookup)).result,null);
 });
+test('sentence cancel releases an in-flight dictionary translation holding the native lock', async () => {
+ const f = await fixture();
+ const dictLookup = {word: 'piece', items: [{id: '0', text: 'a part of something'}]};
+ const dict = f.service.handle('dictionaryGenerate', dictLookup);
+ await new Promise(r => setImmediate(r));
+ assert.equal((await f.service.handle('dictionaryPeek', dictLookup)).busy, true);
+ await f.service.handle('cancel', lookup);
+ await assert.rejects(dict);
+ assert.equal((await f.service.handle('dictionaryPeek', dictLookup)).busy, false);
+});
 test('cancelling one lookup leaves a concurrent lookup able to save its result',async()=>{
  const f=await fixture();
  const other={...lookup,word:'do',mode:'explain'};

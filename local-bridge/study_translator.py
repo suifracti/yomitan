@@ -557,12 +557,18 @@ def main():
             write_frame(sys.stdout.buffer, {'ok': True, 'models': catalog[:40]})
             return 0
         # One generation globally. Prevent accidental multi-click concurrent quota consumption.
+        # A just-cancelled dictionary translation needs a moment to drop the lock.
         lock_path = pathlib.Path.home() / 'Library/Application Support/EnglishStudyTranslator/request.lock'
         with lock_path.open('a') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise ValueError('已有翻译正在进行；请等待或取消后重试。')
+            deadline = time.monotonic() + 2.5
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise ValueError('已有翻译正在进行；请等待或取消后重试。')
+                    time.sleep(0.15)
             with tempfile.TemporaryDirectory(prefix='study-translator-') as cwd:
                 server = AppServer(codex, cwd, codex_home)
                 # Chrome closes stdin on disconnect: stop generation without retaining sentences.
