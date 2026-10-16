@@ -61,10 +61,16 @@ function fill(config) {
     option(model, config.model, `${config.model}（已保存；刷新可选列表）`);
     refreshEffort(config.effort);
     check('cacheEnabled').checked = config.cacheEnabled;
+    check('autoDictionaryTranslate').checked = config.autoDictionaryTranslate === true;
 }
 /** @returns {import('study').StudyConfig} */
 function current() {
-    return {model: model.value, effort: effort.value, cacheEnabled: check('cacheEnabled').checked};
+    return {
+        model: model.value,
+        effort: effort.value,
+        autoDictionaryTranslate: check('autoDictionaryTranslate').checked,
+        cacheEnabled: check('cacheEnabled').checked
+    };
 }
 /**
  * @param {() => Promise<void>} operation

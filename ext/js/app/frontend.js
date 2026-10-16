@@ -326,6 +326,7 @@ export class Frontend {
             searchKanji: true,
             textSourceGenerator: this._textSourceGenerator,
             browser: browser,
+            onLookupKey: this._onStudyLookupKey.bind(this),
         });
         /** @type {boolean} */
         this._textScannerHasBeenEnabled = false;
@@ -605,7 +606,37 @@ export class Frontend {
 
     /** @type {import('cross-frame-api').ApiHandler<'frontendClosePopup'>} */
     _onApiClosePopup() {
-        this._clearSelection(false, true);
+        this._clearSelection(false, true, true);
+    }
+
+    /**
+     * @param {KeyboardEvent} event
+     * @returns {Promise<boolean>}
+     */
+    async _onStudyLookupKey(event) {
+        if (event.key === 'Escape') {
+            const closeMini = new CustomEvent('study-mini-close', {cancelable: true});
+            if (this._pageType === 'popup') { document.dispatchEvent(closeMini); }
+            if (closeMini.defaultPrevented) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this._textScanner.clearSelection();
+                return true;
+            }
+            this._clearSelection(false, true, true);
+            return true;
+        }
+        if (this._pageType === 'popup') {
+            this._textScanner.clearSelection();
+            return false;
+        }
+        if (await this._isPointerOverAnyPopup()) { return true; }
+        if (this._popup !== null && await this._popup.isVisible()) {
+            this._clearSelection(false, true, true);
+            return true;
+        }
+        this._textScanner.clearSelection();
+        return false;
     }
 
     /** @type {import('cross-frame-api').ApiHandler<'frontendCopySelection'>} */
@@ -720,7 +751,7 @@ export class Frontend {
             const request = scanner.studyRequests.get(textSource);
             if (request && request.query !== scanner.studyQuery) { return; }
         }
-        this._studyLastLookupSource = textSource.clone();
+        this._studyLastLookupSource = typeof textSource.clone === 'function' ? textSource.clone() : textSource;
         if (scanner instanceof SubtitleTextScanner) { this._studyLastLookupQuery = scanner.studyQuery; }
         this._stopClearSelectionDelayed();
         let focus = (eventType === 'mouseMove');
@@ -786,24 +817,31 @@ export class Frontend {
     /**
      * @param {boolean} passive
      * @param {boolean} [force] Explicit close or disabling the scanner.
+     * @param {boolean} [closeOwner] Explicit user close, not a nested scanner lifecycle reset.
      */
-    _clearSelection(passive, force = false) {
+    _clearSelection(passive, force = false, closeOwner = false) {
         this._stopClearSelectionDelayed();
         if (force) { this._studyCueCurrent = null; }
         if (force && this._textScanner instanceof SubtitleTextScanner) { this._textScanner.cancelStudySearch(); }
         if (this._popup !== null) {
             void this._popup.clearAutoPlayTimer();
-            void this._popup.hide(!passive, force);
-            this._isPointerOverPopup = false;
+            const ownsPopup = this._pageType !== 'popup' || this._popup.id !== this._parentPopupId;
+            if (ownsPopup || closeOwner) {
+                void this._popup.hide(!passive, force);
+                this._isPointerOverPopup = false;
+            }
         }
         this._textScanner.clearSelection();
         if (force) {
+            if (typeof this._textScanner.suppressStudyScan === 'function') {
+                this._textScanner.suppressStudyScan();
+            }
             // selectText=false leaves the user's native subtitle range behind. Chrome
             // can then treat the next drag as manipulation of that old selection.
             // Only an explicit close releases it; mousedown/passive clears and article
             // selections retain the existing behavior.
             const selection = window.getSelection();
-            const range = this._getFirstSelectionRange(false);
+            const range = this._getFirstSelectionRange ? this._getFirstSelectionRange(false) : null;
             if (range && readStudySubtitle(TextSourceRange.createLazy(range))) {
                 selection?.removeAllRanges();
             }
@@ -1144,7 +1182,8 @@ export class Frontend {
         // Deliberately selected expressions without dictionary hits still keep their learning entry.
         if (type === 'terms' && dictionaryEntries?.length === 0 && !/[\p{L}\p{N}]/u.test(query)) { return; }
         if (this._pageType !== 'web' && type === 'terms' && dictionaryEntries !== null) {
-            const event = new CustomEvent('study-mini-lookup', {cancelable: true, detail: {query, entries: dictionaryEntries, rect: textSource.getRects()[0]}});
+            const rect = typeof textSource.getRects === 'function' ? textSource.getRects()[0] : null;
+            const event = new CustomEvent('study-mini-lookup', {cancelable: true, detail: {query, entries: dictionaryEntries, rect}});
             document.dispatchEvent(event);
             if (event.defaultPrevented) { return; }
         }
@@ -1173,7 +1212,7 @@ export class Frontend {
             if (overVideo) { subtitle = parent; }
         }
         const scanner = /** @type {SubtitleTextScanner} */ (this._textScanner);
-        const snapshot = scanner.studySources.get(textSource);
+        const snapshot = scanner?.studySources?.get ? scanner.studySources.get(textSource) : null;
         this._studyCueCurrent = snapshot?.sourceConfirmed && snapshot.queryId ? {source: textSource, query: scanner.studyQuery, snapshot} : null;
         if (snapshot) {
             // Keep the entire frozen snapshot in the existing history sentence; no Native schema changes.

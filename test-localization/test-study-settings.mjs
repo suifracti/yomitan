@@ -14,6 +14,6 @@ test('settings uses actual model capabilities, drops retired preferences, and cl
  assert.deepEqual([...document.querySelector('#effort').options].map(o=>o.value),['medium','high']);
  assert.equal(document.querySelector('#goal'),null);assert.equal(document.querySelector('#level'),null);assert.equal(document.querySelector('#style'),null);assert.equal(document.querySelector('#memoryEnabled'),null);assert.equal(document.querySelector('#reset-memory'),null);document.querySelector('#cacheEnabled').checked=false;
  document.querySelector('#settings-form').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await flush();
- const config=await service.handle('settings',{});assert.equal(config.model,'gpt-6-astra');assert.equal(config.effort,'medium');assert.deepEqual(Object.keys(config).sort(),['cacheEnabled','effort','model']);assert.equal(config.cacheEnabled,false);
- assert.equal(data.studySavedWordsV1[0].id,'keep');assert.deepEqual(Object.keys(data.studySettingsV2).sort(),['cacheEnabled','effort','model']);assert.equal(nativeCalls,1,'only model metadata, no translation calls');
+ const config=await service.handle('settings',{});assert.equal(config.model,'gpt-6-astra');assert.equal(config.effort,'medium');assert.deepEqual(Object.keys(config).sort(),['autoDictionaryTranslate','cacheEnabled','effort','model']);assert.equal(config.cacheEnabled,false);
+ assert.equal(data.studySavedWordsV1[0].id,'keep');assert.deepEqual(Object.keys(data.studySettingsV2).sort(),['autoDictionaryTranslate','cacheEnabled','effort','model']);assert.equal(nativeCalls,1,'only model metadata, no translation calls');
 });

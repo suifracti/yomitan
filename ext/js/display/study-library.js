@@ -38,8 +38,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
     const destination = d.createElement('p');
     destination.className = 'study-save-destination';
     destination.textContent = `Obsidian · ${getEntry().language === 'ja' ? '日语 + Anki' : '英语 · 按保存与复习设置'}`;
-    if (getEntry().language !== 'ja') {
-        void chrome.storage?.local?.get(SAVE_TARGETS_KEY).then((value) => {
+    if (getEntry().language !== 'ja' && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+        void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
             const settings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
             if (isCurrent() && settings?.ankiEnabled === false) { destination.textContent = 'Obsidian · 英语 · Anki 未启用'; }
         });

@@ -17,6 +17,8 @@
  */
 /** @type {Record<string, string>} */
 const partOfSpeech = {a: '形容词', adj: '形容词', adv: '副词', n: '名词', v: '动词', vt: '及物动词', vi: '不及物动词', prep: '介词', pron: '代词', conj: '连词', interj: '感叹词'};
+/** @type {Record<string, string>} */
+const forms = {复数: 'pl.', 第三人称: '3sg.', 过去式: 'past.', 过去分词: 'p.p.', 现在分词: 'V-ing', 比较级: 'comp.', 最高级: 'superl.'};
 
 /**
  * @param {string} tag
@@ -24,4 +26,12 @@ const partOfSpeech = {a: '形容词', adj: '形容词', adv: '副词', n: '名�
  */
 export function studyPartOfSpeech(tag) {
     return partOfSpeech[tag.replace(/\.$/, '').toLowerCase()] ?? '';
+}
+
+/**
+ * @param {string} name
+ * @returns {string}
+ */
+export function studyFormLabel(name) {
+    return forms[name] ? `${forms[name]} ${name}` : name;
 }

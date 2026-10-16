@@ -27,7 +27,7 @@ export const DETAIL_KEY = 'studyDetailSnapshotsV1';
 export const DICTIONARY_CACHE_KEY = 'studyDictionaryCacheV1';
 
 /** @type {import('study').StudyConfig} */
-export const DEFAULTS = {model: 'gpt-6.1-sol', effort: 'low', cacheEnabled: true};
+export const DEFAULTS = {model: 'gpt-6.1-sol', effort: 'low', autoDictionaryTranslate: false, cacheEnabled: true};
 
 export const TTL = 30 * 24 * 60 * 60 * 1000;
 
@@ -41,9 +41,12 @@ export function studyConfig(value) {
     const v = /** @type {Partial<import('study').StudyConfig>} */ (value ?? {});
     const model = typeof v.model === 'string' && /^[a-zA-Z0-9._-]{1,80}$/.test(v.model) ? v.model : DEFAULTS.model;
     const effort = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(v.effort ?? '') ? v.effort : DEFAULTS.effort;
-    return {model,
+    return {
+        model,
         effort: effort ?? DEFAULTS.effort,
-        cacheEnabled: v.cacheEnabled !== false};
+        autoDictionaryTranslate: v.autoDictionaryTranslate === true,
+        cacheEnabled: v.cacheEnabled !== false
+    };
 }
 
 /**

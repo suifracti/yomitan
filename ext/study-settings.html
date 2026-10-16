@@ -41,6 +41,7 @@
                 <div class="fields"><label>模型<select id="model" name="model"></select></label><label>推理强度<select id="effort" name="effort"></select></label></div>
                 <button type="button" id="load-models">读取 / 刷新可用模型</button><small>高强度通常等待更久；查词建议低强度。不会自动切换或重试其他模型。</small>
             </section>
+            <section><h2>词典 AI 辅助</h2><label class="check"><input type="checkbox" id="autoDictionaryTranslate">查词时自动通过 AI 翻译词典英英首义</label><p>开启后，打开查词卡时会自动调用 AI 将英英首义翻译为中文。关闭后保留英文释义并节省 Token，不会自动发起后台请求；查词卡上显示“点此 AI 翻译释义”，可按需手动点击翻译。</p></section>
             <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>原句缓存最多 100 条，词典辅助中文另存最多 100 批，均有效 30 天；原文、模型或推理变化会区分缓存。只含点击发送的句子/词典段落，不保存全文。关闭后清空两类缓存并停止保存。旧版详解的临时快照只兼容已有链接，不再新建；收藏不代表已保存到 Obsidian 或 Anki。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
             <div class="save-bar"><button type="submit" class="primary">保存设置</button><span>模型调用仅在你点击查词卡的 AI 按钮时发生。</span></div>
         </form>

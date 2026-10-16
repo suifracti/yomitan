@@ -1,4 +1,4 @@
-export type StudyConfig = {model: string; effort: string; cacheEnabled: boolean};
+export type StudyConfig = {model: string; effort: string; autoDictionaryTranslate?: boolean; cacheEnabled: boolean};
 export type Lookup = {
     language?: string;
     dictionaryNotes?: string;

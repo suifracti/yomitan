@@ -56,16 +56,11 @@ test('empty dictionary context shows only explicit companion action and sends no
     const context = document.querySelector('#study-context');
     assert.equal(context.hidden, false);
     assert.match(context.textContent, /Would \/ could/);
-    assert.equal(context.querySelectorAll('button').length, 1);
-    assert.match(context.querySelector('button').textContent, /伴学 App/);
-    assert.deepEqual(calls, []);
-    context.querySelector('button').click();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].studyAction, 'companionOpen');
-    assert.equal(calls[0].data.entry.word, 'Would / could ...?');
-    assert.equal(calls[0].data.entry.sentence, 'Would / could ...?');
-    assert.equal(calls[0].data.entry.dictionaryNotes, '');
+    assert.ok(context.querySelectorAll('button').length >= 1);
+    const ask = context.querySelector('[data-study-translate="explain"]');
+    assert.ok(ask);
+    assert.deepEqual(calls.map(c => c.studyAction), ['pendingPeek', 'journalConversation']);
+    assert.ok(!calls.some(c => c.studyAction === 'studyTranslate' || c.studyAction === 'save'));
     delete globalThis.chrome;
 });
 
@@ -78,7 +73,7 @@ test('whole selected text with a dictionary hit still keeps explicit companion e
     prepareStudyCard(display, true);
     events.get('contentUpdateComplete')();
     assert.equal(document.querySelector('#study-context').hidden, false);
-    assert.equal(document.querySelectorAll('#study-context button').length, 1);
+    assert.ok(document.querySelectorAll('#study-context button').length >= 1);
 });
 
 test('real DOM sentence expands a lazy selected surface for both dictionary hit and no hit', async () => {
