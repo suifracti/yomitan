@@ -832,8 +832,11 @@ export function prepareStudyCard(display, detail = false) {
                     translation.render(context, sentence.text, display.query, {mediaRange: display.history.state?.studyMediaRange, capture: display.history.state?.studyMediaToken ? ((start, duration) => display.invokeContentOrigin('frontendCaptureStudyMedia', {token: mediaToken, start, duration})) : void 0, language, lemma: head?.term, reading: head?.reading, dictionaryNotes, contextSelected: false, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime, meaning: meaning ? `词典简释（未按当前句消歧）：${meaning}` : ''});
                     const legacy = document.querySelector('.study-entry .note-actions-container');
                     if (legacy instanceof HTMLElement) {
-                        legacy.hidden = true;
-                        // Legacy direct-Anki bypass is not part of the study-note workflow.
+                        // Preserve Yomitan's explicit "add to Anki" action as a
+                        // separate choice. DisplayAnki still owns enablement,
+                        // deck mapping, duplicate checks and trusted-cue limits.
+                        legacy.hidden = false;
+                        legacy.title = '仅按 Yomitan 当前卡片格式添加到 Anki；若要保存完整理解，请点“记住它”。';
                     }
                 }
                 const subtitleSnapshot = /** @type {(typeof sentence & {studySubtitle?: import('../app/frontend.js').StudySubtitle})} */ (sentence)?.studySubtitle;
