@@ -988,7 +988,9 @@ export class StudyService {
         if (exact) { return {result: exact.result, cached: true}; }
         if (!this.dictionaryPending.has(key)) {
             const epoch = this.epoch;
-            const {cacheEnabled, ...nativeConfig} = config;
+            // Native Python accepts exactly {model, effort}; UI/cache toggles
+            // stay in extension storage and must never enter the AI request.
+            const nativeConfig = {model: config.model, effort: config.effort};
             const call = this.native({action: 'dictionary', ...lookup, config: nativeConfig});
             const promise = call.promise.then(async (response) => {
                 if (!response.ok || !isDictionaryResult(response.result, lookup)) { throw new Error(response.error ?? 'AI 词典翻译未能逐段对齐；原英文保留。'); }
