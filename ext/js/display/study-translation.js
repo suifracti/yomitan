@@ -430,15 +430,42 @@ export function prepareStudyTranslation() {
                 if (translateSentence) { translateSentence.disabled = value; }
                 stop.hidden = !value;
             };
-            // This is an AI interpretation of the *current sentence*, never a
-            // replacement for any original dictionary definition.
-            /** @param {string} meaning */
-            const updatePinnedExplanation = (meaning) => {
+            // Only show answers already completed for this exact source. The
+            // learner can read the answer next to the sentence without scrolling
+            // past unrelated dictionary details or spending another model call.
+            /** @param {import('study').LearningTurn|null} turn */
+            const updatePinnedExplanation = (turn) => {
                 const pinned = /** @type {?HTMLElement} */ (d.querySelector('.study-reading-ai-context'));
                 if (!pinned) { return; }
+                const meaning = typeof turn?.meaning === 'string' ? turn.meaning.trim() : '';
+                const notes = typeof turn?.notes === 'string' ? turn.notes.trim() : '';
+                const questionText = typeof turn?.question === 'string' ? turn.question.trim() : '';
+                const explanation = meaning || notes;
                 const text = pinned.querySelector('.study-reading-ai-text');
-                if (text) { text.textContent = meaning; }
-                pinned.hidden = !meaning;
+                if (text) { text.textContent = explanation; }
+                pinned.hidden = !explanation;
+                const more = /** @type {?HTMLDetailsElement} */ (pinned.querySelector('.study-reading-ai-more'));
+                const full = more?.querySelector('.study-reading-ai-full');
+                if (!more || !full) { return; }
+                // Keep the open state when refreshing the same answer, but reset
+                // it when the learner moves on to a new question.
+                if (pinned.dataset.previewTurnId !== (turn?.id ?? '')) {
+                    more.open = false;
+                    pinned.dataset.previewTurnId = turn?.id ?? '';
+                }
+                full.replaceChildren();
+                const addLine = (label, content) => {
+                    if (!content) { return; }
+                    const p = d.createElement('p');
+                    const heading = d.createElement('strong');
+                    heading.textContent = label;
+                    p.append(heading, d.createTextNode(content));
+                    full.append(p);
+                };
+                addLine('我的问题：', questionText);
+                addLine('这里的含义：', meaning);
+                if (notes && notes !== meaning) { addLine('补充说明：', notes); }
+                more.hidden = !explanation || (!questionText && !notes && meaning.length <= 150);
             };
             const refresh = async () => {
                 const identityAtRead = identity();
@@ -452,7 +479,7 @@ export function prepareStudyTranslation() {
                 latest = turns.at(-1) ?? null;
                 latestSource = identity();
                 paintSentenceTranslation(turns);
-                updatePinnedExplanation(latest?.meaning ?? '');
+                updatePinnedExplanation([...turns].reverse().find((turn) => (turn.meaning ?? '').trim() || (turn.notes ?? '').trim()) ?? null);
                 for (const [index, turn] of turns.entries()) {
                     const panel = d.createElement('details');
                     panel.className = 'study-conversation-turn';
@@ -627,7 +654,7 @@ export function prepareStudyTranslation() {
                 }
             });
             editor.addEventListener('input', () => {
-                updatePinnedExplanation('');
+                updatePinnedExplanation(null);
                 if (sentenceChinese) { sentenceChinese.hidden = true; }
                 if (translateSentence) { translateSentence.hidden = editor.value.trim() === word.trim(); }
             });
@@ -641,16 +668,16 @@ export function prepareStudyTranslation() {
                 if (original instanceof HTMLElement) {
                     updateStudySourcePreview(original, editor.value);
                 }
-                updatePinnedExplanation('');
+                updatePinnedExplanation(null);
                 void restore();
             });
             context.addEventListener('change', () => {
-                updatePinnedExplanation('');
+                updatePinnedExplanation(null);
                 void restore();
             });
             useContext.addEventListener('click', () => {
                 context.value = source.context?.slice(0, 1200) ?? '';
-                updatePinnedExplanation('');
+                updatePinnedExplanation(null);
                 void restore();
             });
             const onSaved = () => {
