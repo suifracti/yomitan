@@ -22,6 +22,25 @@ test('source context is safe text, highlighted and omitted when absent',async()=
  assert.equal(entry.querySelector('mark').textContent,'ourselves');
  const empty=d.createElement('div');appendStudyContext(empty,null,'word');assert.equal(empty.children.length,0);
 });
+test('source marker uses actual boundaries, recovers unique drift and never guesses repeated words',async()=>{
+ const {appendStudyContext}=await import('../ext/js/display/study-card.js');
+ const d=new JSDOM('<body></body>').window.document;
+ const unique=d.createElement('div');
+ appendStudyContext(unique,{text:'The brain can change; brainstorming can help.',offset:200},'brain');
+ assert.equal(unique.querySelector('mark')?.textContent,'brain','a unique whole word is recovered');
+ const repeated=d.createElement('div');
+ appendStudyContext(repeated,{text:'My brain needs rest; the brain can recover.',offset:-1},'brain');
+ assert.equal(repeated.querySelector('mark'),null,'two candidates without a valid offset must remain unmarked');
+ const precise=d.createElement('div');
+ const original='My brain needs rest; the brain can recover.';
+ appendStudyContext(precise,{text:original,offset:original.lastIndexOf('brain')},'brain');
+ assert.equal(precise.querySelector('mark')?.textContent,'brain');
+ assert.equal(precise.querySelector('mark')?.previousSibling?.textContent?.includes('My brain needs rest'),true,'offset selects the correct repeated occurrence');
+ const phrase=d.createElement('div');
+ appendStudyContext(phrase,{text:'I looked it up before.',offset:99},'looked it up');
+ assert.equal(phrase.querySelector('mark')?.textContent,'looked it up','selected phrase stays intact');
+});
+
 test('auto-size constraints preserve above anchor and fit tiny viewports',async()=>{
  const {fitStudyPopup}=await import('../ext/js/app/study-popup-size.js');
  assert.deepEqual(fitStudyPopup({left:500,top:600,width:400,height:250},450,330,{left:0,top:0,right:800,bottom:900},true),{left:350,top:570,width:450,height:330});
@@ -82,6 +101,37 @@ test('translation is click-only, bounded editable source and stale responses do 
  finish({ok:true,value:{result:{translation:'STALE',meaning:'old',notes:''},cached:false}});await new Promise(r=>setImmediate(r));
  assert.doesNotMatch(document.querySelector('#study-context').textContent,/STALE/);
 });
+test('sentence translation stays manual and paints inline from the current saved answer',async()=>{
+ const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
+ const {callbacks,display}=setupDisplay();
+ let modelCalls=0,turns=[];
+ globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async ({studyAction,data})=>{
+   if(studyAction==='journalConversation')return {ok:true,value:turns};
+   if(studyAction==='conversationUsage')return {ok:true,value:[]};
+   if(studyAction==='peek')return {ok:true,value:{result:null,busy:false}};
+   if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};
+   if(studyAction==='generate'){
+     modelCalls++;assert.equal(data.mode,'translate');assert.equal(data.sentence,'We are tired of this.');
+     assert.equal(data.question,'','manual translation must not consume a typed follow-up');
+     turns=[{id:'translation1',translation:'我们已经厌倦了这件事。',meaning:'tired of 是厌倦',notes:'',question:'',saved:false}];
+     return {ok:true,value:{result:turns[0],cached:false}};
+   }
+   throw new Error('Unexpected backend action '+studyAction);
+ }}};
+ prepareStudyCard(display);callbacks.get('contentUpdateStart')();callbacks.get('contentUpdateComplete')();
+ await new Promise(r=>setImmediate(r));
+ assert.equal(modelCalls,0,'opening a real source never spends AI usage');
+ const translate=document.querySelector('[data-study-translate-sentence]');
+ assert.ok(translate,'manual sentence action exists directly beside its source');
+ const draft=document.querySelector('.study-followup');
+ draft.value='我的另一个问题';
+ translate.click();await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));
+ assert.equal(modelCalls,1);
+ assert.equal(draft.value,'我的另一个问题','a manual sentence translation does not erase the follow-up draft');
+ assert.equal(document.querySelector('.study-source-translation')?.textContent,'我们已经厌倦了这件事。');
+ assert.equal(translate.hidden,true,'cached translation replaces the action in the source card');
+});
+
 test('metadata is directly visible without nested disclosures, original meanings and POS retained',async()=>{
  const {prepareStudyCard,pinStudyContext,appendStudyContext}=await import('../ext/js/display/study-card.js');
  const {callbacks,display}=setupDisplay();prepareStudyCard(display);
