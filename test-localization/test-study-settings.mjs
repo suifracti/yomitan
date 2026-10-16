@@ -42,3 +42,28 @@ test('native dictionary translation receives only model and effort, not UI prefe
   assert.equal(data.studySettingsV2.cacheEnabled,flags.cacheEnabled,'keep local cache preference');
  }
 });
+
+test('sentence AI native requests accept only model/effort even when UI toggles are saved',async()=>{
+ const state={studySettingsV2:{model:'gpt-6-luna',effort:'max',autoDictionaryTranslate:true,cacheEnabled:true}};
+ const storage={get:async key=>({[key]:state[key]}),set:async values=>Object.assign(state,values)};
+ const outbound=[];
+ const native=payload=>{
+  outbound.push(payload);
+  if(payload.action==='libraryMemory'){
+   return {promise:Promise.resolve({ok:true,library:{items:[],total:0}}),cancel:()=>{}};
+  }
+  return {promise:Promise.resolve({ok:true,result:{translation:'我的知识和智力。',meaning:'智力',notes:''}}),cancel:()=>{}};
+ };
+ const service=new StudyService(storage,native);
+ service.journal={checkRoom:async()=>{},get:async()=>[],recordUsage:async()=>{},append:async()=>{}};
+ for(const mode of ['translate','explain']){
+  const value={word:'intelligence',sentence:'My knowledge and intelligence.',context:'',mode,question:mode==='explain'?'怎么理解？':''};
+  const answer=await service.handle('generate',value);
+  assert.equal(answer.result.translation,'我的知识和智力。');
+  const request=outbound.find(row=>row.action===mode);
+  assert.ok(request,mode+' must reach the Native bridge');
+  assert.deepEqual(request.config,{model:'gpt-6-luna',effort:'max'});
+ }
+ assert.equal(state.studySettingsV2.autoDictionaryTranslate,true,'persist UI preference in extension');
+ assert.equal(state.studySettingsV2.cacheEnabled,true,'retain cache configuration');
+});
