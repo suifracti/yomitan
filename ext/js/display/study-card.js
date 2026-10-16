@@ -364,7 +364,7 @@ export function mountOriginalEnglish(entry, word, automatic = true) {
     const showRetry = (label) => {
         retry.hidden = !label;
         retry.textContent = label;
-        const preview = /** @type {?HTMLButtonElement} */ (d.querySelector('.study-reading-english .study-english-retry'));
+        const preview = entry.dataset.studyPinned === 'true' ? /** @type {?HTMLButtonElement} */ (d.querySelector('.study-reading-english .study-english-retry')) : null;
         if (preview) {
             preview.hidden = retry.hidden;
             preview.textContent = label;
