@@ -358,6 +358,32 @@ export function prepareStudyTranslation() {
             question.className = 'study-followup scan-disable';
             question.placeholder = '哪里没懂？继续问…';
             question.setAttribute('aria-label', '关于当前词句的追问');
+            // The source line deserves its own translation, not a translated
+            // dictionary paragraph. Reuse completed QA; never auto-call a model.
+            const sourceBox = d.querySelector('.study-reading-anchor .study-source') ?? container.querySelector('.study-source');
+            const hasRealSentence = sourceBox?.querySelector('.study-source-label')?.textContent === '当前原句' &&
+                sentence.trim() !== word.trim();
+            const translateSentence = hasRealSentence ? button('翻译本句') : null;
+            const sentenceChinese = hasRealSentence ? d.createElement('span') : null;
+            if (translateSentence && sentenceChinese) {
+                translateSentence.dataset.studyTranslateSentence = 'true';
+                const row = d.createElement('div');
+                row.className = 'study-source-translation-row scan-disable';
+                sentenceChinese.className = 'study-source-translation';
+                sentenceChinese.hidden = true;
+                sentenceChinese.setAttribute('lang', 'zh-CN');
+                row.append(translateSentence, sentenceChinese);
+                sourceBox?.append(row);
+            }
+            /** @param {import('study').LearningTurn[]} turns */
+            const paintSentenceTranslation = (turns) => {
+                if (!sentenceChinese || !translateSentence) { return; }
+                const answer = [...turns].reverse().find((turn) => typeof turn.translation === 'string' && turn.translation.trim());
+                const text = answer?.translation?.trim() ?? '';
+                sentenceChinese.textContent = text;
+                sentenceChinese.hidden = !text;
+                translateSentence.hidden = Boolean(text);
+            };
             const more = d.createElement('details');
             more.className = 'study-more-actions';
             const moreLabel = d.createElement('summary');
@@ -401,6 +427,7 @@ export function prepareStudyTranslation() {
             const lock = (value) => {
                 busy = value;
                 ask.disabled = value;
+                if (translateSentence) { translateSentence.disabled = value; }
                 stop.hidden = !value;
             };
             // This is an AI interpretation of the *current sentence*, never a
@@ -424,6 +451,7 @@ export function prepareStudyTranslation() {
                 output.replaceChildren();
                 latest = turns.at(-1) ?? null;
                 latestSource = identity();
+                paintSentenceTranslation(turns);
                 updatePinnedExplanation(latest?.meaning ?? '');
                 for (const [index, turn] of turns.entries()) {
                     const panel = d.createElement('details');
@@ -528,11 +556,12 @@ export function prepareStudyTranslation() {
                     status.textContent = '暂时无法读取本机问答；普通查词仍可用。';
                 }
             };
-            ask.addEventListener('click', () => {
-                if (busy) {
-                    return;
-                }
-                const payload = lookup();
+            /**
+             * @param {'explain'|'translate'} mode
+             */
+            const runGeneration = (mode) => {
+                if (busy) { return; }
+                const payload = mode === 'translate' ? {...lookup(), question: ''} : lookup();
                 const conversation = identity();
                 if (!payload.sentence || payload.sentence.length > 2400 || word.length > 128) {
                     status.textContent = '请先补全原句（最多 2400 字）。';
@@ -545,38 +574,35 @@ export function prepareStudyTranslation() {
                 }
                 activePayload = payload;
                 lock(true);
-                status.textContent = '正在连接本机 AI…已有回答保留在下方。';
+                status.textContent = mode === 'translate' ? '正在翻译当前原句…' : '正在连接本机 AI…已有回答保留在下方。';
                 void chrome.permissions.request({permissions: ['nativeMessaging']}).then(async (allowed) => {
-                    if (!isCurrent() || id !== requestId) {
-                        return;
-                    }
-                    if (!allowed) {
-                        throw new Error('未授予本机通信权限；普通查词仍可用。');
-                    }
-                    await studyCall('generate', {...payload, mode: 'explain'});
-                    if (!isCurrent() || id !== requestId) {
-                        return;
-                    }
+                    if (!isCurrent() || id !== requestId) { return; }
+                    if (!allowed) { throw new Error('未授予本机通信权限；普通查词仍可用。'); }
+                    await studyCall('generate', {...payload, mode});
+                    if (!isCurrent() || id !== requestId) { return; }
                     if (conversation === identity()) {
-                        if (question.value.trim() === payload.question) {
+                        if (mode === 'explain' && question.value.trim() === payload.question) {
                             question.value = '';
                         }
                         await refresh();
                     }
-                    status.textContent = '点“记住它”留下这次学习；也可以继续问。';
+                    status.textContent = mode === 'translate' ?
+                        '原句译文已显示；可以继续追问。' :
+                        '点“记住它”留下这次学习；也可以继续问。';
                 }).catch((e) => {
                     if (isCurrent() && id === requestId) {
                         status.textContent = e instanceof Error ? e.message : '请求未完成，用量可能未知。';
                         void refresh().catch(() => {});
                     }
-                })
-                    .finally(() => {
-                        if (isCurrent() && id === requestId) {
-                            activePayload = null;
-                            lock(false);
-                        }
-                    });
-            });
+                }).finally(() => {
+                    if (isCurrent() && id === requestId) {
+                        activePayload = null;
+                        lock(false);
+                    }
+                });
+            };
+            ask.addEventListener('click', () => runGeneration('explain'));
+            translateSentence?.addEventListener('click', () => runGeneration('translate'));
             stop.addEventListener('click', () => {
                 ++requestId;
                 if (poll !== null) {
@@ -596,7 +622,11 @@ export function prepareStudyTranslation() {
                     ask.click();
                 }
             });
-            editor.addEventListener('input', () => { updatePinnedExplanation(''); });
+            editor.addEventListener('input', () => {
+                updatePinnedExplanation('');
+                if (sentenceChinese) { sentenceChinese.hidden = true; }
+                if (translateSentence) { translateSentence.hidden = editor.value.trim() === word.trim(); }
+            });
             context.addEventListener('input', () => { updatePinnedExplanation(''); });
             editor.addEventListener('change', () => {
                 // PR1 keeps the source inside this context/entry; the newer
