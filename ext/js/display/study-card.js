@@ -55,7 +55,7 @@ export function appendStudyContext(entry, sentence, query, asb = null) {
     const target = query.trim();
     const lower = sentence.text.toLowerCase();
     const needle = target.toLowerCase();
-    const wordChar = (char) => Boolean(char) && /[\\p{L}\\p{M}\\p{N}_]/u.test(char);
+    const wordChar = (char) => Boolean(char) && /[\p{L}\p{M}\p{N}_]/u.test(char);
     const boundaryMatch = (at) => at >= 0 &&
         lower.slice(at, at + target.length) === needle &&
         !wordChar(sentence.text[at - 1]) && !wordChar(sentence.text[at + target.length]);
