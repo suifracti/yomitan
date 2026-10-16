@@ -925,7 +925,10 @@ export class StudyService {
         }
         if (!this.pending.has(key)) {
             const epoch = this.epoch;
-            const {cacheEnabled, ...nativeConfig} = config;
+            const {cacheEnabled} = config;
+            // AI Native requests have a strict model/effort schema. UI-only
+            // switches (including autoDictionaryTranslate) stay local.
+            const nativeConfig = {model: config.model, effort: config.effort};
             const payload = {...(lookup.dictionaryNotes ? {dictionaryNotes: lookup.dictionaryNotes} : {}), language: lookup.language ?? 'en', action: lookup.mode ?? 'explain', sentence: lookup.sentence, word: lookup.word, context: lookup.context, question: lookup.question ?? '', config: nativeConfig, ...(learningMemory ? {learningMemory} : {})};
             const reuse = sharedTranslation && sharedTranslation.length <= 600 ? {cachedTranslation: sharedTranslation} : {};
             const attemptId = crypto.randomUUID();
