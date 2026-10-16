@@ -221,6 +221,13 @@
 .study-entry #study-context { padding: 0 0 12px; border: 0; margin-bottom: 8px; border-bottom: 1px solid var(--study-border); }
 .study-source { margin: 0; padding: 8px 10px; }
 .study-source-label { display: block; color: var(--study-muted); font-size: 11px; }
+.study-source-translation-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; margin-top: 8px; border-top: 1px dashed var(--study-border); padding-top: 7px; }
+.study-source-translation-row button { flex: none; border: 0; padding: 2px 4px; background: transparent; color: var(--study-accent); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.study-source-translation-row button:focus-visible { outline: 2px solid var(--study-accent); outline-offset: 2px; }
+.study-source-translation-row button:disabled { opacity: .5; cursor: wait; }
+.study-source-translation-row .study-source-translation { flex: 1 1 100%; color: var(--text-color); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.study-source-translation-row [hidden] { display: none; }
+
 .study-source p { font-size: 13px; line-height: 1.6; max-height: none; overflow-y: visible; }
 .study-translation-output { margin-top: 8px; }
 .study-translation-output p { margin: 6px 0; }
@@ -429,7 +436,11 @@
     .study-bilingual-unit:not(:has(.study-bilingual-unit)) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .study-bilingual-unit>.study-sense-translation { margin: 0; }
 }
-.study-reading-anchor .study-reading-english { order: 0; flex-basis: 100%; min-width: 0; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--study-border); max-height: min(18vh, 7em); overflow-y: auto; font-size: 12px; line-height: 1.45; }
+.study-reading-anchor .study-reading-english { order: 0; flex-basis: 100%; min-width: 0; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--study-border); max-height: min(18vh, 9em); overflow-y: auto; font-size: 12px; line-height: 1.45; }
+.study-reading-anchor .study-reading-english>summary { color: var(--study-muted); cursor: pointer; font-size: 12px; line-height: 1.5; }
+.study-reading-anchor .study-reading-english>summary:focus-visible { outline: 2px solid var(--study-accent); outline-offset: 2px; }
+.study-reading-anchor .study-reading-english .study-primary-english { margin-top: 7px; }
+
 .study-reading-anchor .study-reading-english .study-english-original { color: var(--text-color); font-size: 12px; line-height: 1.45; }
 .study-reading-caption { display: block; margin-bottom: 2px; color: var(--study-muted); font-size: 11px; font-weight: 500; line-height: 1.4; }
 .study-reading-meaning { flex-basis: 100%; min-width: 0; font-size: 12px; line-height: 1.55; color: var(--text-color); max-height: min(14vh, 6em); overflow-y: auto; }
