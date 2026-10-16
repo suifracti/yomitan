@@ -145,14 +145,19 @@ export function pinStudyContext(inner, context, word) {
     const english = entry?.querySelector('.study-primary-english');
     if (english) {
         const preview = /** @type {HTMLElement} */ (english.cloneNode(true));
-        preview.classList.add('study-reading-english');
+        const disclosure = d.createElement('details');
+        disclosure.className = 'study-reading-english';
+        const summary = d.createElement('summary');
+        summary.className = 'scan-disable';
+        summary.textContent = '英英原义与辅助中文';
+        disclosure.append(summary, preview);
         const previewChinese = preview.querySelector('.study-english-chinese');
         if (previewChinese) {
             previewChinese.addEventListener('click', () => {
                 entry.querySelector('.study-primary-english .study-english-chinese')?.dispatchEvent(new MouseEvent('click'));
             });
         }
-        anchor.append(preview);
+        anchor.append(disclosure);
     }
     const toolbar = inner.querySelector('.study-toolbar');
     if (toolbar) {
