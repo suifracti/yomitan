@@ -32,6 +32,7 @@ export function applyStudyPreset(options) {
         anki.enable = true;
         anki.server = 'http://127.0.0.1:8766';
         anki.tags = ['english-context'];
+        anki.noteGuiMode = 'edit';
         anki.cardFormats = [{
             name: '英语语境',
             icon: 'big-circle',
@@ -43,7 +44,7 @@ export function applyStudyPreset(options) {
                 Sentence: '{sentence}',
                 Definition: '{glossary}',
                 Source: '{document-title}',
-                URL: '{url}',
+                URL: '{url-plain}',
                 Audio: '{audio}',
                 Image: '{screenshot}',
             }).map(([name, value]) => [name, {value, overwriteMode: 'coalesce'}])),

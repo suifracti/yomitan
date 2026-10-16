@@ -9,7 +9,9 @@ test('study default passes upstream schema and maps all existing fields',async()
     const options = util.getDefault();
     util.validate(options);
     expect(options.profiles[0].options.general.language).toBe('en');
+    expect(options.profiles[0].options.anki.noteGuiMode).toBe('edit');
     expect(options.profiles[0].options.anki.cardFormats[0].model).toBe('外语语境卡');
+    expect(options.profiles[0].options.anki.cardFormats[0].fields.URL.value).toBe('{url-plain}');
     expect(Object.keys(options.profiles[0].options.anki.cardFormats[0].fields)).toEqual(['Word','Sentence','Definition','Source','URL','Audio','Image']);
     options.profiles[0].name='custom';
     options.profiles[0].options.anki.server='http://127.0.0.1:9999';
