@@ -51,6 +51,48 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
     const status = d.createElement('p');
     status.className = 'study-library-status';
     status.setAttribute('role', 'status');
+    // Show the verified Anki result separately from the durable Obsidian note.
+    const ankiRow = d.createElement('div');
+    ankiRow.className = 'study-anki-status';
+    ankiRow.hidden = true;
+    const ankiLabel = d.createElement('span');
+    const retryCurrent = d.createElement('button');
+    retryCurrent.type = 'button';
+    retryCurrent.className = 'scan-disable';
+    retryCurrent.textContent = '重试本条卡片';
+    retryCurrent.hidden = true;
+    ankiRow.append(ankiLabel, retryCurrent);
+    /** @type {?import('study').LibraryRecord} */
+    let currentSaved = null;
+    /** @param {import('study').LibraryRecord} row */
+    const showAnkiStatus = (row) => {
+        currentSaved = row;
+        ankiRow.hidden = false;
+        const cards = row.cards ?? [];
+        const synced = cards.filter((card) => card.state === 'synced');
+        const pending = cards.filter((card) => card.state !== 'synced');
+        retryCurrent.hidden = true;
+        if (row.ankiEnabled === false) {
+            ankiLabel.textContent = 'Anki · 已关闭，本次仅保存笔记';
+        } else if (row.ankiState === 'pending') {
+            ankiLabel.textContent = pending.length ?
+                `Anki · ${pending.length} 张卡待核对／补交（笔记已保留）` :
+                'Anki · 复习判断待完成（笔记已保留）';
+            retryCurrent.hidden = false;
+            retryCurrent.textContent = pending.length ? '重试这条记录的送卡' : '继续复习判断';
+            retryCurrent.title = pending.length ?
+                '只核对／补交已持久确认的卡；不重新生成卡片内容。' :
+                '恢复未完成的复习判断，可能调用已配置的 AI。';
+        } else if (synced.length) {
+            const linked = synced.every((card) => card.linkedExisting);
+            ankiLabel.textContent = `Anki · ${linked ? '关联已有' : '已同步'} ${synced.length} 张卡${synced[0].noteId ? ` · #${synced[0].noteId}` : ''}`;
+        } else if (row.reviewDraft?.cards?.length === 0) {
+            ankiLabel.textContent = 'Anki · 本次无需新增复习卡';
+        } else {
+            ankiLabel.textContent = 'Anki · 记录已保存，制卡状态待核对';
+        }
+        ankiRow.title = row.error || pending[0]?.error || row.reviewDraft?.reason || '';
+    };
     const recovery = d.createElement('p');
     recovery.className = 'study-pending-recovery';
     recovery.hidden = true;
@@ -65,8 +107,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         const pending = /** @type {{count?: number}} */ (await studyCall('pendingPeek', {language}));
         if (!isCurrent()) { return; }
         const count = typeof pending?.count === 'number' ? pending.count : 0;
-        recovery.hidden = count === 0;
-        pendingLabel.textContent = `还有 ${count} 条学习未完成 · `;
+        recovery.hidden = count === 0 || (count === 1 && currentSaved?.ankiState === 'pending');
+        pendingLabel.textContent = `还有 ${count} 条待处理学习 · `;
     };
     let busy = false;
     /** @param {() => Promise<void>} operation */
@@ -75,6 +117,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         busy = true;
         save.disabled = true;
         retry.disabled = true;
+        retryCurrent.disabled = true;
         void chrome.permissions.request({permissions: ['nativeMessaging']}).then(async (allowed) => {
             if (!allowed) { throw new Error('尚未允许本机保存；普通查词仍可用。'); }
             await operation();
@@ -88,6 +131,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
                 if (isCurrent()) {
                     save.disabled = false;
                     retry.disabled = false;
+                    retryCurrent.disabled = false;
                     void refreshPending().catch(() => {});
                 }
             });
@@ -96,6 +140,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         pendingLabel.textContent = '正在继续上次未完成的学习…';
         const row = /** @type {?import('study').LibraryRecord} */ (await studyCall('retryPending', {language}));
         if (!row || !isCurrent()) { return; }
+        showAnkiStatus(row);
         status.textContent = row.ankiEnabled === false ? '笔记已保存 · Anki 未启用；原待补齐内容已保留。' : `${row.entry.word} · ${row.ankiState === 'pending' ? '仍待补齐；记录已保留' : '已补齐'}${row.error ? `：${row.error}` : ''}`;
         if (row.openUrl?.startsWith('obsidian://open?')) {
             openNote.href = row.openUrl;
@@ -103,6 +148,21 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
             openNote.hidden = false;
         }
     }));
+    retryCurrent.addEventListener('click', () => {
+        if (!currentSaved || currentSaved.ankiState !== 'pending') { return; }
+        const recordId = currentSaved.id;
+        const currentLanguage = currentSaved.entry.language ?? language;
+        run(async () => {
+            status.textContent = '正在核对并继续本条学习的 Anki 复习…';
+            // Reuses the existing guarded, idempotent save/Anki protocol.
+            const row = /** @type {import('study').LibraryRecord} */ (await studyCall('remember', {id: recordId, language: currentLanguage}));
+            if (!isCurrent()) { return; }
+            showAnkiStatus(row);
+            status.textContent = row.ankiState === 'pending' ?
+                `本条卡片仍待补交：${row.cards?.find((card) => card.state !== 'synced')?.error || row.error || '可稍后再试'}` :
+                '本条复习已确认；Obsidian 笔记未重复保存。';
+        });
+    });
     save.addEventListener('click', () => {
         const entry = getEntry();
         run(async () => {
@@ -111,6 +171,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
             const row = /** @type {import('study').LibraryRecord} */ (await studyCall('rememberEntry', {entry}));
             const saved = row;
             if (isCurrent()) {
+                showAnkiStatus(row);
                 destination.textContent = `已存：${saved.path}`;
                 destination.title = saved.path;
                 openNote.textContent = '查看学习记录 ↗';
@@ -127,7 +188,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
                 return;
             }
             status.textContent = row.ankiState === 'pending' ?
-                '笔记已保存；稍后点“继续补齐”，不用重找原网页。' :
+                '笔记已保存；Anki 卡片待核对／补交，请用下方按钮继续。' :
                 (row.ankiState === 'synced' ? `已记住 · Anki ${row.target?.deck ?? ''}` : '已记下 · 本次不需要新增复习卡');
             const card = row.cards?.find((item) => item.state === 'synced');
             if (card) {
@@ -143,9 +204,9 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
     const primary = container.querySelector('.study-translation-actions');
     if (primary) {
         primary.append(actions);
-        primary.after(destination, openNote, status, recovery);
+        primary.after(destination, openNote, status, ankiRow, recovery);
     } else {
-        container.append(actions, destination, openNote, status, recovery);
+        container.append(actions, destination, openNote, status, ankiRow, recovery);
     }
     void refreshPending().catch(() => {});
 }
