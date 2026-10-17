@@ -37,8 +37,12 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const entry = context.closest('.study-entry');
         const word = cleanText(display.query);
         const language = display.getOptions?.()?.general?.language === 'ja' ? 'ja' : 'en';
-        const original = cleanText(display.history?.state?.sentence?.text) || word;
-        const hasSentence = original.trim().toLowerCase() !== word.trim().toLowerCase();
+        const sentenceState = display.history?.state?.sentence;
+        const original = cleanText(sentenceState?.text) || word;
+        const sourceLabel = source.querySelector('.study-source-label')?.textContent || '';
+        // A dictionary gloss or a bare headword is not the page or subtitle the user is reading.
+        const dictionarySource = sentenceState?.sourceKind === 'dictionary' || sourceLabel.includes('来自词典解释') || sourceLabel.includes('暂无完整原句');
+        const hasSentence = !dictionarySource && original.trim().toLowerCase() !== word.trim().toLowerCase();
         const dictionaryEntry = display.dictionaryEntries?.[0];
         const lemma = dictionaryEntry?.type === 'term' ? cleanText(dictionaryEntry.headwords?.[0]?.term) : '';
         const owner = {word, language, sentence: original, ...(lemma ? {lemma} : {})};
@@ -74,7 +78,13 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const play = entry?.querySelector('[data-action="play-audio"]');
         sound.disabled = !play;
         sound.addEventListener('click', () => { if (current()) { play?.click(); } });
-        heading.append(title, sound);
+        // One visible play control. The original button stays for hotkeys and the source menu.
+        if (play) { play.classList.add('sf-audio-primary-hidden'); }
+        const audioTools = make('div', 'sf-audio-tools');
+        audioTools.append(sound);
+        const sourceMenu = entry?.querySelector('.study-audio-sources');
+        if (sourceMenu) { move(sourceMenu, audioTools); }
+        heading.append(title, audioTools);
         const sourcePane = make('section', 'sf-source-pane');
         sourcePane.setAttribute('aria-label', '原句与译文');
         sourcePane.hidden = !hasSentence;
@@ -117,10 +127,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         body.append(...panels);
         shell.append(heading, sourcePane, tabs, body);
 
-        // Put glossary, morphology and legacy quick-card actions in the dictionary
-        // panel. Every sense is retained: no truncating the actual dictionary.
-        const intro = make('p', 'sf-description', '词典保留全部义项；这句话里的解释在「读懂这句」。');
-        dictionary.append(intro);
+        // Full senses stay on the dictionary panel. The reading panel only borrows one labeled hint.
         for (const selector of ['.study-reading-meaning', '.study-reading-english', '.study-reading-info']) {
             move(anchor.querySelector(selector), dictionary);
         }
@@ -134,21 +141,19 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const dictDisclosure = dictionary.querySelector('.study-dictionary-details');
         if (dictDisclosure) { dictDisclosure.open = true; }
         const direct = dictionary.querySelector('.note-actions-container');
-        if (direct) {
-            const tip = make('p', 'sf-description sf-quick-hint', '只加词典卡会跳过学习笔记；想保留原句和问答，请用「记住它」。');
-            direct.after(tip);
-        }
+        if (direct) { direct.dataset.studyQuickCard = 'true'; }
 
         // Reuse the existing input, save intent, feedback and request controls.
         move(context, learn);
         const focusAnswer = make('section', 'sf-answer');
         focusAnswer.setAttribute('aria-live', 'polite');
-        const answerHeading = make('div', 'sf-section-label', '先理解当前这一句');
+        const answerHeading = make('div', 'sf-section-label', '在这句话里');
+        answerHeading.hidden = true;
         const asked = make('p', 'sf-asked'); asked.hidden = true;
         const meaning = make('div', 'sf-meaning');
+        meaning.hidden = true;
         const notes = make('div', 'sf-notes'); notes.hidden = true;
-        const shortGloss = make('p', 'sf-short-gloss');
-        shortGloss.textContent = cleanText((dictionary.querySelector('.study-reading-sense') || dictionary.querySelector('.study-reading-meaning'))?.textContent).trim();
+        const shortGloss = make('div', 'sf-short-gloss');
         shortGloss.hidden = true;
         const feedback = make('div', 'sf-feedback');
         focusAnswer.append(answerHeading, shortGloss, asked, meaning, notes, feedback);
@@ -165,7 +170,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const usage = context.querySelector('.study-token-summary');
         if (usage) { move(usage, dictionary); usage.classList.add('sf-usage-reference'); }
         const editSource = context.querySelector('.study-more-actions');
-        if (editSource) { move(editSource, dictionary); }
+        // Correct a captured sentence beside that sentence. A word-only lookup keeps the same editor on the dictionary page.
+        if (editSource) { move(editSource, hasSentence ? sourcePane : dictionary); }
         const editor = editSource?.querySelector('.study-source-editor');
         const onSourceEdit = () => {
             const paragraph = source.querySelector('p');
@@ -182,16 +188,23 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         }
         if (input && actions) { compose.prepend(input); input.after(actions); }
         const save = context.querySelector('[data-study-save="note"]');
+        const saveBar = make('div', 'sf-save-bar');
+        shell.append(saveBar); owned.push(saveBar);
         if (save) {
-            save.title = '保存完整原句和问答到 Obsidian，并按设置关联旧卡或择要新增 0–1 张 Anki 卡。';
+            save.title = '保存这次查词到 Obsidian，并按设置关联旧卡或择要新增 0–1 张 Anki 卡。不要求先问 AI。';
+            move(save, saveBar);
         }
         const summary = make('div', 'sf-saved-summary');
         summary.setAttribute('role', 'status'); summary.hidden = true;
-        compose.append(summary); owned.push(summary);
+        saveBar.append(summary); owned.push(summary);
+        for (const selector of ['.study-library-status', '.study-anki-status', '.study-pending-recovery', '.study-request-status', '.openNote']) {
+            const node = context.querySelector(selector);
+            if (node) { move(node, saveBar); }
+        }
         const syncSave = () => {
             if (!current()) { return; }
-            const note = context.querySelector('.study-library-status');
-            const anki = context.querySelector('.study-anki-status');
+            const note = saveBar.querySelector('.study-library-status');
+            const anki = saveBar.querySelector('.study-anki-status');
             const failed = /失败|未完成|待|错误|异常|拒绝|重试|未确认/.test(note?.textContent || '');
             summary.dataset.state = failed ? 'pending' : 'normal';
             const text = [note?.textContent, !anki?.hidden ? anki?.querySelector('span')?.textContent : ''].filter(Boolean).join(' · ');
@@ -200,13 +213,27 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             // Keep actionable retries, open-note links and error messages visible.
             if (note) { note.classList.add('sf-visually-covered'); }
         };
-        for (const node of [context.querySelector('.study-library-status'), context.querySelector('.study-anki-status')]) {
+        for (const node of [saveBar.querySelector('.study-library-status'), saveBar.querySelector('.study-anki-status')]) {
             if (!node) { continue; }
             const observer = new MutationObserver(syncSave);
             observer.observe(node, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden']});
             observers.push(observer);
         }
 
+        const paintDictionaryHint = (host, sense) => {
+            host.replaceChildren();
+            const gloss = sense?.querySelector('.study-meaning-text')?.textContent?.trim() || '';
+            if (!gloss) { return; }
+            const row = make('div', 'sf-gloss-row');
+            const pos = sense.querySelector('.study-pos');
+            if (pos) {
+                const copy = /** @type {HTMLElement} */ (pos.cloneNode(true));
+                copy.classList.add('sf-gloss-pos');
+                row.append(copy);
+            }
+            row.append(make('strong', 'sf-gloss-text', gloss));
+            host.append(make('span', 'sf-gloss-kicker', '词典提示，尚未按本句判断'), row);
+        };
         const updateAnswer = () => {
             if (!current()) { return; }
             const turns = [...(output?.querySelectorAll('.study-conversation-turn') || [])];
@@ -215,15 +242,15 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const answer = turn?.querySelector('.study-turn-answer');
             const meaningText = answer?.querySelector('.study-ai-meaning')?.textContent?.trim() || '';
             const noteText = answer?.querySelector('.study-ai-notes')?.textContent?.trim() || '';
-            const translated = source.querySelector('.study-source-translation');
             const mine = turn?.querySelector('.study-user-question')?.textContent || '';
-            answerHeading.textContent = turn ? '在这句话里' : '词典基本义 · 尚未按本句判断';
-            shortGloss.hidden = Boolean(turn) || !shortGloss.textContent;
+            answerHeading.hidden = !turn;
+            answerHeading.textContent = '在这句话里';
+            paintDictionaryHint(shortGloss, dictionary.querySelector('.study-reading-sense'));
+            shortGloss.hidden = Boolean(turn) || shortGloss.childElementCount === 0;
             asked.textContent = mine;
             asked.hidden = !mine || mine === '我：请解释这句话和这个词的用法';
-            if (meaning.textContent !== (meaningText || (!translated?.hidden && translated?.textContent ? '译文已放在原句下面。可以继续问这个词为什么这样用。' : '先看原句；不懂的词、搭配或整句话，都可以直接问。'))) {
-                meaning.textContent = meaningText || (!translated?.hidden && translated?.textContent ? '译文已放在原句下面。可以继续问这个词为什么这样用。' : '先看原句；不懂的词、搭配或整句话，都可以直接问。');
-            }
+            meaning.textContent = meaningText;
+            meaning.hidden = !meaningText;
             notes.textContent = noteText;
             notes.hidden = !noteText || noteText === meaningText;
             feedback.replaceChildren();
@@ -286,8 +313,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 const anki = memory?.anki || {status: 'unavailable', items: []};
                 const noteCount = Number.isInteger(memory?.total) ? memory.total : null;
                 const cardCount = Number.isInteger(anki.total) ? anki.total : null;
-                tabButtons[2].textContent = `我的记录${noteCount !== null ? ` · ${noteCount}` : ''}`;
-                readStatus.textContent = `${coverage === 'complete' ? `Obsidian ${noteCount ?? items.length} 条同词语境` : 'Obsidian 仅部分范围已核对'} · ${anki.status === 'unavailable' ? 'Anki 未连接／未读到' : `Anki ${cardCount ?? asArray(anki.items).length} 条相关笔记`}。${fresh ? '已重新读回' : '可刷新取得最新修改'}。`;
+                const notesVerified = coverage === 'complete' && noteCount !== null;
+                tabButtons[2].textContent = notesVerified ? `我的记录 · ${noteCount}` : '我的记录 · 未核实';
+                readStatus.textContent = `${notesVerified ? `Obsidian ${noteCount} 条同词语境` : 'Obsidian 尚未完整核对，不能据此判断没学过'} · ${anki.status === 'unavailable' ? 'Anki 未连接／未读到' : anki.status === 'complete' ? `Anki ${cardCount ?? asArray(anki.items).length} 条相关笔记` : 'Anki 只读到一部分'}。${fresh ? '已重新读回' : '可刷新取得最新修改'}。`;
                 const noteTitle = make('h4', '', 'Obsidian · 我的理解'); memoryBody.append(noteTitle);
                 if (!items.length) { memoryBody.append(make('p', 'sf-description', coverage === 'complete' ? '在已检查的语境词库中没有找到相关记录。' : '尚未完整读到笔记，不能据此判断没学过。')); }
                 for (const item of items) {
@@ -341,8 +369,21 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         refresh.addEventListener('click', () => { void readMemory(true, true); });
         const sourceFooter = make('div', 'sf-source-footer');
         const sourceUrl = cleanText(display.history?.state?.url);
+        const videoTime = display.history?.state?.videoTime;
         if (/^https?:\/\//.test(sourceUrl)) {
-            const link = make('a', 'sf-link scan-disable', '回到原文 ↗'); link.href = sourceUrl;
+            let href = sourceUrl;
+            let label = '打开来源';
+            if (typeof videoTime === 'number' && Number.isFinite(videoTime) && videoTime >= 0) {
+                try {
+                    const parsed = new URL(sourceUrl);
+                    if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(parsed.hostname)) {
+                        parsed.searchParams.set('t', `${Math.floor(videoTime)}s`);
+                        href = parsed.href;
+                        label = '打开来源 · 含时间';
+                    }
+                } catch { /* Keep the plain source link. */ }
+            }
+            const link = make('a', 'sf-link scan-disable', label); link.href = href;
             link.target = '_blank'; link.rel = 'noopener noreferrer'; sourceFooter.append(link);
         }
         const expandSource = button('展开原句');
