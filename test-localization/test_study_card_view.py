@@ -17,7 +17,9 @@ class ViewTests(unittest.TestCase):
   view.inspect('外语语境卡',self.api);self.assertEqual(set(self.calls),{'modelFieldNames','modelTemplates','modelStyling'})
  def test_apply_updates_view_only_and_backs_up(self):
   old=view.inspect('外语语境卡',self.api);token=view.fingerprint(old)
-  with tempfile.TemporaryDirectory() as temp:
+  # macOS /var is often a symlink; use a real home directory for this
+  # successful-write fixture without weakening the backup path guard.
+  with tempfile.TemporaryDirectory(prefix='study-card-view-test-',dir=pathlib.Path.home()) as temp:
    result=view.apply_view('外语语境卡',None,token,temp,self.api)
    self.assertEqual(json.loads(pathlib.Path(result['backup']).read_text()),old)
    self.assertEqual(self.fields,view.FIELDS)
