@@ -1,0 +1,28 @@
+name: Study reader integration
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/study-reader.yml'
+      - 'ext/js/study/reader/**'
+      - 'local-bridge/study_batch.py'
+      - 'test-localization/test-study-reader*'
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'suifracti/yomitan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export exact public source (not a runtime acceptance test)
+        run: git archive --format=zip --output=study-reader-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: study-reader-source
+          path: study-reader-source.zip
+          retention-days: 3
