@@ -21,7 +21,13 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
     d.head.append(style);
     let dispose = () => {};
     let revision = 0;
-    const clear = () => { ++revision; dispose(); dispose = () => {}; };
+    let searchWasOpen = false;
+    const clear = () => {
+        searchWasOpen = d.documentElement.classList.contains('sf-search-open');
+        ++revision;
+        dispose();
+        dispose = () => {};
+    };
     display.on('contentUpdateStart', clear);
     display.on('contentClear', clear);
     display.on('contentUpdateComplete', () => {
@@ -94,7 +100,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 const searchToggle = button('换词', '展开搜索其他单词');
                 searchToggle.classList.add('sf-search-toggle');
                 searchToggle.setAttribute('aria-controls', 'sticky-search-header');
-                searchToggle.setAttribute('aria-expanded', 'false');
+                d.documentElement.classList.toggle('sf-search-open', searchWasOpen);
+                searchToggle.setAttribute('aria-expanded', String(searchWasOpen));
+                searchToggle.textContent = searchWasOpen ? '收起搜索' : '换词';
                 searchToggle.addEventListener('click', () => {
                     if (!current()) { return; }
                     const expanded = !d.documentElement.classList.contains('sf-search-open');
@@ -105,7 +113,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     else if (d.activeElement === searchBox) { searchToggle.focus(); }
                 });
                 audioTools.prepend(searchToggle);
-                if (d.activeElement === searchBox) { searchToggle.focus({preventScroll: true}); }
+                if (!searchWasOpen && d.activeElement === searchBox) { searchToggle.focus({preventScroll: true}); }
             }
         }
         heading.append(title, audioTools);
