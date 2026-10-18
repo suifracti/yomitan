@@ -257,6 +257,13 @@
 .sf-short-gloss { display: grid; gap: 4px; margin: 0 0 8px; }
 .sf-short-gloss[hidden] { display: none; }
 .sf-gloss-unavailable { margin: 0; color: var(--sf-muted); font-size: 12px; line-height: 1.6; }
+/* A compact native-meaning caption shares the same source area, instead of
+   disappearing below the tabs when the learner is in a short popup. */
+.sf-source-pane .sf-short-gloss { margin: 0; padding: 9px 12px 7px; gap: 3px; border-bottom: 1px solid var(--sf-line); }
+.sf-source-pane .sf-gloss-kicker { font-size: 10px; }
+.sf-source-pane .sf-gloss-row { gap: 4px 9px; }
+.sf-source-pane .sf-gloss-text { font-size: 14px; line-height: 1.5; }
+.sf-source-pane .study-source { padding-top: 6px; }
 .sf-no-source-note { margin: 9px 0 0; padding: 7px 0 0; border-top: 1px dashed var(--sf-line); font-size: 11px; line-height: 1.5; color: var(--sf-muted); }
 .sf-gloss-kicker { color: var(--sf-muted); font-size: 11px; font-weight: 500; line-height: 1.4; }
 .sf-gloss-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
