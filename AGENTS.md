@@ -15,6 +15,7 @@
 - 代码仍在 [suifracti/yomitan](https://github.com/suifracti/yomitan)、[suifracti/asbplayer](https://github.com/suifracti/asbplayer) 与本机既有工作树；交接文件正文在 Obsidian，报告/HTML/补丁/包等附件在 [既有 Google Drive 文件夹](https://drive.google.com/drive/folders/1yj5UZvKGsyrgHpmdNRoEv3ixyK-hG-kZ)。
 - **2026-10-15 当前决定**：独立 App 已停止，只优化现有 Yomitan/asbplayer/IINA 与 StudyService、Python 保存链；不恢复历史 App 规划，具体状态读取上述 Obsidian Handoff。
 - **用户明确只用 `main`**：沿原工作树直接小改、自检后 commit/push 到个人仓库现有 main，不新开分支或 PR，不强推覆盖远端；冲突先保留本机改动处理。源码同步不等于发布或真实学习数据写入授权。
-- 默认不开 PR、不派 Agent 任务、不因历史“做完了”重新启动工作包。修改代码、安装、付费调用、真实笔记/Anki 读写、推送或发布以当前用户明确授权为准；不得删除学习数据、卡片、复习排程。一个实际工作树同一时刻仅一名写入者。
+- 默认不开 PR，不因历史“做完了”重新启动工作包。修改代码、安装、付费调用、真实笔记/Anki 读写、推送或发布以当前用户明确授权为准；不得删除学习数据、卡片、复习排程。一个实际工作树同一时刻仅一名写入者。
+- **2026-10-18 子代理规则**：主 Agent 可按需要直接开子代理，不逐次询问；子代理只能用 **Luna / max**（当前工具标识 `gpt-6-luna`、`reasoning_effort=max`）。无法选择该组合时由主 Agent 自己做，不静默换其他子代理模型；简单任务不为形式拆分。该规则不扩大费用、正式数据或系统权限授权。
 
 此路由更新不代表本机扩展、Mac App 或任何真实学习链路已完成验收。
