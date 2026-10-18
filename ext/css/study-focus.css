@@ -36,7 +36,7 @@
    legacy intro/options/textbox are opt-in via the visible "换词" control. */
 :root.study-focus-active[data-page-type="search"] #above-sticky-header,
 :root.study-focus-active[data-page-type="search"] #sticky-search-header { display: none !important; }
-:root.study-focus-active.sf-search-open[data-page-type="search"] #above-sticky-header,
+:root.study-focus-active.sf-search-open[data-page-type="search"] #above-sticky-header { display: block !important; }
 :root.study-focus-active.sf-search-open[data-page-type="search"] #sticky-search-header { display: flex !important; }
 :root.study-focus-active[data-page-type="search"] #intro { display: none !important; }
 :root.study-focus-active.sf-search-open[data-page-type="search"] #sticky-search-header { padding-top: 0; position: relative; }
