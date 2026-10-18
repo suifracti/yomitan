@@ -84,6 +84,30 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         audioTools.append(sound);
         const sourceMenu = entry?.querySelector('.study-audio-sources');
         if (sourceMenu) { move(sourceMenu, audioTools); }
+        // A full word card can be opened in Yomitan's old Search page at
+        // ~400x250. Keep the original search controls available on demand,
+        // instead of letting its intro and search form obscure the first sense.
+        if (d.documentElement.dataset.pageType === 'search') {
+            const searchBox = /** @type {?HTMLTextAreaElement} */ (d.querySelector('#search-textbox'));
+            const searchHeader = d.querySelector('#sticky-search-header');
+            if (searchBox && searchHeader) {
+                const searchToggle = button('换词', '展开搜索其他单词');
+                searchToggle.classList.add('sf-search-toggle');
+                searchToggle.setAttribute('aria-controls', 'sticky-search-header');
+                searchToggle.setAttribute('aria-expanded', 'false');
+                searchToggle.addEventListener('click', () => {
+                    if (!current()) { return; }
+                    const expanded = !d.documentElement.classList.contains('sf-search-open');
+                    d.documentElement.classList.toggle('sf-search-open', expanded);
+                    searchToggle.setAttribute('aria-expanded', String(expanded));
+                    searchToggle.textContent = expanded ? '收起搜索' : '换词';
+                    if (expanded) { searchBox.focus(); }
+                    else if (d.activeElement === searchBox) { searchToggle.focus(); }
+                });
+                audioTools.prepend(searchToggle);
+                if (d.activeElement === searchBox) { searchToggle.focus({preventScroll: true}); }
+            }
+        }
         heading.append(title, audioTools);
         const sourcePane = make('section', 'sf-source-pane');
         sourcePane.setAttribute('aria-label', '原句与译文');
@@ -441,7 +465,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             context.querySelector('.sf-visually-covered')?.classList.remove('sf-visually-covered');
             for (const panel of output?.querySelectorAll('.sf-current-history') || []) { panel.classList.remove('sf-current-history'); }
             usage?.classList.remove('sf-usage-reference');
-            d.documentElement.classList.remove('study-focus-active');
+            d.documentElement.classList.remove('study-focus-active', 'sf-search-open');
         };
     });
 }
