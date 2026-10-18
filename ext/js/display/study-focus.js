@@ -162,6 +162,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         noSource.hidden = hasSentence;
         const feedback = make('div', 'sf-feedback');
         focusAnswer.append(shortGloss, noSource, answerHeading, asked, meaning, notes, feedback);
+        // With a real source, keep the dictionary's brief Chinese meaning and
+        // the learner's actual sentence in the same fixed reading area.
+        if (hasSentence) { sourcePane.prepend(shortGloss); }
         context.prepend(focusAnswer);
         owned.push(focusAnswer);
         const history = context.querySelector('.study-conversation-history');
