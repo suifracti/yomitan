@@ -623,3 +623,13 @@
 .sf-dictionary-rail>.sf-pane-button { width: 24px; padding: 5px 3px; white-space: normal; line-height: 16px; border: 1px solid var(--sf-line); background: var(--sf-paper); border-radius: 0 6px 6px 0; color: var(--sf-accent); }
 .sf-word-tab>.sf-word-tab-close { flex: 0 0 20px; min-width: 20px; padding: 0; text-align: center; }
 .sf-dictionary-rail>.sf-pane-button { writing-mode: vertical-rl; white-space: nowrap; height: 36px; min-height: 36px; padding: 3px; }
+/* Records are destinations, not another copy of the note/card content. */
+.sf-records .sf-description:empty { display: none; }
+.sf-memory-body { display: grid; gap: 8px; }
+.sf-record-destination { margin: 0; min-width: 0; font-size: 13px; color: var(--sf-muted); }
+.sf-record-destination>.sf-record-jump, .sf-record-destination>span { display: block; width: 100%; margin: 0; padding: 9px 11px; border: 1px solid var(--sf-line); border-radius: 7px; background: var(--sf-paper); text-align: left; font: inherit; line-height: 1.4; text-decoration: none; }
+.sf-record-destination>.sf-record-jump { color: var(--sf-accent); cursor: pointer; }
+.sf-record-destination>.sf-record-jump:hover { background: var(--sf-tint); border-color: var(--sf-accent); }
+.sf-record-sync { margin-top: 3px; font-size: 11px; }
+.sf-record-destination>.sf-record-jump { white-space: pre-line; }
+.sf-record-destination>.sf-record-jump+.sf-record-jump { margin-top: 6px; }

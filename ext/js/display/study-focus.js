@@ -6,7 +6,6 @@ import {updateStudySourcePreview} from './study-translation.js';
 const cleanText = (value) => typeof value === 'string' ? value : '';
 const asArray = (value) => Array.isArray(value) ? value : [];
 const validId = (value) => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
-const displayValue = (value) => typeof value === 'string' ? value : (value == null ? '' : JSON.stringify(value));
 
 /** A reading-first view over the existing lookup, journal and save controls.
  * No new model, save pipeline, collection, or learning identity is created here.
@@ -570,11 +569,12 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         // Explicit two-way readback: Obsidian stays authoritative for edited prose,
         // Anki for cards and scheduling. The view never overwrites either one.
         const recordsHead = make('div', 'sf-records-head');
-        recordsHead.append(make('h3', '', '我的笔记与卡片'));
-        const refresh = button('刷新笔记与卡片'); recordsHead.append(refresh);
+        recordsHead.append(make('h3', '', '我的记录'));
+        const refresh = button('刷新', '刷新笔记与卡片'); recordsHead.append(refresh);
         const readStatus = make('p', 'sf-description', '正在读取记录…');
         const memoryBody = make('div', 'sf-memory-body');
         records.append(recordsHead, readStatus, memoryBody);
+        memoryBody.append(make('p', 'sf-record-destination', 'Obsidian · 未核实'), make('p', 'sf-record-destination', 'Anki · 未核实'));
         let reading = false;
         const readMemory = async (fresh, interactive) => {
             if (reading || !current()) { return; }
@@ -587,23 +587,29 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 const memory = await call('libraryMemory', {word: owner.word, language: owner.language, ...(owner.lemma ? {lemma: owner.lemma} : {}), fresh});
                 if (!current()) { return; }
                 memoryBody.replaceChildren();
-                const items = asArray(memory?.items);
+                const normalizeWord = (value) => cleanText(value).normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+                const words = [owner.word, owner.lemma].filter(Boolean).map(normalizeWord);
+                const sameWord = (value) => words.includes(normalizeWord(value));
+                // Memory also returns semantic/body matches for AI context. They
+                // are not this word's records and must not be displayed/reconciled here.
+                const items = asArray(memory?.items).filter((item) => sameWord(item.word || item.record?.entry?.word));
                 const ids = [...new Set([...(validId(savedRecordId) ? [savedRecordId] : []), ...items.map((item) => item.id).filter(validId)])].slice(0,10);
                 let exactRecords = [];
                 const reconciliation = new Map();
+                let reconcileFailed = false;
                 if (ids.length) {
                     try {
                         const result = await call('libraryRead', {ids, language});
-                        exactRecords = asArray(result?.items);
+                        exactRecords = asArray(result?.items).filter((item) => sameWord(item.record?.entry?.word || item.word));
                         for (const item of (subtitleSource ? [] : exactRecords)) {
                             const id = item?.record?.id;
                             if (!validId(id)) { continue; }
                             try {
                                 reconciliation.set(id, await call('libraryReconcile', {id, language}));
-                            } catch { /* Keep the read-only record available when reconciliation is unavailable. */ }
+                            } catch { reconcileFailed = true; }
                         }
                         const reread = await call('libraryRead', {ids, language});
-                        exactRecords = asArray(reread?.items);
+                        exactRecords = asArray(reread?.items).filter((item) => sameWord(item.record?.entry?.word || item.word));
                     } catch { /* Memory snippets remain useful when one exact record was moved. */ }
                 }
                 if (!current()) { return; }
@@ -634,122 +640,66 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 }
                 const coverage = memory?.coverage?.status || 'unavailable';
                 const anki = memory?.anki || {status: 'unavailable', items: []};
-                const noteCount = Number.isInteger(memory?.total) ? memory.total : null;
-                const cardCount = Number.isInteger(anki.total) ? anki.total : null;
-                const notesVerified = coverage === 'complete' && noteCount !== null;
-                tabButtons[2].textContent = notesVerified ? `我的记录 · ${noteCount}` : '我的记录 · 未核实';
-                readStatus.textContent = `${notesVerified ? `Obsidian ${noteCount} 条同词语境` : 'Obsidian 尚未完整核对，不能据此判断没学过'} · ${anki.status === 'unavailable' ? 'Anki 未连接／未读到' : anki.status === 'complete' ? `Anki ${cardCount ?? asArray(anki.items).length} 条相关笔记` : 'Anki 只读到一部分'}。${fresh ? '已重新读回' : '可刷新取得最新修改'}。`;
-                const noteTitle = make('h4', '', 'Obsidian · 我的理解'); memoryBody.append(noteTitle);
-                if (!items.length) { memoryBody.append(make('p', 'sf-description', coverage === 'complete' ? '在已检查的语境词库中没有找到相关记录。' : '尚未完整读到笔记，不能据此判断没学过。')); }
-                for (const item of items) {
-                    const read = exactRecords.find((row) => row.id === item.id);
-                    const row = read?.record;
-                    const block = make('article', 'sf-memory-note');
-                    const subject = make('strong', '', row?.entry?.word || item.word || word);
-                    const text = make('div', 'sf-note-prose');
-                    for (const part of cleanText(read?.text || item.text).split(/\n\s*\n/)) {
-                        const value = part.trim();
-                        if (!value || /^<!--/.test(value)) { continue; }
-                        const line = /^#{1,6}\s/.test(value) ? make('h5', '', value.replace(/^#{1,6}\s+/, '')) :
-                            make('p', '', value.split('\n').map((line) => line.replace(/^> ?/, '')).join('\n'));
-                        text.append(line);
-                    }
-                    block.append(subject, text);
-                    const syncState = cleanText(row?.syncState);
-                    const favorite = row?.favorite === true;
-                    const favoritePending = row?.favoriteSyncState === 'pending' || (favorite && syncState === 'pending');
-                    const rowStatus = make('p', 'sf-description', [
-                        favorite ? (favoritePending ? '已收藏到待学 · Obsidian 待同步' : '已收藏到待学') : '',
-                        syncState === 'pending' && !favorite ? 'Obsidian 待同步' : syncState === 'synced' ? 'Obsidian 已同步' : '',
-                        row?.ankiState === 'pending' ? 'Anki 待补交' : '',
-                        Number.isInteger(row?.cards?.length) ? `${row.cards.length} 张卡` : ''
-                    ].filter(Boolean).join(' · ') || '已读取当前学习记录');
-                    block.append(rowStatus);
-                    const savedCards = asArray(row?.cards);
-                    if (savedCards.length) {
-                        const cardsHeading = make('strong', 'sf-record-cards-heading', '本条记录的复习卡');
-                        block.append(cardsHeading);
-                        for (const card of savedCards) {
-                            const cardState = cleanText(card?.syncState || card?.state);
-                            const target = cleanText(card?.target) || cleanText(card?.target?.name || card?.target?.kind || card?.target?.type);
-                            const deck = cleanText(card?.deck || card?.target?.deck || row?.target?.deck);
-                            const stateLabel = cardState === 'pending' ? '待同步' : cardState === 'synced' ? '已同步' : cardState;
-                            const cardText = [cleanText(card?.front), cleanText(card?.back), target ? `目标 ${target}` : '', deck ? `牌组 ${deck}` : '', stateLabel].filter(Boolean).join(' · ');
-                            block.append(make('p', 'sf-record-card', cardText || '已有复习卡；详情未提供'));
-                        }
-                    } else if (row && !('cards' in row)) {
-                        block.append(make('p', 'sf-description', '旧记录没有卡片明细；兼容显示，不据此推断没有卡片。'));
-                    }
-                    const conflicts = asArray(row?.conflicts?.length ? row.conflicts : reconciliation.get(row?.id)?.conflicts);
-                    const resolutions = {};
-                    for (const conflict of conflicts) {
-                        const conflictBox = make('section', 'sf-record-conflict');
-                        const conflictKey = cleanText(conflict?.key) || '记录内容';
-                        conflictBox.append(make('strong', '', `同步冲突 · ${conflictKey}`));
-                        const local = make('p', '', `Obsidian：${displayValue(conflict?.local) || '(空内容)'}`);
-                        const remote = make('p', '', `Anki：${displayValue(conflict?.remote) || '(空内容)'}`);
-                        const choices = make('div', 'sf-conflict-choices');
-                        const resolve = (value) => {
-                            const localChoice = button('保留 Obsidian');
-                            const remoteChoice = button('保留 Anki');
-                            for (const choice of [localChoice, remoteChoice]) { choice.disabled = true; }
-                            const apply = async (resolution) => {
-                                try {
-                                    readStatus.textContent = `正在处理「${conflictKey}」冲突…`;
-                                    resolutions[conflictKey] = resolution;
-                                    if (Object.keys(resolutions).length < conflicts.length) {
-                                        readStatus.textContent = '已保留你的选择，请继续选择这条记录的其他冲突。';
-                                        return;
-                                    }
-                                    await call('libraryReconcile', {id: row.id, language, resolutions});
-                                    readStatus.textContent = '已提交你的选择，正在重新读取实际记录…';
-                                    await readMemory(true, false);
-                                } catch (error) {
-                                    if (current()) { readStatus.textContent = `未完成冲突处理：${error instanceof Error ? error.message : '请稍后重试'}`; }
-                                }
-                            };
-                            localChoice.disabled = false;
-                            remoteChoice.disabled = false;
-                            localChoice.addEventListener('click', () => { void apply('local'); });
-                            remoteChoice.addEventListener('click', () => { void apply('remote'); });
-                            choices.append(localChoice, remoteChoice);
-                        };
-                        resolve();
-                        conflictBox.append(local, remote, choices);
-                        block.append(conflictBox);
-                    }
-                    if (item.truncated || read?.truncated) { block.append(make('p', 'sf-description', '这里只显示片段；完整内容仍在原笔记。')); }
-                    const url = cleanText(row?.openUrl);
-                    if (/^obsidian:\/\/open\?/.test(url)) {
-                        const link = make('a', 'sf-link scan-disable', '打开原笔记 ↗'); link.href = url; block.append(link);
-                    }
-                    memoryBody.append(block);
-                }
-                memoryBody.append(make('h4', '', 'Anki · 已有复习卡'));
-                for (const item of asArray(anki.items)) {
-                    const block = make('article', 'sf-memory-note');
-                    const fields = item?.fields || {};
-                    block.append(make('strong', '', cleanText(fields.Question || fields.Word || fields.Expression || fields.Front) || '已有卡片'));
-                    block.append(make('p', 'sf-memory-sentence', cleanText(fields.Sentence)));
-                    block.append(make('p', '', cleanText(fields.Definition || fields.Back || fields.Text)));
-                    if (item.truncated) { block.append(make('p', 'sf-description', '内容为读取片段，完整卡面仍在 Anki。')); }
-                    const reviews = asArray(item.reviews);
-                    const count = reviews.reduce((total, r) => total + (Number.isInteger(r.reps) ? r.reps : 0), 0);
-                    block.append(make('p', 'sf-description', item.reviewStatus === 'reported' ? `已读取复习 ${count} 次；不代表已经掌握。` : '复习情况尚未读到。'));
-                    if (Number.isSafeInteger(item.noteId) && item.noteId > 0 && display.application?.api?.viewNotes) {
-                        const open = button('在 Anki 查看');
+                const knownNoteIds = new Set(exactRecords.flatMap((item) => asArray(item.record?.cards).map((card) => card.noteId)).filter((id) => Number.isSafeInteger(id) && id > 0));
+                const namesCurrentWord = (item) => {
+                    if (knownNoteIds.has(item.noteId)) { return true; }
+                    const front = normalizeWord(item.fields?.Word || item.fields?.Expression || item.fields?.Question || item.fields?.Front).replace(/<[^>]*>/g, ' ');
+                    return words.some((term) => {
+                        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        return new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}($|[^\\p{L}\\p{N}_])`, 'u').test(front);
+                    });
+                };
+                const cardItems = asArray(anki.items).filter(namesCurrentWord);
+                const verifiedNoteIds = [...reconciliation.values()].filter((row) => row?.syncState === 'synced').flatMap((row) => asArray(row.cards).map((card) => card.noteId));
+                const noteIds = [...new Set([...verifiedNoteIds, ...cardItems.map((item) => item.noteId)])].filter((id) => Number.isSafeInteger(id) && id > 0);
+                const hasNotes = items.length > 0 || exactRecords.length > 0 || memory?.total > 0;
+                const hasCards = noteIds.length > 0;
+                const noCardsVerified = anki.status === 'complete' && anki.total === 0;
+                tabButtons[2].textContent = '我的记录';
+                readStatus.textContent = '';
+                const noteRow = make('div', 'sf-record-destination');
+                const noteUrl = exactRecords.map((item) => cleanText(item.record?.openUrl)).find((url) => /^obsidian:\/\/open\?/.test(url));
+                const noteWords = [...new Set([...exactRecords.map((item) => item.record?.entry?.word), ...items.map((item) => item.word)].filter(Boolean))].join('／') || word;
+                const notesLabel = `Obsidian · ${noteWords} · ${hasNotes ? '有笔记' : coverage === 'complete' ? '暂无笔记' : '未核实'}`;
+                if (noteUrl) {
+                    const link = make('a', 'sf-record-jump sf-link scan-disable', `${notesLabel} ↗`);
+                    link.href = noteUrl; link.title = '打开当前词最近的原笔记'; noteRow.append(link);
+                } else { noteRow.append(make('span', '', notesLabel)); }
+                const cardRow = make('div', 'sf-record-destination');
+                if (hasCards && display.application?.api?.viewNotes) {
+                    const kinds = {meaning: '单词词义', context: '语境词义', expression: '表达', grammar: '语法', sentence: '句子', listening: '听力'};
+                    for (const noteId of noteIds) {
+                        const linked = exactRecords.flatMap((item) => asArray(item.record?.cards).filter((card) => card.noteId === noteId).map((card) => ({card, word: item.record.entry.word})))[0];
+                        const remote = cardItems.find((item) => item.noteId === noteId);
+                        const front = cleanText(linked?.card?.front || remote?.fields?.Question || remote?.fields?.Word || remote?.fields?.Front).replace(/<[^>]*>/g, ' ').trim();
+                        const kind = kinds[linked?.card?.kind] || '既有卡片';
+                        const cardWord = linked?.word || word;
+                        const summary = front.length > 56 ? `${front.slice(0, 56)}…` : front;
+                        const open = button(`Anki · ${cardWord} · ${kind}\n${summary || '查看卡片'} ↗`, noteIds.length === 1 ? '在 Anki 查看' : `在 Anki 查看卡片 ${noteId}`);
+                        open.classList.add('sf-record-jump'); open.title = front || '打开这张卡片';
                         open.addEventListener('click', () => {
                             if (!current()) { return; }
-                            void display.application.api.viewNotes([item.noteId], 'edit', false).catch(() => { readStatus.textContent = '未打开 Anki；原卡片与排程没有更改。'; });
+                            void display.application.api.viewNotes([noteId], 'browse', false).catch(() => {
+                                if (current()) { readStatus.textContent = '未能打开 Anki，请连接后重试。'; }
+                            });
                         });
-                        block.append(open);
+                        cardRow.append(open);
                     }
-                    memoryBody.append(block);
+                } else {
+                    cardRow.append(make('span', '', `Anki · ${word} · ${hasCards ? '有卡片' : noCardsVerified ? '暂无卡片' : '未核实'}`));
                 }
-                if (!asArray(anki.items).length) { memoryBody.append(make('p', 'sf-description', anki.status === 'complete' ? '在当前牌组／笔记类型中未找到相关卡片。' : 'Anki 尚未完整读取，不能当作零卡片。')); }
-                if (anki.cached) { memoryBody.append(make('p', 'sf-description', `Anki 结果来自 ${anki.ageSeconds ?? '少量'} 秒前的缓存；刷新会重新核对。`)); }
+                memoryBody.append(noteRow, cardRow);
+                const states = [...reconciliation.values(), ...exactRecords.map((item) => item.record)];
+                const conflict = states.some((item) => asArray(item?.conflicts).length > 0 || item?.syncState === 'conflict');
+                const pending = states.some((item) => item?.syncState === 'pending' || item?.ankiState === 'pending');
+                if (conflict || pending || reconcileFailed) {
+                    const link = make('a', 'sf-link sf-record-sync scan-disable', conflict ? '同步有冲突 · 去学习库处理 ↗' : pending ? '同步待处理 · 去学习库查看 ↗' : '同步未完成 · 去学习库重试 ↗');
+                    link.href = libraryLink.href;
+                    link.target = '_blank'; memoryBody.append(link);
+                }
+
             } catch (error) {
-                if (current()) { readStatus.textContent = `本次未读回：${error instanceof Error ? error.message : '本机学习服务不可用'}。已有记录没有被修改。`; }
+                if (current()) { readStatus.textContent = `暂未读回：${error instanceof Error ? error.message : '请稍后重试'}`; }
             } finally { reading = false; if (current()) { refresh.disabled = false; } }
         };
         refresh.addEventListener('click', () => { void readMemory(true, true); });

@@ -151,9 +151,11 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
     page.locator('[data-study-save=note]').click();page.wait_for_timeout(50)
     check('save remains exactly one action','()=>window.saveClicks===1 && document.querySelector(".sf-saved-summary").textContent.includes("已关联")')
     page.get_by_role('tab',name='我的记录',exact=False).click()
-    check('Obsidian AND Anki latest data visible','()=>document.querySelector(".sf-records").textContent.includes("Obsidian 修改的解释 v1") && document.querySelector(".sf-records").textContent.includes("入睡的能力。v1")')
+    check('records show compact presence links, never full note or card text','()=>{const r=document.querySelector(".sf-records");return r.textContent.includes("有笔记")&&r.textContent.includes("Anki · ability · 既有卡片")&&r.textContent.includes("ability to do something 是什么意思？")&&!r.textContent.includes("修改的解释 v1")&&!r.textContent.includes("入睡的能力。v1")&&[...r.querySelectorAll("a")].some(a=>a.href.startsWith("obsidian:"));}')
     page.evaluate('window.memoryVersion=2');page.get_by_role('button',name='刷新笔记与卡片',exact=True).click();page.wait_for_timeout(50)
-    check('explicit readback reflects edits without writes','()=>document.querySelector(".sf-records").textContent.includes("修改的解释 v2") && window.calls.every(([x])=>["libraryMemory","libraryRead","libraryReconcile"].includes(x))')
+    check('refresh keeps only presence links rather than importing edited prose','()=>!document.querySelector(".sf-records").textContent.includes("修改的解释 v2") && window.calls.every(([x])=>["libraryMemory","libraryRead","libraryReconcile"].includes(x))')
+    page.get_by_role('button',name='在 Anki 查看',exact=True).click()
+    check('Anki presence button jumps to its note without editing fields','()=>window.calls.some(([a,args])=>a==="viewNotes"&&args[0][0]===42&&args[1]==="browse")')
     page.screenshot(path=str(OUTPUT/'previews'/'records-420.png'))
     page.get_by_role('tab',name='词义与原句',exact=True).click()
     page.evaluate('window.addTurn("很长的解释。".repeat(120), 3)');page.wait_for_timeout(30)
@@ -246,7 +248,22 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
     check('a plain web address is labeled as opening the source', '()=>document.querySelector(".sf-source-footer > a").textContent==="打开来源"')
     page.evaluate('''() => { window.mockOverride = async (action) => { window.calls.push([action, null]); if (action==="libraryMemory") return {total:0, coverage:{status:"partial"}, items:[], anki:{status:"unavailable", items:[]}}; if (action==="libraryRead") return {items:[]}; throw new Error(action); }; }''')
     page.get_by_role('tab', name='我的记录', exact=False).click(); page.get_by_role('button', name='刷新笔记与卡片', exact=True).click(); page.wait_for_timeout(50)
-    check('partial coverage is not shown as zero records', '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent.includes("未核实") && !document.querySelector(".sf-tab[aria-selected=true]").textContent.includes("· 0")')
+    check('partial coverage is not shown as zero records', '()=>document.querySelector(".sf-records").textContent.includes("未核实") && !document.querySelector(".sf-records").textContent.includes("暂无笔记")')
+    load_fixture()
+    page.evaluate("""() => {
+        window.fire('contentUpdateStart'); window.display.query='intelligence';
+        window.display.history.state.sentence={text:'Human intelligence matters.'};
+        window.calls=[];
+        window.mockOverride=async(action,data)=>{
+            window.calls.push([action,data]);
+            if(action==='libraryMemory')return {total:0,coverage:{status:'complete'},items:[{id:'a'.repeat(32),word:'ability',text:'This unrelated note mentions intelligence.'}],anki:{status:'complete',total:1,items:[{noteId:42,fields:{Word:'ability to fall asleep'}}]}};
+            throw Error('Unrelated records must not be read or reconciled: '+action);
+        };
+        window.fire('contentUpdateComplete');
+    }""")
+    page.wait_for_timeout(50);page.get_by_role('tab',name='我的记录',exact=False).click()
+    check('intelligence never displays or reconciles related ability notes', '()=>{const r=document.querySelector(".sf-records");return r.textContent.includes("暂无笔记")&&!r.textContent.includes("ability")&&!r.querySelector(".sf-record-jump")&&window.calls.every(([a])=>a==="libraryMemory");}')
+    page.screenshot(path=str(OUTPUT/'previews'/'records-unrelated-filter.png'))
     # Real Yomitan search windows have their own legacy title/options/search box
     # above the card. A 400x250 full-word lookup must expose the first Chinese
     # sense immediately while keeping the original search controls reachable.

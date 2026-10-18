@@ -458,6 +458,34 @@ class LibraryTests(unittest.TestCase):
         self.assertIn('含义（保存时的解释）', body)
         self.assertIn(ENTRY['meaning'], body)
 
+    def test_note_only_then_qa_then_card_then_more_qa_preserves_point(self):
+        saved = self.lib.handle({'action':'librarySave','entry':ENTRY,'makeCard':False,'turns':[]})
+        self.assertEqual(len(self.cards), 0)
+        first = {'id':'late-qa-1','at':'2026-10-18T12:00:00Z','question':'第一次追问',
+                 'translation':'第一版译文','meaning':'第一版语境含义','notes':'第一轮说明','feedback':'unconfirmed'}
+        updated = self.lib.handle({'action':'libraryUpdate','id':saved['id'],'language':'en',
+                                  'entry':{'translation':first['translation'],'meaning':first['meaning']},'turns':[first]})
+        self.assertEqual(updated['id'], saved['id'])
+        self.assertEqual(len(self.cards), 0)
+        made = self.lib.handle({'action':'libraryCardsAdd','id':saved['id'],'language':'en',
+                               'cards':[{'front':'What does just mean here?','back':'独立确认的复习答案','kind':'context'}]})
+        note_id = made['cards'][0]['noteId']
+        second = {**first,'id':'late-qa-2','question':'第二次追问','translation':'第二版译文','meaning':'第二版语境含义'}
+        self.lib.handle({'action':'libraryUpdate','id':saved['id'],'language':'en',
+                         'entry':{'translation':second['translation'],'meaning':second['meaning']},'turns':[second]})
+        reconciled = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(reconciled['syncState'], 'synced')
+        self.assertEqual(len(self.cards), 1)
+        self.assertEqual(reconciled['cards'][0]['noteId'], note_id)
+        fields = self.cards[note_id]['fields']
+        self.assertIn('第二版译文', fields['Definition'])
+        self.assertIn('第二版语境含义', fields['Definition'])
+        self.assertIn('独立确认的复习答案', fields['Definition'])
+        self.assertIn('What does just mean here?', fields['Word'])
+        body = (self.vault / reconciled['path']).read_text()
+        self.assertIn('第一次追问', body)
+        self.assertIn('第二次追问', body)
+
     def test_pending_card_resubmission_uses_original_ids_and_no_duplicates(self):
         saved = self.save()
         item = {'id': saved['id'], 'version': saved['version'], 'cards': [

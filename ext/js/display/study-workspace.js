@@ -171,8 +171,9 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         node.setAttribute('aria-expanded', String(!collapsed));
     };
     const mainHeight = () => {
-        if (sizes.main.manual || shell.dataset.panel !== '0' || main.hidden) { return sizes.main.height; }
-        const scroll = shell.querySelector('.sf-learning-scroll');
+        if (sizes.main.manual || main.hidden) { return sizes.main.height; }
+        const recordsPage = shell.dataset.panel === '2';
+        const scroll = shell.querySelector(recordsPage ? '.sf-records' : '.sf-learning-scroll');
         if (!scroll) { return sizes.main.height; }
         /**
          * @param {Element} node
@@ -182,8 +183,9 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
             const style = getComputedStyle(node);
             return node.getClientRects().length > 0 ? node.getBoundingClientRect().height + (Number.parseFloat(style.marginTop) || 0) + (Number.parseFloat(style.marginBottom) || 0) : 0;
         };
-        const content = [...scroll.children].reduce((total, node) => total + extent(node), 0);
-        const fixed = [toolbar, shell.querySelector('.sf-heading'), tabs, shell.querySelector('.sf-compose'), shell.querySelector('.sf-save-bar')].filter((node) => node !== null).reduce((total, node) => total + extent(node), 4);
+        const scrollStyle = getComputedStyle(scroll);
+        const content = [...scroll.children].reduce((total, node) => total + extent(node), 0) + (Number.parseFloat(scrollStyle.paddingTop) || 0) + (Number.parseFloat(scrollStyle.paddingBottom) || 0);
+        const fixed = [toolbar, shell.querySelector('.sf-heading'), tabs, recordsPage ? null : shell.querySelector('.sf-compose'), shell.querySelector('.sf-save-bar')].filter((node) => node !== null).reduce((total, node) => total + extent(node), 4);
         return Math.max(240, Math.min(Math.max(550, sizes.main.height), Math.ceil(content + fixed)));
     };
     const layout = () => {
@@ -253,7 +255,11 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         }
         tabButtons[next]?.click(); tabButtons[next]?.focus();
     };
-    const onMainTab = () => { queueMicrotask(layout); };
+    const onMainTab = () => {
+        queueMicrotask(() => {
+            layout(); request();
+        });
+    };
     /** @param {KeyboardEvent} event */
     const onEscape = (event) => {
         if (event.key !== 'Escape' || companion.hidden) { return; }
