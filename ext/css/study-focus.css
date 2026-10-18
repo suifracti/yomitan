@@ -521,3 +521,44 @@
 .sf-header-sense .sf-short-gloss { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 .sf-short-gloss>.sf-gloss-preview { grid-column: 1; grid-row: 1; }
 .sf-short-gloss>.sf-gloss-caption { grid-column: 2; grid-row: 1; padding-top: 2px; }
+
+/* Explicitly constrain the single grid column: intrinsic form text must never
+   widen the whole card and clip unrelated source/composer controls. */
+.study-focus-active .study-focus-shell {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+}
+.study-focus-shell>.sf-heading,
+.study-focus-shell>.sf-tabs,
+.study-focus-shell>.sf-body,
+.study-focus-shell>.sf-save-bar,
+.sf-learn,
+.sf-learning-scroll,
+.sf-learn #study-context,
+.sf-compose,
+.sf-source-pane,
+.sf-source-footer { min-width: 0; max-width: 100%; }
+.sf-compose textarea.study-followup { min-width: 0; }
+.sf-heading button.sf-forms-preview { flex-wrap: wrap; white-space: normal; overflow: visible; max-width: 100%; }
+.sf-form-piece { min-width: 0; max-width: 100%; flex: 0 1 auto; white-space: normal; }
+.sf-form-piece strong { min-width: 0; overflow-wrap: anywhere; }
+.sf-form-name { flex: none; }
+.sf-word-facts { flex: 1 0 100%; min-width: 0; width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 7px; color: var(--sf-muted); font-size: 10px; line-height: 15px; overflow-wrap: anywhere; }
+.sf-word-facts .study-reading-info { margin: 0; padding: 0; border: 0; font: inherit; }
+.sf-word-facts [data-study-meta-role=tags],
+.sf-word-facts [data-sc-study-role=tags] { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.study-focus-shell .note-actions-container,
+.sf-dictionary-info>.entry-header { display: none !important; }
+@media (max-height: 350px) {
+    .study-focus-active .sf-heading { row-gap: 2px; }
+    .sf-heading .sf-word-facts { grid-column: 1 / -1; font-size: 9px; line-height: 12px; flex-wrap: nowrap; overflow: hidden; max-height: 12px; }
+}
+
+.sf-word-facts .study-tag { padding: 0 4px; border-radius: 3px; background: var(--sf-tint); color: var(--sf-muted); }
+@media (max-height: 350px) {
+    .study-focus-active .sf-tabs .sf-tab { padding-block: 1px 2px; }
+    .study-focus-active .sf-save-bar { padding-block: 2px; }
+    .sf-dictionary-heading-dock, .sf-dictionary-pager { padding-block: 2px; }
+}

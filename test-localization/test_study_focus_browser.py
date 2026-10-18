@@ -64,6 +64,24 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
             print(page.evaluate('()=>Object.fromEntries([".sf-heading",".sf-tabs",".sf-body",".sf-dictionary",".sf-dictionary-scroll",".sf-save-bar","[data-study-dictionary-next]","[data-study-dictionary-translate]"].map(s=>{const e=document.querySelector(s),r=e?.getBoundingClientRect();return [s,r?{y:r.y,h:r.height,w:r.width,client:e.clientHeight}:null]}))'))
         assert result, (name, result)
         results.append({'test':name,'passed':True})
+    page.set_viewport_size({'width':400,'height':650})
+    page.evaluate("""()=>{window.fire('contentUpdateStart');
+        document.querySelector('.study-source-translation-row')?.remove();document.querySelector('.study-translation-output').replaceChildren();window.mockOverride=async()=>({items:[],total:0,coverage:{status:'complete'},anki:{status:'complete',items:[],total:0}});
+        window.display.query='diet';window.display.history.state.sentence={text:'Choose information diet.'};document.querySelector('.study-source p').innerHTML='Choose information <mark>diet</mark>.';document.querySelector('.study-reading-phonetic').textContent='/ˈdaɪət/';document.querySelector('.study-reading-meaning').innerHTML='<div class="study-reading-sense"><span class="study-pos">n. 名词</span><span class="study-meaning-text">日常饮食，议会</span></div><div class="study-reading-sense"><span class="study-pos">vt. 及物动词</span><span class="study-meaning-text">照规定饮食</span></div>';
+        document.querySelector('[data-study-meta-role=forms]').innerHTML='<span class="study-form-item"><span class="study-form-label">pl. 复数 / 3sg. 三单：</span><strong>diets</strong></span><span class="study-form-item"><span class="study-form-label">V-ing 进行：</span><strong>dieting</strong></span><span class="study-form-item"><span class="study-form-label">p.p. 过去分词 / past. 过去式：</span><strong>dieted</strong></span>';
+        window.fire('contentUpdateComplete');
+    }""")
+    for width in [320,400,420,720]:
+        page.set_viewport_size({'width':width,'height':650});page.wait_for_timeout(30)
+        check(f'long form labels keep composer/source inside {width}px card', '()=>{const selectors=[".sf-heading",".sf-source-pane",".sf-compose",".sf-compose .study-translation-actions",".sf-source-footer",".sf-save-bar"];const boxes=selectors.map(s=>document.querySelector(s).getBoundingClientRect());window.widthDiagnostics=boxes.map(r=>({left:r.left,right:r.right,width:r.width}));return boxes.every(r=>r.left>=-1&&r.right<=innerWidth+1)&&document.documentElement.scrollWidth<=innerWidth+1;}')
+        if width==400: page.screenshot(path=str(OUTPUT/'previews'/'diet-long-forms-400.png'))
+    page.evaluate('delete window.mockOverride')
+    page.set_viewport_size({'width':420,'height':600})
+    load_fixture()
+    check('tags and frequency are in the shared word header, not the bottom reference section', '()=>document.querySelector(".sf-heading .sf-word-facts")?.textContent.includes("TOEFL") && document.querySelector(".sf-heading [data-study-meta-role=frequency]")?.textContent.includes("BNC") && !document.querySelector(".sf-dictionary-info [data-study-meta-role=frequency]")')
+    page.get_by_role('tab', name='详细词典', exact=True).click()
+    check('learning UI hides the legacy direct dictionary card controls', '()=>{const e=document.querySelector(".sf-dictionary-info .note-actions-container");return e&&e.getBoundingClientRect().height===0&&document.querySelector("[data-study-save=note]").getBoundingClientRect().height>0;}')
+    page.get_by_role('tab', name='词义与原句', exact=True).click()
     check('first page puts Chinese meaning beside the authentic source',
         '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句" && document.querySelector(".sf-heading .sf-gloss-text")?.textContent==="能力，才干" && !document.querySelector(".sf-source-pane").hidden && document.querySelector(".sf-source-pane mark").textContent==="ability"')
     check('quick dictionary action keeps the separate view-card label', '()=>document.querySelector("[data-action=save-note] .study-action-label").textContent==="快速词典卡" && document.querySelector("[data-action=view-note] .study-action-label").textContent==="查看卡片"')

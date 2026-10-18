@@ -212,7 +212,15 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         move(entryHeader, dictionaryInfo);
         move(anchor.querySelector('.study-reading-meaning'), dictionaryReference);
         move(anchor.querySelector('.study-reading-english'), dictionaryReference);
-        move(anchor.querySelector('.study-reading-info'), entryHeader?.querySelector('.study-metadata') ? dictionaryReference : dictionaryInfo);
+        const wordFacts = make('div', 'sf-word-facts');
+        const factNodes = entryHeader?.querySelectorAll('[data-study-meta-role="tags"], [data-sc-study-role="tags"], [data-study-meta-role="frequency"], [data-sc-study-role="frequency"]') || [];
+        for (const node of factNodes) { move(node, wordFacts); }
+        const readingInfo = anchor.querySelector('.study-reading-info');
+        move(readingInfo, factNodes.length ? dictionaryReference : wordFacts);
+        if (wordFacts.textContent.trim()) {
+            wordFacts.title = wordFacts.textContent.trim();
+            headerSense.before(wordFacts); owned.push(wordFacts);
+        }
         move(entry?.querySelector('.study-dictionary-details'), dictionaryScroll);
         const dictDisclosure = dictionary.querySelector('.study-dictionary-details');
         if (dictDisclosure) { dictDisclosure.open = true; }
@@ -280,7 +288,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 const split = part.indexOf('：');
                 const piece = make('span', 'sf-form-piece');
                 if (split > 0) {
-                    const label = part.slice(0, split).replace('过去式 / 过去分词', '过去/分词').replace('现在分词', '进行').replace('第三人称', '三单');
+                    let label = part.slice(0, split);
+                    if (/\p{Script=Han}/u.test(label)) {
+                        label = label.replace(/\b(?:pl\.|3sg\.|past\.|p\.p\.|V-ing|comp\.|superl\.)\s*/gi, '').replace(/过去式/g, '过去').replace(/过去分词/g, '分词').replace(/现在分词/g, '进行').replace(/第三人称/g, '三单').replace(/\s*\/\s*/g, '/').trim();
+                    }
                     piece.append(make('span', 'sf-form-name', label), make('strong', '', part.slice(split + 1).trim()));
                 } else { piece.textContent = part; }
                 formsPreview.append(piece);
