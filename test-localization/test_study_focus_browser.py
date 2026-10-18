@@ -41,6 +41,9 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
         script=script.replace("prepareStudyFocus(window.display,{call:window.mockCall});",card_fixture+"\nprepareStudyFocus(window.display,{call:window.mockCall});")
         script=script.replace("import {prepareStudyFocus} from '/source/ext/js/display/study-focus.js';",'')
         module=(ROOT/'ext/js/display/study-focus.js').read_text()
+        # This suite checks the underlying source/dictionary controllers. The actual
+        # two-card layout and host resizing are exercised by test_study_workspace_browser.py.
+        module=module.replace("import {prepareStudyWorkspace} from './study-workspace.js';", "const prepareStudyWorkspace=()=>({dispose(){}});")
         module=module.replace("import {studyCall} from '../study/study-client.js';", "const studyCall=(a,d)=>globalThis.mockCall(a,d);")
         upstream=(ROOT/'ext/js/display/study-translation.js').read_text()
         begin=upstream.index('export function updateStudySourcePreview(')

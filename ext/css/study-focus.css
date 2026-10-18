@@ -562,3 +562,35 @@
     .study-focus-active .sf-save-bar { padding-block: 2px; }
     .sf-dictionary-heading-dock, .sf-dictionary-pager { padding-block: 2px; }
 }
+
+/* Two independently sized surfaces share the original Display and host frame. */
+:root[data-study-workspace=true] { background: var(--sf-tint); }
+:root[data-study-workspace=true] body,
+:root[data-study-workspace=true] .content-body-inner { background: var(--sf-tint); }
+:root[data-study-workspace=true] #frame-resizer-handle { display: none; }
+.sf-workspace { display: grid; align-items: start; gap: 12px; width: 100%; min-width: 0; height: 100dvh; overflow: hidden; }
+.sf-main-card, .sf-dictionary-card { box-sizing: border-box; position: relative; min-width: 0; overflow: hidden; background: var(--sf-paper); border: 1px solid var(--sf-line); border-radius: 10px; display: flex; flex-direction: column; }
+.sf-workspace .study-toolbar { flex: 0 0 34px; min-height: 34px; height: 34px; gap: 7px; padding: 0 10px; }
+.sf-workspace .study-toolbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-workspace .study-auto-size { display: none; }
+.sf-workspace .study-focus-shell { flex: 1; min-height: 0; height: auto; width: 100%; }
+.sf-pane-heading { display: flex; align-items: center; gap: 6px; flex: 0 0 36px; padding: 0 10px; border-bottom: 1px solid var(--sf-line); }
+.sf-pane-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--sf-ink); }
+.sf-pane-button { flex: none; min-height: 24px; padding: 2px 5px; border: 0; border-radius: 5px; background: none; color: var(--sf-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.sf-pane-button:hover { color: var(--sf-accent); background: var(--sf-tint); }
+.sf-pane-button:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: -2px; }
+.sf-dictionary-card>.sf-dictionary { flex: 1; height: auto; min-height: 0; }
+.sf-dictionary-card[hidden], .sf-pane-collapsed>.study-focus-shell, .sf-pane-collapsed>.sf-pane-resize { display: none !important; }
+.sf-pane-collapsed .study-toolbar>:not(.study-toolbar-title):not(.sf-main-fold):not(.study-close) { display: none; }
+.sf-pane-resize { position: absolute; right: 1px; bottom: 1px; z-index: 4; width: 14px; height: 14px; min-height: 0; padding: 0; border-radius: 0; color: var(--sf-muted); cursor: nwse-resize; touch-action: none; font-size: 12px; opacity: .7; }
+.sf-workspace[data-layout=overlay].sf-reader-expanded>.sf-main-card { display: none; }
+.sf-workspace[data-layout=overlay]:not(.sf-reader-expanded)>.sf-dictionary-card { grid-row: 1; }
+.sf-workspace[data-layout=overlay]:not(.sf-reader-expanded)>.sf-main-card { grid-row: 2; }
+.sf-workspace[data-layout=overlay] { gap: 12px; grid-template-rows: auto minmax(0,1fr); }
+.sf-workspace[data-layout=overlay].sf-reader-expanded { grid-template-rows: minmax(0,1fr); }
+.sf-dictionary-card .sf-dictionary-heading-dock { padding-top: 8px; }
+.sf-dictionary-card .sf-dictionary-scroll { padding: 12px 16px; }
+@media (max-height: 350px) {
+    .sf-workspace .study-toolbar { flex-basis: 28px; height: 28px; min-height: 28px; }
+    .sf-pane-heading { flex-basis: 30px; }
+}

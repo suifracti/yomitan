@@ -554,13 +554,13 @@ export function prepareStudyCard(display, detail = false) {
     const fit = async () => {
         const token = generation;
         const id = display.parentPopupId;
-        if (!id || manual || !autoSize || !autoSize.checked || document.documentElement.dataset.isResizing === 'true') {
+        if (document.documentElement.dataset.studyWorkspace === 'true' || !id || manual || !autoSize || !autoSize.checked || document.documentElement.dataset.isResizing === 'true') {
             return;
         }
         try {
             /** @type {import('popup').ValidSize} */
             const size = await display.invokeParentFrame('popupFactoryGetFrameSize', {id});
-            if (token !== generation || manual || !autoSize.checked || !size.valid) {
+            if (document.documentElement.dataset.studyWorkspace === 'true' || token !== generation || manual || !autoSize.checked || !size.valid) {
                 return;
             }
             const height = Math.max(160, Math.min(560, Math.ceil(inner.getBoundingClientRect().height + 4)));

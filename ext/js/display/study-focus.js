@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 import {studyCall} from '../study/study-client.js';
+import {prepareStudyWorkspace} from './study-workspace.js';
 import {updateStudySourcePreview} from './study-translation.js';
 
 const cleanText = (value) => typeof value === 'string' ? value : '';
@@ -806,8 +807,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         }
         sourcePane.append(sourceFooter); owned.push(sourceFooter);
         select(activeTab); updateAnswer(); syncSave();
+        const workspace = prepareStudyWorkspace(display, {shell, dictionary, tabs, word});
         void readMemory(false, false);
         dispose = () => {
+            workspace.dispose();
             observers.forEach((observer) => observer.disconnect());
             for (const node of formNodes) { node.classList.remove('sf-forms-original'); }
             entry?.removeEventListener('study-dictionary-pagechange', resetDictionaryScroll);

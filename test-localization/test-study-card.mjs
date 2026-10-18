@@ -439,3 +439,21 @@ test('empty or short AI previews never hide sentence editing or the neighbor con
  assert.equal(generated,0);
  controller.cancel();
 });
+
+test('in-flight legacy auto-size yields when the two-card workspace takes ownership',async()=>{
+ const {prepareStudyCard}=await import('../ext/js/display/study-card.js');
+ const {display}=setupDisplay();let scheduled,finish;const setters=[];
+ globalThis.requestAnimationFrame=(callback)=>{scheduled=callback;};
+ globalThis.ResizeObserver=class {constructor(callback){this.callback=callback;}observe(){this.callback();scheduled?.();}};
+ display.parentPopupId='root';
+ display.invokeParentFrame=async(action,data)=>{
+  if(action==='popupFactoryGetFrameSize')return await new Promise(resolve=>{finish=resolve;});
+  setters.push(data);return true;
+ };
+ document.querySelector('.content-body-inner').getBoundingClientRect=()=>({height:500});
+ prepareStudyCard(display);
+ assert.equal(typeof finish,'function','legacy fit is waiting for host size');
+ document.documentElement.dataset.studyWorkspace='true';
+ finish({valid:true,width:400,height:250});await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(setters,[],'old fit must not override the new two-card frame');
+});
