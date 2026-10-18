@@ -23,7 +23,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
     let revision = 0;
     let searchWasOpen = false;
     const clear = () => {
-        searchWasOpen = d.documentElement.classList.contains('sf-search-open');
+        // The Search controller may send more than one clear event per query.
+        // Do not read the temporary CSS class after dispose() has removed it.
+        // Only the learner's explicit "换词" click changes this preference.
         ++revision;
         dispose();
         dispose = () => {};
@@ -106,6 +108,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 searchToggle.addEventListener('click', () => {
                     if (!current()) { return; }
                     const expanded = !d.documentElement.classList.contains('sf-search-open');
+                    searchWasOpen = expanded;
                     d.documentElement.classList.toggle('sf-search-open', expanded);
                     searchToggle.setAttribute('aria-expanded', String(expanded));
                     searchToggle.textContent = expanded ? '收起搜索' : '换词';
@@ -194,9 +197,16 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         noSource.hidden = hasSentence;
         const feedback = make('div', 'sf-feedback');
         focusAnswer.append(shortGloss, noSource, answerHeading, asked, meaning, notes, feedback);
-        // With a real source, keep the dictionary's brief Chinese meaning and
-        // the learner's actual sentence in the same fixed reading area.
-        if (hasSentence) { sourcePane.prepend(shortGloss); }
+        // For a 400x250 standalone Search card, the input/compose area may take
+        // all remaining height. Put the existing Chinese sense ABOVE the tabs,
+        // alongside the headword; it must be visible without inner scrolling.
+        if (hasSentence) {
+            sourcePane.prepend(shortGloss);
+        } else {
+            const standaloneSense = make('div', 'sf-standalone-sense');
+            standaloneSense.append(shortGloss, noSource);
+            heading.append(standaloneSense);
+        }
         context.prepend(focusAnswer);
         owned.push(focusAnswer);
         const history = context.querySelector('.study-conversation-history');
