@@ -275,6 +275,21 @@
 .sf-source-pane .sf-gloss-text { font-size: 14px; line-height: 1.5; }
 .sf-source-pane .study-source { padding-top: 6px; }
 .sf-no-source-note { margin: 9px 0 0; padding: 7px 0 0; border-top: 1px dashed var(--sf-line); font-size: 11px; line-height: 1.5; color: var(--sf-muted); }
+/* A word-only lookup must reveal the native Chinese sense before the tabs,
+   even when the answer pane is too small for an expanded composer. */
+.sf-no-source .sf-heading { flex-wrap: wrap; align-content: flex-start; }
+.sf-standalone-sense {
+    flex: 1 0 100%;
+    min-width: 0;
+    margin-top: 2px;
+    padding: 7px 0 1px;
+    border-top: 1px solid var(--sf-line);
+}
+.sf-standalone-sense .sf-short-gloss { margin: 0; gap: 2px; }
+.sf-standalone-sense .sf-gloss-kicker { font-size: 10px; }
+.sf-standalone-sense .sf-gloss-row { gap: 4px 8px; }
+.sf-standalone-sense .sf-gloss-text { font-size: 15px; line-height: 1.45; }
+.sf-standalone-sense .sf-no-source-note { margin: 3px 0 0; padding: 0; border: 0; font-size: 10px; }
 .sf-gloss-kicker { color: var(--sf-muted); font-size: 11px; font-weight: 500; line-height: 1.4; }
 .sf-gloss-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
 .sf-gloss-pos { color: var(--sf-muted); font-size: 12px; font-weight: 500; }
