@@ -33,8 +33,8 @@ with sync_playwright() as p:
         result=page.evaluate(code)
         assert result, (name, result)
         results.append({'test':name,'passed':True})
-    check('first page starts with Chinese meaning and the real source',
-        '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句" && document.querySelector(".sf-gloss-text")?.textContent==="能力，才干" && !document.querySelector(".sf-source-pane").hidden && document.querySelector(".sf-source-pane mark").textContent==="ability"')
+    check('first page puts Chinese meaning beside the authentic source',
+        '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句" && document.querySelector(".sf-source-pane .sf-gloss-text")?.textContent==="能力，才干" && !document.querySelector(".sf-source-pane").hidden && document.querySelector(".sf-source-pane mark").textContent==="ability"')
     check('one source and readable current answer','()=>document.querySelectorAll(".sf-source-pane .study-source").length===1 && document.querySelector(".sf-answer").textContent.includes("入睡的能力")')
     check('no model/write on lookup','()=>window.models===0 && window.saveClicks===0 && window.calls.every(([x])=>["libraryMemory","libraryRead"].includes(x))')
     check('previous history hidden for first turn','()=>document.querySelector(".study-conversation-history").hidden')
