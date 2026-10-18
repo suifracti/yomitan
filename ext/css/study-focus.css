@@ -243,6 +243,11 @@
     .sf-source-pane { grid-column: 1; grid-row: 2 / 4; max-height: none; margin: 0 0 14px 14px; align-self: stretch; }
     .sf-tabs { grid-column: 2; grid-row: 2; }
     .sf-body { grid-column: 2; grid-row: 3; }
+    /* Full-width detail/record tabs do not leave an empty source column. */
+    .study-focus-active .study-focus-shell[data-panel="1"] .sf-tabs,
+    .study-focus-active .study-focus-shell[data-panel="2"] .sf-tabs { grid-column: 1 / -1; grid-row: 2; }
+    .study-focus-active .study-focus-shell[data-panel="1"] .sf-body,
+    .study-focus-active .study-focus-shell[data-panel="2"] .sf-body { grid-column: 1 / -1; grid-row: 3; }
     .sf-save-bar { grid-column: 1 / -1; grid-row: 4; }
     .sf-source-pane .study-source p { font-size: 15px; line-height: 1.8; }
     .sf-source-pane .study-source-translation { font-size: 13px; }
@@ -251,6 +256,8 @@
 
 .sf-short-gloss { display: grid; gap: 4px; margin: 0 0 8px; }
 .sf-short-gloss[hidden] { display: none; }
+.sf-gloss-unavailable { margin: 0; color: var(--sf-muted); font-size: 12px; line-height: 1.6; }
+.sf-no-source-note { margin: 9px 0 0; padding: 7px 0 0; border-top: 1px dashed var(--sf-line); font-size: 11px; line-height: 1.5; color: var(--sf-muted); }
 .sf-gloss-kicker { color: var(--sf-muted); font-size: 11px; font-weight: 500; line-height: 1.4; }
 .sf-gloss-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
 .sf-gloss-pos { color: var(--sf-muted); font-size: 12px; font-weight: 500; }
