@@ -141,6 +141,10 @@ with sync_playwright() as p:
     page.locator('.sf-search-toggle').click()
     check('switch-word button exposes the original text input and options',
         '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="true" && getComputedStyle(document.querySelector("#sticky-search-header")).display!=="none" && getComputedStyle(document.querySelector("#above-sticky-header")).display!=="none" && document.activeElement?.id==="search-textbox"')
+    page.evaluate('window.fire("contentUpdateStart"); window.fire("contentUpdateComplete")')
+    page.wait_for_timeout(40)
+    check('switch-word search remains open after a query refresh',
+        '()=>document.querySelector(".sf-search-toggle")?.getAttribute("aria-expanded")==="true" && getComputedStyle(document.querySelector("#sticky-search-header")).display!=="none" && document.activeElement?.id==="search-textbox"')
     page.locator('.sf-search-toggle').click()
     check('collapsed search keeps original card intact',
         '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="false" && getComputedStyle(document.querySelector("#sticky-search-header")).display==="none" && document.querySelector(".sf-gloss-text")?.textContent==="能力，才干"')
