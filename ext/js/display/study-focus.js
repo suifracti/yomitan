@@ -96,7 +96,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const dictionary = make('section', 'sf-dictionary');
         const records = make('section', 'sf-records');
         const panels = [learn, dictionary, records];
-        const labels = [hasSentence ? '读懂这句' : '理解用法', '查词典', '我的记录'];
+        const labels = ['词义与原句', '详细词典', '我的记录'];
         const tabButtons = labels.map((label, index) => {
             const tab = button(label); tab.className = 'sf-tab scan-disable';
             tab.setAttribute('role', 'tab');
@@ -114,7 +114,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             });
             tabs.append(tab); return tab;
         });
-        let activeTab = hasSentence ? 0 : 1;
+        // A standalone lookup still starts with its Chinese meaning, not a blank AI panel.
+        let activeTab = 0;
         const select = (index) => {
             activeTab = index;
             panels.forEach((panel, i) => { panel.hidden = i !== index; });
@@ -122,6 +123,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 tab.setAttribute('aria-selected', String(i === index)); tab.tabIndex = i === index ? 0 : -1;
             });
             shell.dataset.panel = String(index);
+            // The original sentence belongs to the first learning page only.
+            sourcePane.hidden = !hasSentence || index !== 0;
             body.scrollTop = 0;
         };
         body.append(...panels);
@@ -155,8 +158,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const notes = make('div', 'sf-notes'); notes.hidden = true;
         const shortGloss = make('div', 'sf-short-gloss');
         shortGloss.hidden = true;
+        const noSource = make('p', 'sf-no-source-note', '暂无原句 · 当前仅查询这个词');
+        noSource.hidden = hasSentence;
         const feedback = make('div', 'sf-feedback');
-        focusAnswer.append(answerHeading, shortGloss, asked, meaning, notes, feedback);
+        focusAnswer.append(shortGloss, noSource, answerHeading, asked, meaning, notes, feedback);
         context.prepend(focusAnswer);
         owned.push(focusAnswer);
         const history = context.querySelector('.study-conversation-history');
@@ -220,19 +225,33 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             observers.push(observer);
         }
 
-        const paintDictionaryHint = (host, sense) => {
+        const paintDictionaryHint = (host) => {
             host.replaceChildren();
-            const gloss = sense?.querySelector('.study-meaning-text')?.textContent?.trim() || '';
-            if (!gloss) { return; }
+            // The pinned meaning may be absent in a standalone or nested lookup.
+            // The original dictionary row is the fallback, never an AI guess.
+            const sense = dictionary.querySelector('.study-reading-sense') ||
+                entry?.querySelector('.study-primary-meaning > div:not([data-sc-study-role="label"])');
+            let gloss = sense?.querySelector('.study-meaning-text')?.textContent?.trim() || '';
+            if (!gloss && sense) {
+                const plain = /** @type {HTMLElement} */ (sense.cloneNode(true));
+                plain.querySelectorAll('.study-pos, [data-sc-study-role="label"]').forEach((node) => node.remove());
+                gloss = plain.textContent?.trim() || '';
+            }
+            if (!gloss || !/\p{Script=Han}/u.test(gloss)) {
+                host.append(make('span', 'sf-gloss-kicker', '简明中文释义'),
+                    make('p', 'sf-gloss-unavailable', '当前词典没有提供中文义项，可查看详细词典或继续问 AI。'));
+                return;
+            }
             const row = make('div', 'sf-gloss-row');
-            const pos = sense.querySelector('.study-pos');
+            const pos = sense?.querySelector('.study-pos');
             if (pos) {
                 const copy = /** @type {HTMLElement} */ (pos.cloneNode(true));
                 copy.classList.add('sf-gloss-pos');
                 row.append(copy);
             }
             row.append(make('strong', 'sf-gloss-text', gloss));
-            host.append(make('span', 'sf-gloss-kicker', '词典提示，尚未按本句判断'), row);
+            host.append(make('span', 'sf-gloss-kicker',
+                hasSentence ? '中文词义 · 词典参考，未按本句判断' : '中文词义 · 词典参考'), row);
         };
         const updateAnswer = () => {
             if (!current()) { return; }
@@ -245,8 +264,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const mine = turn?.querySelector('.study-user-question')?.textContent || '';
             answerHeading.hidden = !turn;
             answerHeading.textContent = '在这句话里';
-            paintDictionaryHint(shortGloss, dictionary.querySelector('.study-reading-sense'));
-            shortGloss.hidden = Boolean(turn) || shortGloss.childElementCount === 0;
+            paintDictionaryHint(shortGloss);
+            // The lexical meaning stays visible whether or not an AI answer exists.
+            // It is labeled separately from the contextual interpretation.
+            shortGloss.hidden = shortGloss.childElementCount === 0;
             asked.textContent = mine;
             asked.hidden = !mine || mine === '我：请解释这句话和这个词的用法';
             meaning.textContent = meaningText;
