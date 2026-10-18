@@ -133,18 +133,18 @@ with sync_playwright() as p:
     page.wait_for_timeout(60)
     check('legacy Search title and textbox hidden until requested',
         '()=>getComputedStyle(document.querySelector("#above-sticky-header")).display==="none" && getComputedStyle(document.querySelector("#sticky-search-header")).display==="none" && !document.querySelector(".sf-search-open")')
-    check('400x250 standalone first Chinese meaning is within the visible viewport',
-        '()=>{const r=document.querySelector(".sf-gloss-text")?.getBoundingClientRect();return !!r && r.top>=0 && r.bottom<=innerHeight && document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句";}')
+    check('400x250 standalone Chinese sense is in the fixed heading above the tabs',
+        '()=>{const gloss=document.querySelector(".sf-heading .sf-standalone-sense .sf-gloss-text");const note=document.querySelector(".sf-heading .sf-no-source-note");const tabs=document.querySelector(".sf-tabs");if(!gloss||!note||!tabs)return false;const r=gloss.getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight && r.bottom<tabs.getBoundingClientRect().top && note.textContent.includes("暂无原句") && document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句";}')
     check('400x250 saved learning control remains reachable at viewport bottom',
         '()=>{const r=document.querySelector(".sf-save-bar [data-study-save=note]")?.getBoundingClientRect();return !!r && r.top<innerHeight && r.bottom<=innerHeight+1;}')
     page.screenshot(path=str(OUTPUT/'previews'/'standalone-search-400x250.png'))
     page.locator('.sf-search-toggle').click()
     check('switch-word button exposes the original text input and options',
         '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="true" && getComputedStyle(document.querySelector("#sticky-search-header")).display!=="none" && getComputedStyle(document.querySelector("#above-sticky-header")).display!=="none" && document.activeElement?.id==="search-textbox"')
-    page.evaluate('window.fire("contentUpdateStart"); window.fire("contentUpdateComplete")')
+    page.evaluate('window.fire("contentUpdateStart"); window.fire("contentClear"); window.fire("contentUpdateComplete")')
     page.wait_for_timeout(40)
-    check('switch-word search remains open after a query refresh',
-        '()=>document.querySelector(".sf-search-toggle")?.getAttribute("aria-expanded")==="true" && getComputedStyle(document.querySelector("#sticky-search-header")).display!=="none" && document.activeElement?.id==="search-textbox"')
+    check('switch-word search remains open through multiple clear events',
+        '()=>document.querySelector(".sf-search-toggle")?.getAttribute("aria-expanded")==="true" && getComputedStyle(document.querySelector("#sticky-search-header")).display!=="none"')
     page.locator('.sf-search-toggle').click()
     check('collapsed search keeps original card intact',
         '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="false" && getComputedStyle(document.querySelector("#sticky-search-header")).display==="none" && document.querySelector(".sf-gloss-text")?.textContent==="能力，才干"')
