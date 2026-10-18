@@ -123,7 +123,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const sourcePane = make('section', 'sf-source-pane');
         sourcePane.setAttribute('aria-label', '原句与译文');
         sourcePane.hidden = !hasSentence;
-        move(source, sourcePane);
+        const sourceReading = make('div', 'sf-source-reading');
+        sourcePane.append(sourceReading);
+        move(source, sourceReading);
         const tabs = make('nav', 'sf-tabs'); tabs.setAttribute('role', 'tablist');
         tabs.setAttribute('aria-label', '学习内容');
         const body = make('div', 'sf-body');
@@ -201,7 +203,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         // all remaining height. Put the existing Chinese sense ABOVE the tabs,
         // alongside the headword; it must be visible without inner scrolling.
         if (hasSentence) {
-            sourcePane.prepend(shortGloss);
+            sourceReading.prepend(shortGloss);
         } else {
             const standaloneSense = make('div', 'sf-standalone-sense');
             standaloneSense.append(shortGloss, noSource);
@@ -222,6 +224,23 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const editSource = context.querySelector('.study-more-actions');
         // Correct a captured sentence beside that sentence. A word-only lookup keeps the same editor on the dictionary page.
         if (editSource) { move(editSource, hasSentence ? sourcePane : dictionary); }
+        const neighborAction = editSource?.querySelector('[data-study-use-context]');
+        const sourceTools = make('div', 'sf-source-tools');
+        const editBody = make('div', 'sf-source-editor-body');
+        const openContextEditor = () => { if (current() && editSource) { editSource.open = true; } };
+        if (hasSentence && editSource) {
+            // Keep the original controls/listeners; only separate their scroll area.
+            for (const node of [...editSource.children]) {
+                if (node.tagName !== 'SUMMARY' && node !== neighborAction) { move(node, editBody); }
+            }
+            editSource.append(editBody); owned.push(editBody);
+            if (neighborAction) {
+                editSource.before(sourceTools); owned.push(sourceTools);
+                move(neighborAction, sourceTools);
+                neighborAction.classList.add('sf-button');
+                neighborAction.addEventListener('click', openContextEditor);
+            }
+        }
         const editor = editSource?.querySelector('.study-source-editor');
         const onSourceEdit = () => {
             const paragraph = source.querySelector('p');
@@ -461,11 +480,11 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         sourceFooter.append(expandSource); sourcePane.append(sourceFooter); owned.push(sourceFooter);
         refreshSourceExpansion = () => {
             if (!current()) { return; }
-            expandSource.hidden = !shell.classList.contains('sf-source-expanded') && sourcePane.scrollHeight <= sourcePane.clientHeight + 2;
+            expandSource.hidden = !shell.classList.contains('sf-source-expanded') && sourceReading.scrollHeight <= sourceReading.clientHeight + 2;
         };
         if (typeof ResizeObserver !== 'undefined') {
             const resize = new ResizeObserver(refreshSourceExpansion);
-            resize.observe(sourcePane); observers.push(resize);
+            resize.observe(sourceReading); observers.push(resize);
         }
         requestAnimationFrame(refreshSourceExpansion);
         select(activeTab); updateAnswer(); syncSave();
@@ -473,6 +492,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         dispose = () => {
             observers.forEach((observer) => observer.disconnect());
             editor?.removeEventListener('change', onSourceEdit);
+            neighborAction?.removeEventListener('click', openContextEditor);
+            neighborAction?.classList.remove('sf-button');
             // Original display nodes return to their own entry before the next
             // lookup. Do not resurrect an anchor already cleared by its owner.
             for (const [node, mark] of homes.reverse()) {

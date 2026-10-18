@@ -406,7 +406,8 @@ export function prepareStudyTranslation() {
             context.value = source.contextSelected ? source.context?.slice(0, 1200) ?? '' : '';
             context.placeholder = '可选：前后句或相邻字幕，不默认发送全文';
             context.setAttribute('aria-label', '补充语境');
-            const useContext = button(source.context ? '带上相邻句' : '暂无可读取的相邻句');
+            const useContext = button(source.context ? '带上邻句' : '暂无可读取的邻句');
+            useContext.dataset.studyUseContext = '';
             useContext.disabled = !source.context;
             more.append(moreLabel, editor, useContext, context);
             const tokens = d.createElement('details');

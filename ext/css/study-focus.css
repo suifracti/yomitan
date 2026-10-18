@@ -90,16 +90,39 @@
 .sf-button:focus-visible, .sf-tab:focus-visible, .sf-link:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
 .sf-source-pane {
     margin: 0 14px 9px;
+    display: flex;
+    flex-direction: column;
     max-height: min(35dvh, 205px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
+    min-height: 0;
+    overflow: hidden;
     border: 1px solid var(--sf-line);
     border-radius: 10px;
     background: var(--sf-source);
 }
 .sf-source-pane:focus-within { border-color: var(--sf-accent); }
-.sf-source-expanded .sf-source-pane { max-height: 54dvh; }
+.sf-source-reading {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: min(35dvh, 205px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.sf-source-pane:has(.study-more-actions[open]), .sf-source-expanded .sf-source-pane { max-height: min(54dvh, 324px); }
+.sf-source-expanded .sf-source-reading { max-height: 42dvh; }
+.sf-source-tools { flex: none; padding: 3px 12px 6px; }
+.sf-source-tools .sf-button { font-size: 11px; min-height: 26px; }
+.sf-source-editor-body {
+    min-height: 0;
+    max-height: min(20dvh, 120px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.sf-source-pane .study-more-actions { flex: 0 1 auto; min-height: 0; overflow: hidden; }
+.sf-source-pane .study-more-actions[open] { display: flex; flex-direction: column; }
+.sf-source-pane .study-more-actions > summary, .sf-source-footer { flex: none; }
+.sf-source-pane .study-more-actions > summary { padding-block: 3px; cursor: pointer; }
 .sf-source-pane .study-source { padding: 9px 12px 4px; margin: 0; background: transparent; border: 0; border-radius: 0; }
 .sf-source-pane .study-source-label { color: var(--sf-muted); font-size: 10px; letter-spacing: .03em; }
 .sf-source-pane .study-source p {
