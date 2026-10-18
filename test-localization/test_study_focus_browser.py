@@ -394,6 +394,8 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
     }""")
     page.wait_for_timeout(100)
     check('real empty-answer controller leaves original sentence adjustment visible', '()=>!document.querySelector(".study-more-actions").hidden && document.querySelector("[data-study-translate-sentence]") && document.querySelector(".sf-short-gloss").textContent.includes("能力")')
+    check('card button is visible beside remember before any save', '()=>{const b=document.querySelector("[data-study-add-card]");return b && !b.hidden && !b.disabled && b.textContent==="制卡" && b.previousElementSibling?.matches("[data-study-save=note]");}')
+    page.screenshot(path=str(OUTPUT/'previews'/'card-button-before-save-400.png'))
     page.locator('[data-study-use-context]').click()
     page.get_by_label('原句',exact=True).fill('Her ability to learn matters.')
     page.get_by_label('补充语境',exact=True).click()

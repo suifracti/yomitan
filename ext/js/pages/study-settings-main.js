@@ -232,6 +232,8 @@ async function initializeStudySettings(root) {
         check('library-directory').value = result.directory;
         check('library-anki-enabled').checked = result.ankiEnabled;
         check('library-model').value = result.model;
+        const parent = root.querySelector('#library-parent-deck');
+        if (parent) { /** @type {HTMLInputElement} */ (parent).value = result.deck.split('::')[0]; }
         if (Array.isArray(result.decks)) { libraryDecks = result.decks; }
         libraryDeck.replaceChildren();
         for (const deck of new Set([result.deck, ...libraryDecks])) {
@@ -255,6 +257,25 @@ async function initializeStudySettings(root) {
         libraryControls(!libraryBusy);
     }
 
+    root.querySelector('#library-use-subdecks')?.addEventListener('click', () => {
+        const parent = check('library-parent-deck').value.trim().replace(/::+$/, '');
+        if (!parent) {
+            libraryStatus.textContent = '请先填写大牌组名称。';
+            return;
+        }
+        if (![...libraryDeck.options].some((item) => item.value === parent)) { option(libraryDeck, parent, parent); }
+        libraryDeck.value = parent;
+        for (const [kind, label] of [['meaning', '单词意思'], ['context', '原句中的意思'], ['listening', '视频声音字幕']]) {
+            const select = /** @type {HTMLSelectElement} */ (root.querySelector(`#library-deck-${kind}`));
+            const name = `${parent}::${label}`;
+            if (![...select.options].some((item) => item.value === name)) { option(select, name, name); }
+            select.value = name;
+        }
+        showNewDeck();
+        if (librarySaveState) { librarySaveState.textContent = '待保存'; }
+        libraryStatus.textContent = '已填入三个子牌组；点击“保存目标”生效，再按需“创建缺少的牌组”。已有卡片不移动。';
+    });
+
     /** @param {LibrarySettingsResult} result */
     function showLibraryCheck(result) {
         const target = /** @type {HTMLElement} */ (root.querySelector('#library-check-result'));
@@ -276,6 +297,10 @@ async function initializeStudySettings(root) {
             `牌组：${result.deck} · ${state.ankiConnected ? (state.deckExists ? '存在' : '缺失；可单独点击创建') : '未核对'}`,
             `模板：${result.model} · ${modelState}`,
         ];
+        for (const kind of ['meaning', 'context', 'listening']) {
+            const deck = result.deckByKind?.[kind];
+            if (deck) { lines.push(`子牌组：${deck} · ${!state.ankiConnected ? '未核对' : (result.decks?.includes(deck) ? '存在' : '缺失；点击创建缺少的牌组')}`); }
+        }
         if (result.error) { lines.push(result.error); }
         target.textContent = lines.join('\n');
     }
@@ -396,7 +421,7 @@ async function initializeStudySettings(root) {
                 requireLibrarySaved();
                 const result = /** @type {LibrarySettingsResult} */ (await studyCall('librarySettingsPrepare', {createDeck, createModel: !createDeck}));
                 showLibraryCheck(result);
-                libraryStatus.textContent = result.message ?? `${createDeck ? '所选空牌组' : '兼容模板'}已准备；没有创建卡片或修改已有模板。`;
+                libraryStatus.textContent = result.message ?? `${createDeck ? '所选牌组' : '兼容模板'}已准备；没有创建卡片或修改已有模板。`;
             });
         });
     }

@@ -418,6 +418,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const node = context.querySelector(selector);
             if (node) { move(node, saveBar); }
         }
+        const cardControl = saveBar.querySelector('.study-card-add-toggle');
+        if (save && cardControl) { save.after(cardControl); }
         learningScroll = make('div', 'sf-learning-scroll');
         learningScroll.setAttribute('aria-label', '原句与问答内容');
         context.prepend(learningScroll); owned.push(learningScroll);

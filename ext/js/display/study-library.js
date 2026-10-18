@@ -63,8 +63,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
     addCard.type = 'button';
     addCard.className = 'scan-disable study-card-add-toggle';
     addCard.dataset.studyAddCard = '';
-    addCard.textContent = '选择制卡';
-    addCard.hidden = true;
+    addCard.textContent = '制卡';
+    addCard.title = '选择单词意思或原句中的意思，预览确认后制卡；尚未保存时会同时保存笔记。';
     const cardPanel = d.createElement('section');
     cardPanel.className = 'study-card-add';
     cardPanel.hidden = true;
@@ -85,7 +85,13 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
     /** @type {import('study').SaveTargetSettings | undefined} */
     let cardSettings;
     if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
-        void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => { cardSettings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]); });
+        void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
+            cardSettings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
+            if (isCurrent() && cardSettings?.ankiEnabled === false) {
+                addCard.disabled = true;
+                addCard.title = 'Anki 制卡尚未启用，请在学习设置的保存与复习中启用。';
+            }
+        });
     }
     /** @type {Map<string, HTMLButtonElement>} */
     const choiceButtons = new Map();
@@ -271,7 +277,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         currentSaved = row;
         updateChoices();
         if (validLibraryId(row?.id)) { container.dataset.studyRecordId = row.id; }
-        addCard.hidden = !validLibraryId(row?.id) || row.ankiEnabled === false;
+        addCard.disabled = row.ankiEnabled === false;
+        if (addCard.disabled) { addCard.title = 'Anki 制卡尚未启用，请在学习设置的保存与复习中启用。'; }
         renderDraftCards(row?.reviewDraft?.cards);
         ankiRow.hidden = false;
         const cards = row.cards ?? [];
@@ -325,6 +332,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         if (busy) { return; }
         busy = true;
         save.disabled = true;
+        addCard.disabled = true;
         retry.disabled = true;
         retryCurrent.disabled = true;
         submitCards.disabled = true;
@@ -333,13 +341,14 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
             await operation();
         }).catch((error) => {
             if (isCurrent()) {
-                status.textContent = `${error instanceof Error ? error.message : '暂未完成'}；点“记住它”可重试。`;
+                status.textContent = `${error instanceof Error ? error.message : '暂未完成'}；可重试当前操作。`;
             }
         })
             .finally(() => {
                 busy = false;
                 if (isCurrent()) {
                     save.disabled = false;
+                    addCard.disabled = currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false;
                     retry.disabled = false;
                     retryCurrent.disabled = false;
                     updateSubmitState();
@@ -377,10 +386,10 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         });
     });
     addCard.addEventListener('click', () => {
-        if (!currentSaved || !validLibraryId(currentSaved.id) || currentSaved.ankiEnabled === false) { return; }
+        if (busy || currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false) { return; }
         cardPanel.hidden = !cardPanel.hidden;
         container.closest('.study-focus-shell')?.classList.toggle('sf-card-editor-open', !cardPanel.hidden);
-        addCard.textContent = cardPanel.hidden ? '选择制卡' : '收起制卡';
+        addCard.textContent = cardPanel.hidden ? '制卡' : '收起制卡';
         updateChoices();
         if (!cardPanel.hidden && typeof cardPanel.scrollIntoView === 'function') {
             d.defaultView?.requestAnimationFrame(() => {
@@ -389,8 +398,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         }
     });
     submitCards.addEventListener('click', () => {
-        const saved = currentSaved;
-        if (!saved || !validLibraryId(saved.id) || saved.ankiEnabled === false) { return; }
+        if (currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false) { return; }
         /** @type {{front: string; back: string; kind: string; deck?: string}[]} */
         const cards = [];
         for (const row of /** @type {NodeListOf<HTMLInputElement>} */ (draftCards.querySelectorAll('input[data-study-review-card]:checked'))) {
@@ -416,8 +424,19 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
             }
             seen.add(key);
         }
-        const currentLanguage = saved.entry?.language ?? getEntry().language ?? 'en';
         run(async () => {
+            let saved = currentSaved;
+            if (!saved || !validLibraryId(saved.id)) {
+                addStatus.textContent = '正在保存笔记并准备已选卡片…';
+                const entry = getEntry();
+                const recordId = container.dataset.studyRecordId || entry.recordId;
+                saved = /** @type {import('study').LibraryRecord} */ (await studyCall('rememberEntry', {entry, ...(validLibraryId(recordId) ? {recordId} : {})}));
+                if (!isCurrent()) { return; }
+                showAnkiStatus(saved);
+            }
+            if (!saved || !validLibraryId(saved.id)) { throw new Error('笔记保存未返回确认，尚未制卡。'); }
+            if (saved.ankiEnabled === false) { throw new Error('笔记已保存；Anki 制卡尚未启用。'); }
+            const currentLanguage = saved.entry?.language ?? getEntry().language ?? 'en';
             addStatus.textContent = '正在添加已选卡片…';
             const result = /** @type {import('study').LibraryRecord} */ (await studyCall('libraryCardsAdd', {
                 id: saved.id,

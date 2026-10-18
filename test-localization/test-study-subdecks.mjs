@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {JSDOM} from 'jsdom';
+import {prepareStudySettings} from '../ext/js/pages/study-settings-main.js';
+const flush=async()=>{for(let i=0;i<5;i++)await new Promise(r=>setImmediate(r));};
+test('three child-deck targets are visible and applying the parent is draft-only until save',async()=>{
+ const dom=new JSDOM(readFileSync(new URL('../ext/settings.html',import.meta.url),'utf8'));
+ globalThis.document=dom.window.document;
+ const calls=[];let settings={vault:'/tmp/fixture',directory:'Study',deck:'外语::英语语境',model:'外语语境卡',ankiEnabled:true,deckByKind:{}};
+ globalThis.chrome={permissions:{contains:async()=>true,request:async()=>true},storage:{onChanged:{addListener(){}}},runtime:{sendMessage:async({studyAction,data})=>{
+  calls.push([studyAction,data]);let value={};
+  if(studyAction==='settings')value={model:'fixture',effort:'low',cacheEnabled:true};
+  if(studyAction==='saved')value=[];
+  if(studyAction==='librarySettingsGet')value=settings;
+  if(studyAction==='librarySettingsSave')value=settings=data.settings;
+  if(studyAction==='librarySettingsPrepare')value={...settings,message:'Prepared'};
+  return {ok:true,value};
+ }}};
+ const d=dom.window.document;await prepareStudySettings(d.querySelector('.content-center'));await flush();
+ for(const kind of ['meaning','context','listening']) assert.equal(d.querySelector('#library-deck-'+kind).closest('details'),null);
+ d.querySelector('#library-use-subdecks').click();
+ assert.equal(d.querySelector('#library-deck-meaning').value,'外语::单词意思');
+ assert.equal(d.querySelector('#library-deck-context').value,'外语::原句中的意思');
+ assert.equal(d.querySelector('#library-deck-listening').value,'外语::视频声音字幕');
+ assert.equal(calls.some(([a])=>a==='librarySettingsSave'||a==='librarySettingsPrepare'),false);
+ d.querySelector('#library-settings-form').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await flush();
+ assert.equal(settings.deck,'外语');assert.equal(settings.deckByKind.context,'外语::原句中的意思');
+ assert.equal(calls.some(([a])=>a==='librarySettingsPrepare'),false);
+ dom.window.close();
+});

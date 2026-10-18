@@ -5,10 +5,10 @@ import {fileURLToPath} from 'node:url';
 import {JSDOM} from 'jsdom';
 import {mountStudyLibrary} from '../ext/js/display/study-library.js';
 const root=fileURLToPath(new URL('../ext/js/display/',import.meta.url));
-function makeHarness(overrides={}){
+function makeHarness(overrides={},settings){
  const dom=new JSDOM('<!doctype html><body><div class="study-focus-shell"><div class="sf-header-sense"><div class="sf-gloss-preview"><div class="sf-gloss-row">int. 你好；喂</div></div></div><div id="host"></div></div></body>');
  const calls=[];
- globalThis.chrome={permissions:{request:async()=>true},storage:{local:{get:async()=>({})}}};
+ globalThis.chrome={permissions:{request:async()=>true},storage:{local:{get:async()=>({studySaveTargetsV1:settings})}}};
  const studyCall=async(action,data)=>{calls.push([action,data]);if(action==='pendingPeek')return {count:0};if(action==='rememberEntry')return {id:'a'.repeat(32),path:'English/hello.md',openUrl:'',entry:{word:'hello',language:'en'},ankiEnabled:true,ankiState:'synced',cards:[],target:{deck:'English'}};if(action==='libraryCardsAdd')return {id:'a'.repeat(32),entry:{word:'hello',language:'en'},cards:data.cards.map((card)=>({...card,syncState:'pending'})),syncState:'pending'};return {};};
  globalThis.chrome.runtime={sendMessage:async({studyAction,data})=>({ok:true,value:await studyCall(studyAction,data)})};
  const mount=mountStudyLibrary;
@@ -47,13 +47,13 @@ test('existing saved id survives a source edit and review suggestions remain ind
 });
 test('study focus exposes sources, reconciliation, and the correct settings/library routes',()=>{
  const focus=readFileSync(root+'study-focus.js','utf8');const card=readFileSync(root+'study-card.js','utf8');const library=readFileSync(root+'study-library.js','utf8');const css=readFileSync(new URL('../ext/css/study-focus.css',import.meta.url),'utf8');
- assert.match(card,/settings\.html#learning/);assert.match(focus,/study-library\.html/);assert.match(focus,/documentTitle/);assert.match(focus,/videoTime/);assert.match(focus,/libraryReconcile/);assert.match(focus,/study-record-current/);assert.match(focus,/sf-source-details/);assert.match(focus,/时间点/);assert.match(focus,/sourceMenu\.textContent = '发音来源/);assert.doesNotMatch(focus,/sf-audio-source-label/);assert.match(focus,/同步未完成/);assert.match(library,/maxLength = 1000/);assert.match(library,/maxLength = 2400/);assert.match(library,/ankiEnabled === false/);assert.match(css,/sf-learning-scroll>\.study-card-add/);assert.doesNotMatch(css,/sf-save-bar>\.study-card-add/);assert.match(card,/recordId, meaning/);
+ assert.match(card,/settings\.html#learning/);assert.match(focus,/study-library\.html/);assert.match(focus,/documentTitle/);assert.match(focus,/videoTime/);assert.match(focus,/libraryReconcile/);assert.match(focus,/study-record-current/);assert.match(focus,/sf-source-details/);assert.match(focus,/时间点/);assert.match(focus,/sourceMenu\.textContent = '发音来源/);assert.doesNotMatch(focus,/sf-audio-source-label/);assert.match(focus,/同步未完成/);assert.match(library,/maxLength = 1000/);assert.match(library,/maxLength = 2400/);assert.match(library,/ankiEnabled === false/);assert.match(css,/sf-learning-scroll>\.study-card-add/);assert.doesNotMatch(css,/sf-save-bar>\.study-card-add[ {]/);assert.match(card,/recordId, meaning/);
 });
 
 test('Anki-disabled records never expose or call manual card addition',()=>{
  const {d,calls}=makeHarness();
  d.querySelector('#host').dispatchEvent(new d.defaultView.CustomEvent('study-record-current',{detail:{id:'c'.repeat(32),entry:{word:'hello',language:'en'},ankiEnabled:false,cards:[]}}));
- const button=d.querySelector('[data-study-add-card]');assert.equal(button.hidden,true);button.click();
+ const button=d.querySelector('[data-study-add-card]');assert.equal(button.hidden,false);assert.equal(button.disabled,true);button.click();
  assert.equal(calls.some(([action])=>action==='libraryCardsAdd'),false);
 });
 
@@ -93,4 +93,27 @@ test('audio choice needs stored real audio, and missing source text disables sen
  empty.querySelector('#host').dispatchEvent(new empty.defaultView.CustomEvent('study-record-current',{detail:{id:'a'.repeat(32),entry:{word:'hello',language:'en'},cards:[],ankiEnabled:true}}));
  empty.querySelector('[data-study-add-card]').click();
  assert.equal(empty.querySelector('[data-study-card-choice=context]').disabled,true);
+});
+
+test('card action is visible before saving and only creates after explicit preview confirmation',async()=>{
+ const {d,calls}=makeHarness();
+ const button=d.querySelector('[data-study-add-card]');
+ assert.equal(button.hidden,false);assert.equal(button.textContent,'制卡');
+ button.click();
+ assert.equal(d.querySelector('.study-card-add').hidden,false);
+ assert.equal(calls.some(([action])=>action==='rememberEntry'||action==='libraryCardsAdd'),false);
+ d.querySelector('[data-study-card-choice=meaning]').click();
+ d.querySelector('[data-study-cards-submit]').click();await tick();
+ assert.equal(calls.filter(([action])=>action==='rememberEntry').length,1);
+ assert.equal(calls.filter(([action])=>action==='libraryCardsAdd').length,1);
+ assert.equal(calls.find(([action])=>action==='libraryCardsAdd')[1].cards[0].kind,'meaning');
+});
+
+test('new cards prefill the target child deck for their chosen kind',async()=>{
+ const {d,calls}=makeHarness({}, {ankiEnabled:true,deck:'外语',deckByKind:{meaning:'外语::单词意思',context:'外语::原句中的意思'}});
+ await tick();d.querySelector('[data-study-add-card]').click();
+ d.querySelector('[data-study-card-choice=meaning]').click();d.querySelector('[data-study-card-choice=context]').click();
+ assert.deepEqual([...d.querySelectorAll('[data-study-card-deck]')].map(e=>e.value),['外语::单词意思','外语::原句中的意思']);
+ d.querySelector('[data-study-cards-submit]').click();await tick();
+ assert.deepEqual(calls.find(([a])=>a==='libraryCardsAdd')[1].cards.map(c=>c.deck),['外语::单词意思','外语::原句中的意思']);
 });

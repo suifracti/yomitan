@@ -203,10 +203,12 @@ class YomitanLibrary:
                                          'Back': '{{FrontSide}}<hr id="answer">{{Definition}}<div>{{Source}}</div>'}]})
             if self.anki('modelFieldNames', {'modelName': checked['model']}) != FIELDS:
                 raise ValueError('新笔记类型字段读回不同，未继续准备牌组。')
-        if p['createDeck'] and not s['deckExists']:
-            self.anki('createDeck', {'deck': checked['deck']})
+        selected = set(filter(None, [checked['deck'], *checked.get('deckByKind', {}).values()]))
+        if p['createDeck']:
+            for deck in sorted(selected - set(checked['decks'])):
+                self.anki('createDeck', {'deck': deck})
         result = self.check()
-        result['prepared'] = result['status']['deckExists'] and result['status']['modelCompatible']
+        result['prepared'] = selected.issubset(set(result['decks'])) and result['status']['modelCompatible']
         return result
 
     def folder_root(self, value):

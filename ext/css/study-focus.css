@@ -638,3 +638,9 @@
 .study-card-type-choices button { border: 1px solid var(--sf-line); border-radius: 6px; padding: 5px 8px; color: var(--sf-accent); background: var(--sf-paper); font: inherit; font-size: 11px; cursor: pointer; }
 .study-card-type-choices button:disabled { color: var(--sf-muted); cursor: default; opacity: 0.7; }
 .study-card-choice-hint { margin: 6px 0; color: var(--sf-muted); font-size: 10px; }
+
+.sf-save-bar>.study-card-add-toggle { min-height: 32px; padding-inline: 12px; font-size: 12px; }
+.sf-save-bar>.study-card-add-toggle:disabled { color: var(--sf-muted); cursor: default; }
+@media (max-height: 360px) {
+    .sf-save-bar>.study-card-add-toggle { min-height: 24px; padding-block: 2px; font-size: 11px; }
+}

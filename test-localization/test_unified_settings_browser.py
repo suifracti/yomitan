@@ -117,6 +117,19 @@ with http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Handler
         page.evaluate("location.hash = '#save'; document.documentElement.dataset.theme = 'dark'")
         page.wait_for_function("document.querySelector('[data-settings-category-panel=save]').hidden === false")
         page.screenshot(path=str(OUTPUT / 'save-dark.png'))
+        page.unroute('**/js/study/study-client.js')
+        routed_client = STUDY_CLIENT.replace('throw new Error(`Unexpected preview action: ${action}`);', "if(action==='librarySettingsGet')return {vault:'/tmp/preview-vault',directory:'Study',ankiEnabled:true,deck:'外语::英语语境',model:'外语语境卡',deckByKind:{}}; if(action==='saved')return []; throw new Error(action);")
+        page.route('**/js/study/study-client.js', lambda route: route.fulfill(status=200,content_type='text/javascript',body=routed_client))
+        page.add_init_script('window.chrome.permissions.contains=async()=>true')
+        page.reload(wait_until='networkidle')
+        page.wait_for_function('window.unifiedSettingsReady === true')
+        page.locator('#library-use-subdecks').click()
+        assert page.locator('#library-deck-meaning').input_value() == '外语::单词意思'
+        assert page.locator('#library-deck-context').input_value() == '外语::原句中的意思'
+        assert page.locator('#library-deck-listening').input_value() == '外语::视频声音字幕'
+        assert page.evaluate('window.unifiedSettingsCalls') == ['settings','librarySettingsGet']
+        page.locator('#library-parent-deck').scroll_into_view_if_needed()
+        page.screenshot(path=str(OUTPUT / 'three-child-decks.png'))
         assert not errors, errors
         browser.close()
 

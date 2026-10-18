@@ -116,6 +116,18 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'librarySettingsPrepare', 'createDeck': True, 'createModel': True})
 
+    def test_explicit_prepare_creates_only_missing_selected_subdecks(self):
+        routes = {'meaning': '外语::单词意思', 'context': '外语::原句中的意思', 'listening': '外语::视频声音字幕'}
+        self.save_settings(deck='外语', deckByKind=routes)
+        self.assertFalse(self.calls)
+        self.decks += ['外语', routes['meaning']]
+        self.library.handle({'action': 'librarySettingsCheck'})
+        self.assertFalse(any(a == 'createDeck' for a, _ in self.calls))
+        self.library.handle({'action': 'librarySettingsPrepare', 'createDeck': True, 'createModel': False})
+        created = [p['deck'] for a, p in self.calls if a == 'createDeck']
+        self.assertEqual(set(created), {routes['context'], routes['listening']})
+        self.assertFalse(any(a in ('addNote', 'updateNoteFields', 'changeDeck') for a, _ in self.calls))
+
     def test_model_or_deck_edit_in_same_directory_keeps_original_target(self):
         first = self.save()
         new = self.save_settings(deck='New deck')
