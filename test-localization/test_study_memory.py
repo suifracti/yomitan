@@ -17,6 +17,9 @@ class MemoryTests(unittest.TestCase):
         def api(action, params):
             self.calls.append((action, params))
             if self.offline: raise OSError('offline')
+            if action == 'deckNames': return ['外语::英语语境']
+            if action == 'updateNoteFields':
+                self.notes[params['note']['id']]['fields'].update(params['note']['fields']); return None
             if action == 'findNotes':
                 query = params['query']
                 if query.startswith('tag:'): return [n for n,r in self.notes.items() if query[4:] in r['tags']]
@@ -24,7 +27,7 @@ class MemoryTests(unittest.TestCase):
                 return list(self.notes)
             if action == 'notesInfo':
                 return [{'noteId': i, 'modelName': '外语语境卡', 'tags': self.notes[i]['tags'], 'cards': [i+1000], 'fields': {k:{'value':v} for k,v in self.notes[i]['fields'].items()}} for i in params['notes']]
-            if action == 'cardsInfo': return [{'cardId': i, 'note': i-1000, 'reps': 3, 'lapses': 1, 'interval': 2, 'queue': 2} for i in params['cards']]
+            if action == 'cardsInfo': return [{'cardId': i, 'deckName': self.notes[i-1000].get('deckName','外语::英语语境'), 'note': i-1000, 'reps': 3, 'lapses': 1, 'interval': 2, 'queue': 2} for i in params['cards']]
             if action == 'addNote':
                 i = max([99, *self.notes]) + 1; self.notes[i] = params['note']; return i
             raise AssertionError(action)

@@ -34,7 +34,7 @@ def normalize_settings_request(p):
         return {**p, 'vault': text(p['vault'], 4000), 'directory': text(p['directory'], 2000)}
     if action == 'librarySettingsSave' and set(p) == {'action', 'settings'}:
         s = p['settings']
-        if not isinstance(s, dict) or not EDITABLE <= set(s) or set(s) - EDITABLE - {'targetId'} or type(s['ankiEnabled']) is not bool:
+        if not isinstance(s, dict) or not EDITABLE <= set(s) or set(s) - EDITABLE - {'targetId', 'deckByKind'} or type(s['ankiEnabled']) is not bool:
             raise ValueError('保存设置字段不完整。')
         target_fields(s)
         return p
@@ -60,6 +60,13 @@ def target_fields(s, allow_empty_vault=False):
         raise ValueError('记录目录不能包含上级路径。')
     result = {'vault': str(vault) if raw_vault else '', 'directory': str(directory),
               'deck': text(s.get('deck'), 300, True), 'model': text(s.get('model'), 300, True)}
+    deck_by_kind = s.get('deckByKind', {})
+    if not isinstance(deck_by_kind, dict) or len(deck_by_kind) > 20 or any(not isinstance(k, str) or not __import__('re').fullmatch(r'[a-zA-Z0-9_-]{1,40}', k) for k in deck_by_kind):
+        raise ValueError('卡片牌组映射无效。')
+    routes = {k: text(v, 300) for k, v in deck_by_kind.items()}
+    routes = {k: v for k, v in routes.items() if v}
+    if routes:
+        result['deckByKind'] = routes
     result['targetId'] = hashlib.sha256(json.dumps(result, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:32]
     return result
 
@@ -290,6 +297,10 @@ class YomitanLibrary:
         if action == 'librarySave':
             lib = self.locate(entry_id(p['entry'])) or self.library_for(p.get('targetId', self.legacy_id))
             return lib.handle(p)
+        if action == 'libraryFavorite' and p.get('entry'):
+            ident = entry_id(p['entry'])
+            lib = self.locate(ident) or self.library_for(p.get('targetId', self.active_id))
+            return lib.handle(p)
         if action == 'libraryList':
             rows = []
             seen = set()
@@ -302,22 +313,26 @@ class YomitanLibrary:
                 for file, ident in lib.record_files():
                     row = self.locate(ident).result(ident)
                     e = row['entry']
-                    match = row['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title'])
+                    match = True if p.get('scope') == 'all' else (row['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title']))
                     if match:
                         rows.append(row)
             rows.sort(key=lambda row: row['created'], reverse=True)
             offset = p.get('offset', 0)
             return {'items': rows[offset:offset + 10], 'total': len(rows), 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
         ids = p.get('ids', []) or [r['id'] for r in p.get('items', [])] or ([p['id']] if p.get('id') else [])
-        if ids:
+        if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite'):
             # Split mixed destinations while preserving caller ordering and per-record versions.
             rows = []
             for ident in ids:
                 lib = self.locate(ident)
                 if lib is None: raise ValueError('没有找到原学习记录；未改投当前目录。')
+                if action == 'libraryCardsAdd':
+                    lib.new_card_defaults = self.settings()
                 request = {**p}
                 if 'ids' in p: request['ids'] = [ident]
                 if 'items' in p: request['items'] = [r for r in p['items'] if r['id'] == ident]
+                if p.get('targetId') and lib.target_id != p['targetId']:
+                    raise ValueError('记录目标与请求目标不同；未改投。')
                 result = lib.handle(request)
                 if 'items' not in result: return result
                 rows.extend(result['items'])

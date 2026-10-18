@@ -335,7 +335,8 @@ export class DisplayAnki {
         const cardFormat = this._cardFormats[cardFormatIndex];
         singleNoteActionButtons.dataset.cardFormatIndex = cardFormatIndex.toString();
         saveButton.title = this._display.getOptions?.()?.general?.language === 'en' ?
-            `快速加卡 · ${cardFormat.name}（仅词典卡，不保存完整学习问答）` : `Add ${cardFormat.name} note`;
+            `快速加卡 · ${cardFormat.name}（仅词典卡，不保存完整学习问答）` :
+`Add ${cardFormat.name} note`;
         saveButton.dataset.cardFormatIndex = cardFormatIndex.toString();
         iconSpan.dataset.icon = cardFormat.icon;
 
@@ -541,8 +542,8 @@ export class DisplayAnki {
 (await chrome.storage?.local?.get(SAVE_TARGETS_KEY))?.[SAVE_TARGETS_KEY]);
         if (!settings) { return; } // Existing defaults work before the settings page is first opened.
         this._studyAnkiEnabled = settings.ankiEnabled !== false;
-        this._studyAnkiDeck = settings.deck;
-        this._cardFormats = this._cardFormats.map((format) => (format.type === 'term' ? {...format, deck: settings.deck} : format));
+        this._studyAnkiDeck = settings.deckByKind?.meaning || settings.deck;
+        this._cardFormats = this._cardFormats.map((format) => (format.type === 'term' ? {...format, deck: this._studyAnkiDeck ?? settings.deck} : format));
         if (!this._studyAnkiEnabled) {
             for (const button of document.querySelectorAll('[data-action=save-note]')) {
                 if (button instanceof HTMLButtonElement) {
@@ -989,6 +990,7 @@ export class DisplayAnki {
             await this._refreshStudyAnkiTarget(true);
             if (this._studyAnkiEnabled === false) { throw new Error('Anki 未启用；未添加卡片。'); }
             if (this._studyAnkiDeck) { note.deckName = this._studyAnkiDeck; }
+            note.tags = [...new Set([...(note.tags ?? []), 'study_kind::meaning'])];
             noteId = await this._display.application.api.addAnkiNote(note);
             addNoteOkay = true;
         } catch (e) {

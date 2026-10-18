@@ -5,6 +5,7 @@ import {updateStudySourcePreview} from './study-translation.js';
 const cleanText = (value) => typeof value === 'string' ? value : '';
 const asArray = (value) => Array.isArray(value) ? value : [];
 const validId = (value) => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+const displayValue = (value) => typeof value === 'string' ? value : (value == null ? '' : JSON.stringify(value));
 
 /** A reading-first view over the existing lookup, journal and save controls.
  * No new model, save pipeline, collection, or learning identity is created here.
@@ -47,6 +48,12 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const language = display.getOptions?.()?.general?.language === 'ja' ? 'ja' : 'en';
         const sentenceState = display.history?.state?.sentence;
         const original = cleanText(sentenceState?.text) || word;
+        const subtitleSource = Boolean(sentenceState?.studySubtitle);
+        const sameSavedWord = !display.history?.state?.savedRecordWord || cleanText(display.history.state.savedRecordWord).toLocaleLowerCase() === word.toLocaleLowerCase();
+        const savedRecordId = subtitleSource || !sameSavedWord ? void 0 : (display.history?.state?.savedRecordId ?? sentenceState?.recordId);
+        const sourceUrlCurrent = cleanText(display.history?.state?.url);
+        const sourceTitleCurrent = cleanText(display.history?.state?.documentTitle) || cleanText(display.history?.state?.title);
+        const sourceTimeCurrent = display.history?.state?.videoTime;
         const sourceLabel = source.querySelector('.study-source-label')?.textContent || '';
         // A dictionary gloss or a bare headword is not the page or subtitle the user is reading.
         const dictionarySource = sentenceState?.sourceKind === 'dictionary' || sourceLabel.includes('来自词典解释') || sourceLabel.includes('暂无完整原句');
@@ -54,6 +61,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const dictionaryEntry = display.dictionaryEntries?.[0];
         const lemma = dictionaryEntry?.type === 'term' ? cleanText(dictionaryEntry.headwords?.[0]?.term) : '';
         const owner = {word, language, sentence: original, ...(lemma ? {lemma} : {})};
+        if (validId(savedRecordId)) { context.dataset.studyRecordId = savedRecordId; }
         const current = () => token === revision && shell.isConnected;
         const homes = [];
         const observers = [];
@@ -91,7 +99,17 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const audioTools = make('div', 'sf-audio-tools');
         audioTools.append(sound);
         const sourceMenu = entry?.querySelector('.study-audio-sources');
-        if (sourceMenu) { move(sourceMenu, audioTools); }
+        if (sourceMenu) {
+            sourceMenu.textContent = '发音来源 ▾';
+            move(sourceMenu, audioTools);
+        }
+        const navigation = make('nav', 'sf-navigation');
+        navigation.setAttribute('aria-label', '学习导航');
+        const libraryLink = make('a', 'sf-link scan-disable', '学习库');
+        libraryLink.href = '/study-library.html';
+        libraryLink.target = '_blank';
+        libraryLink.rel = 'noopener noreferrer';
+        navigation.append(libraryLink);
         // A full word card can be opened in Yomitan's old Search page at
         // ~400x250. Keep the original search controls available on demand,
         // instead of letting its intro and search form obscure the first sense.
@@ -120,7 +138,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             }
         }
         const headerSense = make('div', hasSentence ? 'sf-header-sense' : 'sf-header-sense sf-standalone-sense');
-        heading.append(title, audioTools, headerSense);
+        heading.append(title, audioTools, navigation, headerSense);
         const sourcePane = make('section', 'sf-source-pane');
         sourcePane.setAttribute('aria-label', '原句与译文');
         sourcePane.hidden = !hasSentence;
@@ -256,9 +274,11 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const neighborAction = editSource?.querySelector('[data-study-use-context]');
         const sourceTools = make('div', 'sf-source-tools');
         const openContextEditor = () => { if (current() && editSource) { editSource.open = true; resizeEditors(); } };
-        if (hasSentence && editSource) {
+        const translateSentence = source.querySelector('[data-study-translate-sentence]');
+        if (hasSentence && (translateSentence || neighborAction)) {
+            source.after(sourceTools); owned.push(sourceTools);
+            if (translateSentence) { move(translateSentence, sourceTools); }
             if (neighborAction) {
-                editSource.before(sourceTools); owned.push(sourceTools);
                 move(neighborAction, sourceTools);
                 neighborAction.classList.add('sf-button');
                 neighborAction.addEventListener('click', openContextEditor);
@@ -298,7 +318,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const summary = make('div', 'sf-saved-summary');
         summary.setAttribute('role', 'status'); summary.hidden = true;
         saveBar.append(summary); owned.push(summary);
-        for (const selector of ['.study-library-status', '.study-anki-status', '.study-pending-recovery', '.study-request-status', '.openNote']) {
+        for (const selector of ['.study-library-status', '.study-anki-status', '.study-pending-recovery', '.study-request-status', '.openNote', '.study-card-add-toggle']) {
             const node = context.querySelector(selector);
             if (node) { move(node, saveBar); }
         }
@@ -307,6 +327,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         context.prepend(learningScroll); owned.push(learningScroll);
         learningScroll.append(sourcePane, focusAnswer);
         move(history, learningScroll);
+        const cardPanel = context.querySelector('.study-card-add');
+        if (cardPanel) { move(cardPanel, learningScroll); }
         resizeFollowup = () => {
             if (!current() || !input || !input.getClientRects().length) { return; }
             const style = getComputedStyle(input);
@@ -467,15 +489,50 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 if (!current()) { return; }
                 memoryBody.replaceChildren();
                 const items = asArray(memory?.items);
-                const ids = items.map((item) => item.id).filter(validId).slice(0,10);
+                const ids = [...new Set([...(validId(savedRecordId) ? [savedRecordId] : []), ...items.map((item) => item.id).filter(validId)])].slice(0,10);
                 let exactRecords = [];
+                const reconciliation = new Map();
                 if (ids.length) {
                     try {
                         const result = await call('libraryRead', {ids, language});
                         exactRecords = asArray(result?.items);
+                        for (const item of (subtitleSource ? [] : exactRecords)) {
+                            const id = item?.record?.id;
+                            if (!validId(id)) { continue; }
+                            try {
+                                reconciliation.set(id, await call('libraryReconcile', {id, language}));
+                            } catch { /* Keep the read-only record available when reconciliation is unavailable. */ }
+                        }
+                        const reread = await call('libraryRead', {ids, language});
+                        exactRecords = asArray(reread?.items);
                     } catch { /* Memory snippets remain useful when one exact record was moved. */ }
                 }
                 if (!current()) { return; }
+                // Bind this view only to the same captured context (or an explicit
+                // source record id), never the first result for a matching word.
+                const requestedId = validId(savedRecordId) ? savedRecordId : context.dataset.studyRecordId;
+                const normalize = (value) => cleanText(value).trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+                const currentSentence = cleanText(editor?.value).trim() || original.trim();
+                const requestedRecord = exactRecords.find((item) => item?.record?.id === requestedId && normalize(item.record.entry?.word) === normalize(word))?.record;
+                const candidates = currentSentence && normalize(currentSentence) !== normalize(word) ? exactRecords.filter((item) => {
+                        const record = item?.record;
+                        const entry = record?.entry;
+                        return entry && normalize(entry.word) === normalize(word) &&
+                            (entry.language ?? language) === language && normalize(entry.sentence) === normalize(currentSentence);
+                    }) : [];
+                const sourceMatches = candidates.filter((item) => {
+                    const entry = item?.record?.entry;
+                    if (!entry) { return false; }
+                    if (sourceUrlCurrent && cleanText(entry.url) !== sourceUrlCurrent) { return false; }
+                    if (sourceTitleCurrent && cleanText(entry.title) && cleanText(entry.title) !== sourceTitleCurrent) { return false; }
+                    if (typeof sourceTimeCurrent === 'number' && typeof entry.videoTime === 'number' && Math.floor(entry.videoTime) !== Math.floor(sourceTimeCurrent)) { return false; }
+                    return true;
+                });
+                const matchingRecord = requestedRecord || (sourceMatches.length === 1 ? sourceMatches[0]?.record : null);
+                if (matchingRecord && validId(matchingRecord.id)) {
+                    context.dataset.studyRecordId = matchingRecord.id;
+                    context.dispatchEvent(new d.defaultView.CustomEvent('study-record-current', {detail: matchingRecord}));
+                }
                 const coverage = memory?.coverage?.status || 'unavailable';
                 const anki = memory?.anki || {status: 'unavailable', items: []};
                 const noteCount = Number.isInteger(memory?.total) ? memory.total : null;
@@ -499,6 +556,69 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                         text.append(line);
                     }
                     block.append(subject, text);
+                    const syncState = cleanText(row?.syncState);
+                    const favorite = row?.favorite === true;
+                    const favoritePending = row?.favoriteSyncState === 'pending' || (favorite && syncState === 'pending');
+                    const rowStatus = make('p', 'sf-description', [
+                        favorite ? (favoritePending ? '已收藏到待学 · Obsidian 待同步' : '已收藏到待学') : '',
+                        syncState === 'pending' && !favorite ? 'Obsidian 待同步' : syncState === 'synced' ? 'Obsidian 已同步' : '',
+                        row?.ankiState === 'pending' ? 'Anki 待补交' : '',
+                        Number.isInteger(row?.cards?.length) ? `${row.cards.length} 张卡` : ''
+                    ].filter(Boolean).join(' · ') || '已读取当前学习记录');
+                    block.append(rowStatus);
+                    const savedCards = asArray(row?.cards);
+                    if (savedCards.length) {
+                        const cardsHeading = make('strong', 'sf-record-cards-heading', '本条记录的复习卡');
+                        block.append(cardsHeading);
+                        for (const card of savedCards) {
+                            const cardState = cleanText(card?.syncState || card?.state);
+                            const target = cleanText(card?.target) || cleanText(card?.target?.name || card?.target?.kind || card?.target?.type);
+                            const deck = cleanText(card?.deck || card?.target?.deck || row?.target?.deck);
+                            const stateLabel = cardState === 'pending' ? '待同步' : cardState === 'synced' ? '已同步' : cardState;
+                            const cardText = [cleanText(card?.front), cleanText(card?.back), target ? `目标 ${target}` : '', deck ? `牌组 ${deck}` : '', stateLabel].filter(Boolean).join(' · ');
+                            block.append(make('p', 'sf-record-card', cardText || '已有复习卡；详情未提供'));
+                        }
+                    } else if (row && !('cards' in row)) {
+                        block.append(make('p', 'sf-description', '旧记录没有卡片明细；兼容显示，不据此推断没有卡片。'));
+                    }
+                    const conflicts = asArray(row?.conflicts?.length ? row.conflicts : reconciliation.get(row?.id)?.conflicts);
+                    const resolutions = {};
+                    for (const conflict of conflicts) {
+                        const conflictBox = make('section', 'sf-record-conflict');
+                        const conflictKey = cleanText(conflict?.key) || '记录内容';
+                        conflictBox.append(make('strong', '', `同步冲突 · ${conflictKey}`));
+                        const local = make('p', '', `Obsidian：${displayValue(conflict?.local) || '(空内容)'}`);
+                        const remote = make('p', '', `Anki：${displayValue(conflict?.remote) || '(空内容)'}`);
+                        const choices = make('div', 'sf-conflict-choices');
+                        const resolve = (value) => {
+                            const localChoice = button('保留 Obsidian');
+                            const remoteChoice = button('保留 Anki');
+                            for (const choice of [localChoice, remoteChoice]) { choice.disabled = true; }
+                            const apply = async (resolution) => {
+                                try {
+                                    readStatus.textContent = `正在处理「${conflictKey}」冲突…`;
+                                    resolutions[conflictKey] = resolution;
+                                    if (Object.keys(resolutions).length < conflicts.length) {
+                                        readStatus.textContent = '已保留你的选择，请继续选择这条记录的其他冲突。';
+                                        return;
+                                    }
+                                    await call('libraryReconcile', {id: row.id, language, resolutions});
+                                    readStatus.textContent = '已提交你的选择，正在重新读取实际记录…';
+                                    await readMemory(true, false);
+                                } catch (error) {
+                                    if (current()) { readStatus.textContent = `未完成冲突处理：${error instanceof Error ? error.message : '请稍后重试'}`; }
+                                }
+                            };
+                            localChoice.disabled = false;
+                            remoteChoice.disabled = false;
+                            localChoice.addEventListener('click', () => { void apply('local'); });
+                            remoteChoice.addEventListener('click', () => { void apply('remote'); });
+                            choices.append(localChoice, remoteChoice);
+                        };
+                        resolve();
+                        conflictBox.append(local, remote, choices);
+                        block.append(conflictBox);
+                    }
                     if (item.truncated || read?.truncated) { block.append(make('p', 'sf-description', '这里只显示片段；完整内容仍在原笔记。')); }
                     const url = cleanText(row?.openUrl);
                     if (/^obsidian:\/\/open\?/.test(url)) {
@@ -536,7 +656,40 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         refresh.addEventListener('click', () => { void readMemory(true, true); });
         const sourceFooter = make('div', 'sf-source-footer');
         const sourceUrl = cleanText(display.history?.state?.url);
+        const sourceTitle = cleanText(display.history?.state?.documentTitle) || cleanText(display.history?.state?.title);
         const videoTime = display.history?.state?.videoTime;
+        const sourceMeta = make('dl', 'sf-source-meta');
+        const addSourceMeta = (label, value, href = '') => {
+            if (!value) { return; }
+            const row = make('div', 'sf-source-meta-row');
+            row.append(make('dt', '', label));
+            const description = make('dd', '');
+            if (href) {
+                const link = make('a', 'sf-link scan-disable', value);
+                link.href = href;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                description.append(link);
+            } else {
+                description.textContent = value;
+            }
+            row.append(description);
+            sourceMeta.append(row);
+        };
+        addSourceMeta('标题', sourceTitle);
+        if (/^https?:\/\//.test(sourceUrl)) { addSourceMeta('链接', sourceUrl, sourceUrl); }
+        if (sourceMeta.childElementCount) {
+            const details = make('details', 'sf-source-details');
+            details.append(make('summary', '', '学习来源详情'), sourceMeta);
+            sourceFooter.append(details);
+        }
+        if (typeof videoTime === 'number' && Number.isFinite(videoTime) && videoTime >= 0) {
+            const wholeSeconds = Math.floor(videoTime);
+            const hours = Math.floor(wholeSeconds / 3600);
+            const minutes = Math.floor((wholeSeconds % 3600) / 60);
+            const seconds = wholeSeconds % 60;
+            sourceFooter.append(make('span', 'sf-source-time', `时间点 · ${hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${minutes}:${String(seconds).padStart(2, '0')}`}`));
+        }
         if (/^https?:\/\//.test(sourceUrl)) {
             let href = sourceUrl;
             let label = '打开来源';

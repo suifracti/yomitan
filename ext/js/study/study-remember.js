@@ -36,7 +36,7 @@ export async function rememberSaved(service, source, dispatch = null) {
         throw new Error('已保存笔记暂不可读；没有送入 Anki。');
     }
     if (row.ankiEnabled === false) { return row; } // Note-only is not a zero-card AI decision.
-    if (row.ankiState === 'pending' && (row.cards?.length || row.noteId || !row.reviewDraft)) {
+    if (row.cards?.length || row.noteId || (row.ankiState === 'pending' && !row.reviewDraft)) {
         // Retrying already-authorized cards is not a new AI decision.
         return (await call('librarySync', {ids: [id]})).items[0];
     }

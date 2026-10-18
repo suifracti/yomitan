@@ -28,6 +28,7 @@
             <a href="#profile"          class="button outline-item"><span class="outline-item-left"><span class="outline-item-icon icon" data-icon="profile"></span></span><span class="outline-item-label">Profile</span></a>
             <a href="#general"          class="button outline-item"><span class="outline-item-left"><span class="outline-item-icon icon" data-icon="cog"></span></span><span class="outline-item-label">General</span></a>
             <a href="#dictionaries"     class="button outline-item"><span class="outline-item-left"><span class="outline-item-icon icon" data-icon="book"></span><span class="outline-item-left-warning-badge no-dictionaries-enabled-warning" hidden><div class="badge warning-badge"><span class="icon" data-icon="exclamation-point-short"></span></div></span></span><span class="outline-item-label">Dictionaries</span></a>
+            <a href="#learning"         class="button outline-item"><span class="outline-item-left"><span class="outline-item-icon icon" data-icon="note-card"></span></span><span class="outline-item-label">学习与保存</span></a>
             <a href="#scanning"         class="button outline-item"><span class="outline-item-left"><span class="outline-item-icon icon" data-icon="scanning"></span></span><span class="outline-item-label">Scanning</span></a>
             <a href="#popup"            class="button outline-item"><span class="outline-item-left"><span class="outline-item-icon icon" data-icon="popup"></span></span><span class="outline-item-label">Popup Behavior</span></a>
             <a href="#appearance"       class="button outline-item"><span class="outline-item-left"><span class="outline-item-icon icon" data-icon="palette"></span></span><span class="outline-item-label">Appearance</span></a>
@@ -72,6 +73,15 @@
     <span tabindex="-1" id="content-scroll-focus"></span>
 
     <h1>Yomitan Settings</h1>
+
+    <div class="heading-container">
+        <div class="heading-container-icon"><span class="icon" data-icon="note-card"></span></div>
+        <div class="heading-container-left"><h2 id="learning"><a href="#learning">学习与保存</a></h2></div>
+    </div>
+    <div class="settings-group study-settings-embed-container">
+        <p>模型、Obsidian 保存目标、牌组路由与本地收藏都在同一份学习设置中管理；学习内容由下方学习库查看。</p>
+        <iframe id="study-settings-frame" class="study-settings-embed" title="学习与保存设置" src="/study-settings.html?embed=1"></iframe>
+    </div>
 
     <!-- Notifications -->
     <div class="settings-group settings-group-top-margin page-loading-stalled-notification">
@@ -1811,7 +1821,7 @@
     <div>
         <div class="heading-container">
             <div class="heading-container-icon"><span class="icon" data-icon="note-card"></span></div>
-            <div class="heading-container-left"><h2 id="anki"><a href="#anki">Anki</a></h2></div>
+            <div class="heading-container-left"><h2 id="anki"><a href="#anki">Anki 高级设置</a></h2></div>
             <div class="heading-container-right"><a tabindex="0" class="more-toggle more-only heading-link-light" data-parent-distance="3">Info&hellip;</a></div>
         </div>
         <div class="heading-description more" hidden>

@@ -132,7 +132,7 @@ export function updateStudySourcePreview(target, text) {
 }
 
 /**
- * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, videoTime?: number, contextSelected?: boolean, meaning?: string}) => void}}
+ * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, meaning?: string}) => void}}
  */
 export function prepareStudyTranslation() {
     let generation = 0;
@@ -154,6 +154,7 @@ export function prepareStudyTranslation() {
             const version = generation;
             const isCurrent = () => version === generation;
             const d = container.ownerDocument;
+            delete container.dataset.studyRecordId;
             if (source.subtitleSnapshot) {
                 // Subtitle UI carries only a session reference; every action is authorized by private backend state.
                 const s = source.subtitleSnapshot;
@@ -368,7 +369,7 @@ export function prepareStudyTranslation() {
             // dictionary paragraph. Reuse completed QA; never auto-call a model.
             const sourceBox = d.querySelector('.study-reading-anchor .study-source') ?? container.querySelector('.study-source');
             const hasRealSentence = sourceBox?.querySelector('.study-source-label')?.textContent === '当前原句' &&
-                sentence.trim() !== word.trim();
+            sentence.trim() !== word.trim();
             const translateSentence = hasRealSentence ? button('翻译本句') : null;
             const sentenceChinese = hasRealSentence ? d.createElement('span') : null;
             if (translateSentence && sentenceChinese) {
@@ -424,9 +425,11 @@ export function prepareStudyTranslation() {
                 requestId = 0;
             /** @type {?import('study').Result} */
             let latest = null;
+            /** @type {import('study').LearningTurn|null} */
+            let latestExplanation = null;
             let latestSource = '';
             const lookup = () => ({...(source.lemma ? {lemma: source.lemma} : {}), language: source.language ?? 'en', ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), word, context: context.value.trim(), question: question.value.trim(), url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})});
-            /** @type {(import('study').Lookup & {url: string, title: string, videoTime?: number, lemma?: string}) | null} */
+            /** @type {(import('study').Lookup & {url: string, title: string, recordId?: string, videoTime?: number, lemma?: string}) | null} */
             let activePayload = null;
             // Draft input is NOT conversation identity. Typing a new question never erases the previous answer.
             const identity = () => JSON.stringify({...lookup(), question: ''});
@@ -451,16 +454,20 @@ export function prepareStudyTranslation() {
                 const text = pinned.querySelector('.study-reading-ai-text');
                 if (text) { text.textContent = explanation; }
                 pinned.hidden = !explanation;
-                const more = /** @type {?HTMLDetailsElement} */ (pinned.querySelector('.study-reading-ai-more'));
-                const full = more?.querySelector('.study-reading-ai-full');
-                if (!more || !full) { return; }
+                const explanationDetails = /** @type {?HTMLDetailsElement} */ (pinned.querySelector('.study-reading-ai-more'));
+                const full = explanationDetails?.querySelector('.study-reading-ai-full');
+                if (!explanationDetails || !full) { return; }
                 // Keep the open state when refreshing the same answer, but reset
                 // it when the learner moves on to a new question.
                 if (pinned.dataset.previewTurnId !== (turn?.id ?? '')) {
-                    more.open = false;
+                    explanationDetails.open = false;
                     pinned.dataset.previewTurnId = turn?.id ?? '';
                 }
                 full.replaceChildren();
+                /**
+                 * @param {string} label
+                 * @param {string} content
+                 */
                 const addLine = (label, content) => {
                     if (!content) { return; }
                     const p = d.createElement('p');
@@ -486,6 +493,7 @@ export function prepareStudyTranslation() {
                 history.hidden = turns.length === 0;
                 historyLabel.textContent = `问答历史 · ${turns.length} 轮（含理解反馈）`;
                 latest = turns.at(-1) ?? null;
+                latestExplanation = [...turns].reverse().find((turn) => turn.meaning?.trim() || turn.notes?.trim()) ?? null;
                 latestSource = identity();
                 paintSentenceTranslation(turns);
                 updatePinnedExplanation([...turns].reverse().find((turn) => (turn.meaning ?? '').trim() || (turn.notes ?? '').trim()) ?? null);
@@ -496,10 +504,10 @@ export function prepareStudyTranslation() {
                     panel.open = opened.has(turn.id) || (index === turns.length - 1 && oldLast !== turn.id);
                     const label = d.createElement('summary');
                     label.className = 'scan-disable';
-                    label.textContent = `第 ${index + 1} 轮 · ${turn.question || '理解当前词句'} · ${turn.saved ? '已保存' : '待保存'}`;
+                    label.textContent = `第 ${index + 1} 轮 · ${turn.mode === 'translate' ? '原句翻译' : '问 AI'} · ${turn.question || '理解当前词句'} · ${turn.saved ? '已保存' : '待保存'}`;
                     const mine = d.createElement('p');
                     mine.className = 'study-user-question';
-                    mine.textContent = `我：${turn.question || '请解释这句话和这个词的用法'}`;
+                    mine.textContent = turn.mode === 'translate' ? '翻译当前原句' : `我：${turn.question || '请解释这句话和这个词的用法'}`;
                     const answer = d.createElement('div');
                     answer.className = 'study-turn-answer';
                     renderStudyResult(answer, turn, turn.usage?.status === 'cached');
@@ -537,7 +545,7 @@ export function prepareStudyTranslation() {
                                 }
                                 select(value);
                                 feedbackStatus.textContent = `已选择“${title}”，点“记住它”同步。`;
-                                label.textContent = `第 ${index + 1} 轮 · ${turn.question || '理解当前词句'} · 待保存`;
+                                label.textContent = `第 ${index + 1} 轮 · ${turn.mode === 'translate' ? '原句翻译' : '问 AI'} · ${turn.question || '理解当前词句'} · 待保存`;
                             }).catch((e) => {
                                 feedbackStatus.textContent = e instanceof Error ? e.message : '反馈未保存';
                             })
@@ -624,22 +632,24 @@ export function prepareStudyTranslation() {
                         }
                         await refresh();
                     }
-                    status.textContent = mode === 'translate' ?
-                        '原句译文已显示；可以继续追问。' :
-                        '点“记住它”留下这次学习；也可以继续问。';
+                    const pendingSync = /** @type {unknown[]} */ (await studyCall('syncPending', {checkOnly: true}));
+                    status.textContent = Array.isArray(pendingSync) && pendingSync.length > 0 ?
+'内容已保留 · 有更新待同步，可在学习库重试。' :
+                        (mode === 'translate' ? '原句译文已显示；已保存过的学习会自动补充。' : '点“记住它”留下这次学习；已保存过的学习会自动补充。');
                 }).catch((e) => {
                     if (isCurrent() && id === requestId) {
                         status.textContent = e instanceof Error ? e.message : '请求未完成，用量可能未知。';
                         void refresh().catch(() => {});
                     }
-                }).finally(() => {
-                    if (isCurrent() && id === requestId) {
-                        activePayload = null;
-                        const blocked = /已有翻译正在进行/.test(status.textContent);
-                        lock(false);
-                        if (blocked) { stop.hidden = false; }
-                    }
-                });
+                })
+                    .finally(() => {
+                        if (isCurrent() && id === requestId) {
+                            activePayload = null;
+                            const blocked = /已有翻译正在进行/.test(status.textContent);
+                            lock(false);
+                            if (blocked) { stop.hidden = false; }
+                        }
+                    });
             };
             ask.addEventListener('click', () => runGeneration('explain'));
             translateSentence?.addEventListener('click', () => runGeneration('translate'));
@@ -725,11 +735,12 @@ export function prepareStudyTranslation() {
             container.append(actions, status, history, question, footer, more);
             mountStudyLibrary(container, () => {
                 const current = latestSource === identity() ? latest : null;
+                const explanation = latestSource === identity() ? latestExplanation : null;
                 const english = container.closest('.study-entry')?.querySelector('.study-primary-english');
                 const translated = english?.querySelector('[data-study-translated=true]')?.textContent;
                 const dictionaryTranslation = translated ? `词典英文：${english?.querySelector('.study-english-original')?.textContent ?? ''}\nAI 辅助中文：${translated}` : '';
 
-                return {word, ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: current?.meaning || source.meaning || '', translation: current?.translation ?? '', notes: current?.notes ?? '', explanationSource: current ? 'AI 辅助解释（非词典原文）' : '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
+                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: current?.translation ?? '', notes: explanation?.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
             }, isCurrent);
             for (const control of container.querySelectorAll('button, input, textarea, select, summary')) {
                 control.classList.add('scan-disable');

@@ -14,6 +14,18 @@ with sync_playwright() as p:
         html, script=raw.split('<script type="module">',1)
         script=script.split('</script>',1)[0]
         script=script.replace("import {prepareStudyFocus} from '/source/ext/js/display/study-focus.js';",'')
+        card_fixture = """
+const studyContext=document.querySelector('#study-context');
+const cardToggle=document.createElement('button');cardToggle.type='button';cardToggle.className='study-card-add-toggle';cardToggle.dataset.studyAddCard='';cardToggle.textContent='手动添加卡片';cardToggle.hidden=true;
+const cardPanel=document.createElement('section');cardPanel.className='study-card-add';cardPanel.setAttribute('aria-label','手动添加复习卡');cardPanel.hidden=true;
+cardPanel.innerHTML='<fieldset class=\"study-card-editor\"><label>学习点<select><option>词义</option></select></label><label>正面<textarea rows=\"2\" maxlength=\"1000\">A short prompt</textarea></label><label>背面<textarea rows=\"2\" maxlength=\"2400\">A short answer</textarea></label></fieldset><button type=\"button\">再加一张</button><button type=\"button\">添加已选卡片</button>';
+cardToggle.onclick=()=>{cardPanel.hidden=!cardPanel.hidden;document.querySelector('.study-focus-shell')?.classList.toggle('sf-card-editor-open',!cardPanel.hidden);if(!cardPanel.hidden)requestAnimationFrame(()=>cardPanel.scrollIntoView({block:'nearest'}));};
+const sourceMenu=document.createElement('button');sourceMenu.type='button';sourceMenu.className='study-audio-sources';sourceMenu.title='选择发音来源';sourceMenu.textContent='来源 ▾';document.querySelector('.study-entry .actions').append(sourceMenu);
+studyContext.append(cardToggle,cardPanel);
+document.querySelector('[data-study-save=note]').addEventListener('click',()=>{cardToggle.hidden=false;});
+"""
+        script=script.replace("prepareStudyFocus(window.display,{call:window.mockCall});",card_fixture+"\nprepareStudyFocus(window.display,{call:window.mockCall});")
+        script=script.replace("import {prepareStudyFocus} from '/source/ext/js/display/study-focus.js';",'')
         module=(ROOT/'ext/js/display/study-focus.js').read_text()
         module=module.replace("import {studyCall} from '../study/study-client.js';", "const studyCall=(a,d)=>globalThis.mockCall(a,d);")
         upstream=(ROOT/'ext/js/display/study-translation.js').read_text()
@@ -37,7 +49,7 @@ with sync_playwright() as p:
     check('first page puts Chinese meaning beside the authentic source',
         '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句" && document.querySelector(".sf-heading .sf-gloss-text")?.textContent==="能力，才干" && !document.querySelector(".sf-source-pane").hidden && document.querySelector(".sf-source-pane mark").textContent==="ability"')
     check('one source and readable current answer','()=>document.querySelectorAll(".sf-source-pane .study-source").length===1 && document.querySelector(".sf-answer").textContent.includes("入睡的能力")')
-    check('no model/write on lookup','()=>window.models===0 && window.saveClicks===0 && window.calls.every(([x])=>["libraryMemory","libraryRead"].includes(x)) && window.dictionaryCalls.every(([x])=>x==="dictionaryPeek")')
+    check('lookup does not generate or save new learning; existing records may reconcile','()=>window.models===0 && window.saveClicks===0 && window.calls.every(([x])=>["libraryMemory","libraryRead","libraryReconcile"].includes(x)) && window.dictionaryCalls.every(([x])=>x==="dictionaryPeek")')
     check('previous history hidden for first turn','()=>document.querySelector(".study-conversation-history").hidden')
     check('Chinese meaning and tabs are outside the one learning scroller', '()=>document.querySelector(".sf-heading .sf-gloss-text") && document.querySelector(".sf-learning-scroll .sf-source-pane") && !document.querySelector(".sf-learning-scroll .sf-tabs") && !document.querySelector(".sf-learning-scroll .sf-compose")')
     pinned_before=page.locator('.sf-heading').bounding_box()
@@ -93,7 +105,7 @@ with sync_playwright() as p:
     page.get_by_role('tab',name='我的记录',exact=False).click()
     check('Obsidian AND Anki latest data visible','()=>document.querySelector(".sf-records").textContent.includes("Obsidian 修改的解释 v1") && document.querySelector(".sf-records").textContent.includes("入睡的能力。v1")')
     page.evaluate('window.memoryVersion=2');page.get_by_role('button',name='刷新笔记与卡片',exact=True).click();page.wait_for_timeout(50)
-    check('explicit readback reflects edits without writes','()=>document.querySelector(".sf-records").textContent.includes("修改的解释 v2") && window.calls.every(([x])=>["libraryMemory","libraryRead"].includes(x))')
+    check('explicit readback reflects edits without writes','()=>document.querySelector(".sf-records").textContent.includes("修改的解释 v2") && window.calls.every(([x])=>["libraryMemory","libraryRead","libraryReconcile"].includes(x))')
     page.screenshot(path=str(OUTPUT/'previews'/'records-420.png'))
     page.get_by_role('tab',name='词义与原句',exact=True).click()
     page.evaluate('window.addTurn("很长的解释。".repeat(120), 3)');page.wait_for_timeout(30)
@@ -132,7 +144,7 @@ with sync_playwright() as p:
     page.evaluate('document.querySelector(".study-translation-output").replaceChildren()');page.wait_for_timeout(40)
     check('shared hint keeps every Chinese POS row instead of just the first', '()=>!document.querySelector(".sf-short-gloss").hidden && document.querySelector(".sf-gloss-text").textContent==="能力，才干" && document.querySelector(".sf-gloss-pos").textContent.includes("名词") && document.querySelector(".sf-short-gloss").textContent.includes("使能够") && document.querySelector(".sf-gloss-kicker").textContent.includes("未按本句判断")')
     page.get_by_role('tab',name='详细词典',exact=True).click()
-    check('usage stays in the dictionary and sentence editing stays beside the sentence', '()=>document.querySelector(".sf-dictionary-info .study-token-summary") && document.querySelector(".sf-source-pane .study-more-actions") && document.querySelectorAll(".sf-audio-tools button").length===1 && document.querySelector(".sf-audio-primary-hidden")')
+    check('usage stays in the dictionary and sentence editing stays beside the sentence', '()=>document.querySelector(".sf-dictionary-info .study-token-summary") && document.querySelector(".sf-source-pane .study-more-actions") && document.querySelectorAll(".sf-audio-tools button:not(.study-audio-sources)").length===1 && document.querySelector(".sf-audio-primary-hidden")')
     page.evaluate('window.fire("contentUpdateStart"); window.chrome.permissions.contains=async()=>false;window.calls=[];window.fire("contentUpdateComplete")');page.wait_for_timeout(50)
     check('ungranted permission never starts a read or prompts on opening', '()=>window.calls.length===0 && document.querySelector(".sf-records").textContent.includes("点「刷新笔记与卡片」")')
     load_fixture()
@@ -172,7 +184,7 @@ with sync_playwright() as p:
     page.evaluate("""()=>{window.fire('contentUpdateStart');document.querySelector('.study-reading-meaning').replaceChildren();window.fire('contentUpdateComplete');}""");page.wait_for_timeout(30)
     check('absent Chinese is explicit and never generated', '()=>document.querySelector(".sf-gloss-unavailable").textContent.includes("没有提供中文") && window.models===0')
     load_fixture()
-    check('a plain web address is labeled as opening the source', '()=>document.querySelector(".sf-source-footer a").textContent==="打开来源"')
+    check('a plain web address is labeled as opening the source', '()=>document.querySelector(".sf-source-footer > a").textContent==="打开来源"')
     page.evaluate('''() => { window.mockOverride = async (action) => { window.calls.push([action, null]); if (action==="libraryMemory") return {total:0, coverage:{status:"partial"}, items:[], anki:{status:"unavailable", items:[]}}; if (action==="libraryRead") return {items:[]}; throw new Error(action); }; }''')
     page.get_by_role('tab', name='我的记录', exact=False).click(); page.get_by_role('button', name='刷新笔记与卡片', exact=True).click(); page.wait_for_timeout(50)
     check('partial coverage is not shown as zero records', '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent.includes("未核实") && !document.querySelector(".sf-tab[aria-selected=true]").textContent.includes("· 0")')
@@ -215,6 +227,32 @@ with sync_playwright() as p:
     check('collapsed search keeps original card intact',
         '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="false" && getComputedStyle(document.querySelector("#sticky-search-header")).display==="none" && document.querySelector(".sf-gloss-text")?.textContent==="能力，才干"')
 
+    # Restore normal component state for distributable screenshots.
+    page.set_viewport_size({'width':420,'height':600});load_fixture()
+    page.get_by_role('tab',name='详细词典',exact=True).click();page.screenshot(path=str(OUTPUT/'previews'/'dictionary-420.png'))
+    page.get_by_role('tab',name='词义与原句',exact=True).click()
+    page.evaluate('document.documentElement.setAttribute("data-theme","dark")')
+    page.screenshot(path=str(OUTPUT/'previews'/'learning-dark-420.png'))
+    assert not errors, errors
+    results.append({'test':'no browser JS exceptions','passed':True})
+    # Exercise the actual focus relocation with a real expanded manual-card panel.
+    for height in (250,550):
+        page.set_viewport_size({'width':400,'height':height});load_fixture()
+        page.locator('[data-study-save=note]').click();page.locator('[data-study-add-card]').click();page.wait_for_timeout(60)
+        check(f'manual card editor shares the content scroll and fixed bottom stays visible at 400x{height}', '''()=>{
+            const panel=document.querySelector('.study-card-add'),scroller=document.querySelector('.sf-learning-scroll'),field=panel?.querySelector('textarea');
+            const visible=(e)=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight+1;};
+            const toggle=document.querySelector('[data-study-add-card]'),compose=document.querySelector('.sf-compose'),savebar=document.querySelector('.sf-save-bar');
+            return !panel.hidden&&panel.parentElement===scroller&&!panel.closest('.sf-save-bar')&&visible(toggle)&&visible(compose)&&visible(savebar)&&visible(field)&&field.maxLength===1000&&field.getAttribute('maxlength')==='1000'&&getComputedStyle(field).resize==='none'&&getComputedStyle(field).overflowY==='hidden';
+        }''')
+        page.screenshot(path=str(OUTPUT/'previews'/f'card-editor-400x{height}.png'))
+        page.locator('.study-card-add button').filter(has_text='添加已选卡片').evaluate('(e)=>e.scrollIntoView({block:"nearest"})');page.wait_for_timeout(20)
+        check(f'manual-card controls remain reachable inside the one content scroll at 400x{height}', '''()=>{
+            const panel=document.querySelector('.study-card-add'),scroller=document.querySelector('.sf-learning-scroll');
+            const button=[...panel.querySelectorAll('button')].find(e=>e.textContent.includes('添加已选卡片'));
+            const r=button.getBoundingClientRect(),sr=scroller.getBoundingClientRect(),save=document.querySelector('[data-study-save=note]').getBoundingClientRect();
+            return panel.parentElement===scroller&&r.height>0&&r.top>=sr.top&&r.bottom<=sr.bottom+1&&save.top>=0&&save.bottom<=innerHeight+1&&document.querySelectorAll('.study-card-add').length===1;
+        }''')
     # Restore normal component state for distributable screenshots.
     page.set_viewport_size({'width':420,'height':600});load_fixture()
     page.get_by_role('tab',name='详细词典',exact=True).click();page.screenshot(path=str(OUTPUT/'previews'/'dictionary-420.png'))

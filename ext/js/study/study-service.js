@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {StudySync} from './study-sync.js';
 import {log} from '../core/log.js';
 import {rememberSaved} from './study-remember.js';
 import {CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
@@ -79,6 +80,10 @@ export class StudyService {
         this.writes = Promise.resolve();
         /** @type {StudyJournal} */
         this.journal = new StudyJournal(this);
+        /**
+         *
+         */
+        this.sync = new StudySync(this);
         /** @type {Map<string, {generation: number, active: number}>} */
         this.cancelScopes = new Map();
         /** @type {Map<string, Promise<import('study').LibraryRecord>>} */
@@ -297,7 +302,7 @@ export class StudyService {
                 call.cancel();
             };
             const response = await call.promise;
-            if (run.cancelled || response.ok !== true || !isStudyResult(response.result)) { throw new Error(response.error ?? '回答未完成；已完成问答保留。'); }
+            if (run.cancelled || response.ok !== true || !isStudyResult(response.result) || !response.result.meaning.trim()) { throw new Error(response.error ?? '回答未完成；已完成问答保留。'); }
             await this.#liveCue(runtime, queryId);
             if (run.cancelled) { throw new Error('已取消，未写入迟到回答。'); }
             // append enters service.write synchronously; write captures this guard before its storage awaits.
@@ -544,6 +549,8 @@ export class StudyService {
      */
     async rememberEntry(entry) {
         studyLookup(entry); // Reject invalid language/word/sentence before queueing.
+        entry = {...entry};
+        delete entry.recordId;
         const turns = structuredClone(await this.journal.get(entry));
         const targetId = await this.resolveSaveTarget(entry);
         /** @type {import('study').RememberSaveIntent} */
@@ -675,8 +682,35 @@ export class StudyService {
             return tasks.length > 0 ? await this.handle('remember', tasks[0]) : null;
         }
         if (action === 'rememberEntry') {
-            if (!value || typeof value !== 'object' || Object.keys(value).some((k) => k !== 'entry')) { throw new Error('学习保存参数无效。'); }
-            return await this.rememberEntry(/** @type {{entry: import('study').LibraryEntry}} */ (value).entry);
+            if (!value || typeof value !== 'object' || Object.keys(value).some((k) => !['entry', 'recordId'].includes(k))) { throw new Error('学习保存参数无效。'); }
+            const {entry, recordId} = /** @type {{entry: import('study').LibraryEntry; recordId?: string}} */ (value);
+            const existingId = recordId ?? entry.recordId;
+            if (existingId) {
+                if (!/^[a-f0-9]{32}$/.test(existingId)) { throw new Error('原学习记录编号无效。'); }
+                const original = await this.native({action: 'libraryRead', ids: [existingId], language: entry.language ?? 'en'}).promise;
+                const originalRecord = /** @type {{items?: import('study').LearningMaterial[]}|undefined} */ (original.library)?.items?.[0]?.record;
+                if (!original.ok || !originalRecord) { throw new Error(original.error ?? '原学习记录暂不可读；未改投其他对象。'); }
+                if (originalRecord.entry.word.toLocaleLowerCase() !== entry.word.toLocaleLowerCase()) { return await this.rememberEntry(entry); }
+                const update = {...entry};
+                delete update.recordId;
+                const turns = await this.journal.get(entry);
+                await this.sync.enqueue({key: `update:${entry.language ?? 'en'}:${existingId}`,
+                    action: 'libraryUpdate',
+                    id: existingId,
+                    language: entry.language ?? 'en',
+                    remember: true,
+                    entry: update,
+                    turns});
+                await this.sync.flush();
+                const response = await this.native({action: 'libraryRead', ids: [existingId], language: entry.language ?? 'en'}).promise;
+                const row = /** @type {{items?: import('study').LearningMaterial[]}|undefined} */ (response.library)?.items?.[0]?.record;
+                if (!response.ok || !row) { throw new Error(response.error ?? '更新待同步；不会另建记录。'); }
+                await this.sync.bind(entry, row);
+                const pending = (await this.sync.pending()).find((task) => task.id === existingId);
+                if (!pending && row.ankiEnabled !== false && !row.cards?.length && !row.noteId && !row.reviewDraft) { return await this.handle('remember', {id: row.id, language: entry.language ?? 'en'}); }
+                return pending ? {...row, syncState: 'pending', error: pending.error ?? '学习更新待同步'} : row;
+            }
+            return await this.rememberEntry(entry);
         }
         if (action === 'remember') {
             const {id, language = 'en'} = /** @type {{id: string, language?: string}} */ (value ?? {});
@@ -690,6 +724,10 @@ export class StudyService {
             return await operation;
         }
         if (action === 'journalConversation') { return await this.journal.conversation(value); }
+        if (action === 'syncPending') {
+            if (!(/** @type {{checkOnly?: boolean}} */ (value ?? {})).checkOnly) { await this.sync.flush(); }
+            return await this.sync.pending();
+        }
         if (action === 'conversationUsage') { return this.journal.usage(value); }
         if (action === 'usageStats') {
             const response = await this.native({action: 'usageStats'}).promise;
@@ -719,16 +757,35 @@ export class StudyService {
                 vault: settings.vault,
                 directory: settings.directory,
                 deck: settings.deck,
-                model: settings.model};
+                model: settings.model,
+                ...(settings.deckByKind ? {deckByKind: settings.deckByKind} : {})};
             if (JSON.stringify(await this.read(SAVE_TARGETS_KEY)) !== JSON.stringify(snapshot)) {
                 await this.write(SAVE_TARGETS_KEY, () => snapshot);
             }
             return response.library;
         }
-        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit'].includes(action)) {
+        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate'].includes(action)) {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
+            if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
+            if (action === 'libraryList' || action === 'libraryMemory') {
+                const items = /** @type {{items?: import('study').LibraryRecord[]}} */ (response.library).items;
+                if (Array.isArray(items)) { await this.sync.favoritesFrom(items.filter((r) => r.entry)); }
+            }
+            if (['libraryFavorite', 'libraryReconcile'].includes(action)) {
+                const row = /** @type {import('study').LibraryRecord} */ (response.library);
+                if (row.entry) {
+                    await this.sync.favoritesFrom([row]);
+                    if (action === 'libraryReconcile') { await this.sync.bind(row.entry, row); }
+                }
+            }
+            if (action === 'libraryRead') {
+                const items = /** @type {{items?: import('study').LearningMaterial[]}} */ (response.library).items ?? [];
+                for (const material of items) {
+                    if (material.record?.entry) { await this.sync.bind(material.record.entry, material.record); }
+                }
+            }
             return response.library;
         }
         if (action === 'draftCards') {
@@ -838,11 +895,16 @@ export class StudyService {
             return Array.isArray(rows) ? rows : [];
         }
         if (action === 'clearSaved') {
+            const rows = /** @type {import('study').SavedWord[]} */ (await this.read(SAVED_KEY) ?? []);
+            for (const row of rows) { await this.sync.favorite(row, false); }
             await this.write(SAVED_KEY, () => []);
             return true;
         }
         if (action === 'removeWord') {
             const {id} = /** @type {{id: string}} */ (value);
+            const rows = /** @type {import('study').SavedWord[]} */ (await this.read(SAVED_KEY) ?? []);
+            const row = rows.find((r) => r.id === id);
+            if (row) { await this.sync.favorite(row, false); }
             await this.write(SAVED_KEY, (v) => (Array.isArray(v) ? v : []).filter((r) => r.id !== id));
             return true;
         }
@@ -867,6 +929,7 @@ export class StudyService {
                 }
             } catch { /* Local/plain source has no web URL. */ }
             const videoTime = typeof source.videoTime === 'number' && Number.isFinite(source.videoTime) && source.videoTime >= 0 ? Math.floor(source.videoTime) : void 0;
+            const sourceUrl = url;
             if (videoTime !== void 0 && url) {
                 const link = new URL(url);
                 if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(link.hostname)) {
@@ -874,13 +937,14 @@ export class StudyService {
                     url = link.href;
                 }
             }
-            const row = {id: crypto.randomUUID(), ...lookup, url, title: String(source.title ?? '').slice(0, 300), videoTime, created: Date.now()};
+            const row = {id: crypto.randomUUID(), ...lookup, url, sourceUrl, title: String(source.title ?? '').slice(0, 300), videoTime, created: Date.now(), syncPending: true};
             await this.write(SAVED_KEY, (v) => {
                 const rows = (/** @type {import('study').SavedWord[]} */ (Array.isArray(v) ? v : [])).filter((r) => r.word !== lookup.word || r.sentence !== lookup.sentence || r.url !== url);
                 if (rows.length >= 200) { throw new Error('本地收藏已满（200 条）；请先导出并手动清理，不会自动删除旧收藏。'); }
                 return [...rows, row];
             });
-            return row;
+            await this.sync.favorite(row, true);
+            return (/** @type {import('study').SavedWord[]} */ (await this.read(SAVED_KEY) ?? [])).find((r) => r.id === row.id) ?? row;
         }
         const cache = config.cacheEnabled ? await this.cache() : [];
         let exact = [...cache].reverse().find((r) => r.key === key) ??
@@ -919,6 +983,7 @@ export class StudyService {
         }
         if (requestScope && requestScope.generation !== requestEpoch) { throw new Error('已取消，未启动后续模型请求。'); }
         if (exact) {
+            if (lookup.mode === 'translate') { exact = {...exact, result: {translation: exact.result.translation, meaning: '', notes: ''}}; }
             await this.journal.append(value, exact.result, 'unconfirmed', {status: 'cached', inputTokens: 0, outputTokens: 0, totalTokens: 0});
             return {result: exact.result, cached: true};
         }
@@ -953,9 +1018,10 @@ export class StudyService {
                 await this.journal.recordUsage(value, attemptId, response.usage ?? {status: 'unknown'});
                 reportedUsage = true;
                 if (requestScope && requestScope.generation !== requestEpoch) { throw new Error('已取消，未保存返回结果。'); }
-                if (response.ok !== true || !isStudyResult(response.result)) {
+                if (response.ok !== true || !isStudyResult(response.result) || (lookup.mode !== 'translate' && !response.result.meaning.trim())) {
                     throw new Error(response.error ?? 'AI 返回了无效文本。');
                 }
+                if (lookup.mode === 'translate') { response.result = {translation: response.result.translation, meaning: '', notes: ''}; }
                 if (cacheEnabled && epoch === this.epoch) {
                     const row = {key, sentenceKey: skey, created: Date.now(), result: response.result};
                     await this.write(CACHE_KEY, (v) => (epoch !== this.epoch ? v : [...this.rows(v).filter((r) => r.key !== key && r.created > Date.now() - TTL), row].slice(-CACHE_LIMIT)));
@@ -1048,11 +1114,11 @@ export function prepareStudyService(lookupDictionary = null) {
         }
         const prefix = chrome.runtime.getURL('');
         const pathname = sender.url?.slice(prefix.length).split(/[?#]/)[0];
-        if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(prefix) || !['popup.html', 'search.html', 'study-settings.html'].includes(pathname ?? '')) {
+        if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(prefix) || !['popup.html', 'search.html', 'study-settings.html', 'study-library.html', 'settings.html'].includes(pathname ?? '')) {
             reply({ok: false, error: '不允许此页面访问学习组件。'});
             return false;
         }
-        if (['librarySettingsSave', 'librarySettingsCheck', 'librarySettingsPrepare', 'librarySettingsOpen', 'libraryPrepareJapanese', 'saveSettings', 'clearCache', 'clearSaved', 'removeWord', 'models'].includes(studyAction) && pathname !== 'study-settings.html') {
+        if (['librarySettingsSave', 'librarySettingsCheck', 'librarySettingsPrepare', 'librarySettingsOpen', 'libraryPrepareJapanese', 'saveSettings', 'clearCache', 'clearSaved', 'models'].includes(studyAction) && !['study-settings.html', 'settings.html'].includes(pathname ?? '')) {
             reply({ok: false, error: '请在 AI 设置页管理本地数据。'});
             return false;
         }

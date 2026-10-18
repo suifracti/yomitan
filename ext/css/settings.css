@@ -2783,3 +2783,18 @@ button.hotkey-list-item-enabled-button[data-scope-count='0'] {
         background-color: #1e1e1e;
     }
 }
+
+.study-settings-embed-container {
+    padding: 0;
+}
+.study-settings-embed-container>p {
+    margin: 0;
+    padding: 1em 1.5em;
+}
+.study-settings-embed {
+    display: block;
+    width: 100%;
+    min-height: 720px;
+    border: 0;
+    overflow: hidden;
+}

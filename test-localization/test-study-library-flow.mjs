@@ -33,6 +33,11 @@ class FakeAnki:
         self.lose_next_add_response = False
     def __call__(self, action, params):
         self.calls.append({'action': action, 'params': params})
+        if action == 'deckNames':
+            return [library.deck]
+        if action == 'updateNoteFields':
+            self.notes[params['note']['id']]['fields'].update(params['note']['fields'])
+            return None
         if action == 'storeMediaFile':
             return params['filename']
         if action == 'findNotes':
@@ -309,7 +314,7 @@ test('translation UI saves the completed original Q&A with makeCard=false and ac
     const save = container.querySelector('[data-study-save="note"]');
     assert.ok(save, 'the real translation view must mount the shared save control');
     save.click();
-    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('本次不需要新增复习卡'), 'zero-card save receipt');
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('本次无需新增复习卡'), 'zero-card save receipt');
 
     const saveCall = h.nativeCalls.find((call) => call.action === 'librarySave');
     assert.equal(saveCall.makeCard, false);

@@ -20,6 +20,7 @@ import {prepareStudyDictionary} from './study-dictionary.js';
 import {studyFormLabel, studyPartOfSpeech} from './study-labels.js';
 import {prepareStudyMini} from './study-mini.js';
 import {studyCall} from '../study/study-client.js';
+import {SAVED_KEY} from '../study/study-data.js';
 
 /** @type {WeakMap<HTMLElement, () => void>} */
 const readingSourceCleanups = new WeakMap();
@@ -57,8 +58,8 @@ export function appendStudyContext(entry, sentence, query, asb = null) {
     const needle = target.toLowerCase();
     const wordChar = (char) => Boolean(char) && /[\p{L}\p{M}\p{N}_]/u.test(char);
     const boundaryMatch = (at) => at >= 0 &&
-        lower.slice(at, at + target.length) === needle &&
-        !wordChar(sentence.text[at - 1]) && !wordChar(sentence.text[at + target.length]);
+    lower.slice(at, at + target.length) === needle &&
+    !wordChar(sentence.text[at - 1]) && !wordChar(sentence.text[at + target.length]);
     let at = -1;
     if (target && Number.isInteger(sentence.offset) && boundaryMatch(sentence.offset)) {
         at = sentence.offset;
@@ -478,13 +479,24 @@ export function prepareStudyCard(display, detail = false) {
     let favoriteRow = null;
     /** @type {{word: string, sentence: string, language: string, url: string, title: string, videoTime?: number}|null} */
     let favoriteSource = null;
+    const updateFavoriteLabel = () => {
+        if (!favorite) { return; }
+        const saved = Boolean(favoriteRow);
+        const pendingSync = favoriteRow?.syncPending === true;
+        favorite.textContent = saved ? '★' : '☆';
+        favorite.setAttribute('aria-pressed', String(saved));
+        favorite.setAttribute('aria-label', saved ? '取消待学收藏' : '收藏到待学');
+        favorite.title = pendingSync ?
+                '本地已收藏，Obsidian 待同步；再次点击取消收藏' :
+                (saved ? '已收藏到待学，可同步到 Obsidian；再次点击取消收藏' : '收藏到待学，可同步到 Obsidian；不制卡');
+    };
     if (favorite) {
         favorite.type = 'button';
         favorite.className = 'study-favorite scan-disable';
         favorite.textContent = '☆';
         favorite.disabled = true;
-        favorite.title = '收藏语境到本地；不调用 AI、不保存到 Obsidian 或 Anki';
-        favorite.setAttribute('aria-label', '收藏语境');
+        favorite.title = '收藏到待学，可同步到 Obsidian；不制卡';
+        favorite.setAttribute('aria-label', '收藏到待学');
         favorite.setAttribute('aria-pressed', 'false');
         const before = toolbar?.querySelector('.study-settings, #close-button');
         if (before) {
@@ -501,10 +513,7 @@ export function prepareStudyCard(display, detail = false) {
             void (existing ? studyCall('removeWord', {id: existing.id}) : studyCall('saveWord', source)).then((value) => {
                 if (token !== generation) { return; }
                 favoriteRow = existing ? null : /** @type {import('study').SavedWord} */ (value);
-                favorite.textContent = favoriteRow ? '★' : '☆';
-                favorite.setAttribute('aria-pressed', `${!!favoriteRow}`);
-                favorite.setAttribute('aria-label', favoriteRow ? '取消收藏语境' : '收藏语境');
-                favorite.title = favoriteRow ? '已收藏到扩展本地；再次点击取消收藏' : '收藏语境到本地；不调用 AI、不保存到 Obsidian 或 Anki';
+                updateFavoriteLabel();
             }).catch((error) => {
                 if (token === generation) {
                     favorite.textContent = '!';
@@ -531,15 +540,17 @@ export function prepareStudyCard(display, detail = false) {
         void studyCall('saved').then((value) => {
             if (token !== generation) { return; }
             favoriteRow = /** @type {import('study').SavedWord[]} */ (value).find((r) => r.word === source.word && r.sentence === source.sentence && r.url === url && (r.language ?? 'en') === source.language) ?? null;
-            favorite.textContent = favoriteRow ? '★' : '☆';
-            favorite.setAttribute('aria-pressed', `${!!favoriteRow}`);
-            favorite.setAttribute('aria-label', favoriteRow ? '取消收藏语境' : '收藏语境');
-            favorite.title = favoriteRow ? '已收藏到扩展本地；再次点击取消收藏' : '收藏语境到本地；不调用 AI、不保存到 Obsidian 或 Anki';
+            updateFavoriteLabel();
             favorite.disabled = false;
         }).catch(() => {
             if (token === generation) { favorite.disabled = false; }
         });
     };
+    if (typeof chrome !== 'undefined') {
+        chrome.storage?.onChanged?.addListener((changes, area) => {
+            if (area === 'local' && SAVED_KEY in changes) { refreshFavorite(); }
+        });
+    }
     const fit = async () => {
         const token = generation;
         const id = display.parentPopupId;
@@ -781,6 +792,12 @@ export function prepareStudyCard(display, detail = false) {
             if (toolbarTitle) {
                 toolbarTitle.textContent = display.getOptions?.()?.general?.language === 'ja' ? '日语查词' : '英语查词';
             }
+            const settings = toolbar?.querySelector('.study-settings');
+            if (settings) {
+                settings.href = '/settings.html#learning';
+                settings.textContent = '学习设置 ↗';
+                settings.title = '打开学习与保存设置';
+            }
             toolbar?.querySelector('.study-toolbar-asb')?.remove();
             const asb = display.history.state?.asb;
             if (asb?.label && toolbarTitle) {
@@ -838,7 +855,9 @@ export function prepareStudyCard(display, detail = false) {
                         const full = lines.join('\n');
                         dictionaryNotes = full.length > 4000 ? `${full.slice(0, 3950)}\n[本次仅保留部分词典资料，完整条目可在词典查看]` : full;
                     }
-                    translation.render(context, sentence.text, display.query, {mediaRange: display.history.state?.studyMediaRange, capture: display.history.state?.studyMediaToken ? ((start, duration) => display.invokeContentOrigin('frontendCaptureStudyMedia', {token: mediaToken, start, duration})) : void 0, language, lemma: head?.term, reading: head?.reading, dictionaryNotes, contextSelected: false, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime, meaning: meaning ? `词典简释（未按当前句消歧）：${meaning}` : ''});
+                    const sameSavedWord = !display.history.state?.savedRecordWord || display.history.state.savedRecordWord.toLocaleLowerCase() === (display.query ?? '').toLocaleLowerCase();
+                    const recordId = sentence?.studySubtitle || !sameSavedWord ? void 0 : (display.history.state?.savedRecordId ?? sentence?.recordId);
+                    translation.render(context, sentence.text, display.query, {mediaRange: display.history.state?.studyMediaRange, capture: display.history.state?.studyMediaToken ? ((start, duration) => display.invokeContentOrigin('frontendCaptureStudyMedia', {token: mediaToken, start, duration})) : void 0, language, lemma: head?.term, reading: head?.reading, dictionaryNotes, contextSelected: false, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime, recordId, meaning: meaning ? `词典简释（未按当前句消歧）：${meaning}` : ''});
                     const legacy = document.querySelector('.study-entry .note-actions-container');
                     if (legacy instanceof HTMLElement) {
                         // Preserve Yomitan's explicit "add to Anki" action as a

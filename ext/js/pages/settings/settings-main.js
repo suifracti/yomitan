@@ -54,6 +54,18 @@ import {StorageController} from './storage-controller.js';
 import {TranslationTextReplacementsController} from './translation-text-replacements-controller.js';
 import {YomitanApiController} from './yomitan-api-controller.js';
 
+window.addEventListener('message', (event) => {
+    const frame = document.getElementById('study-settings-frame');
+    if (!(frame instanceof HTMLIFrameElement) || event.origin !== location.origin || event.source !== frame.contentWindow) { return; }
+    const data = /** @type {unknown} */ (event.data);
+    if (!data || typeof data !== 'object') { return; }
+    const message = /** @type {{type?: unknown, height?: unknown}} */ (data);
+    const height = message.type === 'yomitan-study-settings-height' ? message.height : null;
+    if (typeof height === 'number' && Number.isFinite(height)) {
+        frame.style.height = `${Math.max(720, Math.min(4200, Math.ceil(height)))}px`;
+    }
+});
+
 /**
  * @param {GenericSettingController} genericSettingController
  */

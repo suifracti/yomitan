@@ -69,7 +69,7 @@ function current() {
         model: model.value,
         effort: effort.value,
         autoDictionaryTranslate: check('autoDictionaryTranslate').checked,
-        cacheEnabled: check('cacheEnabled').checked
+        cacheEnabled: check('cacheEnabled').checked,
     };
 }
 /**
@@ -216,10 +216,11 @@ chrome.storage?.onChanged.addListener((changes, area) => {
     if (area === 'local' && SAVED_KEY in changes) { void run(showSaved); }
 });
 
-/** @typedef {{vault: string, directory: string, ankiEnabled: boolean, deck: string, model: string}} LibraryTarget */
-/** @typedef {LibraryTarget & {decks?: string[], message?: string, error?: string, status?: {vaultExists?: boolean, directoryExists?: boolean, saveAvailable?: boolean, saveMessage?: string, ankiConnected?: boolean, deckExists?: boolean, modelExists?: boolean, modelCompatible?: boolean}}} LibrarySettingsResult */
+/** @typedef {{vault: string, directory: string, ankiEnabled: boolean, deck: string, model: string, deckByKind: Record<string, string>}} LibraryTarget */
+/** @typedef {LibraryTarget & {decks?: string[], deckByKind?: Record<string, string>, message?: string, error?: string, status?: {vaultExists?: boolean, directoryExists?: boolean, saveAvailable?: boolean, saveMessage?: string, ankiConnected?: boolean, deckExists?: boolean, modelExists?: boolean, modelCompatible?: boolean}}} LibrarySettingsResult */
 const libraryStatus = /** @type {HTMLElement} */ (document.querySelector('#library-status'));
 const libraryDeck = /** @type {HTMLSelectElement} */ (document.querySelector('#library-deck'));
+const libraryKinds = ['meaning', 'context', 'expression', 'grammar', 'sentence', 'listening'];
 /** @type {LibraryTarget | null} */
 let librarySaved = null;
 /** @type {string[]} */
@@ -229,11 +230,13 @@ let libraryBusy = false;
 
 /** @returns {LibraryTarget} */
 function libraryCurrent() {
+    const deckByKind = Object.fromEntries(libraryKinds.map((kind) => [kind, /** @type {HTMLSelectElement} */ (document.getElementById(`library-deck-${kind}`)).value]));
     return {vault: check('library-vault').value.trim(),
         directory: check('library-directory').value.trim(),
         ankiEnabled: check('library-anki-enabled').checked,
         deck: libraryDeck.value === newDeckValue ? check('library-new-deck').value.trim() : libraryDeck.value,
-        model: check('library-model').value};
+        model: check('library-model').value,
+        deckByKind};
 }
 
 /** @param {boolean} loaded */
@@ -253,7 +256,8 @@ function showNewDeck() {
 
 /** @param {LibrarySettingsResult} result */
 function fillLibrary(result) {
-    librarySaved = {vault: result.vault, directory: result.directory, ankiEnabled: result.ankiEnabled, deck: result.deck, model: result.model};
+    const deckByKind = Object.fromEntries(libraryKinds.map((kind) => [kind, result.deckByKind?.[kind] ?? '']));
+    librarySaved = {vault: result.vault, directory: result.directory, ankiEnabled: result.ankiEnabled, deck: result.deck, model: result.model, deckByKind};
     check('library-vault').value = result.vault;
     check('library-directory').value = result.directory;
     check('library-anki-enabled').checked = result.ankiEnabled;
@@ -265,6 +269,16 @@ function fillLibrary(result) {
     }
     option(libraryDeck, newDeckValue, '输入新牌组名称…');
     libraryDeck.value = result.deck;
+    for (const kind of libraryKinds) {
+        const select = /** @type {HTMLSelectElement} */ (document.getElementById(`library-deck-${kind}`));
+        select.replaceChildren();
+        option(select, '', '使用默认牌组');
+        const selectedDeck = deckByKind[kind];
+        for (const deck of new Set([...libraryDecks, ...(selectedDeck ? [selectedDeck] : [])])) {
+            option(select, deck, deck === selectedDeck && !libraryDecks.includes(deck) ? `${deck}（未在牌组列表中核对）` : deck);
+        }
+        select.value = selectedDeck;
+    }
     check('library-new-deck').value = '';
     showNewDeck();
     libraryControls(!libraryBusy);
@@ -421,3 +435,11 @@ void (async () => {
         libraryStatus.textContent = `尚未连接本机保存服务，请点击「只读检查」重试。${error instanceof Error ? error.message : ''}`;
     }
 })();
+
+if (new URLSearchParams(location.search).get('embed') === '1' && window.parent !== window && typeof ResizeObserver === 'function') {
+    const reportSize = () => window.parent.postMessage({type: 'yomitan-study-settings-height', height: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)}, location.origin);
+    const observer = new ResizeObserver(reportSize);
+    observer.observe(document.body);
+    window.addEventListener('load', reportSize);
+    reportSize();
+}

@@ -35,6 +35,7 @@ export type SubtitleSourceV1 = {
 export type CueSaveIntent = {targetId?: string; key: string; entry: LibraryEntry; turns: LearningTurn[]};
 
 export type LibraryEntry = {
+    recordId?: string;
     subtitleSource?: SubtitleSourceV1;
     language?: string;
     lemma?: string;
@@ -65,9 +66,15 @@ export type StudyTarget = {
     model: string;
 };
 
-export type SaveTargetSettings = {ankiEnabled: boolean; targetId: string; vault: string; directory: string; deck: string; model: string};
+export type CardKind = 'meaning' | 'context' | 'expression' | 'grammar' | 'sentence' | 'listening';
+export type SyncConflict = {key: string; local: unknown; remote: unknown};
+export type SaveTargetSettings = {deckByKind?: Partial<Record<CardKind, string>>; ankiEnabled: boolean; targetId: string; vault: string; directory: string; deck: string; model: string};
 
 export type LibraryRecord = {
+    favorite?: boolean;
+    learningState?: string;
+    syncState?: string;
+    conflicts?: SyncConflict[];
     ankiEnabled?: boolean;
     targetId?: string;
     reviewDraft?: ReviewDraft;
@@ -77,8 +84,14 @@ export type LibraryRecord = {
         id: string;
         state: string;
         noteId: number | null;
+        kind?: CardKind;
+        target?: StudyTarget;
+        deck?: string;
+        syncState?: string;
+        error?: string;
         linkedExisting?: boolean;
         linkedByPoint?: boolean;
+        reviewOnly?: boolean;
     })[];
     id: string;
     entry: LibraryEntry;
@@ -92,7 +105,7 @@ export type LibraryRecord = {
 };
 
 export type Model = {model: string; displayName: string; efforts: string[]; defaultEffort: string};
-export type SavedWord = {id: string; word: string; sentence: string; context: string; url: string; title: string; created: number; videoTime?: number};
+export type SavedWord = {sourceUrl?: string; language?: string; libraryId?: string; syncPending?: boolean; id: string; word: string; sentence: string; context: string; url: string; title: string; created: number; videoTime?: number};
 export type CacheEntry = {key: string; sentenceKey: string; created: number; result: Result};
 export type NativeCall = (payload: object) => {promise: Promise<NativeResult>; cancel: () => void};
 export type Storage = {get: (key: string) => Promise<Record<string, unknown>>; set: (value: Record<string, unknown>) => Promise<void>};
@@ -141,6 +154,7 @@ export type LearningTurn = Result & {
     usage?: Usage;
     saved?: boolean;
     kind?: 'feedback';
+    mode?: 'translate' | 'explain';
     relatedTurnId?: string;
     id: string;
     at: string;
@@ -167,6 +181,7 @@ export type LearningMaterial = {
 };
 
 export type CardDraft = {
+    kind?: CardKind;
     front: string;
     back: string;
 };
@@ -222,3 +237,6 @@ export type MiniLookup = {
 };
 
 export type RememberSaveIntent = {targetId?: string; key: string; entry: LibraryEntry; turns: LearningTurn[]};
+
+export type SyncLink = {key: string; id: string; language: string; targetId?: string};
+export type SyncTask = {remember?: boolean; key: string; action: string; language: string; id?: string; targetId?: string; entry?: Partial<LibraryEntry>; turns?: LearningTurn[]; favorite?: boolean; revision?: string; error?: string};

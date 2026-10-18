@@ -156,7 +156,8 @@ export class StudyJournal {
      */
     async append(source, result, feedback = 'unconfirmed', usage) {
         const lookup = studyLookup(source);
-        const turn = {id: crypto.randomUUID(), at: new Date().toISOString(), question: lookup.question ?? '', ...result, feedback, ...(usage ? {usage} : {})};
+        /** @type {import('study').LearningTurn} */
+        const turn = {id: crypto.randomUUID(), at: new Date().toISOString(), mode: lookup.mode === 'translate' ? 'translate' : 'explain', question: lookup.question ?? '', ...result, feedback, ...(usage ? {usage} : {})};
         const row = {key: sourceKey(source), turn};
         await this.service.write(KEY, (value) => {
             const rows = /**
@@ -168,6 +169,7 @@ export class StudyJournal {
             }
             return next;
         });
+        await this.service.sync.learned(source, result);
     }
 
     /**
@@ -200,6 +202,7 @@ export class StudyJournal {
             }
             return [...rows, {key, turn: {id: crypto.randomUUID(), at: new Date().toISOString(), kind: 'feedback', relatedTurnId: row.turn.id, question: row.turn.question, translation: '', meaning: '', notes: '', feedback}}];
         });
+        await this.service.sync.learned(source, {translation: '', meaning: '', notes: ''});
         return true;
     }
 
@@ -224,24 +227,32 @@ export class StudyJournal {
                 throw new Error(response.error ?? '保存未确认，问答仍在本地待保存。');
             }
             saved = response.library;
-            const snapshots = new Map(batch.map((t) => [t.id, t]));
-            await this.service.write(KEY, (value) => {
-                const rows = /** @type {import('study').JournalRow[]} */ (Array.isArray(value) ? value : []);
-                /** @type {import('study').JournalRow[]} */
-                const repairs = [];
-                const next = rows.map((r) => {
-                    const snapshot = snapshots.get(r.turn.id);
-                    if (!snapshot) {
-                        return r;
-                    }
-                    if (r.turn.feedback !== snapshot.feedback) {
-                        repairs.push({key: r.key, turn: {id: crypto.randomUUID(), at: new Date().toISOString(), kind: 'feedback', relatedTurnId: r.turn.relatedTurnId ?? r.turn.id, question: r.turn.question, translation: '', meaning: '', notes: '', feedback: r.turn.feedback}});
-                    }
-                    return {...r, turn: snapshot, saved: true};
-                });
-                return bounded([...next, ...repairs]);
-            });
+            await this.acknowledge(batch);
+        }
+        if (saved && typeof saved === 'object' && 'id' in saved) {
+            await this.service.sync.bind(entry, /** @type {import('study').LibraryRecord} */ (saved));
         }
         return saved;
+    }
+
+    /** @param {import('study').LearningTurn[]} batch */
+    async acknowledge(batch) {
+        const snapshots = new Map(batch.map((t) => [t.id, t]));
+        await this.service.write(KEY, (value) => {
+            const rows = /** @type {import('study').JournalRow[]} */ (Array.isArray(value) ? value : []);
+            /** @type {import('study').JournalRow[]} */
+            const repairs = [];
+            const next = rows.map((r) => {
+                const snapshot = snapshots.get(r.turn.id);
+                if (!snapshot) {
+                    return r;
+                }
+                if (r.turn.feedback !== snapshot.feedback) {
+                    repairs.push({key: r.key, turn: {id: crypto.randomUUID(), at: new Date().toISOString(), kind: 'feedback', relatedTurnId: r.turn.relatedTurnId ?? r.turn.id, question: r.turn.question, translation: '', meaning: '', notes: '', feedback: r.turn.feedback}});
+                }
+                return {...r, turn: snapshot, saved: true};
+            });
+            return bounded([...next, ...repairs]);
+        });
     }
 }

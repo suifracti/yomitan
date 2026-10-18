@@ -154,7 +154,7 @@ def _normalize_request(p):
         from study_settings import normalize_settings_request
         return normalize_settings_request(p)
     if 'targetId' in p:
-        if action != 'librarySave' or not isinstance(p['targetId'], str) or not ID_RE.fullmatch(p['targetId']):
+        if action not in ('librarySave', 'libraryCardsAdd', 'libraryReconcile', 'libraryUpdate', 'libraryFavorite') or not isinstance(p['targetId'], str) or not ID_RE.fullmatch(p['targetId']):
             raise ValueError('保存目的地编号无效。')
         return {**normalize_request({k: v for k, v in p.items() if k != 'targetId'}), 'targetId': p['targetId']}
     if 'cueAuthorization' in p:
@@ -172,8 +172,10 @@ def _normalize_request(p):
         if not isinstance(turns, list) or len(turns) > 20:
             raise ValueError('每批最多保存 20 轮问答。')
         for t in turns:
-            if not isinstance(t, dict) or not {'id', 'at', 'question', 'translation', 'meaning', 'notes', 'feedback'} <= set(t) or set(t) - {'id', 'at', 'question', 'translation', 'meaning', 'notes', 'feedback', 'kind', 'relatedTurnId', 'usage'}:
+            if not isinstance(t, dict) or not {'id', 'at', 'question', 'translation', 'meaning', 'notes', 'feedback'} <= set(t) or set(t) - {'id', 'at', 'question', 'translation', 'meaning', 'notes', 'feedback', 'kind', 'relatedTurnId', 'usage', 'mode'}:
                 raise ValueError('学习过程格式无效。')
+            if t.get('mode') not in (None, 'translate', 'explain'):
+                raise ValueError('学习过程模式无效。')
             if 'kind' in t and t['kind'] != 'feedback':
                 raise ValueError('未知学习事件。')
             if t.get('kind') == 'feedback':
@@ -199,6 +201,72 @@ def _normalize_request(p):
         if 'fresh' in p and type(p['fresh']) is not bool:
             raise ValueError('历史核对刷新标志无效。')
         return {**p, 'word': text(p['word'], 128, True), **({'lemma': text(p['lemma'], 128, True)} if 'lemma' in p else {})}
+    if action == 'libraryFavorite':
+        if type(p.get('favorite')) is not bool or set(p) not in ({'action', 'entry', 'favorite'}, {'action', 'id', 'favorite'}):
+            raise ValueError('收藏请求无效。')
+        if 'entry' in p:
+            return {**p, 'entry': normalize_entry(p['entry'])}
+        if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
+            raise ValueError('学习记录编号无效。')
+        return p
+    if action == 'libraryCardsAdd' and set(p) == {'action', 'id', 'cards'}:
+        if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']) or not isinstance(p['cards'], list) or not 1 <= len(p['cards']) <= 10:
+            raise ValueError('手动卡片请求无效。')
+        seen = set()
+        for card in p['cards']:
+            if not isinstance(card, dict) or set(card) - {'front', 'back', 'kind', 'deck'} or not {'front', 'back'} <= set(card):
+                raise ValueError('手动卡片字段无效。')
+            front, back = text(card['front'], 1000, True), text(card['back'], 2400, True)
+            kind = text(card.get('kind', 'manual'), 40, True)
+            deck = text(card.get('deck', ''), 300)
+            if not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', kind):
+                raise ValueError('卡片类型无效。')
+            if front in seen:
+                raise ValueError('同批卡片问题重复，请修改问题后再提交。')
+            seen.add(front)
+            card.update({'front': front, 'back': back, 'kind': kind, 'deck': deck})
+        return p
+    if action == 'libraryReconcile' and set(p) in ({'action', 'id'}, {'action', 'id', 'resolutions'}):
+        if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
+            raise ValueError('学习记录编号无效。')
+        resolutions = p.get('resolutions', {})
+        if not isinstance(resolutions, dict) or len(resolutions) > 100 or any(not isinstance(k, str) or v not in ('local', 'remote') for k, v in resolutions.items()):
+            raise ValueError('字段冲突选择无效。')
+        return {**p, 'resolutions': resolutions}
+    if action == 'libraryUpdate' and set(p) <= {'action', 'id', 'entry', 'turns', 'remember'} and {'action', 'id'} <= set(p) and ('entry' in p or 'turns' in p):
+        if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
+            raise ValueError('学习记录编号无效。')
+        if 'remember' in p and type(p['remember']) is not bool:
+            raise ValueError('明确记住标志无效。')
+        entry = p.get('entry', {})
+        allowed = set(FIELDS) | {'videoTime', 'language', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation'}
+        if not isinstance(entry, dict) or set(entry) - allowed:
+            raise ValueError('学习补充字段无效。')
+        partial = {}
+        for key, limit in FIELDS.items():
+            if key in entry:
+                partial[key] = source_url(text(entry[key], limit)) if key == 'url' else text(entry[key], limit)
+        for key, limit in [('lemma',128),('reading',128),('dictionaryNotes',4000),('dictionaryTranslation',4000)]:
+            if key in entry: partial[key] = text(entry[key], limit)
+        if 'videoTime' in entry:
+            value = entry['videoTime']
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 604800:
+                raise ValueError('视频时间无效。')
+            partial['videoTime'] = int(value)
+        turns = p.get('turns', [])
+        if not isinstance(turns, list) or len(turns) > 20:
+            raise ValueError('每次最多补充20轮。')
+        for turn in turns:
+            if not isinstance(turn, dict) or not {'id','at','question','translation','meaning','notes','feedback'} <= set(turn) or set(turn) - {'id','at','question','translation','meaning','notes','feedback','kind','relatedTurnId','usage','mode'}:
+                raise ValueError('学习过程格式无效。')
+            if turn.get('mode') not in (None, 'translate', 'explain'):
+                raise ValueError('学习过程模式无效。')
+            for key, limit in [('id',80),('at',40),('question',500),('translation',5000),('meaning',5000),('notes',5000)]: text(turn[key], limit, key in ('id','at'))
+            if not re.fullmatch(r'[a-zA-Z0-9_-]{6,80}', turn['id']) or turn['feedback'] not in ('unconfirmed','understood','unclear'):
+                raise ValueError('学习过程编号或反馈无效。')
+            if turn.get('kind') == 'feedback' and (not isinstance(turn.get('relatedTurnId'), str) or any(turn[k] for k in ('translation','meaning','notes'))):
+                raise ValueError('反馈须关联原学习轮次，不重复答案。')
+        return {**p, 'entry': partial, 'turns': turns}
     if action in ('libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit'):
         if set(p) != {'action', 'items'} or not isinstance(p['items'], list) or not 1 <= len(p['items']) <= 10:
             raise ValueError('每次处理1–10条明确选中的草稿。')
@@ -215,9 +283,11 @@ def _normalize_request(p):
                 if not isinstance(row['cards'], list) or len(row['cards']) > 4:
                     raise ValueError('每条记录最多4张复习建议。')
                 for card in row['cards']:
-                    if not isinstance(card, dict) or set(card) != {'front', 'back', 'selected'} or type(card['selected']) is not bool:
+                    if not isinstance(card, dict) or set(card) - {'front', 'back', 'selected', 'kind'} or not {'front', 'back', 'selected'} <= set(card) or type(card['selected']) is not bool:
                         raise ValueError('草稿问题、答案或选择无效。')
                     text(card['front'], 1000, True); text(card['back'], 2400, True)
+                    if 'kind' in card and not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', text(card['kind'], 40, True)):
+                        raise ValueError('卡片类型无效。')
         return p
     if action == 'libraryCards' and set(p) == {'action', 'items'} and isinstance(p['items'], list) and 1 <= len(p['items']) <= 10:
         seen = set()
@@ -228,15 +298,18 @@ def _normalize_request(p):
             if not isinstance(row['cards'], list) or not 1 <= len(row['cards']) <= 4:
                 raise ValueError('每条记录确认 1–4 张卡。')
             for card in row['cards']:
-                if not isinstance(card, dict) or set(card) != {'front', 'back'}:
+                if not isinstance(card, dict) or set(card) - {'front', 'back', 'kind'} or not {'front', 'back'} <= set(card):
                     raise ValueError('卡片字段无效。')
                 text(card['front'], 1000, True)
                 text(card['back'], 2400, True)
+                if 'kind' in card and not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', text(card['kind'], 40, True)):
+                    raise ValueError('卡片类型无效。')
         return p
-    if action == 'libraryList' and {'action', 'url', 'title'} <= set(p) and not set(p) - {'action', 'url', 'title', 'offset', 'scope'}:
-        if type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or p.get('scope', 'source') not in ('source', 'pending'):
+    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope'}:
+        scope = p.get('scope', 'source')
+        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all'):
             raise ValueError('学习列表范围无效。')
-        return {**p, 'url': source_url(p['url']), 'title': text(p['title'], 300)}
+        return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300)}
     if action in ('librarySync', 'libraryRead') and set(p) == {'action', 'ids'} and isinstance(p['ids'], list) and 1 <= len(p['ids']) <= 10:
         if len(set(p['ids'])) != len(p['ids']) or any(not isinstance(i, str) or not ID_RE.fullmatch(i) for i in p['ids']):
             raise ValueError('学习记录编号无效。')
@@ -299,6 +372,9 @@ class StudyLibrary:
         if target and self.language == 'en':
             self.relative = pathlib.Path(target['directory'])
             self.deck, self.model = target['deck'], target['model']
+            self.deck_by_kind = target.get('deckByKind', {})
+        else:
+            self.deck_by_kind = {}
         self.base = self.vault / self.relative
         self.records = self.base / '记录'
         self.anki = anki
@@ -559,14 +635,21 @@ class StudyLibrary:
 
     def target_details(self):
         details = {'deck': self.deck, 'model': self.model}
+        if self.deck_by_kind:
+            details['deckByKind'] = self.deck_by_kind.copy()
         if self.target_id:
             details.update({'targetId': self.target_id, 'vault': str(self.vault), 'directory': str(self.relative), 'ankiEnabled': self.anki_enabled})
         return details
 
     def result(self, ident):
         r, body, version = self.read(ident)
+        import study_sync
+        latest = study_sync.local_fields(r, body)
+        r = {**r, 'entry': {**r['entry'], **{k: latest[k] for k in study_sync.SYNC_KEYS}}, 'favorite': latest.get('favorite', r.get('favorite', False))}
         stale = bool(r.get('reviewDraft')) and r['reviewDraft']['sourceHash'] != hashlib.sha256(self.without_draft(r, body).encode()).hexdigest()
-        return {**r, 'version': version, 'path': str(self.path(ident).relative_to(self.vault)),
+        return {**r, 'favorite': bool(r.get('favorite', False)),
+                'learningState': r.get('learningState', 'saved'), 'syncState': r.get('syncState', r.get('ankiState', 'saved')),
+                'version': version, 'path': str(self.path(ident).relative_to(self.vault)),
                 'target': self.target_details(), 'draftStale': stale,
                 **({'targetId': self.target_id, 'ankiEnabled': self.anki_enabled} if self.target_id else {}),
                 'vaultSaved': True, 'openUrl': self.open_url(ident)}
@@ -586,24 +669,29 @@ class StudyLibrary:
         if not self.anki_enabled:
             return self.result(ident)
         r, body, version = self.read(ident)
+        if r.get('noteId') and not r['entry'].get('subtitleSource'):
+            import study_sync
+            return study_sync.reconcile(self, {'id': ident})
         if r.get('cards'):
             return self.sync_cards(r, body, version)
         r['ankiState'] = 'pending'
         r.pop('error', None)
         try:
             from study_memory import duplicate, exact_tag, invalidate_anki, norm
+            import study_sync
             e = r['entry']
+            local = study_sync.local_fields(r, body)
+            legacy = {c['id']:c for c in local.get('cards', [])}.get('legacy', {})
             fields = {k: '' for k in ('Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image')}
-            for k, value in {'Word': e['word'], 'Sentence': e['sentence'],
-                             'Definition': '\n'.join(filter(None, [e['meaning'], e['translation']])),
-                             'Source': e['title']}.items():
+            for k, value in {'Word': legacy.get('front', e['word']), 'Sentence': local['sentence'],
+                             'Definition': legacy.get('back', '\n'.join(filter(None, [local['meaning'], local['translation']]))),
+                             'Source': local['title']}.items():
                 fields[k] = html.escape(value).replace('\n', '<br>')
             if not fields['Definition']:
                 raise ValueError('已保存原句；请先补充含义再制卡。')
-            fields['URL'] = html.escape(e['url'])
-            fields['Source'] += '<br><a href="' + html.escape(self.open_url(ident), quote=True) + '">学习笔记</a>'
-            if 'videoTime' in e:
-                fields['Source'] += f'<br>视频位置：{e["videoTime"]} 秒'
+            fields['URL'] = html.escape(local['url'])
+            fields['Source'] = study_sync.source_field(self, r, local)
+            fields['Definition'] = study_sync.definition_field(legacy.get('back', '\n'.join(filter(None, [local['meaning'], local['translation']]))), local)
             self.language_fields(fields, e)
             found = self.anki('findNotes', {'query': 'tag:study_' + ident})
             if r.get('linkedExisting') and r.get('noteId'):
@@ -616,6 +704,7 @@ class StudyLibrary:
                     found = [existing]
                     r['linkedExisting'] = True
             if not found:
+                study_sync.require_deck(self, self.deck)
                 from study_media import anki_fields
                 fields.update(anki_fields(self, r))
             note_id = found[0] if found else self.anki('addNote', {'note': {
@@ -628,13 +717,22 @@ class StudyLibrary:
             info = self.anki('notesInfo', {'notes': [note_id]})
             equal = (lambda a, b: norm(a) == norm(b)) if r.get('linkedExisting') else (lambda a, b: a == b)
             keys = ('Word', 'Sentence', 'Definition', 'Expression', 'Question', 'Reading') if self.language == 'ja' else ('Word', 'Sentence', 'Definition')
-            if not isinstance(info, list) or len(info) != 1 or info[0].get('noteId') != note_id or any(not equal(info[0].get('fields', {}).get(k, {}).get('value'), fields[k]) for k in keys):
+            if not isinstance(info, list) or len(info) != 1 or info[0].get('noteId') != note_id or any(not equal(study_sync.comparable_field(k,info[0].get('fields', {}).get(k, {}).get('value')), study_sync.comparable_field(k,fields[k])) for k in keys):
                 raise ValueError('关联卡内容读回不同，请人工确认；不覆盖或重建已有卡。')
             if not found and any(info[0]['fields'].get(k, {}).get('value') != fields[k] for k in ('Audio', 'Image')):
                 raise ValueError('Anki 媒体字段读回不一致，保留待核验；未覆盖。')
             r['ankiState'] = 'synced'
+            baseline = r.setdefault('syncBaseline', {})
+            for key in study_sync.SYNC_KEYS:
+                baseline.setdefault(key, local.get(key, ''))
+            legacy_fields = next((c for c in local.get('cards', []) if c['id'] == 'legacy'),
+                                 {'front':e['word'], 'back':'\n'.join(filter(None, (e['meaning'], e['translation'])))})
+            baseline.setdefault('card.legacy.front', legacy_fields['front'])
+            baseline.setdefault('card.legacy.back', legacy_fields['back'])
+            body = study_sync.with_local_fields(body, study_sync.local_fields(r, body))
             invalidate_anki(self)
         except Exception as error:
+            r['ankiState'] = 'pending'
             r['error'] = str(error)[:200] if isinstance(error, ValueError) else 'Anki 未连接或响应不确定；笔记已保存，可稍后补交。'
         self.write(r, body, version)
         return self.result(ident)
@@ -660,21 +758,28 @@ class StudyLibrary:
     def sync_cards(self, r, body, version):
         if not self.anki_enabled:
             return self.result(r['id'])
+        if r.get('cards') and all(c.get('noteId') for c in r['cards']) and not r['entry'].get('subtitleSource'):
+            import study_sync
+            return study_sync.reconcile(self, {'id': r['id']})
         for card in r['cards']:
             card['state'] = 'pending'
             card.pop('error', None)
             try:
+                import study_sync
+                card.setdefault('kind', study_sync.default_card_kind(r['entry']))
+                card.setdefault('target', study_sync.card_target(self, card))
                 tag = 'studycard_' + card['id']
                 found = self.anki('findNotes', {'query': 'tag:' + tag})
                 if card.get('linkedExisting') and card.get('noteId'):
                     found = [card['noteId']]
                 if not isinstance(found, list) or len(found) > 1 or (card.get('noteId') and card['noteId'] not in found):
                     raise ValueError('关联卡异常或被删除，请人工检查；不覆盖或自动重建。')
+                source_values = study_sync.local_fields(r, body)
                 fields = {'Word': html.escape(card['front']).replace('\n', '<br>'),
-                          'Sentence': html.escape(r['entry']['sentence']).replace('\n', '<br>'),
-                          'Definition': html.escape(card['back']).replace('\n', '<br>'),
-                          'Source': html.escape(r['entry']['title']) + '<br><a href="' + html.escape(self.open_url(r['id']), quote=True) + '">学习过程笔记</a>',
-                          'URL': html.escape(r['entry']['url']), 'Audio': '', 'Image': ''}
+                          'Sentence': html.escape(source_values['sentence']).replace('\n', '<br>'),
+                          'Definition': study_sync.definition_field(card['back'], source_values),
+                          'Source': study_sync.source_field(self, r, source_values),
+                          'URL': html.escape(source_values['url']), 'Audio': '', 'Image': ''}
                 self.language_fields(fields, r['entry'], card['front'])
                 if not found:
                     from study_memory import duplicate
@@ -690,13 +795,14 @@ class StudyLibrary:
                         card['linkedExisting'] = True
                         card['linkedByPoint'] = True
                 if not found:
+                    study_sync.require_deck(self, card.get('target', {}).get('deck', self.deck))
                     from study_media import anki_fields
                     fields.update(anki_fields(self, r))
                 self.language_fields(fields, r['entry'], card['front'])
                 from study_memory import exact_tag, point_id
                 note_id = found[0] if found else self.anki('addNote', {'note': {
-                    'deckName': self.deck, 'modelName': self.model, 'fields': fields,
-                    'tags': [tag, exact_tag(self, fields), 'studypoint_' + point_id(self, r['entry'], card['front'], card['back']), 'japanese_study' if self.language == 'ja' else 'english_study'], 'options': {'allowDuplicate': True}}})
+                    'deckName': card.get('target', {}).get('deck', self.deck), 'modelName': self.model, 'fields': fields,
+                    'tags': study_sync.card_tags(r, card['kind']) + [tag, exact_tag(self, fields), 'studypoint_' + point_id(self, r['entry'], card['front'], card['back']), 'japanese_study' if self.language == 'ja' else 'english_study'], 'options': {'allowDuplicate': True}}})
                 if type(note_id) is not int:
                     raise ValueError('Anki 未返回有效编号。')
                 card['noteId'] = note_id
@@ -705,19 +811,31 @@ class StudyLibrary:
                 equal = (lambda a, b: norm(a) == norm(b)) if card.get('linkedExisting') else (lambda a, b: a == b)
                 keys = ('Word', 'Sentence', 'Definition', 'Question', 'Expression', 'Reading') if self.language == 'ja' else ('Word', 'Sentence', 'Definition')
                 if card.get('linkedByPoint'): keys = tuple(k for k in keys if k != 'Sentence')
-                if not isinstance(info, list) or len(info) != 1 or info[0].get('noteId') != note_id or any(not equal(info[0].get('fields', {}).get(k, {}).get('value'), fields[k]) for k in keys):
+                if not isinstance(info, list) or len(info) != 1 or info[0].get('noteId') != note_id or any(not equal(study_sync.comparable_field(k,info[0].get('fields', {}).get(k, {}).get('value')), study_sync.comparable_field(k,fields[k])) for k in keys):
                     raise ValueError('卡片读回不同，请人工确认，不覆盖已有卡。')
                 if not found and any(info[0]['fields'].get(k, {}).get('value') != fields[k] for k in ('Audio', 'Image')):
                     raise ValueError('Anki 媒体字段读回不同，请人工确认。')
+                actual_deck = study_sync._actual_deck(self, info[0], card['target'].get('deck', self.deck))
+                card['target']['deck'] = actual_deck
+                card['deck'] = actual_deck
+                if self.target_id:
+                    card['target']['targetId'] = self.target_id
                 card['state'] = 'synced'
             except Exception as error:
                 card['error'] = str(error)[:200] if isinstance(error, ValueError) else 'Anki 未连接或结果不确定，草稿已保存，可补交。'
         from study_memory import invalidate_anki
         invalidate_anki(self)
         r['ankiState'] = 'synced' if all(c['state'] == 'synced' for c in r['cards']) else 'pending'
+        baseline = r.setdefault('syncBaseline', {})
+        for key in study_sync.SYNC_KEYS:
+            baseline.setdefault(key, r['entry'].get(key, ''))
+        for card in r['cards']:
+            baseline.setdefault('card.' + card['id'] + '.front', card['front'])
+            baseline.setdefault('card.' + card['id'] + '.back', card['back'])
         r.pop('error', None)
         if r['ankiState'] == 'pending':
             r['error'] = '部分已确认卡片待补交；保存的草稿不会丢失。'
+        body = study_sync.with_local_fields(body, study_sync.local_fields(r, body))
         if r.get('reviewDraft'):
             body = self.set_draft(r, body, r['reviewDraft'])
         self.write(r, body, version)
@@ -746,7 +864,7 @@ class StudyLibrary:
             return {'items': [], 'total': 0, 'target': {'deck': self.deck, 'model': self.model}}
         with self.locked():
             # R2 is a record-only contract. No ID-based card/AI/media route may bypass it.
-            if p['action'] in ('libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'librarySync', 'libraryEnrich', 'libraryMedia'):
+            if p['action'] in ('libraryCards', 'libraryCardsAdd', 'libraryUpdate', 'libraryReconcile', 'libraryFavorite', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'librarySync', 'libraryEnrich', 'libraryMedia'):
                 ids = p.get('ids', []) + [x['id'] for x in p.get('items', [])]
                 if p.get('id'):
                     ids.append(p['id'])
@@ -754,7 +872,7 @@ class StudyLibrary:
                     source = self.read(ident)[0]['entry'].get('subtitleSource')
                     if source:
                         grant = p.get('cueAuthorization')
-                        if not grant or grant['id'] != ident or grant['source'] != source or p['action'] in ('libraryCards', 'libraryEnrich', 'libraryMedia'):
+                        if not grant or grant['id'] != ident or grant['source'] != source or p['action'] in ('libraryCards', 'libraryCardsAdd', 'libraryUpdate', 'libraryFavorite', 'libraryReconcile', 'libraryEnrich', 'libraryMedia'):
                             raise ValueError('字幕学习记录必须由私有可信记住动作授权。')
                         if p['action'] == 'libraryDraftSave' and any(len(x['cards']) > 1 for x in p['items']):
                             raise ValueError('字幕每次只允许必要的0或1张卡。')
@@ -774,6 +892,9 @@ class StudyLibrary:
                     return {'items': items, **({'ankiEnabled': self.anki_enabled} if self.target_id else {})}
                 finally:
                     del self.memory_deadline
+            if p['action'] in ('libraryCardsAdd', 'libraryUpdate', 'libraryFavorite', 'libraryReconcile'):
+                import study_sync
+                return study_sync.handle(self, p)
             if p['action'] in ('libraryDraftSave', 'libraryDraftDiscard'):
                 staged = []
                 for item in p['items']:
@@ -806,7 +927,7 @@ class StudyLibrary:
                     if p['action'] == 'libraryDraftCommit':
                         if not draft or draft['id'] != item['draftId'] or self.result(r['id'])['draftStale']:
                             raise ValueError('草稿已变化或学习内容更新，请重新读取；未制卡。')
-                        candidates = [{'front': c['front'], 'back': c['back']} for c in draft['cards'] if c['selected']]
+                        candidates = [{k:c[k] for k in ('front', 'back', 'kind') if k in c} for c in draft['cards'] if c['selected']]
                         if not candidates:
                             raise ValueError('请先选择并保存至少一张草稿。')
                     else:
@@ -897,7 +1018,8 @@ class StudyLibrary:
                     added = True
                     seen.append(turn['id'])
                     feedback = {'unconfirmed': '尚未确认理解', 'understood': '本人反馈：这次解释我懂了', 'unclear': '本人反馈：仍然不懂'}[turn['feedback']]
-                    body += '\n' + heading + ' ' + ('理解反馈' if turn.get('kind') == 'feedback' else '学习过程') + ' · ' + safe_markdown(turn['at']) + '\n\n'
+                    turn_label = '理解反馈' if turn.get('kind') == 'feedback' else ('翻译过程' if turn.get('mode') == 'translate' else '学习过程')
+                    body += '\n' + heading + ' ' + turn_label + ' · ' + safe_markdown(turn['at']) + '\n\n'
                     body += '轮次 ID：' + safe_markdown(turn.get('relatedTurnId', turn['id'])) + '\n\n'
                     for label, key in [('我的问题', 'question'), ('原句翻译', 'translation'), ('这里的含义', 'meaning'), ('AI 的解释（非权威原文）', 'notes')]:
                         if turn[key]:
@@ -907,6 +1029,9 @@ class StudyLibrary:
                         u = turn['usage']
                         body += '\nToken：' + ('缓存命中，本次未调用模型' if u['status'] == 'cached' else ('已报告 ' + str(u['totalTokens']) + '（输入 ' + str(u.get('inputTokens', '?')) + ' / 输出 ' + str(u.get('outputTokens', '?')) + '）' if 'totalTokens' in u else '未报告，不能视为 0')) + ('；请求未完整结束' if u['status'] in ('running','incomplete') else '') + '\n'
 
+                if old.get('learningState') != 'saved':
+                    old['learningState'] = 'saved'
+                    added = True
                 if changed or added:
                     old['updated'] = datetime.datetime.now().astimezone().isoformat()
                     self.write(old, body, version)
@@ -916,7 +1041,7 @@ class StudyLibrary:
                 for f, ident in self.record_files():
                     r = self.result(ident)
                     e = r['entry']
-                    match = r['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title'])
+                    match = True if p.get('scope') == 'all' else (r['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title']))
                     if match:
                         rows.append(r)
                 rows.sort(key=lambda r: r['created'], reverse=True)

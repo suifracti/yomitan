@@ -31,3 +31,6 @@ input[readonly] { color: var(--muted); }
 .folder-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .folder-actions button { padding: 5px 10px; font-size: 12px; }
 .folder-choices[hidden] { display: none; }
+.deck-routing { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; }
+.deck-routing h3 { font-size: 15px; margin: 0 0 4px; }
+:root[data-embedded='true'] main { margin-top: 14px; margin-bottom: 24px; }

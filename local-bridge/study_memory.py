@@ -220,6 +220,7 @@ def memory(lib, word, lemma='', fresh=False):
 
 
 def duplicate(lib, fields, entry=None):
+    from study_sync import comparable_field
     """Fresh exact word/question + answer + sentence only; never merge different senses."""
     api=bounded_api(lib)
     front=plain(fields.get('Question') if lib.language=='ja' else fields['Word'])
@@ -238,12 +239,13 @@ def duplicate(lib, fields, entry=None):
         if entry is not None and any(t.startswith(('studycard_', 'studypoint_')) for t in n.get('tags', [])):
             # Managed Q/A can be generic: use its Ob subject association instead.
             continue
-        if n.get('modelName')==lib.model and all(norm(n.get('fields',{}).get(k,{}).get('value',''))==norm(fields.get(k,'')) for k in keys):
+        if n.get('modelName')==lib.model and all(norm(comparable_field(k,n.get('fields',{}).get(k,{}).get('value','')))==norm(comparable_field(k,fields.get(k,''))) for k in keys):
             return n['noteId']
     return None
 
 
 def duplicate_point(lib, entry, front, back, fields):
+    from study_sync import comparable_field
     """Link only a proven subject + exact Q/A; fresh readback, never overwrite an old card."""
     point = point_id(lib, entry, front, back)
     index = MemoryIndex(lib)
@@ -266,7 +268,7 @@ def duplicate_point(lib, entry, front, back, fields):
     if ids:
         notes = api('notesInfo', {'notes': ids})
         keys = ('Word', 'Definition', 'Expression', 'Question', 'Reading') if lib.language == 'ja' else ('Word', 'Definition')
-        if not isinstance(notes, list) or len(notes) != len(ids) or any(n.get('noteId') != ident or n.get('modelName') != lib.model or any(norm(n.get('fields', {}).get(k, {}).get('value', '')) != norm(fields.get(k, '')) for k in keys) for n, ident in zip(notes, ids)):
+        if not isinstance(notes, list) or len(notes) != len(ids) or any(n.get('noteId') != ident or n.get('modelName') != lib.model or any(norm(comparable_field(k,n.get('fields', {}).get(k, {}).get('value', ''))) != norm(comparable_field(k,fields.get(k, ''))) for k in keys) for n, ident in zip(notes, ids)):
             raise ValueError('关联学习点的旧卡已变化或被删除；不覆盖、不重建。')
         return ids[0]
     if coverage['status'] != 'complete':

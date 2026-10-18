@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>英语学习 · 学习设置</title>
     <link rel="stylesheet" href="/css/study-settings.css">
-    <script src="/js/pages/study-settings-main.js" type="module"></script>
+    <script src="/js/pages/study-settings.js" type="module"></script>
 </head>
 <body>
     <main>
-        <header><div><p class="eyebrow">YOMITAN · 私人英语学习版</p><h1>学习设置</h1><p>少一点设置，多一点连续阅读。</p></div><a href="/settings.html">词典与扩展设置 ↗</a></header>
+        <header><div><p class="eyebrow">YOMITAN · 私人英语学习版</p><h1>学习与保存</h1><p>少一点设置，多一点连续阅读。</p></div><nav><a href="/study-library.html" target="_top">打开学习库 ↗</a><a href="/settings.html#anki" target="_top">Anki 高级设置 ↗</a></nav></header>
         <p id="status" role="status" aria-live="polite">正在读取本地设置…</p>
         <section id="library-settings"><h2>保存与复习</h2><p>“记住它”将语境保存到 Obsidian；Anki 复习可以单独关闭。这里只修改保存目标，不移动已有笔记或卡片。</p>
             <p id="library-status" role="status" aria-live="polite">正在读取保存目标…</p>
@@ -27,13 +27,20 @@
                 <small>检测和选择只填入这里，点击「保存目标」才生效。库从 Obsidian 本机登记读取；保存目录须在选定库内，更深的目录可用系统文件夹选择器。</small>
                 <small>实际学习笔记位于语境根目录下的「记录/」。新保存的英语内容按一个词一篇笔记，不同原句、来源和问答在篇内分节；同词不区分大小写。旧笔记保留原位置，不自动合并。目录尚不存在时，首次保存会创建；切换目标不会迁移历史记录。</small>
                 <label class="check"><input type="checkbox" id="library-anki-enabled">记住后同时准备 Anki 复习（关闭时只保存 Obsidian）</label>
-                <div class="fields"><label>复习牌组<select id="library-deck"></select></label><label>兼容模板<input id="library-model" type="text" readonly></label></div>
+                <div class="fields"><label>默认复习牌组<select id="library-deck"></select></label><label>兼容模板<input id="library-model" type="text" readonly></label></div>
                 <label id="library-new-deck-label" hidden>新牌组名称<input id="library-new-deck" type="text" placeholder="例如：外语::英语语境"></label>
+                <div class="deck-routing"><h3>按内容类型选择牌组（可选）</h3><p>留空就使用默认牌组；这里只选择现有牌组，不会自动创建。</p>
+                    <div class="fields">
+                        <label>词义牌组<select id="library-deck-meaning"></select></label><label>语境牌组<select id="library-deck-context"></select></label>
+                        <label>表达牌组<select id="library-deck-expression"></select></label><label>语法牌组<select id="library-deck-grammar"></select></label>
+                        <label>句子牌组<select id="library-deck-sentence"></select></label><label>听力牌组<select id="library-deck-listening"></select></label>
+                    </div>
+                </div>
                 <small>点「只读检查」读取现有牌组；选择不存在的牌组不会自动创建。模板只用于语境卡，不会改写已有模板。</small>
                 <div class="library-actions"><button type="submit" class="primary">保存目标</button><button type="button" id="library-open">打开语境目录</button><button type="button" id="library-check">只读检查 / 刷新牌组</button></div>
             </form>
             <div id="library-check-result" aria-live="polite">尚未检查。检查只读取目录与 Anki 状态，不生成内容、不写学习数据。</div>
-            <div class="library-actions"><button type="button" id="library-create-deck">创建所选空牌组</button><button type="button" id="library-create-model">创建兼容模板</button><a id="library-advanced" href="/settings.html#!anki">原版 Anki 高级设置 ↗</a></div>
+            <div class="library-actions"><button type="button" id="library-create-deck">创建所选空牌组</button><button type="button" id="library-create-model">创建兼容模板</button><a id="library-advanced" href="/settings.html#anki" target="_top">原版 Anki 高级设置 ↗</a></div>
             <small>这两个创建按钮只在你明确点击时生效，不创建卡片，不修改已有模板或复习排程。请保持 Anki 与 AnkiConnect 运行。</small>
         </section>
         <form id="settings-form">

@@ -108,7 +108,33 @@ await Application.main(true, async (application) => {
         } catch (error) {
             if (heading instanceof HTMLElement) { heading.textContent = error instanceof Error ? error.message : '无法恢复详解语境。'; }
         }
-    } else { display.initializeState(); }
+    } else {
+        const resumeParams = new URLSearchParams(location.search);
+        if (resumeParams.get('studyResume') === '1') {
+            const query = resumeParams.get('query') ?? '';
+            const sentence = resumeParams.get('full') ?? query;
+            const offsetValue = Number.parseInt(resumeParams.get('offset') ?? '0', 10);
+            const offset = Number.isFinite(offsetValue) ? Math.max(0, Math.min(sentence.length, offsetValue)) : 0;
+            const sourceUrl = resumeParams.get('studySourceUrl') ?? '';
+            const videoTimeValue = Number(resumeParams.get('studyVideoTime'));
+            const savedRecordId = resumeParams.get('studyRecordId') ?? '';
+            display.setContent({focus: false,
+                historyMode: 'overwrite',
+                params: {type: 'terms', query, full: sentence, offset: `${offset}`},
+                state: {focusEntry: 0,
+                    optionsContext: display.getOptionsContext(),
+                    sentence: {text: sentence, offset, adjacent: resumeParams.get('studyContext') ?? '', recordId: savedRecordId},
+                    url: sourceUrl,
+                    documentTitle: resumeParams.get('studySourceTitle') ?? '',
+                    ...(Number.isFinite(videoTimeValue) && resumeParams.has('studyVideoTime') ? {videoTime: videoTimeValue} : {}),
+                    savedRecordId,
+                    savedRecordWord: query,
+                    studyLanguage: resumeParams.get('studyLanguage') ?? 'en'},
+                content: {}});
+        } else {
+            display.initializeState();
+        }
+    }
 
     document.documentElement.dataset.loaded = 'true';
 });

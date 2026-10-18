@@ -46,6 +46,7 @@ def install(home, codex, python, vault=None):
         runtime / 'study_settings.py': (pathlib.Path(__file__).parent / 'study_settings.py').read_bytes(),
         runtime / 'study_library.py': (pathlib.Path(__file__).parent / 'study_library.py').read_bytes(),
         runtime / 'study_library_core.py': (pathlib.Path(__file__).parent / 'study_library_core.py').read_bytes(),
+        runtime / 'study_sync.py': (pathlib.Path(__file__).parent / 'study_sync.py').read_bytes(),
         runtime / 'study_note_view.py': (pathlib.Path(__file__).parent / 'study_note_view.py').read_bytes(),
         runtime / 'study_japanese.py': (pathlib.Path(__file__).parent / 'study_japanese.py').read_bytes(),
         runtime / 'study_video.py': (pathlib.Path(__file__).parent / 'study_video.py').read_bytes(),

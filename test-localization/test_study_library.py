@@ -29,6 +29,8 @@ class LibraryTests(unittest.TestCase):
         def anki(action, params):
             if self.offline:
                 raise OSError('offline')
+            if action == 'deckNames':
+                return ['外语::英语语境', '外语::日语语境', 'Cloze Deck', 'Default Deck']
             if action == 'storeMediaFile':
                 return params['filename']
             if action == 'findNotes':
@@ -44,8 +46,14 @@ class LibraryTests(unittest.TestCase):
                     raise TimeoutError('written but response lost')
                 return ident
             if action == 'notesInfo':
-                return [{'noteId': i, 'fields': {k: {'value': v} for k, v in self.cards[i]['fields'].items()}}
+                return [{'noteId': i, 'cards': [i], 'modelName': self.cards[i].get('modelName'), 'fields': {k: {'value': v} for k, v in self.cards[i]['fields'].items()}}
                         for i in params['notes']]
+            if action == 'cardsInfo':
+                return [{'cardId': i, 'deckName': self.cards[i].get('deckName', '外语::英语语境')} for i in params['cards']]
+            if action in ('updateNote', 'updateNoteFields'):
+                note = params['note']
+                self.cards[note['id']]['fields'].update(note['fields'])
+                return None
             raise AssertionError(action)
 
         self.lib = self.module.StudyLibrary(self.vault, anki=anki)
@@ -383,7 +391,7 @@ class LibraryTests(unittest.TestCase):
         import json, shutil, struct, subprocess, sys
         runtime = self.vault / 'runtime'
         runtime.mkdir()
-        for name in ['study_translator.py', 'study_library.py', 'study_settings.py', 'study_video.py']:
+        for name in ['study_translator.py', 'study_library.py', 'study_library_core.py', 'study_sync.py', 'study_note_view.py', 'study_settings.py', 'study_video.py', 'study_memory.py', 'study_media.py', 'study_japanese.py']:
             shutil.copyfile(ROOT / 'local-bridge' / name, runtime / name)
         (runtime / 'bridge-config.json').write_text(json.dumps({'vault': str(self.vault), 'codex': '/nonexistent/do-not-start'}))
         request = json.dumps({'action': 'librarySave', 'entry': ENTRY, 'makeCard': False}).encode()
@@ -474,6 +482,230 @@ class LibraryTests(unittest.TestCase):
         resync = self.lib.handle({'action': 'librarySync', 'ids': [saved['id']]})['items'][0]
         self.assertEqual(len(self.cards), 1)
         self.assertEqual(resync['cards'][0]['noteId'], synced['cards'][0]['noteId'])
+
+
+    def test_favorite_only_is_idempotent_and_explicit_save_reuses_same_context(self):
+        entry = {**ENTRY, 'word': 'focus', 'sentence': 'Focus on the task.'}
+        favorite = self.lib.handle({'action':'libraryFavorite','entry':entry,'favorite':True,'language':'en'})
+        self.assertTrue(favorite['favorite'])
+        self.assertEqual(favorite['learningState'], 'favorite-only')
+        again = self.lib.handle({'action':'libraryFavorite','entry':entry,'favorite':True,'language':'en'})
+        self.assertEqual(favorite['id'], again['id'])
+        saved = self.lib.handle({'action':'librarySave','entry':entry,'makeCard':False,'turns':[]})
+        self.assertEqual(favorite['id'], saved['id'])
+        self.assertEqual(len(list(self.lib.records.glob('*.md'))), 1)
+        self.assertEqual(saved['learningState'], 'saved')
+        bookmark_entry = {**ENTRY, 'word':'bookmark', 'sentence':'Bookmark this context.'}
+        bookmark = self.lib.handle({'action':'libraryFavorite','entry':bookmark_entry,'favorite':True,'language':'en'})
+        appended = self.lib.handle({'action':'libraryUpdate','id':bookmark['id'],'language':'en','entry':{'translation':'整理后的译文'}})
+        self.assertEqual(appended['learningState'], 'favorite-only')
+        remembered = self.lib.handle({'action':'libraryUpdate','id':bookmark['id'],'language':'en','entry':{},'remember':True})
+        self.assertEqual(remembered['learningState'], 'saved')
+        self.assertTrue(remembered['favorite'])
+        unstarred = self.lib.handle({'action':'libraryFavorite','id':saved['id'],'favorite':False,'language':'en'})
+        self.assertFalse(unstarred['favorite'])
+        self.assertEqual(unstarred['learningState'], 'saved')
+        self.assertTrue((self.vault / saved['path']).is_file())
+
+    def test_partial_update_keeps_unspecified_fields_and_distinguishes_translate_turn(self):
+        saved = self.save()
+        update = self.lib.handle({'action':'libraryUpdate','id':saved['id'],'language':'en',
+            'entry':{'translation':'更新后的译文'},
+            'turns':[{'id':'translate-1','at':'2026-10-18T12:00:00+08:00','question':'','translation':'新译文','meaning':'','notes':'','feedback':'unconfirmed','mode':'translate'}]})
+        self.assertEqual(update['entry']['translation'], '更新后的译文')
+        self.assertEqual(update['entry']['meaning'], ENTRY['meaning'])
+        body = (self.vault / update['path']).read_text()
+        self.assertIn('翻译过程', body)
+        self.assertEqual(body.count('## 翻译过程'), 1)
+        self.assertEqual(self.cards, {})
+
+    def test_deck_by_kind_is_preserved_in_target_and_card_target_uses_actual_anki_deck(self):
+        from study_settings import target_fields
+        target = target_fields({'vault':str(self.vault),'directory':'custom-study','deck':'Default Deck',
+                               'model':'外语语境卡','deckByKind':{'cloze':'Cloze Deck'}})
+        self.assertEqual(target['deckByKind']['cloze'], 'Cloze Deck')
+        lib = self.module.StudyLibrary(self.vault, anki=self.lib.anki,
+             target={**target, 'ankiEnabled':True})
+        saved = lib.handle({'action':'librarySave','entry':{**ENTRY,'url':'https://example.com/deck'},'makeCard':False,'turns':[]})
+        result = lib.handle({'action':'libraryCardsAdd','id':saved['id'],'language':'en','cards':[
+            {'front':'just','back':'公正的','kind':'cloze'}]})
+        self.assertEqual(result['cards'][0]['target']['deck'], 'Cloze Deck')
+        self.assertEqual(result['cards'][0]['target']['targetId'], target['targetId'])
+
+
+    def test_draft_kind_survives_commit_and_routes_to_configured_deck(self):
+        from study_settings import target_fields
+        target = target_fields({'vault':str(self.vault),'directory':'kind-study','deck':'Default Deck',
+                               'model':'外语语境卡','deckByKind':{'cloze':'Cloze Deck'}})
+        lib = self.module.StudyLibrary(self.vault, anki=self.lib.anki,
+             target={**target, 'ankiEnabled':True}, group_words=True)
+        saved = lib.handle({'action':'librarySave','entry':{**ENTRY,'url':'https://example.com/kind'},'makeCard':False,'turns':[]})
+        draft = lib.handle({'action':'libraryDraftSave','items':[{'id':saved['id'],'version':saved['version'],'reason':'需要复习','cards':[
+            {'front':'Complete this phrase','back':'a just decision','kind':'cloze','selected':True}]}]})['items'][0]
+        committed = lib.handle({'action':'libraryDraftCommit','items':[{'id':saved['id'],'version':draft['version'],'draftId':draft['reviewDraft']['id']}]})['items'][0]
+        self.assertEqual(committed['cards'][0]['kind'],'cloze')
+        self.assertEqual(committed['cards'][0]['target']['deck'],'Cloze Deck')
+        import study_sync
+        self.assertEqual(study_sync.default_card_kind({'sentence':'a real sentence'}),'context')
+        self.assertEqual(study_sync.default_card_kind({'sentence':''}),'meaning')
+
+    def test_manual_cards_are_persisted_independently_and_reconciled_from_anki(self):
+        saved = self.save()
+        result = self.lib.handle({'action':'libraryCardsAdd','id':saved['id'],'language':'en','cards':[
+            {'front':'What does just mean here?','back':'公正的','kind':'meaning'},
+            {'front':'Complete: a just decision','back':'a just decision','kind':'cloze'}]})
+        self.assertEqual(len(result['cards']), 2)
+        self.assertEqual(len(self.cards), 2)
+        self.assertEqual(len({c['id'] for c in result['cards']}), 2)
+        self.assertTrue(all(c.get('target',{}).get('deck') == '外语::英语语境' for c in result['cards']))
+        card = result['cards'][0]
+        self.cards[card['noteId']]['fields']['Word'] = 'What does just mean in this sentence?'
+        reconciled = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(reconciled['syncState'], 'synced')
+        self.assertEqual(reconciled['cards'][0]['front'], 'What does just mean in this sentence?')
+        self.assertEqual(reconciled.get('conflicts'), [])
+        path = self.vault / reconciled['path']
+        body = path.read_text().replace('##### 问题\n\n> What does just mean in this sentence?', '##### 问题\n\n> What does just mean now?')
+        path.write_text(body)
+        edited = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(edited['cards'][0]['front'], 'What does just mean now?')
+        self.assertEqual(self.cards[card['noteId']]['fields']['Word'], 'What does just mean now?')
+
+
+    def test_legacy_card_front_edit_keeps_record_identity(self):
+        saved = self.save(make_card=True)
+        path = self.vault / saved['path']
+        body = path.read_text()
+        body = body.replace('##### 问题\n\n> just', '##### 问题\n\n> JUST')
+        path.write_text(body)
+        updated = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(updated['id'], saved['id'])
+        self.assertEqual(updated['legacyCard']['front'], 'JUST')
+        self.assertEqual(self.cards[saved['noteId']]['fields']['Word'], 'JUST')
+        with self.assertRaises(ValueError):
+            self.lib.handle({'action':'libraryUpdate','id':saved['id'],'entry':{'word':'another'}})
+        self.assertEqual(self.lib.result(saved['id'])['entry']['word'], 'just')
+
+    def test_reconcile_conflict_waits_for_explicit_resolution(self):
+        saved = self.save()
+        result = self.lib.handle({'action':'libraryCardsAdd','id':saved['id'],'language':'en','cards':[
+            {'front':'What does just mean here?','back':'公正的','kind':'meaning'}]})
+        path = self.vault / result['path']
+        body = path.read_text().replace('#### 本句含义\n\n> 公正的', '#### 本句含义\n\n> 本地含义')
+        path.write_text(body)
+        note_id = result['cards'][0]['noteId']
+        self.cards[note_id]['fields']['Definition'] = self.cards[note_id]['fields']['Definition'].replace('本句含义<br>公正的', '本句含义<br>远程含义')
+        conflict = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(conflict['syncState'], 'conflict')
+        self.assertTrue(any(x['key'] == 'meaning' for x in conflict['conflicts']))
+        resolved = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en','resolutions':{'meaning':'local'}})
+        self.assertEqual(resolved['syncState'], 'synced')
+        self.assertIn('本句含义<br>本地含义', self.cards[note_id]['fields']['Definition'])
+
+    def test_different_shared_anki_values_report_each_card_id_and_can_choose_local(self):
+        saved = self.save()
+        result = self.lib.handle({'action':'libraryCardsAdd','id':saved['id'],'language':'en','cards':[
+            {'front':'What does just mean here?','back':'公正的','kind':'meaning'},
+            {'front':'Complete: a just decision','back':'a just decision','kind':'cloze'}]})
+        for i, card in enumerate(result['cards']):
+            self.cards[card['noteId']]['fields']['Sentence'] = f'Remote variant {i}'
+        conflict = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        sentence_conflicts = [x for x in conflict['conflicts'] if x['key'].startswith('sentence:')]
+        self.assertEqual({x['key'].split(':',1)[1] for x in sentence_conflicts}, {c['id'] for c in result['cards']})
+        resolutions = {x['key']:'local' for x in sentence_conflicts}
+        resolved = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en','resolutions':resolutions})
+        self.assertEqual(resolved['syncState'], 'synced')
+        self.assertTrue(all(self.cards[c['noteId']]['fields']['Sentence'] == ENTRY['sentence'] for c in result['cards']))
+
+    def test_sync_fields_are_visible_and_editable_in_both_apps(self):
+        saved = self.save()
+        result = self.lib.handle({'action':'libraryCardsAdd','id':saved['id'],'language':'en','cards':[
+            {'front':'What does just mean here?','back':'公正的','kind':'meaning'}]})
+        path = self.vault / result['path']
+        text = path.read_text()
+        self.assertIn('#### 原句译文', text)
+        self.assertNotIn('```study-sync-json', text)
+        self.assertIn('data-study-sync="translation"', self.cards[result['cards'][0]['noteId']]['fields']['Definition'])
+        text = text.replace('#### 原句译文\n\n> 这是一个公正的决定。', '#### 原句译文\n\n> 这是公允的决定。')
+        path.write_text(text)
+        updated = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(updated['entry']['translation'], '这是公允的决定。')
+        note = self.cards[updated['cards'][0]['noteId']]
+        self.assertIn('这是公允的决定。', note['fields']['Definition'])
+        note['fields']['Definition'] = note['fields']['Definition'].replace('这是公允的决定。', '远端更新的译文')
+        updated = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(updated['entry']['translation'], '远端更新的译文')
+        self.assertIn('> 远端更新的译文', path.read_text())
+
+    def test_blank_optional_routes_keep_legacy_target_identity(self):
+        from study_settings import target_fields
+        original = {'vault':str(self.vault),'directory':'study','deck':'Default','model':'Study'}
+        base = target_fields(original)
+        routed = target_fields({**original,'deckByKind':{kind:'' for kind in ('meaning','context','expression','grammar','sentence','listening')}})
+        self.assertEqual(base, routed)
+
+    def test_reconcile_missing_anki_is_pending_not_success(self):
+        saved = self.save(make_card=True)
+        self.offline = True
+        updated = self.lib.handle({'action':'libraryReconcile','id':saved['id'],'language':'en'})
+        self.assertEqual(updated['syncState'], 'pending')
+        self.assertIn('Anki', updated['error'])
+
+
+    def test_one_shared_edit_updates_other_cards_and_partial_retry_has_no_false_conflict(self):
+        saved = self.save()
+        row = self.lib.handle({'action':'libraryCardsAdd','id':saved['id'],'cards':[
+            {'front':'Point A','back':'Answer A','kind':'context'}, {'front':'Point B','back':'Answer B','kind':'sentence'}]})
+        self.cards[row['cards'][0]['noteId']]['fields']['Sentence'] = 'An edited real sentence.'
+        row = self.lib.handle({'action':'libraryReconcile','id':row['id']})
+        self.assertEqual(row['syncState'],'synced')
+        self.assertTrue(all(self.cards[c['noteId']]['fields']['Sentence'] == 'An edited real sentence.' for c in row['cards']))
+        self.lib.handle({'action':'libraryUpdate','id':row['id'],'entry':{'translation':'新的共享译文'}})
+        original = self.lib.anki
+        fail = [True]
+        second = row['cards'][1]['noteId']
+        def uncertain(action, params):
+            if action == 'updateNoteFields' and params['note']['id'] == second and fail[0]:
+                fail[0] = False
+                raise OSError('temporary offline')
+            return original(action, params)
+        self.lib.anki = uncertain
+        pending = self.lib.handle({'action':'libraryReconcile','id':row['id']})
+        self.assertEqual(pending['syncState'],'pending')
+        retried = self.lib.handle({'action':'libraryReconcile','id':row['id']})
+        self.assertEqual(retried['syncState'],'synced')
+        self.assertEqual(retried['conflicts'],[])
+        self.assertTrue(all('新的共享译文' in self.cards[c['noteId']]['fields']['Definition'] for c in retried['cards']))
+        self.assertEqual(len(self.cards),2)
+
+    def test_associated_card_does_not_replace_another_context_source(self):
+        first = self.save()
+        owner = self.lib.handle({'action':'libraryCardsAdd','id':first['id'],'cards':[{'front':'Meaning?','back':'公正的','kind':'meaning'}]})
+        second = self.save({**ENTRY,'sentence':'A different context for just.','url':'https://example.com/second'})
+        record, body, version = self.lib.read(second['id'])
+        record['cards'] = [{**owner['cards'][0], 'linkedExisting':True, 'linkedByPoint':True}]
+        self.lib.write(record,body,version)
+        result = self.lib.handle({'action':'libraryReconcile','id':second['id']})
+        self.assertEqual(result['entry']['sentence'],'A different context for just.')
+        self.assertEqual(self.cards[owner['cards'][0]['noteId']]['fields']['Sentence'],ENTRY['sentence'])
+        self.assertTrue(result['cards'][0]['reviewOnly'])
+
+    def test_missing_deck_preserves_manual_card_without_auto_creation(self):
+        saved = self.save()
+        row = self.lib.handle({'action':'libraryCardsAdd','id':saved['id'],'cards':[{'front':'Question?','back':'Answer','kind':'meaning','deck':'Missing Deck'}]})
+        self.assertEqual(row['ankiState'],'pending')
+        self.assertEqual(len(row['cards']),1)
+        self.assertEqual(self.cards,{})
+        self.assertIn('牌组不存在',row['cards'][0]['error'])
+
+    def test_obisidian_star_edit_is_readable_even_with_anki_disabled(self):
+        row = self.lib.handle({'action':'libraryFavorite','entry':ENTRY,'favorite':True})
+        path = self.vault / row['path']
+        path.write_text(path.read_text().replace('#### 收藏\n\n> 是','#### 收藏\n\n> 否'))
+        self.lib.anki_enabled = False
+        result = self.lib.result(row['id'])
+        self.assertFalse(result['favorite'])
+        self.assertEqual(result['learningState'],'favorite-only')
 
 
 if __name__ == '__main__':

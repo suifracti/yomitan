@@ -171,7 +171,7 @@ class SettingsTests(unittest.TestCase):
         import sys
         runtime = self.root / 'runtime'
         runtime.mkdir()
-        for name in ('study_translator.py', 'study_settings.py', 'study_library.py', 'study_memory.py', 'study_video.py'):
+        for name in ('study_translator.py', 'study_settings.py', 'study_library.py', 'study_library_core.py', 'study_sync.py', 'study_note_view.py', 'study_memory.py', 'study_video.py', 'study_media.py', 'study_japanese.py', 'study_usage.py'):
             shutil.copyfile(pathlib.Path(__file__).parent / name, runtime / name)
         shutil.copyfile(self.config, runtime / 'bridge-config.json')
         def native(payload):

@@ -79,6 +79,9 @@ export type HistoryParams = {
  * The semi-persistent state assigned to the navigation entry.
  */
 export type HistoryState = {
+    savedRecordId?: string;
+    savedRecordWord?: string;
+    studyLanguage?: string;
     /** Playback position only when source is a recognized subtitle and exactly one visible video exists. */
     videoTime?: number;
     /** What was the cause of the navigation. */
@@ -105,6 +108,7 @@ export type HistoryState = {
  * The sentence context.
  */
 export type HistoryStateSentence = {
+    recordId?: string;
     /** Lookup material inside our card is not an article or subtitle. */
     sourceKind?: 'dictionary';
     /** Optional bounded local adjacent sentences; not uploaded by default. */

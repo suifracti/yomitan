@@ -45,7 +45,7 @@ export function studyConfig(value) {
         model,
         effort: effort ?? DEFAULTS.effort,
         autoDictionaryTranslate: v.autoDictionaryTranslate === true,
-        cacheEnabled: v.cacheEnabled !== false
+        cacheEnabled: v.cacheEnabled !== false,
     };
 }
 
@@ -81,7 +81,7 @@ export function isStudyResult(value) {
         return false;
     }
     const v = /** @type {import('study').Result} */ (value);
-    return typeof v.translation === 'string' && !!v.translation.trim() && typeof v.meaning === 'string' && !!v.meaning.trim() &&
+    return typeof v.translation === 'string' && !!v.translation.trim() && typeof v.meaning === 'string' &&
     typeof v.notes === 'string' && [v.translation, v.meaning, v.notes].every((s) => s.length <= 5000);
 }
 
