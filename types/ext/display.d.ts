@@ -157,6 +157,7 @@ export type Events = {
         dictionaryEntry: Dictionary.DictionaryEntry;
         promises: Promise<unknown>[];
     };
+    contentWillChange: Record<string, never>;
     contentClear: Record<string, never>;
     contentUpdateStart: {
         type: PageType;

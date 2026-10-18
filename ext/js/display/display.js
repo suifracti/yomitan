@@ -815,6 +815,7 @@ export class Display extends EventDispatcher {
     /** */
     async _onStateChanged() {
         if (this._historyChangeIgnore) { return; }
+        this.trigger('contentWillChange', {});
 
         safePerformance.mark('display:_onStateChanged:start');
 

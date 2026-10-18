@@ -15,10 +15,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-/** @typedef {{width: number, height: number, collapsed: boolean}} PaneSize */
+import {bindStudyWordTabs} from './study-word-tabs.js';
+
+/** @typedef {{width: number, height: number, collapsed: boolean, manual?: boolean}} PaneSize */
 /** @typedef {{main: PaneSize, dictionary: PaneSize, open: boolean, opened: boolean, view: 'main' | 'dictionary', queue: Promise<void>}} WorkspaceState */
 /** @type {WeakMap<object, WorkspaceState>} */
 const preferences = new WeakMap();
+/** @type {WeakMap<object, {width: number, height: number}>} */
+const initialSizes = new WeakMap();
+/** @type {WeakMap<object, Promise<void>>} */
+const queues = new WeakMap();
 
 /**
  * A layout over the original controls, not another Display or learning session.
@@ -33,13 +39,6 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     const dictionaryButton = tabButtons[1];
     const originalTitle = toolbar?.querySelector('.study-toolbar-title');
     const titleText = originalTitle?.textContent ?? '';
-    let state = preferences.get(display);
-    if (!state) {
-        const size = {width: window.innerWidth, height: window.innerHeight, collapsed: false};
-        state = {main: {...size}, dictionary: {...size}, open: false, opened: false, view: 'main', queue: Promise.resolve()};
-        preferences.set(display, state);
-    }
-    const sizes = state;
     let active = true;
     let pending = false;
     /** @type {{name: 'main' | 'dictionary', id: number, x: number, y: number, width: number, height: number} | null} */
@@ -96,10 +95,24 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     companion.append(companionHead);
     const cardTabs = make('nav', 'sf-workspace-tabs');
     cardTabs.setAttribute('aria-label', '学习卡片切换');
-    const mainTab = button(word, '切换主卡');
-    const dictionaryTab = button('详细词典', '切换词典卡');
-    cardTabs.append(mainTab, dictionaryTab);
-    workspace.append(cardTabs, main, companion);
+    const wordTabs = bindStudyWordTabs(display, cardTabs, () => {
+        sizes.main.collapsed = false; sizes.view = 'main';
+        layout(); request();
+    });
+    let state = preferences.get(wordTabs.key);
+    if (!state) {
+        const size = {...(initialSizes.get(display) ?? {width: window.innerWidth, height: Math.max(250, window.innerHeight)}), collapsed: false};
+        state = {main: {...size}, dictionary: {...size}, open: false, opened: false, view: 'main', queue: Promise.resolve()};
+        preferences.set(wordTabs.key, state);
+    }
+    const sizes = state;
+    if (wordTabs.restored) {
+        sizes.main.collapsed = false; sizes.view = 'main';
+    }
+    const dictionaryRail = make('aside', 'sf-dictionary-rail');
+    const restoreDictionary = button('词典', '展开词典卡');
+    restoreDictionary.title = '展开详细词典'; dictionaryRail.append(restoreDictionary);
+    workspace.append(cardTabs, main, companion, dictionaryRail);
     shell.before(workspace);
     move(toolbar, main);
     move(shell, main);
@@ -125,7 +138,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         pending = true;
         requestAnimationFrame(() => {
             pending = false;
-            sizes.queue = sizes.queue.catch(() => {}).then(async () => {
+            sizes.queue = (queues.get(display) ?? Promise.resolve()).catch(() => {}).then(async () => {
                 if (!active) { return; }
                 const id = display.parentPopupId;
                 if (id && typeof display.invokeParentFrame === 'function') {
@@ -134,9 +147,9 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
                         if (!active || !before.valid) { return; }
                         const mainWidth = sizes.main.collapsed ? 0 : sizes.main.width;
                         const sideWidth = sizes.open && !sizes.dictionary.collapsed ? sizes.dictionary.width : 0;
-                        const width = Math.max(300, mainWidth + sideWidth + (mainWidth && sideWidth ? 12 : 0));
-                        const dockHeight = sizes.open || sizes.main.collapsed ? 30 : 0;
-                        const height = Math.max(sizes.main.collapsed ? 0 : sizes.main.height, sideWidth ? sizes.dictionary.height : 0) + dockHeight;
+                        const width = Math.max(300, mainWidth + sideWidth + (mainWidth && sideWidth ? 12 : (sizes.open && !sideWidth ? 36 : 0)));
+                        const dockHeight = wordTabs.hasTabs() || sizes.main.collapsed ? 30 : 0;
+                        const height = Math.max(sizes.main.collapsed ? 0 : mainHeight(), sideWidth ? sizes.dictionary.height : (sizes.open ? 36 : 0)) + dockHeight;
                         await display.invokeParentFrame('popupFactorySetFrameSize', {id, width, height});
                         // The setter fits to the host viewport; true does not mean requested size fits.
                         if (active) { await display.invokeParentFrame('popupFactoryGetFrameSize', {id}); }
@@ -144,6 +157,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
                 }
                 if (active) { layout(); }
             });
+            queues.set(display, sizes.queue);
         });
     };
     /**
@@ -156,6 +170,22 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         node.setAttribute('aria-label', `${collapsed ? '展开' : '收起'}${name}`);
         node.setAttribute('aria-expanded', String(!collapsed));
     };
+    const mainHeight = () => {
+        if (sizes.main.manual || shell.dataset.panel !== '0' || main.hidden) { return sizes.main.height; }
+        const scroll = shell.querySelector('.sf-learning-scroll');
+        if (!scroll) { return sizes.main.height; }
+        /**
+         * @param {Element} node
+         * @returns {number}
+         */
+        const extent = (node) => {
+            const style = getComputedStyle(node);
+            return node.getClientRects().length > 0 ? node.getBoundingClientRect().height + (Number.parseFloat(style.marginTop) || 0) + (Number.parseFloat(style.marginBottom) || 0) : 0;
+        };
+        const content = [...scroll.children].reduce((total, node) => total + extent(node), 0);
+        const fixed = [toolbar, shell.querySelector('.sf-heading'), tabs, shell.querySelector('.sf-compose'), shell.querySelector('.sf-save-bar')].filter((node) => node !== null).reduce((total, node) => total + extent(node), 4);
+        return Math.max(240, Math.min(sizes.main.height, Math.ceil(content + fixed)));
+    };
     const layout = () => {
         if (!active) { return; }
         const width = window.innerWidth;
@@ -164,13 +194,8 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         const showMain = !sizes.main.collapsed;
         const showDictionary = sizes.open && !sizes.dictionary.collapsed;
         const overlay = showMain && showDictionary && width < 572;
-        const dockHeight = sizes.open || sizes.main.collapsed ? 30 : 0;
+        const dockHeight = wordTabs.hasTabs() || sizes.main.collapsed ? 30 : 0;
         cardTabs.hidden = dockHeight === 0;
-        dictionaryTab.hidden = !sizes.open;
-        mainTab.setAttribute('aria-label', sizes.main.collapsed ? '展开主卡' : '切换主卡');
-        dictionaryTab.setAttribute('aria-label', sizes.dictionary.collapsed ? '展开词典卡' : '切换词典卡');
-        mainTab.setAttribute('aria-pressed', String(showMain && (!overlay || sizes.view === 'main')));
-        dictionaryTab.setAttribute('aria-pressed', String(showDictionary && (!overlay || sizes.view === 'dictionary')));
         workspace.dataset.layout = overlay ? 'overlay' : 'beside';
         workspace.classList.toggle('sf-companion-open', sizes.open);
         main.hidden = !showMain || (overlay && sizes.view === 'dictionary');
@@ -185,13 +210,16 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         dictionaryButton?.removeAttribute('aria-selected');
         if (dictionaryButton) { dictionaryButton.tabIndex = 0; }
         const beside = showMain && showDictionary && !overlay;
+        const rail = sizes.open && (!showDictionary || (overlay && sizes.view === 'main'));
+        dictionaryRail.hidden = !rail;
         const mainWidth = beside ? Math.max(280, Math.min((width - 12) * sizes.main.width / (sizes.main.width + sizes.dictionary.width), width - 292)) : width;
-        workspace.style.gridTemplateColumns = beside ? `${mainWidth}px ${width - mainWidth - 12}px` : 'minmax(0,1fr)';
+        workspace.style.gridTemplateColumns = beside ? `${mainWidth}px ${width - mainWidth - 12}px` : (rail ? 'minmax(0,1fr) 24px' : 'minmax(0,1fr)');
         workspace.style.gridTemplateRows = `${dockHeight}px minmax(0,1fr)`;
         const available = Math.max(0, height - dockHeight);
-        main.style.height = `${Math.min(sizes.main.height, available)}px`;
+        main.style.height = `${Math.min(mainHeight(), available)}px`;
         companion.style.height = `${Math.min(sizes.dictionary.height, available)}px`;
         companion.style.width = '';
+        if (!sizes.main.collapsed) { initialSizes.set(display, {width: sizes.main.width, height: sizes.main.height}); }
     };
     const open = () => {
         if (!sizes.opened) {
@@ -236,7 +264,8 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         layout(); request();
     };
     foldMain.onclick = () => {
-        sizes.main.collapsed = !sizes.main.collapsed; sizes.view = 'dictionary';
+        sizes.main.collapsed = true; sizes.view = 'dictionary';
+        wordTabs.park();
         layout(); request();
     };
     foldDictionary.onclick = () => {
@@ -247,11 +276,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         sizes.open = false; sizes.view = 'main';
         layout(); request();
     };
-    mainTab.onclick = () => {
-        sizes.main.collapsed = false; sizes.view = 'main';
-        layout(); request();
-    };
-    dictionaryTab.onclick = open;
+    restoreDictionary.onclick = open;
     workspace.addEventListener('click', onClick, true);
     tabs.addEventListener('keydown', onTabsKey, true);
     tabs.addEventListener('click', onMainTab);
@@ -262,6 +287,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     const onMove = (event) => {
         if (!drag || event.pointerId !== drag.id) { return; }
         const size = sizes[drag.name];
+        size.manual = true;
         size.width = Math.max(280, Math.min(1100, drag.width + event.screenX - drag.x));
         size.height = Math.max(240, Math.min(1200, drag.height + event.screenY - drag.y));
         layout(); request();
@@ -286,12 +312,21 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     }
     const chromeObserver = new MutationObserver(layout);
     chromeObserver.observe(root, {attributes: true, attributeFilter: ['class']});
-    layout();
+    const onContents = () => {
+        layout(); request();
+    };
+    const contentObserver = new MutationObserver(onContents);
+    contentObserver.observe(shell, {subtree: true, childList: true, characterData: true});
+    workspace.addEventListener('input', onContents);
+    workspace.addEventListener('toggle', onContents, true);
+    layout(); request();
     if (sizes.open || sizes.main.collapsed || Math.abs(sizes.main.width - window.innerWidth) > 1 || Math.abs(sizes.main.height - window.innerHeight) > 1) { request(); }
     return {
         dispose: () => {
             active = false; drag = null;
-            chromeObserver.disconnect();
+            chromeObserver.disconnect(); contentObserver.disconnect();
+            workspace.removeEventListener('input', onContents);
+            workspace.removeEventListener('toggle', onContents, true);
             workspace.removeEventListener('click', onClick, true);
             tabs.removeEventListener('keydown', onTabsKey, true);
             tabs.removeEventListener('click', onMainTab);

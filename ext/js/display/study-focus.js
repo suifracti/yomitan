@@ -373,7 +373,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const openContextEditor = () => { if (current() && editSource) { editSource.open = true; resizeEditors(); } };
         const translateSentence = source.querySelector('[data-study-translate-sentence]');
         if (hasSentence && (translateSentence || neighborAction)) {
-            source.after(sourceTools); owned.push(sourceTools);
+            (source.querySelector('.study-source-heading') || source).append(sourceTools); owned.push(sourceTools);
             if (translateSentence) { move(translateSentence, sourceTools); }
             if (neighborAction) {
                 move(neighborAction, sourceTools);
