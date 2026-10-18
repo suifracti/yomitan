@@ -385,7 +385,7 @@ export function prepareStudyTranslation() {
             /** @param {import('study').LearningTurn[]} turns */
             const paintSentenceTranslation = (turns) => {
                 if (!sentenceChinese || !translateSentence) { return; }
-                const answer = [...turns].reverse().find((turn) => typeof turn.translation === 'string' && turn.translation.trim());
+                const answer = [...turns].reverse().find((turn) => turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
                 const text = answer?.translation?.trim() ?? '';
                 sentenceChinese.textContent = text;
                 sentenceChinese.hidden = !text;
@@ -491,33 +491,49 @@ export function prepareStudyTranslation() {
                 const oldLast = output.lastElementChild?.getAttribute('data-turn-id');
                 output.replaceChildren();
                 history.hidden = turns.length === 0;
-                historyLabel.textContent = `问答历史 · ${turns.length} 轮（含理解反馈）`;
+                const translationCount = turns.filter((turn) => turn.mode === 'translate').length;
+                const questionCount = turns.length - translationCount;
+                historyLabel.textContent = `学习历史 · 问答 ${questionCount} 轮 · 原句翻译 ${translationCount} 次`;
                 latest = turns.at(-1) ?? null;
-                latestExplanation = [...turns].reverse().find((turn) => turn.meaning?.trim() || turn.notes?.trim()) ?? null;
+                latestExplanation = [...turns].reverse().find((turn) => turn.mode !== 'translate' && (turn.meaning?.trim() || turn.notes?.trim())) ?? null;
                 latestSource = identity();
                 paintSentenceTranslation(turns);
-                updatePinnedExplanation([...turns].reverse().find((turn) => (turn.meaning ?? '').trim() || (turn.notes ?? '').trim()) ?? null);
+                updatePinnedExplanation(latestExplanation);
                 for (const [index, turn] of turns.entries()) {
                     const panel = d.createElement('details');
                     panel.className = 'study-conversation-turn';
                     panel.dataset.turnId = turn.id;
+                    const isTranslation = turn.mode === 'translate';
+                    panel.dataset.studyMode = isTranslation ? 'translate' : 'explain';
                     panel.open = opened.has(turn.id) || (index === turns.length - 1 && oldLast !== turn.id);
                     const label = d.createElement('summary');
                     label.className = 'scan-disable';
-                    label.textContent = `第 ${index + 1} 轮 · ${turn.mode === 'translate' ? '原句翻译' : '问 AI'} · ${turn.question || '理解当前词句'} · ${turn.saved ? '已保存' : '待保存'}`;
+                    label.textContent = isTranslation ?
+                        `第 ${index + 1} 轮 · 原句翻译 · ${turn.saved ? '已保存' : '待保存'}` :
+                        `第 ${index + 1} 轮 · 问 AI · ${turn.question || '理解当前词句'} · ${turn.saved ? '已保存' : '待保存'}`;
                     const mine = d.createElement('p');
                     mine.className = 'study-user-question';
-                    mine.textContent = turn.mode === 'translate' ? '翻译当前原句' : `我：${turn.question || '请解释这句话和这个词的用法'}`;
+                    mine.textContent = isTranslation ? '翻译当前原句' : `我：${turn.question || '请解释这句话和这个词的用法'}`;
+                    mine.hidden = isTranslation;
                     const answer = d.createElement('div');
                     answer.className = 'study-turn-answer';
-                    renderStudyResult(answer, turn, turn.usage?.status === 'cached');
+                    if (isTranslation) {
+                        // Keep historical translations readable without presenting them as Q&A.
+                        const text = d.createElement('p');
+                        text.className = 'study-sentence-translation';
+                        text.textContent = turn.translation || '';
+                        answer.append(text);
+                    } else { renderStudyResult(answer, turn, turn.usage?.status === 'cached'); }
                     const usage = d.createElement('p');
                     usage.className = 'study-turn-usage';
                     usage.textContent = usageText(turn.usage);
+                    usage.hidden = isTranslation;
                     const feedback = d.createElement('div');
                     feedback.className = 'study-learning-actions study-feedback';
+                    feedback.hidden = isTranslation;
                     const feedbackStatus = d.createElement('p');
                     feedbackStatus.className = 'study-feedback-status';
+                    feedbackStatus.hidden = isTranslation;
                     feedbackStatus.setAttribute('role', 'status');
                     const choices = [['understood', '这次懂了'], ['unclear', '仍然不懂']];
                     /** @type {HTMLButtonElement[]} */
@@ -528,7 +544,7 @@ export function prepareStudyTranslation() {
                             b.setAttribute('aria-pressed', String(b.dataset.feedback === value));
                         }
                     };
-                    for (const [value, title] of choices) {
+                    for (const [value, title] of (isTranslation ? [] : choices)) {
                         const b = button(title);
                         b.dataset.feedback = value;
                         feedbackButtons.push(b);
@@ -545,7 +561,9 @@ export function prepareStudyTranslation() {
                                 }
                                 select(value);
                                 feedbackStatus.textContent = `已选择“${title}”，点“记住它”同步。`;
-                                label.textContent = `第 ${index + 1} 轮 · ${turn.mode === 'translate' ? '原句翻译' : '问 AI'} · ${turn.question || '理解当前词句'} · 待保存`;
+                                label.textContent = isTranslation ?
+                                    `第 ${index + 1} 轮 · 原句翻译 · 待保存` :
+                                    `第 ${index + 1} 轮 · 问 AI · ${turn.question || '理解当前词句'} · 待保存`;
                             }).catch((e) => {
                                 feedbackStatus.textContent = e instanceof Error ? e.message : '反馈未保存';
                             })

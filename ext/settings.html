@@ -607,7 +607,7 @@
     </section>
 
     <section class="settings-category-panel" data-settings-category-panel="save" hidden>
-<section id="library-settings" class="study-settings-panel"><h2 id="learning">保存与复习</h2><p>“记住它”会保存到 Obsidian；Anki 复习可单独关闭。目标只影响之后的新保存。</p>
+<section id="library-settings" class="study-settings-panel"><h2 id="learning">保存与复习</h2><p>“记住它”只保存到 Obsidian；制卡时另选学习内容。目标只影响之后的新保存。</p>
             <p id="library-status" role="status" aria-live="polite">点击「只读检查」连接本机保存服务并读取目标；不会调用模型。</p><p id="library-save-state" class="study-save-state" role="status" aria-live="polite">尚未读取</p>
             <form id="library-settings-form">
                 <div class="fields">
@@ -628,7 +628,7 @@
                     <div class="library-actions"><button type="button" id="library-create-deck">创建所选空牌组</button><button type="button" id="library-create-model">创建兼容模板</button></div>
                     <small>请保持 Anki 与 AnkiConnect 运行；创建操作不生成卡片。</small>
                 </div></details>
-                <label class="check"><input type="checkbox" id="library-anki-enabled">记住后同时准备 Anki 复习（关闭时只保存 Obsidian）</label>
+                <label class="check"><input type="checkbox" id="library-anki-enabled">启用 Anki 制卡与同步（不自动制卡）</label>
                 <div class="fields"><label>默认复习牌组<select id="library-deck"></select></label><label>兼容模板<input id="library-model" type="text" readonly></label></div>
                 <label id="library-new-deck-label" hidden>新牌组名称<input id="library-new-deck" type="text" placeholder="例如：外语::英语语境"></label>
                 <details class="deck-routing-details"><summary>按内容类型选择牌组（可选）</summary><div class="deck-routing">

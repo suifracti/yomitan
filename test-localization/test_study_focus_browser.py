@@ -372,7 +372,18 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
     page.goto('https://study-interaction.test/')
     page.set_viewport_size({'width':400,'height':550})
     page.evaluate("""async()=>{
-        window.chrome={runtime:{sendMessage:async({studyAction})=>({ok:true,value:['journalConversation','conversationUsage','saved'].includes(studyAction)?[]:studyAction==='pendingPeek'?{count:0}:{result:null,busy:false}})}};
+        window.studyTurns=[];window.feedbackRequests=[];window.generatedModes=[];
+        const qaTurn={id:'qa-before-translation',at:'2026-10-18T00:00:00Z',mode:'explain',question:'Why does ability fit here?',translation:'',meaning:'The original AI explanation remains.',notes:'The original AI note remains.',feedback:'unconfirmed',saved:true,usage:{status:'completed',totalTokens:12,inputTokens:5,outputTokens:7}};
+        const translationTurn={id:'sentence-translation',at:'2026-10-18T00:01:00Z',mode:'translate',question:'',translation:'她的能力很重要。',meaning:'',notes:'',feedback:'unconfirmed',saved:false,usage:{status:'completed',totalTokens:8,inputTokens:3,outputTokens:5}};
+        window.testTurns={qa:qaTurn,translation:translationTurn};
+        window.chrome={runtime:{sendMessage:async({studyAction,data})=>{
+            if(studyAction==='rememberEntry')return {ok:true,value:{id:'a'.repeat(32),entry:data.entry,path:'Temporary/ability.md',ankiEnabled:true,ankiState:'saved',cards:[]}};
+            if(studyAction==='journalConversation')return {ok:true,value:window.studyTurns};
+            if(studyAction==='conversationUsage')return {ok:true,value:[]};
+            if(studyAction==='generate') { window.generatedModes.push(data.mode); if(data.mode==='translate')window.studyTurns.push({...window.testTurns.translation,id:`sentence-translation-${window.generatedModes.length}`}); if(data.mode==='explain')window.studyTurns.push({...window.testTurns.qa,id:`ai-explanation-${window.generatedModes.length}`,question:data.question}); return {ok:true,value:true}; }
+            if(studyAction==='journalFeedback') { window.feedbackRequests.push(data); return {ok:true,value:true}; }
+            return {ok:true,value:studyAction==='pendingPeek'?{count:0}:[]};
+        }},permissions:{request:async()=>true,contains:async()=>true}};
         const {prepareStudyTranslation}=await import('/js/display/study-translation.js');
         const {prepareStudyFocus}=await import('/js/display/study-focus.js');
         const callbacks={};
@@ -387,7 +398,61 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
     page.get_by_label('原句',exact=True).fill('Her ability to learn matters.')
     page.get_by_label('补充语境',exact=True).click()
     check('real neighbor action fills context and original remains editable', '()=>document.querySelector(".study-more-actions").open && !document.querySelector(".study-more-actions").hidden && document.querySelector("[aria-label=补充语境]").value==="She works hard. She keeps learning." && document.querySelector(".study-source p").textContent==="Her ability to learn matters."')
+    page.locator('[data-study-translate-sentence]').click();page.wait_for_timeout(150)
+    check('pure translation stays under source without Q&A explanation or feedback', '''()=>{
+        const sourceTranslation=document.querySelector('.study-source-translation');
+        const panels=[...document.querySelectorAll('.study-conversation-turn')];
+        const translation=panels.find(e=>e.dataset.studyMode==='translate');
+        return sourceTranslation?.textContent==='她的能力很重要。' &&
+            document.querySelector('.sf-section-label').hidden &&
+            document.querySelector('.sf-asked').hidden && document.querySelector('.sf-meaning').hidden &&
+            document.querySelector('.sf-notes').hidden && document.querySelector('.sf-feedback').children.length===0 &&
+            translation?.querySelector('.study-feedback')?.hidden && translation?.querySelector('.study-user-question')?.hidden &&
+            translation?.querySelector('.study-sentence-translation')?.textContent==='她的能力很重要。' &&
+            document.querySelector('.study-conversation-history>summary').textContent.includes('原句翻译 1 次') &&
+            window.generatedModes.join(',')==='translate';
+    }''')
+    page.screenshot(path=str(OUTPUT/'previews'/'translation-only-400.png'))
+    page.evaluate('window.studyTurns.push(window.testTurns.qa)')
+    page.locator('[data-study-translate-sentence]').evaluate('(e)=>e.hidden=false')
+    page.locator('[data-study-translate-sentence]').click();page.wait_for_timeout(150)
+    check('later translation preserves AI answer and distinct history modes', '''()=>{
+        const panels=[...document.querySelectorAll('.study-conversation-turn')];
+        const translation=panels.find(e=>e.dataset.studyMode==='translate');
+        const explanation=panels.find(e=>e.dataset.studyMode==='explain');
+        return document.querySelector('.study-source-translation')?.textContent==='她的能力很重要。' &&
+            document.querySelector('.sf-meaning').textContent==='The original AI explanation remains.' &&
+            document.querySelector('.sf-notes').textContent==='The original AI note remains.' &&
+            document.querySelector('.sf-asked').textContent.includes('Why does ability fit here?') &&
+            document.querySelectorAll('.sf-feedback button').length===2 &&
+            explanation?.querySelector(':scope>summary')?.textContent.includes('问 AI') &&
+            translation?.querySelector(':scope>summary')?.textContent.includes('原句翻译') &&
+            translation?.querySelector('.study-feedback')?.hidden &&
+            translation?.querySelector('.study-sentence-translation')?.textContent==='她的能力很重要。' &&
+            !document.querySelector('.sf-asked').textContent.includes('翻译当前原句') &&
+            document.querySelector('.study-conversation-history>summary').textContent.includes('原句翻译 2 次') &&
+            window.generatedModes.join(',')==='translate,translate';
+    }''')
+    page.locator('.sf-feedback button').first.click();page.wait_for_timeout(50)
+    check('focus feedback remains linked to the earlier explain turn', '()=>window.feedbackRequests.at(-1)?.turnId===window.testTurns.qa.id')
     page.screenshot(path=str(OUTPUT/'previews'/'real-source-editor-400.png'))
+    page.locator('[data-study-save=note]').click();page.wait_for_timeout(100)
+    page.locator('[data-study-add-card]').click()
+    page.locator('[data-study-card-choice=meaning]').click()
+    page.evaluate('''()=>{const panel=document.querySelector('.study-card-add');const scroll=document.querySelector('.sf-learning-scroll');scroll.scrollTop+=panel.getBoundingClientRect().top-scroll.getBoundingClientRect().top;window.scrollTo(0,0);}''')
+    page.screenshot(path=str(OUTPUT/'previews'/'card-choice-meaning-400.png'))
+    page.locator('[data-study-card-choice=context]').click()
+    check('actual card controller offers distinct word and contextual previews', '''()=>{
+        const rows=[...document.querySelectorAll('.study-card-editor')];
+        return rows.length===2 && rows[0].querySelector('[data-study-card-kind]').value==='meaning' && rows[1].querySelector('[data-study-card-kind]').value==='context' &&
+            rows[0].querySelector('[data-study-card-back]').value.includes('能力') && rows[1].querySelector('[data-study-card-back]').value==='The original AI explanation remains.' &&
+            rows[1].querySelector('[data-study-card-front]').value.includes('Her ability to learn matters.') &&
+            !document.querySelector('[data-study-cards-submit]').disabled;
+    }''')
+    for width in [320,420]:
+        page.set_viewport_size({'width':width,'height':550});page.wait_for_timeout(60)
+        check(f'card choices stay within {width}px viewport', '()=>document.querySelector(".study-card-add").getBoundingClientRect().right<=innerWidth+1 && document.querySelector(".study-card-add").scrollWidth<=document.querySelector(".study-card-add").clientWidth+1')
+    page.locator('.study-card-add').screenshot(path=str(OUTPUT/'previews'/'card-choices-420.png'))
     assert not errors, errors
     results.append({'test':'no browser JS exceptions','passed':True})
     (OUTPUT/'test-results.json').write_text(json.dumps({'checks':results,'count':len(results),'scope':'Chromium component integration with simulated storage/Native; no user Mac or real AI/Anki writes'},ensure_ascii=False,indent=2))

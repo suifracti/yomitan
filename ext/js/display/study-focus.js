@@ -408,7 +408,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const saveBar = make('div', 'sf-save-bar');
         shell.append(saveBar); owned.push(saveBar);
         if (save) {
-            save.title = '保存这次查词到 Obsidian，并按设置关联旧卡或择要新增 0–1 张 Anki 卡。不要求先问 AI。';
+            save.title = '保存这次学习到 Obsidian，不自动制卡；可另选单词意思或原句中的意思制卡。';
             move(save, saveBar);
         }
         const summary = make('div', 'sf-saved-summary');
@@ -521,7 +521,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const updateAnswer = () => {
             if (!current()) { return; }
             const turns = [...(output?.querySelectorAll('.study-conversation-turn') || [])];
-            const turn = [...turns].reverse().find((node) => node.querySelector('.study-turn-answer')) || turns.at(-1);
+            /** @param {Element} node */
+            const isTranslationTurn = (node) => node.getAttribute('data-study-mode') === 'translate';
+            const questionTurns = turns.filter((node) => !isTranslationTurn(node));
+            const turn = [...questionTurns].reverse().find((node) => node.querySelector('.study-turn-answer')) || questionTurns.at(-1);
             const prior = turns.filter((node) => node !== turn);
             const answer = turn?.querySelector('.study-turn-answer');
             const meaningText = answer?.querySelector('.study-ai-meaning')?.textContent?.trim() || '';
@@ -552,7 +555,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             if (history) {
                 history.hidden = prior.length === 0;
                 const label = history.querySelector(':scope > summary');
-                if (label) { label.textContent = `之前的问答 · ${prior.length} 轮`; }
+                const priorQuestionCount = prior.filter((node) => !isTranslationTurn(node)).length;
+                const priorTranslationCount = prior.filter(isTranslationTurn).length;
+                if (label) { label.textContent = `之前的历史 · 问答 ${priorQuestionCount} 轮 · 原句翻译 ${priorTranslationCount} 次`; }
             }
             // The original full journal DOM remains authoritative, including the
             // latest turn, but the latest answer is displayed only once.

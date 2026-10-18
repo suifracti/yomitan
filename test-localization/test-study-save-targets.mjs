@@ -14,7 +14,7 @@ throw Error('Unexpected action: '+p.action);
 })()});const row=()=>({id,entry,version:'v1',path:'Studies/just.md',openUrl:'obsidian://open?x',vaultSaved:true,ankiState:'saved',noteId:null,ankiEnabled:enabled,targetId, target:{deck:'Target',model:'外语语境卡'}});
 return {db,calls,storage,native,service:new StudyService(storage,native),setEnabled:v=>enabled=v,setFail:v=>fail=v,setTarget:v=>target=v};}
 test('settings read caches native targets for the native direct-card button',async()=>{const h=setup();const result=await h.service.handle('librarySettingsGet',{});assert.equal(result.ankiEnabled,false);assert.equal(h.db.studySaveTargetsV1.deck,'Target');});
-test('Anki off remembers the complete note without AI card choice or delivery',async()=>{const h=setup();await h.service.journal.append({...entry,question:'Why is just used here?'},{meaning:'fair',translation:'公正的',notes:'Completed answer'});const r=await h.service.handle('rememberEntry',{entry});assert.equal(r.ankiEnabled,false);assert.equal(h.calls.some(p=>p.action==='cards'),false);assert.deepEqual(h.db.studyRememberOutbox,[]);assert.equal(h.calls.find(p=>p.action==='librarySave').targetId,targetId);assert.equal(h.calls.find(p=>p.action==='librarySave').turns[0].notes,'Completed answer');});
+test('Anki off remembers the complete note without AI card choice or delivery',async()=>{const h=setup();await h.service.journal.append({...entry,question:'Why is just used here?'},{meaning:'fair',translation:'公正的',notes:'Completed answer'});const r=await h.service.handle('rememberEntry',{entry});assert.equal(r.ankiEnabled,false);assert.equal(h.calls.some(p=>p.action==='cards'),false);assert.deepEqual(h.db.studyRememberOutbox??[],[]);assert.equal(h.calls.find(p=>p.action==='librarySave').targetId,targetId);assert.equal(h.calls.find(p=>p.action==='librarySave').turns[0].notes,'Completed answer');});
 test('save intent freezes its old target across failure, change, and service restart',async()=>{const h=setup();h.setFail(true);await assert.rejects(h.service.handle('rememberEntry',{entry}),/offline/);assert.equal(h.db.studyRememberSaveIntents[0].targetId,targetId);h.setTarget('c'.repeat(32));h.setFail(false);await new StudyService(h.storage,h.native).handle('retryPending',{});assert.equal(h.calls.filter(p=>p.action==='librarySave').at(-1).targetId,targetId);});
 test('turning Anki off preserves earlier queued work rather than pretending zero cards',async()=>{const h=setup();h.db.studyRememberOutbox=[{id,language:'en'}];const r=await h.service.handle('retryPending',{});assert.equal(r.ankiEnabled,false);assert.equal(h.db.studyRememberOutbox.length,1);assert.equal(h.calls.some(p=>p.action==='cards'),false);});
 test('direct card draft endpoint also refuses model choice while Anki disabled',async()=>{const h=setup();const r=await h.service.handle('draftCards',{ids:[id]});assert.equal(r.items[0].ankiEnabled,false);assert.equal(h.calls.some(p=>p.action==='cards'),false);});
@@ -64,4 +64,16 @@ test('folder discovery uses the existing settings transport and never selects a 
  const result=await service.handle('librarySettingsOpen',{folderAction:'detect',kind:'directory',vault:settings.vault,directory:settings.directory});
  assert.equal(result.items[0].path,'Another folder');assert.deepEqual(db.studySaveTargetsV1,settings);
  assert.deepEqual(calls.map(p=>p.action),['librarySettingsOpen']);
+});
+
+test('Anki enabled: remember still saves only a note and binds later additions without AI card selection',async()=>{
+ const h=setup();h.setEnabled(true);
+ const result=await h.service.handle('rememberEntry',{entry});
+ assert.equal(result.id,id);
+ await h.service.handle('remember',{id,language:'en'});
+ assert.equal(h.calls.filter(p=>p.action==='librarySave').length,1);
+ assert.equal(h.calls.some(p=>['cards','libraryCards','libraryDraftCommit','addNote'].includes(p.action)),false);
+ assert.equal((await h.service.saveIntents()).length,0);
+ await h.service.sync.learned(entry,{meaning:'later meaning',translation:'later translation',notes:''});
+ assert.equal((await h.service.sync.pending()).some(task=>task.id===id),true);
 });

@@ -514,8 +514,18 @@ export class StudyService {
             const rows = this.outboxRows(v);
             return rows.some((r) => r.id === task.id && r.language === task.language) ? rows : [...rows, task];
         });
-        const row = await rememberSaved(this, task);
-        if (row.ankiState !== 'pending' && !(row.ankiEnabled === false && wasQueued)) {
+        const read = /** @type {{items: import('study').LearningMaterial[]}} */ (await this.handle('libraryRead', {ids: [task.id], language: task.language}));
+        let row = read.items?.find((item) => item.record?.id === task.id)?.record;
+        if (!row) { throw new Error('已保存笔记暂不可读；没有送入 Anki。'); }
+        // Ordinary word saves never select cards, including old save retries.
+        // Only cards the user already confirmed may be retried here.
+        const hasCards = Boolean(row.cards?.length || row.noteId);
+        if (hasCards && row.ankiEnabled !== false) {
+            const result = /** @type {{items: import('study').LibraryRecord[]}} */ (await this.handle('librarySync', {ids: [task.id], language: task.language}));
+            row = result.items[0];
+            if (!row) { throw new Error('卡片同步未返回确认；笔记已保留。'); }
+        }
+        if ((!hasCards || row.ankiState !== 'pending') && !(row.ankiEnabled === false && wasQueued)) {
             await this.write('studyRememberOutbox', (v) => this.outboxRows(v).filter((r) => r.id !== task.id || r.language !== task.language));
         }
         return row;
@@ -580,8 +590,8 @@ export class StudyService {
         if (!operation) {
             operation = (async () => {
                 const saved = /** @type {import('study').LibraryRecord} */ (await this.journal.save(task.entry, false, task.turns, task.targetId));
-                // The id-based outbox becomes durable before any model/Anki work.
-                const row = /** @type {import('study').LibraryRecord} */ (await this.handle('remember', {id: saved.id, language: task.entry.language ?? 'en'}));
+                // This action saves the note only. Card creation is a separate explicit choice.
+                const row = saved;
                 await this.write('studyRememberSaveIntents', (value) => {
                     const rows = /** @type {import('study').RememberSaveIntent[]} */ (Array.isArray(value) ? value : []);
                     return rows.filter((r) => r.key !== task.key);
@@ -707,7 +717,6 @@ export class StudyService {
                 if (!response.ok || !row) { throw new Error(response.error ?? '更新待同步；不会另建记录。'); }
                 await this.sync.bind(entry, row);
                 const pending = (await this.sync.pending()).find((task) => task.id === existingId);
-                if (!pending && row.ankiEnabled !== false && !row.cards?.length && !row.noteId && !row.reviewDraft) { return await this.handle('remember', {id: row.id, language: entry.language ?? 'en'}); }
                 return pending ? {...row, syncState: 'pending', error: pending.error ?? '学习更新待同步'} : row;
             }
             return await this.rememberEntry(entry);
