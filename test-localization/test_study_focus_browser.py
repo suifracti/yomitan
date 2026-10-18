@@ -111,6 +111,40 @@ with sync_playwright() as p:
     page.evaluate('''() => { window.mockOverride = async (action) => { window.calls.push([action, null]); if (action==="libraryMemory") return {total:0, coverage:{status:"partial"}, items:[], anki:{status:"unavailable", items:[]}}; if (action==="libraryRead") return {items:[]}; throw new Error(action); }; }''')
     page.get_by_role('tab', name='我的记录', exact=False).click(); page.get_by_role('button', name='刷新笔记与卡片', exact=True).click(); page.wait_for_timeout(50)
     check('partial coverage is not shown as zero records', '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent.includes("未核实") && !document.querySelector(".sf-tab[aria-selected=true]").textContent.includes("· 0")')
+    # Real Yomitan search windows have their own legacy title/options/search box
+    # above the card. A 400x250 full-word lookup must expose the first Chinese
+    # sense immediately while keeping the original search controls reachable.
+    page.set_viewport_size({'width':400,'height':250});load_fixture()
+    page.evaluate("""() => {
+        document.documentElement.dataset.pageType = 'search';
+        const legacy = document.createElement('div');
+        legacy.id = 'above-sticky-header';
+        legacy.innerHTML = '<div class="search-header-wrapper"><div class="search-header"><div id="intro"><h1>Yomitan Search</h1></div><details class="study-search-options"><summary>搜索选项</summary></details></div></div>';
+        const search = document.createElement('div');
+        search.id = 'sticky-search-header';
+        search.className = 'search-header-wrapper';
+        search.innerHTML = '<div class="search-header"><textarea id="search-textbox" placeholder="输入单词或短语"></textarea></div>';
+        document.querySelector('#content-scroll').prepend(legacy, search);
+        window.fire('contentUpdateStart');
+        window.display.history.state.sentence = {text:'ability',offset:0};
+        search.querySelector('#search-textbox').focus();
+        window.fire('contentUpdateComplete');
+    }""")
+    page.wait_for_timeout(60)
+    check('legacy Search title and textbox hidden until requested',
+        '()=>getComputedStyle(document.querySelector("#above-sticky-header")).display==="none" && getComputedStyle(document.querySelector("#sticky-search-header")).display==="none" && !document.querySelector(".sf-search-open")')
+    check('400x250 standalone first Chinese meaning is within the visible viewport',
+        '()=>{const r=document.querySelector(".sf-gloss-text")?.getBoundingClientRect();return !!r && r.top>=0 && r.bottom<=innerHeight && document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句";}')
+    check('400x250 saved learning control remains reachable at viewport bottom',
+        '()=>{const r=document.querySelector(".sf-save-bar [data-study-save=note]")?.getBoundingClientRect();return !!r && r.top<innerHeight && r.bottom<=innerHeight+1;}')
+    page.screenshot(path=str(OUTPUT/'previews'/'standalone-search-400x250.png'))
+    page.locator('.sf-search-toggle').click()
+    check('switch-word button exposes the original text input and options',
+        '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="true" && getComputedStyle(document.querySelector("#sticky-search-header")).display!=="none" && getComputedStyle(document.querySelector("#above-sticky-header")).display!=="none" && document.activeElement?.id==="search-textbox"')
+    page.locator('.sf-search-toggle').click()
+    check('collapsed search keeps original card intact',
+        '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="false" && getComputedStyle(document.querySelector("#sticky-search-header")).display==="none" && document.querySelector(".sf-gloss-text")?.textContent==="能力，才干"')
+
     # Restore normal component state for distributable screenshots.
     load_fixture()
     page.get_by_role('tab',name='详细词典',exact=True).click();page.screenshot(path=str(OUTPUT/'previews'/'dictionary-420.png'))
