@@ -5,34 +5,27 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/study-reader.yml'
-      - 'ext/js/study/reader/**'
-      - 'local-bridge/study_batch.py'
-      - 'test-localization/test-study-reader*'
 permissions:
   contents: read
 jobs:
-  source:
+  dependencies:
     if: github.repository == 'suifracti/yomitan'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Export exact public source (not a runtime acceptance test)
-        run: git archive --format=zip --output=study-reader-source.zip HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact lockfile without package lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Package verification dependencies
+        run: tar -czf study-node-deps.tar.gz node_modules
       - uses: actions/upload-artifact@v4
         with:
-          name: study-reader-source
-          path: study-reader-source.zip
-          retention-days: 3
-      - name: Acquire pinned upstream source for code and license review
-        run: |
-          mkdir upstream
-          curl --fail --location --max-time 120 https://codeload.github.com/fishjar/kiss-translator/tar.gz/7a7e2957ce2084d374f802b3537f2e0ca87cd7b8 -o upstream/kiss-source.tar.gz
-          curl --fail --location --max-time 120 https://codeload.github.com/suifracti/asbplayer/tar.gz/f7c3cb641b39706998a30b451ca4ed1e1ccd54f8 -o upstream/asb-source.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: study-reader-upstream
-          path: upstream/
-          retention-days: 3
+          name: study-reader-dependencies
+          path: study-node-deps.tar.gz
+          retention-days: 1
