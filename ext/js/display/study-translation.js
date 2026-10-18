@@ -479,7 +479,7 @@ export function prepareStudyTranslation() {
                 addLine('我的问题：', questionText);
                 addLine('这里的含义：', meaning);
                 if (notes && notes !== meaning) { addLine('补充说明：', notes); }
-                more.hidden = !explanation || (!questionText && !notes && meaning.length <= 150);
+                explanationDetails.hidden = !explanation || (!questionText && !notes && meaning.length <= 150);
             };
             const refresh = async () => {
                 const identityAtRead = identity();

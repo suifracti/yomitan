@@ -22,16 +22,27 @@ import {afterEach, describe, expect, test, vi} from 'vitest';
 const mocks = vi.hoisted(() => ({
     studyCall: vi.fn(),
     applicationMain: vi.fn(),
+    HotkeyHandler: vi.fn(() => ({prepare: vi.fn()})),
+    PopupFactory: vi.fn(() => ({prepare: vi.fn()})),
+    Frontend: vi.fn(() => ({prepare: vi.fn()})),
 }));
 
 vi.mock('../ext/js/study/study-client.js', () => ({studyCall: mocks.studyCall}));
 vi.mock('../ext/js/application.js', () => ({Application: {main: mocks.applicationMain}}));
+vi.mock('../ext/js/input/hotkey-handler.js', () => ({HotkeyHandler: mocks.HotkeyHandler}));
+vi.mock('../ext/js/app/popup-factory.js', () => ({PopupFactory: mocks.PopupFactory}));
+vi.mock('../ext/js/app/frontend.js', () => ({Frontend: mocks.Frontend}));
 
 afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     document.body.replaceChildren();
 });
+
+/** @returns {object} */
+function makeApplication() {
+    return {api: {viewNotes: vi.fn(), getEnvironmentInfo: vi.fn().mockResolvedValue({browser: 'chrome'})}, crossFrame: {}};
+}
 
 /** @returns {void} */
 function makePageDom() {
@@ -51,6 +62,66 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('wires the standard web selection scanner so Control can look up selected card text', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
+        const application = makeApplication();
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(application));
+        mocks.studyCall.mockImplementation(async (actionValue) => {
+            switch (String(actionValue)) {
+                case 'syncPending': return [];
+                case 'saved': return [];
+                case 'libraryList': return {items: [], total: 0};
+                default: throw new Error(`Unexpected call: ${String(actionValue)}`);
+            }
+        });
+
+        await import('../ext/js/pages/study-library.js');
+        await vi.waitFor(() => expect(document.querySelector('.study-library-empty')?.textContent).toContain('没有已读取'));
+
+        expect(mocks.HotkeyHandler).toHaveBeenCalledOnce();
+        expect(mocks.HotkeyHandler.mock.results[0].value.prepare).toHaveBeenCalledWith(application.crossFrame);
+        expect(mocks.PopupFactory).toHaveBeenCalledWith(application);
+        expect(mocks.PopupFactory.mock.results[0].value.prepare).toHaveBeenCalledOnce();
+        expect(mocks.Frontend).toHaveBeenCalledWith(expect.objectContaining({
+            application,
+            pageType: 'web',
+            depth: 0,
+            parentPopupId: null,
+            parentFrameId: null,
+            useProxyPopup: false,
+            canUseWindowPopup: true,
+            allowRootFramePopupProxy: true,
+            childrenSupported: true,
+            browser: 'chrome',
+        }));
+        expect(mocks.Frontend.mock.calls[0][0].hotkeyHandler).toBe(mocks.HotkeyHandler.mock.results[0].value);
+        expect(mocks.Frontend.mock.results[0].value.prepare).toHaveBeenCalledOnce();
+        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['syncPending', 'saved', 'libraryList']);
+    });
+
+    test('keeps library loading when the lookup frontend cannot start', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
+        const application = makeApplication();
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(application));
+        mocks.Frontend.mockImplementationOnce(() => ({prepare: vi.fn().mockRejectedValue(new Error('lookup init failed'))}));
+        mocks.studyCall.mockImplementation(async (actionValue) => {
+            switch (String(actionValue)) {
+                case 'syncPending': return [];
+                case 'saved': return [];
+                case 'libraryList': return {items: [], total: 0};
+                default: throw new Error(`Unexpected call: ${String(actionValue)}`);
+            }
+        });
+
+        await import('../ext/js/pages/study-library.js');
+        await vi.waitFor(() => expect(document.querySelector('.study-library-empty')?.textContent).toContain('没有已读取'));
+        await vi.waitFor(() => expect(document.querySelector('#study-library-status')?.textContent).toContain('lookup init failed'));
+        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['syncPending', 'saved', 'libraryList']);
+    });
     test('filters actual save state and keeps favorite-only rows out of learned saves', async () => {
         vi.resetModules();
         const {matchesCategory, createResumeUrl} = await import('../ext/js/pages/study-library.js');
@@ -81,7 +152,7 @@ describe('study library page', () => {
         vi.resetModules();
         makePageDom();
         vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
-        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback({api: {viewNotes: vi.fn()}}));
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         const nativeRecord = {
             id: 'native-record-id',
             entry: {
@@ -168,7 +239,7 @@ describe('study library page', () => {
         vi.resetModules();
         makePageDom();
         vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
-        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback({api: {viewNotes: vi.fn()}}));
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         const record = {
             id: 'stale-native-id',
             entry: {language: 'en', word: 'linger', sentence: 'We linger by the gate.', context: '', url: '', title: ''},

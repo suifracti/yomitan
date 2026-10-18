@@ -16,6 +16,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 import {Application} from '../application.js';
+import {Frontend} from '../app/frontend.js';
+import {PopupFactory} from '../app/popup-factory.js';
+import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 
@@ -155,6 +158,37 @@ function stateSummary(record) {
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
 /**
+ * Extension pages do not receive the web content-script wrapper, so install the same
+ * Frontend scanner/popup pair explicitly for the study-library page.
+ * @param {Application} application
+ * @returns {Promise<void>}
+ */
+export async function prepareStudyLibraryLookup(application) {
+    const hotkeyHandler = new HotkeyHandler();
+    hotkeyHandler.prepare(application.crossFrame);
+
+    const popupFactory = new PopupFactory(application);
+    popupFactory.prepare();
+
+    const {browser} = await application.api.getEnvironmentInfo();
+    const frontend = new Frontend({
+        application,
+        popupFactory,
+        depth: 0,
+        parentPopupId: null,
+        parentFrameId: null,
+        useProxyPopup: false,
+        pageType: 'web',
+        canUseWindowPopup: true,
+        allowRootFramePopupProxy: true,
+        childrenSupported: true,
+        hotkeyHandler,
+        browser,
+    });
+    await frontend.prepare();
+}
+
+/**
  * @returns {Promise<void>}
  */
 async function initializePage() {
@@ -163,6 +197,13 @@ async function initializePage() {
         const list = byId('study-library-list');
         const search = /** @type {HTMLInputElement} */ (document.getElementById('study-library-search'));
         const more = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-more'));
+        let lookupWarning = '';
+        /** @param {string} text */
+        const setStatus = (text) => { status.textContent = lookupWarning ? `${text} · 选词查词未就绪：${lookupWarning}` : text; };
+        void prepareStudyLibraryLookup(application).catch((error) => {
+            lookupWarning = error instanceof Error ? error.message : '请刷新页面再试。';
+            setStatus('学习库仍可使用');
+        });
         /** @type {Map<string, StudyLibraryRecord>} */
         const records = new Map();
         /** @type {LocalSavedWord[]} */
@@ -176,9 +217,6 @@ async function initializePage() {
         let loading = false;
         let loaded = false;
         let category = 'all';
-
-        /** @param {string} text */
-        const setStatus = (text) => { status.textContent = text; };
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {

@@ -402,3 +402,40 @@ test('article expressions without a dictionary hit stay in the plugin learning f
     assert.match(document.querySelector('.content-body-inner').textContent, /This is a turn of phrase/);
     assert.match(context.textContent, /turn of phrase/);
 });
+
+
+test('empty or short AI previews never hide sentence editing or the neighbor context',async()=>{
+ const {prepareStudyTranslation}=await import('../ext/js/display/study-translation.js');
+ setupDisplay();
+ document.querySelector('.content-body-inner').insertAdjacentHTML('afterbegin','<div class="study-reading-anchor"><div class="study-source"><span class="study-source-label">当前原句</span><p>Her <mark>ability</mark> matters.</p></div><div class="study-reading-ai-context"><div class="study-reading-ai-text"></div><details class="study-reading-ai-more"><summary>更多</summary><div class="study-reading-ai-full"></div></details></div></div>');
+ let turns=[];let generated=0;
+ globalThis.chrome={runtime:{sendMessage:async({studyAction})=>{
+  if(studyAction==='journalConversation')return {ok:true,value:turns};
+  if(studyAction==='conversationUsage'||studyAction==='saved')return {ok:true,value:[]};
+  if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};
+  if(studyAction==='generate')generated++;
+  return {ok:true,value:{result:null,busy:false}};
+ }}};
+ const container=document.querySelector('#study-context');
+ const controller=prepareStudyTranslation();
+ controller.render(container,'Her ability matters.','ability',{context:'She works hard. She keeps learning.'});
+ const settle=async()=>{await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));};
+ await settle();
+ const more=container.querySelector('.study-more-actions');
+ assert.equal(more.hidden,false,'no prior answer must leave sentence editing available');
+ assert.equal(document.querySelector('.study-reading-ai-more').hidden,true,'only the answer disclosure is hidden');
+ more.open=true;
+ container.querySelector('[data-study-use-context]').click();await settle();
+ assert.equal(more.hidden,false,'adding neighbors must not hide the editor');
+ assert.equal(container.querySelector('[aria-label="补充语境"]').value,'She works hard. She keeps learning.');
+ const editor=container.querySelector('[aria-label="原句"]');
+ editor.value='Her ability to learn matters.';editor.dispatchEvent(new document.defaultView.Event('input'));editor.dispatchEvent(new document.defaultView.Event('change'));await settle();
+ assert.equal(more.hidden,false,'typing and committing a sentence leaves the editor visible');
+ assert.equal(document.querySelector('.study-source p').textContent,'Her ability to learn matters.');
+ turns=[{id:'short',at:'today',meaning:'能力',question:'',notes:'',translation:'',feedback:'unconfirmed',saved:false}];
+ container.dispatchEvent(new document.defaultView.Event('study-saved'));await settle();
+ assert.equal(more.hidden,false,'a short completed explanation must not hide sentence editing');
+ assert.equal(document.querySelector('.study-reading-ai-more').hidden,true);
+ assert.equal(generated,0);
+ controller.cancel();
+});

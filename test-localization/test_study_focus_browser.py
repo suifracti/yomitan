@@ -259,6 +259,34 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     page.get_by_role('tab',name='词义与原句',exact=True).click()
     page.evaluate('document.documentElement.setAttribute("data-theme","dark")')
     page.screenshot(path=str(OUTPUT/'previews'/'learning-dark-420.png'))
+    # The visual fixture alone cannot catch a real controller hiding the wrong details node.
+    def serve_interaction(route):
+        path=route.request.url.split('https://study-interaction.test/',1)[-1].split('?',1)[0]
+        file=ROOT/'ext'/path
+        if file.is_file():
+            route.fulfill(path=str(file))
+        else:
+            route.fulfill(content_type='text/html',body='<html><head><meta charset="UTF-8"></head><body><div class="content-body-inner"><div class="study-entry"><div class="entry-header"></div><div class="study-reading-anchor"><div class="study-source"><span class="study-source-label">当前原句</span><p>Her <mark>ability</mark> matters.</p></div><div class="study-reading-ai-context"><div class="study-reading-ai-text"></div><details class="study-reading-ai-more"><summary>更多</summary><div class="study-reading-ai-full"></div></details></div><div class="study-reading-meaning"><div class="study-reading-sense">n. 能力</div></div></div><section id="study-context"></section></div></div></body></html>')
+    page.route('https://study-interaction.test/**',serve_interaction)
+    page.goto('https://study-interaction.test/')
+    page.set_viewport_size({'width':400,'height':550})
+    page.evaluate("""async()=>{
+        window.chrome={runtime:{sendMessage:async({studyAction})=>({ok:true,value:['journalConversation','conversationUsage','saved'].includes(studyAction)?[]:studyAction==='pendingPeek'?{count:0}:{result:null,busy:false}})}};
+        const {prepareStudyTranslation}=await import('/js/display/study-translation.js');
+        const {prepareStudyFocus}=await import('/js/display/study-focus.js');
+        const callbacks={};
+        const display={on:(event,fn)=>callbacks[event]=fn,query:'ability',history:{state:{sentence:{text:'Her ability matters.'},url:'https://example.test/article'}},getOptions:()=>({general:{language:'en'}})};
+        prepareStudyTranslation().render(document.querySelector('#study-context'),'Her ability matters.','ability',{context:'She works hard. She keeps learning.'});
+        prepareStudyFocus(display,{call:async()=>({items:[],total:0,anki:{status:'complete',items:[]}})});
+        callbacks.contentUpdateComplete();
+    }""")
+    page.wait_for_timeout(100)
+    check('real empty-answer controller leaves original sentence adjustment visible', '()=>!document.querySelector(".study-more-actions").hidden && document.querySelector("[data-study-translate-sentence]") && document.querySelector(".sf-short-gloss").textContent.includes("能力")')
+    page.locator('[data-study-use-context]').click()
+    page.get_by_label('原句',exact=True).fill('Her ability to learn matters.')
+    page.get_by_label('补充语境',exact=True).click()
+    check('real neighbor action fills context and original remains editable', '()=>document.querySelector(".study-more-actions").open && !document.querySelector(".study-more-actions").hidden && document.querySelector("[aria-label=补充语境]").value==="She works hard. She keeps learning." && document.querySelector(".study-source p").textContent==="Her ability to learn matters."')
+    page.screenshot(path=str(OUTPUT/'previews'/'real-source-editor-400.png'))
     assert not errors, errors
     results.append({'test':'no browser JS exceptions','passed':True})
     (OUTPUT/'test-results.json').write_text(json.dumps({'checks':results,'count':len(results),'scope':'Chromium component integration with simulated storage/Native; no user Mac or real AI/Anki writes'},ensure_ascii=False,indent=2))
