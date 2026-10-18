@@ -568,7 +568,7 @@
 :root[data-study-workspace=true] body,
 :root[data-study-workspace=true] .content-body-inner { background: var(--sf-tint); }
 :root[data-study-workspace=true] #frame-resizer-handle { display: none; }
-.sf-workspace { display: grid; align-items: start; gap: 12px; width: 100%; min-width: 0; height: 100dvh; overflow: hidden; }
+.sf-workspace { display: grid; align-items: start; column-gap: 12px; row-gap: 0; width: 100%; min-width: 0; height: 100dvh; overflow: hidden; }
 .sf-main-card, .sf-dictionary-card { box-sizing: border-box; position: relative; min-width: 0; overflow: hidden; background: var(--sf-paper); border: 1px solid var(--sf-line); border-radius: 10px; display: flex; flex-direction: column; }
 .sf-workspace .study-toolbar { flex: 0 0 34px; min-height: 34px; height: 34px; gap: 7px; padding: 0 10px; }
 .sf-workspace .study-toolbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -583,14 +583,33 @@
 .sf-dictionary-card[hidden], .sf-pane-collapsed>.study-focus-shell, .sf-pane-collapsed>.sf-pane-resize { display: none !important; }
 .sf-pane-collapsed .study-toolbar>:not(.study-toolbar-title):not(.sf-main-fold):not(.study-close) { display: none; }
 .sf-pane-resize { position: absolute; right: 1px; bottom: 1px; z-index: 4; width: 14px; height: 14px; min-height: 0; padding: 0; border-radius: 0; color: var(--sf-muted); cursor: nwse-resize; touch-action: none; font-size: 12px; opacity: .7; }
-.sf-workspace[data-layout=overlay].sf-reader-expanded>.sf-main-card { display: none; }
-.sf-workspace[data-layout=overlay]:not(.sf-reader-expanded)>.sf-dictionary-card { grid-row: 1; }
-.sf-workspace[data-layout=overlay]:not(.sf-reader-expanded)>.sf-main-card { grid-row: 2; }
-.sf-workspace[data-layout=overlay] { gap: 12px; grid-template-rows: auto minmax(0,1fr); }
-.sf-workspace[data-layout=overlay].sf-reader-expanded { grid-template-rows: minmax(0,1fr); }
 .sf-dictionary-card .sf-dictionary-heading-dock { padding-top: 8px; }
 .sf-dictionary-card .sf-dictionary-scroll { padding: 12px 16px; }
 @media (max-height: 350px) {
     .sf-workspace .study-toolbar { flex-basis: 28px; height: 28px; min-height: 28px; }
     .sf-pane-heading { flex-basis: 30px; }
 }
+
+/* One palette for the original controls and both learning surfaces. */
+:root.study-focus-active[data-study-workspace=true],
+:root.study-focus-active[data-study-detail=true],
+:root.study-focus-active[data-theme=dark],
+:root.study-focus-active[data-glossary-layout-mode=dark] {
+    --study-accent: var(--sf-accent);
+    --study-soft: var(--sf-tint);
+    --study-muted: var(--sf-muted);
+    --study-border: var(--sf-line);
+    --background-color: var(--sf-paper);
+    --text-color: var(--sf-ink);
+}
+.sf-main-card, .sf-dictionary-card { color: var(--sf-ink); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+.sf-workspace>.sf-main-card, .sf-workspace>.sf-dictionary-card { grid-row: 2; }
+.sf-workspace>[hidden] { display: none !important; }
+.sf-workspace-tabs { grid-row: 1; grid-column: 1 / -1; display: flex; align-items: stretch; gap: 3px; min-width: 0; height: 30px; padding-inline: 4px; background: var(--sf-tint); border-bottom: 1px solid var(--sf-line); }
+.sf-workspace-tabs button { flex: 0 1 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 7px 7px 0 0; padding-inline: 10px; text-align: left; color: var(--sf-muted); }
+.sf-workspace-tabs button[aria-pressed=true] { background: var(--sf-paper); color: var(--sf-accent); box-shadow: inset 0 2px var(--sf-accent); }
+.study-focus-active .sf-source-tools { gap: 12px; padding-block: 0 3px; }
+.study-focus-active .sf-source-tools button,
+.study-focus-active #study-context .sf-source-tools button { min-height: 20px; padding: 0 1px; border: 0; border-radius: 3px; background: transparent; color: var(--sf-accent); font: inherit; font-size: 11px; line-height: 20px; }
+.study-focus-active .sf-source-tools button:hover:not(:disabled) { text-decoration: underline; background: transparent; }
+.study-focus-active .sf-source-tools button:disabled { opacity: .5; }

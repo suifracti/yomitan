@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 /** @typedef {{width: number, height: number, collapsed: boolean}} PaneSize */
-/** @typedef {{main: PaneSize, dictionary: PaneSize, open: boolean, opened: boolean, queue: Promise<void>}} WorkspaceState */
+/** @typedef {{main: PaneSize, dictionary: PaneSize, open: boolean, opened: boolean, view: 'main' | 'dictionary', queue: Promise<void>}} WorkspaceState */
 /** @type {WeakMap<object, WorkspaceState>} */
 const preferences = new WeakMap();
 
@@ -36,7 +36,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     let state = preferences.get(display);
     if (!state) {
         const size = {width: window.innerWidth, height: window.innerHeight, collapsed: false};
-        state = {main: {...size}, dictionary: {...size}, open: false, opened: false, queue: Promise.resolve()};
+        state = {main: {...size}, dictionary: {...size}, open: false, opened: false, view: 'main', queue: Promise.resolve()};
         preferences.set(display, state);
     }
     const sizes = state;
@@ -94,7 +94,12 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     foldMain.classList.add('sf-main-fold');
     companionHead.append(companionTitle, foldDictionary, closeDictionary);
     companion.append(companionHead);
-    workspace.append(main, companion);
+    const cardTabs = make('nav', 'sf-workspace-tabs');
+    cardTabs.setAttribute('aria-label', '学习卡片切换');
+    const mainTab = button(word, '切换主卡');
+    const dictionaryTab = button('详细词典', '切换词典卡');
+    cardTabs.append(mainTab, dictionaryTab);
+    workspace.append(cardTabs, main, companion);
     shell.before(workspace);
     move(toolbar, main);
     move(shell, main);
@@ -127,10 +132,11 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
                     try {
                         const before = await display.invokeParentFrame('popupFactoryGetFrameSize', {id});
                         if (!active || !before.valid) { return; }
-                        const mainWidth = sizes.main.collapsed ? 180 : sizes.main.width;
-                        const sideWidth = sizes.dictionary.collapsed ? 220 : sizes.dictionary.width;
-                        const width = mainWidth + (sizes.open ? sideWidth + 12 : 0);
-                        const height = Math.max(sizes.main.collapsed ? 36 : sizes.main.height, sizes.open ? (sizes.dictionary.collapsed ? 36 : sizes.dictionary.height) : 0);
+                        const mainWidth = sizes.main.collapsed ? 0 : sizes.main.width;
+                        const sideWidth = sizes.open && !sizes.dictionary.collapsed ? sizes.dictionary.width : 0;
+                        const width = Math.max(300, mainWidth + sideWidth + (mainWidth && sideWidth ? 12 : 0));
+                        const dockHeight = sizes.open || sizes.main.collapsed ? 30 : 0;
+                        const height = Math.max(sizes.main.collapsed ? 0 : sizes.main.height, sideWidth ? sizes.dictionary.height : 0) + dockHeight;
                         await display.invokeParentFrame('popupFactorySetFrameSize', {id, width, height});
                         // The setter fits to the host viewport; true does not mean requested size fits.
                         if (active) { await display.invokeParentFrame('popupFactoryGetFrameSize', {id}); }
@@ -153,33 +159,39 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     const layout = () => {
         if (!active) { return; }
         const width = window.innerWidth;
-        const height = Math.max(36, window.innerHeight - Math.max(0, workspace.getBoundingClientRect().top));
+        const height = Math.max(30, window.innerHeight - Math.max(0, workspace.getBoundingClientRect().top));
         workspace.style.height = `${height}px`;
-        const a = sizes.main.collapsed ? 180 : sizes.main.width;
-        const b = sizes.dictionary.collapsed ? 220 : sizes.dictionary.width;
-        const minimum = (sizes.main.collapsed ? 180 : 280) + (sizes.dictionary.collapsed ? 220 : 280) + 12;
-        const overlay = sizes.open && width < minimum;
+        const showMain = !sizes.main.collapsed;
+        const showDictionary = sizes.open && !sizes.dictionary.collapsed;
+        const overlay = showMain && showDictionary && width < 572;
+        const dockHeight = sizes.open || sizes.main.collapsed ? 30 : 0;
+        cardTabs.hidden = dockHeight === 0;
+        dictionaryTab.hidden = !sizes.open;
+        mainTab.setAttribute('aria-label', sizes.main.collapsed ? '展开主卡' : '切换主卡');
+        dictionaryTab.setAttribute('aria-label', sizes.dictionary.collapsed ? '展开词典卡' : '切换词典卡');
+        mainTab.setAttribute('aria-pressed', String(showMain && (!overlay || sizes.view === 'main')));
+        dictionaryTab.setAttribute('aria-pressed', String(showDictionary && (!overlay || sizes.view === 'dictionary')));
         workspace.dataset.layout = overlay ? 'overlay' : 'beside';
         workspace.classList.toggle('sf-companion-open', sizes.open);
-        workspace.classList.toggle('sf-reader-expanded', overlay && !sizes.dictionary.collapsed);
-        companion.hidden = !sizes.open;
-        dictionary.hidden = !sizes.open || sizes.dictionary.collapsed;
+        main.hidden = !showMain || (overlay && sizes.view === 'dictionary');
+        companion.hidden = !showDictionary || (overlay && sizes.view === 'main');
+        dictionary.hidden = !showDictionary;
         main.classList.toggle('sf-pane-collapsed', sizes.main.collapsed);
         companion.classList.toggle('sf-pane-collapsed', sizes.dictionary.collapsed);
         setFoldLabel(foldMain, sizes.main.collapsed, '主卡');
         setFoldLabel(foldDictionary, sizes.dictionary.collapsed, '词典卡');
-        if (originalTitle) { originalTitle.textContent = sizes.main.collapsed ? word : titleText; }
-        dictionaryButton?.setAttribute('aria-expanded', String(sizes.open && !sizes.dictionary.collapsed));
+        if (originalTitle) { originalTitle.textContent = titleText; }
+        dictionaryButton?.setAttribute('aria-expanded', String(showDictionary && !companion.hidden));
         dictionaryButton?.removeAttribute('aria-selected');
         if (dictionaryButton) { dictionaryButton.tabIndex = 0; }
-        const mainWidth = sizes.open && !overlay ? Math.max(sizes.main.collapsed ? 180 : 280, Math.min((width - 12) * a / (a + b), width - 12 - (sizes.dictionary.collapsed ? 220 : 280))) : width;
-        const sideWidth = overlay ? width : Math.max(0, width - mainWidth - 12);
-        workspace.style.gridTemplateColumns = sizes.open && !overlay ? `${mainWidth}px ${sideWidth}px` : 'minmax(0,1fr)';
-        main.style.height = `${sizes.main.collapsed ? 36 : Math.min(sizes.main.height, Math.max(0, height - (overlay && sizes.dictionary.collapsed ? 48 : 0)))}px`;
-        companion.style.height = `${sizes.dictionary.collapsed ? 36 : Math.min(sizes.dictionary.height, height)}px`;
-        // A clipped host is a full-width reader, not two unusably narrow columns.
-        if (overlay && !sizes.dictionary.collapsed) { companion.style.height = `${height}px`; }
-        companion.style.width = !overlay && sizes.open && a + b + 12 < width ? `${Math.min(b, sideWidth)}px` : '';
+        const beside = showMain && showDictionary && !overlay;
+        const mainWidth = beside ? Math.max(280, Math.min((width - 12) * sizes.main.width / (sizes.main.width + sizes.dictionary.width), width - 292)) : width;
+        workspace.style.gridTemplateColumns = beside ? `${mainWidth}px ${width - mainWidth - 12}px` : 'minmax(0,1fr)';
+        workspace.style.gridTemplateRows = `${dockHeight}px minmax(0,1fr)`;
+        const available = Math.max(0, height - dockHeight);
+        main.style.height = `${Math.min(sizes.main.height, available)}px`;
+        companion.style.height = `${Math.min(sizes.dictionary.height, available)}px`;
+        companion.style.width = '';
     };
     const open = () => {
         if (!sizes.opened) {
@@ -190,6 +202,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         }
         // The original dictionary lives alongside whichever main page is active.
         sizes.open = true; sizes.dictionary.collapsed = false;
+        sizes.view = 'dictionary';
         layout(); request();
     };
     /** @param {MouseEvent} event */
@@ -215,25 +228,30 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     const onMainTab = () => { queueMicrotask(layout); };
     /** @param {KeyboardEvent} event */
     const onEscape = (event) => {
-        if (event.key !== 'Escape' || !sizes.open || sizes.dictionary.collapsed) { return; }
+        if (event.key !== 'Escape' || companion.hidden) { return; }
         // Let the original menu/mini-card handle its own Escape first.
         if ([...document.querySelectorAll('.popup-menu, .study-mini')].some((node) => node.getClientRects().length)) { return; }
         event.preventDefault(); event.stopImmediatePropagation();
-        sizes.dictionary.collapsed = true;
+        sizes.dictionary.collapsed = true; sizes.view = 'main';
         layout(); request();
     };
     foldMain.onclick = () => {
-        sizes.main.collapsed = !sizes.main.collapsed;
+        sizes.main.collapsed = !sizes.main.collapsed; sizes.view = 'dictionary';
         layout(); request();
     };
     foldDictionary.onclick = () => {
-        sizes.dictionary.collapsed = !sizes.dictionary.collapsed;
+        sizes.dictionary.collapsed = !sizes.dictionary.collapsed; sizes.view = 'main';
         layout(); request();
     };
     closeDictionary.onclick = () => {
-        sizes.open = false;
+        sizes.open = false; sizes.view = 'main';
         layout(); request();
     };
+    mainTab.onclick = () => {
+        sizes.main.collapsed = false; sizes.view = 'main';
+        layout(); request();
+    };
+    dictionaryTab.onclick = open;
     workspace.addEventListener('click', onClick, true);
     tabs.addEventListener('keydown', onTabsKey, true);
     tabs.addEventListener('click', onMainTab);
