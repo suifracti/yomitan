@@ -34,18 +34,17 @@ with sync_playwright() as p:
         assert result, (name, result)
         results.append({'test':name,'passed':True})
     check('first page puts Chinese meaning beside the authentic source',
-        '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句" && document.querySelector(".sf-source-pane .sf-gloss-text")?.textContent==="能力，才干" && !document.querySelector(".sf-source-pane").hidden && document.querySelector(".sf-source-pane mark").textContent==="ability"')
+        '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句" && document.querySelector(".sf-heading .sf-gloss-text")?.textContent==="能力，才干" && !document.querySelector(".sf-source-pane").hidden && document.querySelector(".sf-source-pane mark").textContent==="ability"')
     check('one source and readable current answer','()=>document.querySelectorAll(".sf-source-pane .study-source").length===1 && document.querySelector(".sf-answer").textContent.includes("入睡的能力")')
     check('no model/write on lookup','()=>window.models===0 && window.saveClicks===0 && window.calls.every(([x])=>["libraryMemory","libraryRead"].includes(x))')
     check('previous history hidden for first turn','()=>document.querySelector(".study-conversation-history").hidden')
-    check('Chinese meaning stays outside the scrollable sentence area', '()=>document.querySelector(".sf-source-pane > .sf-short-gloss") && !document.querySelector(".sf-source-reading .sf-short-gloss")')
-    gloss_before=page.locator('.sf-source-pane > .sf-short-gloss').bounding_box()
-    page.locator('.sf-source-reading').evaluate('(e)=>e.scrollTop=e.scrollHeight')
-    gloss_after=page.locator('.sf-source-pane > .sf-short-gloss').bounding_box()
-    assert gloss_before and gloss_after and abs(gloss_before['y']-gloss_after['y'])<1
-    check('Chinese meaning is still visible after scrolling the sentence', '()=>{const g=document.querySelector(".sf-source-pane > .sf-short-gloss").getBoundingClientRect();const p=document.querySelector(".sf-source-pane").getBoundingClientRect();return g.height>0 && g.top>=p.top && g.bottom<=p.bottom;}')
-    page.screenshot(path=str(OUTPUT/'previews'/'gloss-pinned-420.png'))
-    page.locator('.sf-source-reading').evaluate('(e)=>e.scrollTop=0')
+    check('Chinese meaning and tabs are outside the one learning scroller', '()=>document.querySelector(".sf-heading .sf-gloss-text") && document.querySelector(".sf-learning-scroll .sf-source-pane") && !document.querySelector(".sf-learning-scroll .sf-tabs") && !document.querySelector(".sf-learning-scroll .sf-compose")')
+    pinned_before=page.locator('.sf-heading').bounding_box()
+    page.locator('.sf-learning-scroll').evaluate('(e)=>e.scrollTop=e.scrollHeight')
+    pinned_after=page.locator('.sf-heading').bounding_box()
+    assert pinned_before and pinned_after and pinned_before['y']==pinned_after['y']
+    check('source has no separate expand or inner scrolling', '()=>!document.querySelector(".sf-expand-source") && [".sf-source-pane",".sf-source-reading"].every(s=>!/(auto|scroll)/.test(getComputedStyle(document.querySelector(s)).overflowY))')
+    page.locator('.sf-learning-scroll').evaluate('(e)=>e.scrollTop=0')
     page.screenshot(path=str(OUTPUT/'previews'/'learning-420.png'))
     page.locator('.sf-feedback button').first.click()
     check('feedback delegates to original journal control','()=>document.querySelector(".study-conversation-turn .study-feedback button").getAttribute("aria-pressed")==="true"')
@@ -59,11 +58,7 @@ with sync_playwright() as p:
     check('neighbor action is visible without opening the source editor', '()=>{const b=document.querySelector(".sf-source-tools [data-study-use-context]");if(!b)return false;const r=b.getBoundingClientRect();return r.height>0 && r.top>=0 && r.bottom<innerHeight && !document.querySelector(".study-more-actions").open;}')
     page.locator('[data-study-use-context]').click()
     check('neighbor action opens the existing context editor', '()=>document.querySelector(".study-more-actions").open')
-    before_source_edit=page.locator('.study-source p').bounding_box()
-    page.locator('.sf-source-editor-body').evaluate('(e)=>{e.style.height="45px";e.scrollTop=e.scrollHeight;}')
-    after_source_edit=page.locator('.study-source p').bounding_box()
-    assert before_source_edit and after_source_edit and abs(before_source_edit['y']-after_source_edit['y'])<1
-    results.append({'test':'scrolling source editor does not move the original sentence','passed':True})
+    check('source editing shares the learning scroller', '()=>!document.querySelector(".sf-source-editor-body") && document.querySelector(".sf-learning-scroll .study-more-actions") && !/(auto|scroll)/.test(getComputedStyle(document.querySelector(".study-more-actions")).overflowY)')
     page.screenshot(path=str(OUTPUT/'previews'/'neighbor-editor-420.png'))
     page.locator('.study-more-actions .study-source-editor').fill('Her ability to learn is remarkable.')
     page.locator('.study-more-actions .study-source-editor').dispatch_event('change')
@@ -82,14 +77,31 @@ with sync_playwright() as p:
     page.screenshot(path=str(OUTPUT/'previews'/'records-420.png'))
     page.get_by_role('tab',name='词义与原句',exact=True).click()
     page.evaluate('window.addTurn("很长的解释。".repeat(120), 3)');page.wait_for_timeout(30)
-    before=page.locator('.sf-source-pane').bounding_box()
-    page.locator('#study-context').evaluate('(e)=>e.scrollTop=e.scrollHeight')
-    after=page.locator('.sf-source-pane').bounding_box()
-    assert before['y']==after['y'];results.append({'test':'original sentence stays put while long AI answer scrolls','passed':True})
-    for width in [320,420,720]:
-        page.set_viewport_size({'width':width,'height':600});load_fixture()
-        check(f'no horizontal overflow at {width}px', '()=>document.documentElement.scrollWidth<=innerWidth+1')
-        page.screenshot(path=str(OUTPUT/'previews'/f'learning-{width}.png'))
+    before=page.locator('.sf-compose').bounding_box()
+    page.locator('.sf-learning-scroll').evaluate('(e)=>e.scrollTop=e.scrollHeight')
+    after=page.locator('.sf-compose').bounding_box()
+    assert before['y']==after['y'];results.append({'test':'composer stays fixed while source and long AI answer scroll together','passed':True})
+    for width,height in [(400,550),(400,250),(320,550),(420,600),(720,600)]:
+        page.set_viewport_size({'width':width,'height':height});load_fixture()
+        page.locator('.study-more-actions').evaluate('(e)=>e.open=true')
+        page.evaluate('window.addTurn("很长的解释。".repeat(100), 4)')
+        page.wait_for_timeout(30)
+        check(f'one content scroll and fixed usable controls at {width}x{height}', """()=>{
+            const visible=(e)=>{const r=e.getBoundingClientRect();return r.width>0 && r.height>0 && r.top>=0 && r.bottom<=innerHeight+1 && r.left>=0 && r.right<=innerWidth+1;};
+            const targets=['.sf-heading .sf-gloss-text','.sf-tabs','.study-followup','[data-study-translate=explain]','[data-study-save=note]'];
+            const all=targets.every(s=>visible(document.querySelector(s)));
+            const nested=[...document.querySelectorAll('.sf-learn *')].filter(e=>e.tagName!=='TEXTAREA' && e.clientHeight>0 && e.scrollHeight>e.clientHeight+1 && /(auto|scroll)/.test(getComputedStyle(e).overflowY));
+            return all && nested.length===1 && nested[0].classList.contains('sf-learning-scroll') && document.documentElement.scrollWidth<=innerWidth+1;
+        }""")
+        page.locator('.sf-learning-scroll').evaluate('(e)=>e.scrollTop=e.scrollHeight')
+        check(f'buttons remain clickable after scrolling at {width}x{height}', """()=>['[data-study-translate=explain]','[data-study-save=note]'].every(s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})""")
+        page.screenshot(path=str(OUTPUT/'previews'/f'learning-{width}x{height}.png'))
+    page.set_viewport_size({'width':400,'height':550});load_fixture()
+    page.locator('.study-followup').fill('第一行\n第二行\n第三行\n第四行\n第五行')
+    check('followup grows to at most three lines without hiding actions', """()=>{const e=document.querySelector('.study-followup'),s=getComputedStyle(e);return e.rows===1 && e.clientHeight<=3*parseFloat(s.lineHeight)+parseFloat(s.paddingTop)+parseFloat(s.paddingBottom)+1 && document.querySelector('[data-study-translate=explain]').getBoundingClientRect().bottom<=innerHeight && document.querySelector('[data-study-save=note]').getBoundingClientRect().bottom<=innerHeight;}""")
+    page.set_viewport_size({'width':400,'height':250});load_fixture()
+    page.locator('.study-followup').fill('第一行\n第二行\n第三行\n第四行')
+    check('compact multiline input leaves both actions fully on screen', """()=>['.study-followup','[data-study-translate=explain]','[data-study-save=note]'].every(s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();const clip=e.closest('.sf-body')?.getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight && (!clip || (r.top>=clip.top && r.bottom<=clip.bottom+1));})""")
     page.set_viewport_size({'width':720,'height':600});load_fixture()
     page.get_by_role('tab',name='详细词典',exact=True).click()
     check('wide detail page expands without an empty source column',

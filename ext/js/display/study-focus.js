@@ -58,7 +58,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const homes = [];
         const observers = [];
         const owned = [];
-        let refreshSourceExpansion = () => {};
+        let resizeFollowup = () => {};
         const make = (tag, cls, text = '') => {
             const el = d.createElement(tag); el.className = cls; el.textContent = text; return el;
         };
@@ -119,7 +119,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 if (!searchWasOpen && d.activeElement === searchBox) { searchToggle.focus({preventScroll: true}); }
             }
         }
-        heading.append(title, audioTools);
+        const headerSense = make('div', hasSentence ? 'sf-header-sense' : 'sf-header-sense sf-standalone-sense');
+        heading.append(title, audioTools, headerSense);
         const sourcePane = make('section', 'sf-source-pane');
         sourcePane.setAttribute('aria-label', '原句与译文');
         sourcePane.hidden = !hasSentence;
@@ -162,10 +163,11 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             shell.dataset.panel = String(index);
             // The original sentence belongs to the first learning page only.
             sourcePane.hidden = !hasSentence || index !== 0;
-            body.scrollTop = 0;
+            headerSense.hidden = index !== 0;
+            requestAnimationFrame(resizeFollowup);
         };
         body.append(...panels);
-        shell.append(heading, sourcePane, tabs, body);
+        shell.append(heading, tabs, body);
 
         // Full senses stay on the dictionary panel. The reading panel only borrows one labeled hint.
         for (const selector of ['.study-reading-meaning', '.study-reading-english', '.study-reading-info']) {
@@ -199,24 +201,19 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         noSource.hidden = hasSentence;
         const feedback = make('div', 'sf-feedback');
         focusAnswer.append(shortGloss, noSource, answerHeading, asked, meaning, notes, feedback);
-        // For a 400x250 standalone Search card, the input/compose area may take
-        // all remaining height. Put the existing Chinese sense ABOVE the tabs,
-        // alongside the headword; it must be visible without inner scrolling.
-        if (hasSentence) {
-            // Keep the Chinese meaning fixed while the source/translation scrolls.
-            sourcePane.prepend(shortGloss);
-        } else {
-            const standaloneSense = make('div', 'sf-standalone-sense');
-            standaloneSense.append(shortGloss, noSource);
-            heading.append(standaloneSense);
-        }
+        // The lexical hint is outside the content scroller for both source and word-only lookups.
+        headerSense.append(shortGloss, noSource);
         context.prepend(focusAnswer);
         owned.push(focusAnswer);
         const history = context.querySelector('.study-conversation-history');
         const output = context.querySelector('.study-translation-output');
         const input = context.querySelector('.study-followup');
         const actions = context.querySelector('.study-translation-actions');
-        if (input) { input.placeholder = '哪一部分还不明白？可以直接用中文问。'; }
+        const inputOriginal = input ? {rows: input.getAttribute('rows'), height: input.style.height} : null;
+        if (input) {
+            input.placeholder = '哪一部分还不明白？可以直接用中文问。';
+            input.rows = 1;
+        }
         const compose = make('div', 'sf-compose');
         context.append(compose); owned.push(compose);
         // Usage and source editing are real secondary tools, never deleted.
@@ -227,14 +224,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         if (editSource) { move(editSource, hasSentence ? sourcePane : dictionary); }
         const neighborAction = editSource?.querySelector('[data-study-use-context]');
         const sourceTools = make('div', 'sf-source-tools');
-        const editBody = make('div', 'sf-source-editor-body');
-        const openContextEditor = () => { if (current() && editSource) { editSource.open = true; } };
+        const openContextEditor = () => { if (current() && editSource) { editSource.open = true; resizeEditors(); } };
         if (hasSentence && editSource) {
-            // Keep the original controls/listeners; only separate their scroll area.
-            for (const node of [...editSource.children]) {
-                if (node.tagName !== 'SUMMARY' && node !== neighborAction) { move(node, editBody); }
-            }
-            editSource.append(editBody); owned.push(editBody);
             if (neighborAction) {
                 editSource.before(sourceTools); owned.push(sourceTools);
                 move(neighborAction, sourceTools);
@@ -247,9 +238,18 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const paragraph = source.querySelector('p');
             if (current() && paragraph && editor) {
                 updateStudySourcePreview(paragraph, editor.value);
-                refreshSourceExpansion();
             }
         };
+        const editorHeights = new Map([...editSource?.querySelectorAll('textarea') || []].map((field) => [field, field.style.height]));
+        const resizeEditors = () => {
+            if (!current() || !hasSentence || !editSource?.open) { return; }
+            for (const field of editorHeights.keys()) {
+                field.style.height = '0px';
+                field.style.height = `${field.scrollHeight + 2}px`;
+            }
+        };
+        sourcePane.addEventListener('input', resizeEditors);
+        editSource?.addEventListener('toggle', resizeEditors);
         editor?.addEventListener('change', onSourceEdit);
         const allContextChildren = [...context.children];
         for (const node of allContextChildren) {
@@ -271,6 +271,23 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const node = context.querySelector(selector);
             if (node) { move(node, saveBar); }
         }
+        const learningScroll = make('div', 'sf-learning-scroll');
+        learningScroll.setAttribute('aria-label', '原句与问答内容');
+        context.prepend(learningScroll); owned.push(learningScroll);
+        learningScroll.append(sourcePane, focusAnswer);
+        move(history, learningScroll);
+        resizeFollowup = () => {
+            if (!current() || !input || !input.getClientRects().length) { return; }
+            const style = getComputedStyle(input);
+            const line = parseFloat(style.lineHeight) || 18;
+            const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+            const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+            input.style.height = '0px';
+            input.style.height = `${Math.min(input.scrollHeight + border, line * 3 + padding + border)}px`;
+        };
+        input?.addEventListener('input', resizeFollowup);
+        window.addEventListener('resize', resizeFollowup);
+        window.addEventListener('resize', resizeEditors);
         const syncSave = () => {
             if (!current()) { return; }
             const note = saveBar.querySelector('.study-library-status');
@@ -333,6 +350,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             // The lexical meaning stays visible whether or not an AI answer exists.
             // It is labeled separately from the contextual interpretation.
             shortGloss.hidden = shortGloss.childElementCount === 0;
+            resizeFollowup();
             asked.textContent = mine;
             asked.hidden = !mine || mine === '我：请解释这句话和这个词的用法';
             meaning.textContent = meaningText;
@@ -361,7 +379,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             observer.observe(output, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['aria-pressed', 'disabled']});
             observers.push(observer);
         }
-        const sourceObserver = new MutationObserver(() => { updateAnswer(); refreshSourceExpansion(); });
+        const sourceObserver = new MutationObserver(() => { updateAnswer(); });
         sourceObserver.observe(source, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden']});
         observers.push(sourceObserver);
 
@@ -472,27 +490,22 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const link = make('a', 'sf-link scan-disable', label); link.href = href;
             link.target = '_blank'; link.rel = 'noopener noreferrer'; sourceFooter.append(link);
         }
-        const expandSource = button('展开原句');
-        expandSource.classList.add('sf-expand-source'); expandSource.setAttribute('aria-expanded','false');
-        expandSource.addEventListener('click', () => {
-            const full = shell.classList.toggle('sf-source-expanded');
-            expandSource.setAttribute('aria-expanded', String(full)); expandSource.textContent = full ? '收起原句' : '展开原句';
-        });
-        sourceFooter.append(expandSource); sourcePane.append(sourceFooter); owned.push(sourceFooter);
-        refreshSourceExpansion = () => {
-            if (!current()) { return; }
-            expandSource.hidden = !shell.classList.contains('sf-source-expanded') && sourceReading.scrollHeight <= sourceReading.clientHeight + 2;
-        };
-        if (typeof ResizeObserver !== 'undefined') {
-            const resize = new ResizeObserver(refreshSourceExpansion);
-            resize.observe(sourceReading); observers.push(resize);
-        }
-        requestAnimationFrame(refreshSourceExpansion);
+        sourcePane.append(sourceFooter); owned.push(sourceFooter);
         select(activeTab); updateAnswer(); syncSave();
         void readMemory(false, false);
         dispose = () => {
             observers.forEach((observer) => observer.disconnect());
             editor?.removeEventListener('change', onSourceEdit);
+            sourcePane.removeEventListener('input', resizeEditors);
+            editSource?.removeEventListener('toggle', resizeEditors);
+            for (const [field, height] of editorHeights) { field.style.height = height; }
+            input?.removeEventListener('input', resizeFollowup);
+            window.removeEventListener('resize', resizeFollowup);
+            window.removeEventListener('resize', resizeEditors);
+            if (input && inputOriginal) {
+                if (inputOriginal.rows === null) { input.removeAttribute('rows'); } else { input.setAttribute('rows', inputOriginal.rows); }
+                input.style.height = inputOriginal.height;
+            }
             neighborAction?.removeEventListener('click', openContextEditor);
             neighborAction?.classList.remove('sf-button');
             // Original display nodes return to their own entry before the next

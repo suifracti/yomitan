@@ -53,7 +53,7 @@
     height: calc(100dvh - 36px);
     min-height: 0;
     display: grid;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     color: var(--sf-ink);
     background: var(--sf-paper);
     text-align: left;
@@ -63,9 +63,10 @@
 .study-focus-active .study-focus-shell * { box-sizing: border-box; }
 .sf-heading {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 6px 10px;
     padding: 13px 16px 10px;
 }
 .sf-word { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; min-width: 0; }
@@ -89,41 +90,28 @@
 .sf-button:disabled { opacity: .5; cursor: not-allowed; }
 .sf-button:focus-visible, .sf-tab:focus-visible, .sf-link:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
 .sf-source-pane {
-    margin: 0 14px 9px;
-    display: flex;
-    flex-direction: column;
-    max-height: min(35dvh, 205px);
-    min-height: 0;
-    overflow: hidden;
+    margin: 10px 14px;
     border: 1px solid var(--sf-line);
     border-radius: 10px;
     background: var(--sf-source);
 }
 .sf-source-pane:focus-within { border-color: var(--sf-accent); }
-.sf-source-pane > .sf-short-gloss { flex: none; }
-.sf-source-reading {
-    flex: 0 1 auto;
-    min-height: 0;
-    max-height: min(35dvh, 205px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
+.sf-source-pane, .sf-source-reading, .sf-source-pane .study-more-actions {
+    max-height: none;
+    overflow: visible;
 }
-.sf-source-pane:has(.study-more-actions[open]), .sf-source-expanded .sf-source-pane { max-height: min(54dvh, 324px); }
-.sf-source-expanded .sf-source-reading { max-height: 42dvh; }
-.sf-source-tools { flex: none; padding: 3px 12px 6px; }
+.sf-source-tools { padding: 3px 12px 6px; }
 .sf-source-tools .sf-button { font-size: 11px; min-height: 26px; }
-.sf-source-editor-body {
-    min-height: 0;
-    max-height: min(20dvh, 120px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
-}
-.sf-source-pane .study-more-actions { flex: 0 1 auto; min-height: 0; overflow: hidden; }
-.sf-source-pane .study-more-actions[open] { display: flex; flex-direction: column; }
-.sf-source-pane .study-more-actions > summary, .sf-source-footer { flex: none; }
 .sf-source-pane .study-more-actions > summary { padding-block: 3px; cursor: pointer; }
+.sf-source-pane .study-source-editor {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    max-height: none;
+    margin-block: 6px;
+    resize: none;
+    overflow: hidden;
+}
 .sf-source-pane .study-source { padding: 9px 12px 4px; margin: 0; background: transparent; border: 0; border-radius: 0; }
 .sf-source-pane .study-source-label { color: var(--sf-muted); font-size: 10px; letter-spacing: .03em; }
 .sf-source-pane .study-source p {
@@ -181,6 +169,11 @@
     margin: 0;
     padding: 0;
     border: 0;
+    overflow: hidden;
+}
+.sf-learning-scroll {
+    flex: 1 1 0;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
@@ -196,29 +189,35 @@
 #study-context .sf-feedback button { border-color: var(--sf-line); background: var(--sf-paper); color: var(--sf-muted); padding: 3px 8px; font-size: 11px; }
 #study-context .sf-feedback button[aria-pressed='true'] { color: var(--sf-accent-strong); background: var(--sf-mark); border-color: var(--sf-accent); }
 .study-focus-active .sf-compose {
-    position: sticky;
-    bottom: 0;
-    z-index: 3;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    column-gap: 7px;
     flex: none;
-    padding: 10px 14px 9px;
+    padding: 8px 14px;
     border-top: 1px solid var(--sf-line);
     background: var(--sf-paper);
 }
 .study-focus-active #study-context .sf-compose textarea.study-followup {
-    min-height: 46px;
-    max-height: 120px;
-    resize: vertical;
-    padding: 8px 10px;
-    margin: 0 0 6px;
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 32px;
+    max-height: 68px;
+    width: 100%;
+    resize: none;
+    padding: 6px 9px;
+    margin: 0;
     border: 1px solid var(--sf-line);
     border-radius: 8px;
     color: var(--sf-ink);
     background: var(--sf-paper);
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 18px;
 }
 .study-focus-active #study-context .sf-compose textarea.study-followup:focus { border-color: var(--sf-accent); outline: 2px solid color-mix(in srgb,var(--sf-accent) 15%,transparent); }
-.study-focus-active .sf-compose .study-translation-actions { margin: 0; gap: 7px; }
+.study-focus-active .sf-compose .study-translation-actions { grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; margin: 0; gap: 5px; }
+.sf-compose > .study-save-destination { display: none; }
+.sf-compose > :not(textarea):not(.study-translation-actions):not(.study-save-destination) { grid-column: 1 / -1; }
 .study-focus-active #study-context .sf-compose button { border-color: var(--sf-line); background: var(--sf-paper); color: var(--sf-accent); }
 .sf-save-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 14px 12px; border-top: 1px solid var(--sf-line); }
 .sf-save-bar [data-study-save='note'] { background: var(--sf-accent); color: white; border-color: var(--sf-accent); font-weight: 600; padding-inline: 15px; }
@@ -272,48 +271,28 @@
     .sf-records-head { flex-wrap: wrap; }
 }
 @media (min-width: 660px) {
-    .study-focus-active .study-focus-shell { grid-template-columns: minmax(240px, .92fr) minmax(300px, 1.08fr); grid-template-rows: auto auto minmax(0,1fr) auto; }
-    .sf-heading { grid-column: 1 / -1; }
-    .sf-source-pane { grid-column: 1; grid-row: 2 / 4; max-height: none; margin: 0 0 14px 14px; align-self: stretch; }
-    .sf-tabs { grid-column: 2; grid-row: 2; }
-    .sf-body { grid-column: 2; grid-row: 3; }
-    /* Full-width detail/record tabs do not leave an empty source column. */
-    .study-focus-active .study-focus-shell[data-panel="1"] .sf-tabs,
-    .study-focus-active .study-focus-shell[data-panel="2"] .sf-tabs { grid-column: 1 / -1; grid-row: 2; }
-    .study-focus-active .study-focus-shell[data-panel="1"] .sf-body,
-    .study-focus-active .study-focus-shell[data-panel="2"] .sf-body { grid-column: 1 / -1; grid-row: 3; }
-    .sf-save-bar { grid-column: 1 / -1; grid-row: 4; }
     .sf-source-pane .study-source p { font-size: 15px; line-height: 1.8; }
     .sf-source-pane .study-source-translation { font-size: 13px; }
-    .sf-expand-source { display: none; }
 }
 
 .sf-short-gloss { display: grid; gap: 4px; margin: 0 0 8px; }
 .sf-short-gloss[hidden] { display: none; }
 .sf-gloss-unavailable { margin: 0; color: var(--sf-muted); font-size: 12px; line-height: 1.6; }
-/* A compact native-meaning caption shares the same source area, instead of
-   disappearing below the tabs when the learner is in a short popup. */
-.sf-source-pane .sf-short-gloss { margin: 0; padding: 9px 12px 7px; gap: 3px; border-bottom: 1px solid var(--sf-line); }
-.sf-source-pane .sf-gloss-kicker { font-size: 10px; }
-.sf-source-pane .sf-gloss-row { gap: 4px 9px; }
-.sf-source-pane .sf-gloss-text { font-size: 14px; line-height: 1.5; }
-.sf-source-pane .study-source { padding-top: 6px; }
 .sf-no-source-note { margin: 9px 0 0; padding: 7px 0 0; border-top: 1px dashed var(--sf-line); font-size: 11px; line-height: 1.5; color: var(--sf-muted); }
 /* A word-only lookup must reveal the native Chinese sense before the tabs,
    even when the answer pane is too small for an expanded composer. */
-.sf-no-source .sf-heading { flex-wrap: wrap; align-content: flex-start; }
-.sf-standalone-sense {
+.sf-header-sense {
     flex: 1 0 100%;
     min-width: 0;
     margin-top: 2px;
     padding: 7px 0 1px;
     border-top: 1px solid var(--sf-line);
 }
-.sf-standalone-sense .sf-short-gloss { margin: 0; gap: 2px; }
-.sf-standalone-sense .sf-gloss-kicker { font-size: 10px; }
-.sf-standalone-sense .sf-gloss-row { gap: 4px 8px; }
-.sf-standalone-sense .sf-gloss-text { font-size: 15px; line-height: 1.45; }
-.sf-standalone-sense .sf-no-source-note { margin: 3px 0 0; padding: 0; border: 0; font-size: 10px; }
+.sf-header-sense .sf-short-gloss { margin: 0; gap: 2px; }
+.sf-header-sense .sf-gloss-kicker { font-size: 10px; }
+.sf-header-sense .sf-gloss-row { gap: 4px 8px; }
+.sf-header-sense .sf-gloss-text { font-size: 15px; line-height: 1.45; }
+.sf-header-sense .sf-no-source-note { margin: 3px 0 0; padding: 0; border: 0; font-size: 10px; }
 .sf-gloss-kicker { color: var(--sf-muted); font-size: 11px; font-weight: 500; line-height: 1.4; }
 .sf-gloss-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
 .sf-gloss-pos { color: var(--sf-muted); font-size: 12px; font-weight: 500; }
@@ -325,19 +304,18 @@
 
 .study-focus-active .study-focus-shell.sf-no-source { grid-template-rows: auto auto minmax(0, 1fr) auto; }
 .sf-no-source .sf-source-pane { display: none; }
-@media (min-width: 660px) {
-    .sf-no-source .sf-tabs, .sf-no-source .sf-body { grid-column: 1 / -1; }
-}
 @media (max-height: 350px) {
     /* 400x250 dictionary windows: the Chinese first sense, rather than the
        historical search chrome, must be the first readable content. */
-    .study-focus-active .sf-heading { padding: 7px 11px 5px; gap: 6px; }
+    .study-focus-active .sf-heading { padding: 5px 11px 3px; gap: 3px 6px; }
     .study-focus-active .sf-word strong { font-size: 19px; }
     .study-focus-active .sf-tabs { padding-inline: 11px; gap: 12px; }
     .study-focus-active .sf-tab { padding: 5px 1px 6px; }
     .study-focus-active .sf-answer { padding: 7px 11px 4px; }
     .study-focus-active .sf-short-gloss { margin-bottom: 3px; }
-    .study-focus-active .sf-no-source-note { margin-top: 3px; padding-top: 5px; }
-    .study-focus-active .sf-save-bar { padding: 4px 10px 6px; }
-    .study-focus-active .sf-compose { padding: 6px 10px; }
+    .study-focus-active .sf-no-source-note { margin-top: 2px; padding-top: 2px; }
+    .study-focus-active .sf-header-sense { padding-top: 3px; margin-top: 0; }
+    .study-focus-active .sf-gloss-kicker { display: none; }
+    .study-focus-active .sf-save-bar { padding: 3px 10px 4px; }
+    .study-focus-active .sf-compose { padding: 4px 10px; }
 }
