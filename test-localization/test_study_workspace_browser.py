@@ -9,7 +9,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 async def main(port):
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path=os.environ.get('CHROMIUM_EXECUTABLE', '/usr/bin/chromium'), headless=True)
-        page = await browser.new_page(viewport={'width':400,'height':600})
+        page = await browser.new_page(viewport={'width':400,'height':250})
         errors=[]; page.on('pageerror', lambda error: errors.append(str(error)))
         limits={'width':1200,'height':900}
         requests=[]
@@ -50,6 +50,7 @@ prepareStudyFocus(window.display,{call:window.mockCall});""")
             checks.append(name)
         await check('companion is a layout-only wrapper over the original card', '()=>!!document.querySelector(".sf-workspace .sf-main-card .study-focus-shell")')
         await page.wait_for_timeout(100)
+        await check('default 250px popup can grow to its content before manual resizing', '()=>innerHeight>300')
         await check('short first page adapts height rather than keeping an empty bottom region', '()=>{const m=document.querySelector(".sf-main-card");return m.getBoundingClientRect().height<=600&&m.getBoundingClientRect().height>240;}')
         await page.evaluate('window.oldSentence=document.querySelector(".sf-source-pane p").textContent;document.querySelector(".sf-source-pane p").textContent="A short source.";document.querySelector(".sf-answer").hidden=true')
         await page.wait_for_timeout(150)

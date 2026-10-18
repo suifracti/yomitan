@@ -184,7 +184,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         };
         const content = [...scroll.children].reduce((total, node) => total + extent(node), 0);
         const fixed = [toolbar, shell.querySelector('.sf-heading'), tabs, shell.querySelector('.sf-compose'), shell.querySelector('.sf-save-bar')].filter((node) => node !== null).reduce((total, node) => total + extent(node), 4);
-        return Math.max(240, Math.min(sizes.main.height, Math.ceil(content + fixed)));
+        return Math.max(240, Math.min(Math.max(550, sizes.main.height), Math.ceil(content + fixed)));
     };
     const layout = () => {
         if (!active) { return; }
