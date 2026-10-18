@@ -150,6 +150,11 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const body = make('div', 'sf-body');
         const learn = make('section', 'sf-learn');
         const dictionary = make('section', 'sf-dictionary');
+        const dictionaryHeading = make('div', 'sf-dictionary-heading-dock');
+        const dictionaryScroll = make('div', 'sf-dictionary-scroll');
+        dictionaryScroll.setAttribute('aria-label', '英文释义、例句与词形资料');
+        const dictionaryPager = make('div', 'sf-dictionary-pager');
+        dictionary.append(dictionaryHeading, dictionaryScroll, dictionaryPager);
         const records = make('section', 'sf-records');
         const fullMeanings = make('section', 'sf-all-meanings');
         fullMeanings.hidden = true;
@@ -189,7 +194,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             sourcePane.hidden = !hasSentence || index !== 0;
             headerSense.hidden = index === 2;
             fullMeanings.hidden = !allMeaningsOpen || index === 2;
-            if (index < 2) { (index === 0 ? learningScroll : dictionary)?.prepend(fullMeanings); }
+            if (index < 2) { (index === 0 ? learningScroll : dictionaryScroll)?.prepend(fullMeanings); }
             requestAnimationFrame(syncGlossOverflow);
             requestAnimationFrame(resizeFollowup);
         };
@@ -200,29 +205,109 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         // but show only the full English dictionary as the main second-page content.
         const dictionaryReference = make('div', 'sf-dictionary-reference');
         dictionaryReference.hidden = true;
-        const dictionaryInfo = make('details', 'sf-dictionary-info');
-        dictionaryInfo.append(make('summary', 'scan-disable', '词形与资料'));
+        const dictionaryInfo = make('section', 'sf-dictionary-info');
+        dictionaryInfo.append(make('h3', 'sf-section-label', '词典资料'));
+        const dictionaryForms = make('section', 'sf-dictionary-forms');
         const entryHeader = entry?.querySelector('.entry-header');
         move(entryHeader, dictionaryInfo);
         move(anchor.querySelector('.study-reading-meaning'), dictionaryReference);
         move(anchor.querySelector('.study-reading-english'), dictionaryReference);
         move(anchor.querySelector('.study-reading-info'), entryHeader?.querySelector('.study-metadata') ? dictionaryReference : dictionaryInfo);
-        move(entry?.querySelector('.study-dictionary-details'), dictionary);
+        move(entry?.querySelector('.study-dictionary-details'), dictionaryScroll);
         const dictDisclosure = dictionary.querySelector('.study-dictionary-details');
         if (dictDisclosure) { dictDisclosure.open = true; }
         const originalDictionary = dictionary.querySelector('.study-original-dictionary');
         if (originalDictionary) { originalDictionary.open = true; }
-        for (const label of dictionary.querySelectorAll('[data-sc-content=summary-entry]')) {
-            if (['词形与语法', '词源', 'Grammar', 'Etymology'].includes(label.textContent?.trim() || '')) {
-                const details = label.closest('details');
-                if (details) { move(details, dictionaryInfo); }
+        // Keep one dictionary content scroller; its two toolbars never scroll away.
+        move(dictionary.querySelector('.study-dictionary-heading'), dictionaryHeading);
+        move(dictionary.querySelector('.study-dictionary-status'), dictionaryHeading);
+        move(dictionary.querySelector('.study-dictionary-pagination'), dictionaryPager);
+        dictionaryHeading.hidden = !dictionaryHeading.childElementCount;
+        dictionaryPager.hidden = !dictionaryPager.childElementCount;
+        const referenceStates = new Map();
+        const seenReferences = new Set();
+        const lockReferenceOpen = (event) => {
+            const node = event.currentTarget;
+            if (current() && node instanceof HTMLDetailsElement && !node.open) { node.open = true; }
+        };
+        for (const label of [...dictionaryScroll.querySelectorAll('[data-sc-content=summary-entry]')]) {
+            if (!['词形与语法', '词源', 'Grammar', 'Etymology'].includes(label.textContent?.trim() || '')) { continue; }
+            const details = label.closest('details');
+            if (!details || referenceStates.has(details)) { continue; }
+            const dict = details.closest('[data-dictionary]')?.getAttribute('data-dictionary') || '';
+            const signature = dict ? `${dict}:${details.textContent?.replace(/\s+/g, ' ').trim()}` : '';
+            const duplicate = Boolean(signature && seenReferences.has(signature));
+            if (signature) { seenReferences.add(signature); }
+            move(details, ['词形与语法', 'Grammar'].includes(label.textContent?.trim() || '') ? dictionaryForms : dictionaryInfo);
+            for (const node of [details, ...details.querySelectorAll('details')]) {
+                const summary = node.querySelector(':scope > summary');
+                referenceStates.set(node, {open: node.open, hidden: node.hidden, summary, tabIndex: summary?.getAttribute('tabindex')});
+                node.open = true;
+                node.classList.add('sf-reference-open');
+                summary?.setAttribute('tabindex', '-1');
+                node.addEventListener('toggle', lockReferenceOpen);
+            }
+            details.hidden = duplicate;
+            if (dict) {
+                const origin = make('span', 'sf-reference-source', ` · ${dict}`);
+                label.append(origin); owned.push(origin);
             }
         }
-        dictionary.append(dictionaryInfo, dictionaryReference);
-        owned.push(dictionaryInfo, dictionaryReference);
+        if (dictionaryForms.childElementCount) { dictionaryScroll.prepend(dictionaryForms); }
+        dictionaryScroll.append(dictionaryInfo, dictionaryReference);
+        const formNodes = entryHeader?.querySelectorAll('[data-study-meta-role="forms"], [data-sc-study-role="forms"]') || [];
+        const formText = [...formNodes].map((node) => {
+            const items = [...node.querySelectorAll('.study-form-item')];
+            return (items.length ? items.map((item) => item.textContent?.trim()).join(' · ') : node.textContent?.trim()) || '';
+        }).filter(Boolean).join(' · ');
+        let syncFormsPreview = () => {};
+        if (formText) {
+            const repeatedForms = [];
+            const formOrigins = [];
+            // The header already displays these exact words; keep the original node/data,
+            // but do not print an identical forms paragraph again below it.
+            const normalizeForms = (text) => (text || '').replace(/\s+/g, '');
+            for (const details of dictionaryForms.children) {
+                const bodyText = [...details.children].filter((node) => node.tagName !== 'SUMMARY').map((node) => node.textContent).join('');
+                if (!details.hidden && normalizeForms(bodyText) === normalizeForms(formText)) {
+                    repeatedForms.push(details);
+                    const origin = details.querySelector('.sf-reference-source')?.textContent?.trim();
+                    if (origin) { formOrigins.push(origin); }
+                }
+            }
+            const formsPreview = button('', '在详细词典查看完整词形');
+            for (const part of formText.split(' · ')) {
+                const split = part.indexOf('：');
+                const piece = make('span', 'sf-form-piece');
+                if (split > 0) {
+                    const label = part.slice(0, split).replace('过去式 / 过去分词', '过去/分词').replace('现在分词', '进行').replace('第三人称', '三单');
+                    piece.append(make('span', 'sf-form-name', label), make('strong', '', part.slice(split + 1).trim()));
+                } else { piece.textContent = part; }
+                formsPreview.append(piece);
+            }
+            for (const node of formNodes) { node.classList.add('sf-forms-original'); }
+            formsPreview.classList.add('sf-forms-preview');
+            formsPreview.title = [formText, ...formOrigins].join('\n');
+            syncFormsPreview = () => {
+                const fits = formsPreview.scrollWidth <= formsPreview.clientWidth + 1;
+                for (const details of repeatedForms) { details.hidden = fits; }
+                dictionaryForms.hidden = ![...dictionaryForms.children].some((node) => !node.hidden);
+            };
+            requestAnimationFrame(syncFormsPreview);
+            window.addEventListener('resize', syncFormsPreview);
+            headerSense.before(formsPreview); owned.push(formsPreview);
+            formsPreview.addEventListener('click', () => {
+                if (!current()) { return; }
+                select(1);
+                dictionaryScroll.scrollTop = 0;
+            });
+        }
+        const resetDictionaryScroll = () => { if (current()) { dictionaryScroll.scrollTop = 0; } };
+        entry?.addEventListener('study-dictionary-pagechange', resetDictionaryScroll);
+        owned.push(dictionaryForms, dictionaryInfo, dictionaryReference);
         const quickLabels = new Map();
         const syncQuickLabels = () => {
-            for (const label of dictionaryInfo.querySelectorAll('.note-actions-container .study-action-label')) {
+            for (const label of dictionaryInfo.querySelectorAll('.note-actions-container [data-action="save-note"] .study-action-label')) {
                 if (!quickLabels.has(label)) { quickLabels.set(label, label.textContent); }
                 if (label.textContent !== '快速词典卡') { label.textContent = '快速词典卡'; }
             }
@@ -246,7 +331,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const notes = make('div', 'sf-notes'); notes.hidden = true;
         const shortGloss = make('div', 'sf-short-gloss');
         shortGloss.hidden = true;
-        const noSource = make('p', 'sf-no-source-note', '暂无原句 · 当前仅查询这个词');
+        const noSource = make('p', 'sf-no-source-note', '暂无原句');
         noSource.hidden = hasSentence;
         const feedback = make('div', 'sf-feedback');
         focusAnswer.append(shortGloss, noSource, answerHeading, asked, meaning, notes, feedback);
@@ -379,7 +464,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             glossSignature = signature;
             host.replaceChildren(); fullMeanings.replaceChildren();
             if (!senses.length) {
-                host.append(make('p', 'sf-gloss-unavailable', '当前词典没有提供中文义项，可查看详细词典或继续问 AI。'));
+                host.append(make('p', 'sf-gloss-unavailable', '暂无中文释义'));
                 allMeaningsOpen = false; fullMeanings.hidden = true;
                 return;
             }
@@ -392,10 +477,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             };
             const preview = make('div', 'sf-gloss-preview');
             const caption = make('div', 'sf-gloss-caption');
-            caption.append(make('span', 'sf-gloss-kicker', hasSentence ? '词典中文 · 未按本句判断' : '词典中文'));
             const toggle = button(`全部词义 · 共 ${senses.length} 项`);
             toggle.classList.add('sf-gloss-toggle');
             toggle.setAttribute('aria-expanded', String(allMeaningsOpen));
+            toggle.hidden = true; caption.hidden = true;
             caption.append(toggle);
             for (const sense of senses) { appendRow(preview, sense); }
             host.append(caption, preview);
@@ -408,13 +493,15 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 allMeaningsOpen = expanded;
                 fullMeanings.hidden = !expanded || activeTab === 2;
                 toggle.setAttribute('aria-expanded', String(expanded));
-                if (expanded) { (activeTab === 0 ? learningScroll : dictionary).scrollTop = 0; }
+                if (expanded) { (activeTab === 0 ? learningScroll : dictionaryScroll).scrollTop = 0; }
+                syncGlossOverflow();
             };
             toggle.addEventListener('click', () => { setExpanded(!allMeaningsOpen); });
             collapse.addEventListener('click', () => { setExpanded(false); });
             syncGlossOverflow = () => {
                 if (!current() || !preview.getClientRects().length) { return; }
                 toggle.hidden = !allMeaningsOpen && preview.scrollHeight <= preview.clientHeight + 1;
+                caption.hidden = toggle.hidden;
             };
             requestAnimationFrame(syncGlossOverflow);
         };
@@ -473,7 +560,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const recordsHead = make('div', 'sf-records-head');
         recordsHead.append(make('h3', '', '我的笔记与卡片'));
         const refresh = button('刷新笔记与卡片'); recordsHead.append(refresh);
-        const readStatus = make('p', 'sf-description', '读取已有学习，不调用 AI，也不改变笔记或复习排程。');
+        const readStatus = make('p', 'sf-description', '正在读取记录…');
         const memoryBody = make('div', 'sf-memory-body');
         records.append(recordsHead, readStatus, memoryBody);
         let reading = false;
@@ -711,6 +798,18 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         void readMemory(false, false);
         dispose = () => {
             observers.forEach((observer) => observer.disconnect());
+            for (const node of formNodes) { node.classList.remove('sf-forms-original'); }
+            entry?.removeEventListener('study-dictionary-pagechange', resetDictionaryScroll);
+            window.removeEventListener('resize', syncFormsPreview);
+            for (const [node, state] of referenceStates) {
+                node.removeEventListener('toggle', lockReferenceOpen);
+                node.open = state.open; node.hidden = state.hidden;
+                node.classList.remove('sf-reference-open');
+                if (state.summary) {
+                    if (state.tabIndex === null) { state.summary.removeAttribute('tabindex'); }
+                    else if (typeof state.tabIndex === 'string') { state.summary.setAttribute('tabindex', state.tabIndex); }
+                }
+            }
             editor?.removeEventListener('change', onSourceEdit);
             sourcePane.removeEventListener('input', resizeEditors);
             editSource?.removeEventListener('toggle', resizeEditors);

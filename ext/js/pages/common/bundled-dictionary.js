@@ -20,8 +20,11 @@ import {prepareStudyRichDictionary} from './study-rich-dictionary.js';
 import {DictionaryWorker} from '../../dictionary/dictionary-worker.js';
 import {bundledDictionaryTitle, initializeBundledDictionary, planStudyDictionary} from './bundled-dictionary-core.js';
 
-/** @param {import('../settings/settings-controller.js').SettingsController} controller */
-export async function prepareBundledDictionary(controller) {
+/**
+ * @param {import('../settings/settings-controller.js').SettingsController} controller
+ * @param {HTMLElement} [container]
+ */
+export async function prepareBundledDictionary(controller, container = document.body) {
     const marker = 'personalStudyDictionaryRichReadyV1';
     const initial = await controller.getOptionsFull();
     const currentIndex = initial.profileCurrent;
@@ -29,7 +32,7 @@ export async function prepareBundledDictionary(controller) {
     if (!initialProfile) { return; }
     const status = document.createElement('section');
     status.className = 'study-dictionary-status';
-    status.style.cssText = 'padding:14px 20px;border:1px solid #95b8ad;border-radius:10px;margin:16px;font-size:14px;';
+    status.style.cssText = 'padding:14px 20px;border:1px solid var(--study-line, #e1e6ef);border-left:3px solid var(--study-accent, #4c5da4);border-radius:10px;margin:16px;font-size:14px;background:var(--study-paper, #fff);color:var(--study-ink, #202c40);';
     const label = document.createElement('p');
     label.setAttribute('role', 'status');
     const button = document.createElement('button');
@@ -39,10 +42,10 @@ export async function prepareBundledDictionary(controller) {
     link.href = '/settings.html#dictionaries';
     link.textContent = '  查看词典管理';
     const aiLink = document.createElement('a');
-    aiLink.href = '/study-settings.html';
-    aiLink.textContent = '  AI 设置 · 模型 / 记忆 / 缓存 ↗';
+    aiLink.href = '/settings.html#ai';
+    aiLink.textContent = '  AI 与翻译设置 ↗';
     status.append(label, button, link, aiLink);
-    document.body.prepend(status);
+    container.prepend(status);
     const refresh = async () => {
         const full = await controller.getOptionsFull();
         const info = await controller.application.api.getDictionaryInfo();

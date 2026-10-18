@@ -10,9 +10,13 @@
 </head>
 <body>
     <main>
+        <nav class="study-library-nav" aria-label="主导航">
+            <a href="/search.html">查词</a>
+            <a href="/study-library.html" aria-current="page">学习库</a>
+            <a href="/settings.html#save">设置</a>
+        </nav>
         <header>
-            <div><p class="eyebrow">YOMITAN · ENGLISH STUDY</p><h1>学习库</h1><p>接着原来的词句、笔记与复习状态学习。</p></div>
-            <nav><a href="/settings.html#learning">学习与保存设置</a><a href="/settings.html#anki">Anki 高级设置</a></nav>
+            <div><h1>学习库</h1><p>接着原来的词句、笔记与复习状态学习。</p></div>
         </header>
         <p id="study-library-status" role="status" aria-live="polite">正在读取学习库…</p>
         <section class="study-library-tools" aria-label="学习库筛选">
@@ -27,6 +31,18 @@
             <input id="study-library-search" type="search" placeholder="查词、原句、来源、笔记路径…" autocomplete="off">
             <div class="study-library-toolbar-actions"><button type="button" id="study-library-refresh">刷新列表</button></div>
         </section>
+        <details class="study-library-collection" aria-label="收藏管理">
+            <summary>收藏管理 · 导出与清理</summary>
+            <div class="study-library-collection-body">
+                <div>
+                    <p>管理扩展中已收集的收藏，包含已读取的同步收藏；未加载的原生收藏不会自动读入。清除只取消收藏标记，不删除笔记或卡片。</p>
+                </div>
+                <div class="study-library-collection-actions">
+                    <button type="button" id="study-library-export-saved">导出已收集收藏</button>
+                    <button type="button" id="study-library-clear-saved">清空已收集收藏</button>
+                </div>
+            </div>
+        </details>
         <section id="study-library-list" aria-live="polite"><p class="study-library-empty">正在读取学习库…</p></section>
         <button type="button" id="study-library-more" class="study-library-more" hidden>加载更多</button>
     </main>

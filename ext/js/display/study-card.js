@@ -779,11 +779,6 @@ export function prepareStudyCard(display, detail = false) {
             dictionary.append(summary);
             dictionary.append(body);
         }
-        const audio = element.querySelector('.actions [data-action="play-audio"]');
-        const sources = element.querySelector('.study-audio-sources');
-        sources?.addEventListener('click', () => {
-            audio?.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}));
-        });
     });
     display.on('contentUpdateComplete', () => {
         try {

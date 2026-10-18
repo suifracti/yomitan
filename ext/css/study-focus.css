@@ -355,12 +355,14 @@
     .study-focus-active .study-focus-shell.sf-card-editor-open .sf-gloss-caption { display: none; }
 }
 @media (max-height: 350px) {
+    .study-focus-active .study-toolbar { height: 30px; }
+    .study-focus-active .study-focus-shell { height: calc(100dvh - 30px); }
     /* 400x250 dictionary windows: the Chinese first sense, rather than the
        historical search chrome, must be the first readable content. */
     .study-focus-active .sf-heading { padding: 5px 11px 3px; gap: 3px 6px; }
     .study-focus-active .sf-word strong { font-size: 19px; }
     .study-focus-active .sf-tabs { padding-inline: 11px; gap: 12px; }
-    .study-focus-active .sf-tab { padding: 5px 1px 6px; }
+    .study-focus-active .sf-tab { padding: 2px 1px 3px; }
     .study-focus-active .sf-answer { padding: 7px 11px 4px; }
     .study-focus-active .sf-short-gloss { margin-bottom: 3px; }
     .study-focus-active .sf-no-source-note { margin-top: 2px; padding-top: 2px; }
@@ -417,3 +419,105 @@
 
 .study-focus-active .sf-dictionary-info .study-metadata > [data-sc-study-role=tags] { display: flex; }
 .study-focus-active .sf-dictionary-info .study-metadata > [data-study-meta-role=frequency] { display: block; }
+
+/* Dictionary tools share the card frame; only the text and reference area scroll. */
+.study-focus-active .sf-dictionary:not([hidden]) { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; padding: 0; }
+.sf-dictionary-heading-dock { padding: 8px 16px 5px; border-bottom: 1px solid var(--sf-line); background: var(--sf-paper); }
+.sf-dictionary .sf-dictionary-heading-dock .study-dictionary-heading { margin: 0; }
+.sf-dictionary-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 10px 16px; position: relative; }
+.sf-dictionary-pager { padding: 6px 16px; border-top: 1px solid var(--sf-line); background: var(--sf-paper); }
+.sf-dictionary .sf-dictionary-pager .study-dictionary-pagination { margin: 0; padding: 0; border: 0; justify-content: space-between; flex-wrap: nowrap; gap: 5px; }
+.sf-dictionary-scroll > .study-dictionary-details, .sf-dictionary-scroll .study-original-dictionary { margin: 0; padding: 0; border: 0; }
+.sf-dictionary-scroll > .study-dictionary-details > summary { display: none; }
+.sf-dictionary-info > h3 { margin: 0 0 8px; }
+.sf-dictionary-info .sf-reference-open > summary { display: block; list-style: none; pointer-events: none; padding: 5px 0; font-size: 12px; font-weight: 600; color: var(--sf-ink); }
+.sf-reference-open > summary::-webkit-details-marker { display: none; }
+.sf-reference-source { color: var(--sf-muted); font-size: 10px; font-weight: 400; overflow-wrap: anywhere; }
+.sf-dictionary-info .study-metadata { display: flex; flex-wrap: wrap; gap: 4px 9px; font-size: 11px; }
+.sf-heading .sf-forms-preview { flex: 1 0 100%; width: 100%; min-width: 0; text-align: left; display: block; border: 0; padding: 0; min-height: 0; border-radius: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sf-muted); font-size: 11px; line-height: 17px; background: none; }
+@media (max-height: 350px) {
+    .sf-heading .sf-forms-preview { grid-column: 1 / -1; font-size: 10px; line-height: 13px; }
+    .sf-dictionary-heading-dock { padding: 3px 11px; }
+    .sf-dictionary .study-dictionary-heading-label { font-size: 11px; }
+    .sf-dictionary .study-dictionary-heading button, .sf-dictionary .study-dictionary-pagination button { min-height: 22px; padding: 2px 5px; font-size: 10px; }
+    .sf-dictionary-scroll { padding: 6px 11px; }
+    .sf-dictionary-pager { padding: 3px 11px; }
+}
+@media (max-height: 350px) {
+    .study-focus-active .sf-heading .sf-header-sense { padding-block: 2px 0; }
+    .study-focus-active .sf-heading .sf-short-gloss { display: flex; align-items: center; gap: 5px; }
+    .study-focus-active .sf-heading .sf-gloss-caption { order: 2; flex: none; margin: 0; }
+    .study-focus-active .sf-heading .sf-gloss-kicker { display: none; }
+    .study-focus-active .sf-heading .sf-gloss-preview { flex: 1; min-width: 0; }
+    .study-focus-active .sf-heading .sf-gloss-toggle { font-size: 9px; }
+}
+
+/* The focus shell owns its visible controls, including retained upstream buttons. */
+.study-focus-shell :where(button:not(.sf-tab, .sf-forms-preview, .sf-gloss-toggle)) {
+    appearance: none;
+    box-shadow: none;
+    border: 1px solid var(--sf-line);
+    border-radius: 7px;
+    padding: 5px 9px;
+    min-height: 28px;
+    background: var(--sf-paper);
+    color: var(--sf-accent);
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.4;
+    cursor: pointer;
+}
+.study-focus-shell :where(button:not(.sf-tab, .sf-forms-preview, .sf-gloss-toggle)):hover:not(:disabled) { background: var(--sf-tint); }
+.study-focus-shell :where(button:not(.sf-tab, .sf-forms-preview, .sf-gloss-toggle)):disabled { opacity: .5; cursor: not-allowed; }
+.sf-save-bar [data-study-save='note'] { min-height: 32px; background: var(--sf-accent); color: var(--sf-paper); border-color: var(--sf-accent); padding-inline: 15px; }
+.sf-save-bar [data-study-save='note']:hover:not(:disabled) { background: var(--sf-accent-strong); }
+.sf-heading button.sf-forms-preview {
+    display: flex;
+    gap: 5px;
+    border: 0;
+    padding: 0;
+    background: none;
+    line-height: 23px;
+    min-height: 0;
+    overflow: hidden;
+}
+.sf-form-piece { display: inline-flex; flex: none; align-items: baseline; gap: 4px; padding: 0 5px; border-radius: 5px; background: var(--sf-tint); color: var(--sf-ink); }
+.sf-form-name { font-size: 10px; color: var(--sf-muted); }
+.sf-form-piece strong { font-size: 11px; font-weight: 600; }
+.sf-forms-original { display: none !important; }
+.sf-dictionary-forms { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--sf-line); font-size: 12px; line-height: 1.6; }
+.sf-dictionary-forms .sf-reference-open>summary { display: block; list-style: none; padding: 0 0 4px; pointer-events: none; font-size: 11px; color: var(--sf-muted); }
+.sf-dictionary-forms p { margin: 0; }
+.sf-dictionary-scroll .definition-list,
+.sf-dictionary-scroll .gloss-list { margin: 0; padding: 0; list-style: none; }
+.sf-dictionary-scroll .gloss-list>.gloss-item { margin: 0; }
+.sf-dictionary-scroll [data-sc-content='glosses'] { margin: 7px 0 12px; padding-left: 20px; list-style: decimal; font-size: 13px; line-height: 1.65; }
+.sf-dictionary-scroll [data-sc-content='glosses']>li { padding-left: 3px; margin-block: 6px; }
+.sf-dictionary-scroll .dictionary-tag { display: inline-block; color: var(--sf-muted); font-size: 10px; margin-bottom: 2px; }
+.sf-dictionary-info { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--sf-line); }
+.sf-dictionary-info .note-actions-container { margin-top: 8px; }
+@media (max-height: 350px) {
+    .sf-heading button.sf-forms-preview { line-height: 16px; gap: 4px; }
+    .sf-form-name { font-size: 9px; }
+    .sf-form-piece strong { font-size: 10px; }
+    .sf-save-bar [data-study-save='note'] { min-height: 24px; padding-block: 2px; font-size: 11px; }
+    .sf-dictionary-forms { margin-bottom: 6px; padding-bottom: 6px; }
+}
+
+.sf-gloss-caption[hidden] { display: none !important; }
+.sf-gloss-caption { justify-content: flex-end; }
+.study-focus-active .sf-audio-tools .study-audio-sources { min-height: 28px; padding: 4px 9px; background: var(--sf-paper); color: var(--sf-accent); border: 1px solid var(--sf-line); border-radius: 7px; font-size: 11px; }
+.sf-dictionary-info .note-actions-container button { min-height: 27px; padding: 4px 8px; border: 1px solid var(--sf-line); border-radius: 6px; background: var(--sf-paper); color: var(--sf-muted); font: inherit; font-size: 11px; }
+@media (max-height: 350px) {
+    .study-focus-active .sf-audio-tools .study-audio-sources { min-height: 24px; padding: 2px 5px; }
+}
+
+.sf-header-sense .sf-gloss-preview .sf-gloss-row { line-height: 20px; }
+.sf-header-sense .sf-gloss-preview .sf-gloss-row>* { line-height: inherit; }
+@media (max-height: 350px) {
+    .sf-header-sense .sf-gloss-preview .sf-gloss-row { line-height: 18px; }
+}
+
+.sf-header-sense .sf-short-gloss { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.sf-short-gloss>.sf-gloss-preview { grid-column: 1; grid-row: 1; }
+.sf-short-gloss>.sf-gloss-caption { grid-column: 2; grid-row: 1; padding-top: 2px; }

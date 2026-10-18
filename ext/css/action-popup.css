@@ -25,11 +25,15 @@
     --line-height: calc(var(--line-height-no-units) / var(--font-size-no-units));
     --background-color: #f8f9fa;
     --text-color: #333333;
+    --action-learning-accent: #4c5da4;
+    --action-learning-tint: rgba(76, 93, 164, 0.09);
 }
 
 :root[data-theme=dark] {
     --background-color: #1e1e1e;
     --text-color: #cccccc;
+    --action-learning-accent: #a9b9ff;
+    --action-learning-tint: rgba(169, 185, 255, 0.12);
 }
 
 /* Initilization */
@@ -263,6 +267,49 @@ h2.action-title {
 
 .action-container.action-buttons {
     gap: 0.25em;
+    width: 100%;
+}
+
+.action-container.action-buttons button {
+    display: flex;
+    flex-flow: column nowrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3em;
+    min-height: 3.8em;
+    padding: 0.45em 0.55em;
+    border-radius: 6px;
+}
+
+.action-container.action-buttons .action-open-search,
+.action-container.action-buttons .action-open-study-library,
+.action-container.action-buttons .action-open-settings {
+    flex: 1 1 0;
+    min-width: 5.1em;
+}
+
+.action-container.action-buttons .action-open-study-library {
+    color: var(--action-learning-accent);
+    border-color: var(--action-learning-accent);
+    background-color: var(--action-learning-tint);
+}
+
+.action-container.action-buttons .action-open-study-library .action-icon>.icon {
+    background-color: var(--action-learning-accent);
+}
+
+.action-container.action-buttons .action-open-info {
+    flex: 0 0 auto;
+    min-width: 3.8em;
+    padding-left: 0.4em;
+    padding-right: 0.4em;
+}
+
+.action-label {
+    font-size: 0.9em;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 /* Actions */

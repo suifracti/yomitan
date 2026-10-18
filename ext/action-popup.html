@@ -44,25 +44,29 @@
             </div>
         </div>
         <div class="action-container action-buttons">
-            <button tabindex="0" type="button" class="low-emphasis action-open-settings" title="Settings" data-hotkey='["global:openSettingsPage","title","Settings ({0})"]'>
-                <div class="action-icon">
-                    <span class="icon" data-icon="cog"></span>
-                </div>
-            </button>
-            <button tabindex="0" type="button" class="low-emphasis action-open-search" title="Search&#010;Shift+click to open here" data-hotkey='["global:openSearchPage","title","Search ({0})\nShift+click to open here"]'>
+            <button tabindex="0" type="button" class="low-emphasis action-open-search" title="查词 / Search&#010;Shift+click to open here" aria-label="查词" data-hotkey='["global:openSearchPage","title","Search ({0})\nShift+click to open here"]'>
                 <div class="action-icon">
                     <span class="icon" data-icon="magnifying-glass"></span>
                 </div>
+                <span class="action-label">查词</span>
             </button>
             <button tabindex="0" type="button" class="low-emphasis action-open-study-library" title="学习库" aria-label="打开学习库">
                 <div class="action-icon">
                     <span class="icon" data-icon="note-card"></span>
                 </div>
+                <span class="action-label">学习库</span>
             </button>
-            <button tabindex="0" type="button" class="low-emphasis action-open-info" title="Information" data-hotkey='["global:openInfoPage","title","Information ({0})"]'>
+            <button tabindex="0" type="button" class="low-emphasis action-open-settings" title="设置" aria-label="设置" data-hotkey='["global:openSettingsPage","title","Settings ({0})"]'>
+                <div class="action-icon">
+                    <span class="icon" data-icon="cog"></span>
+                </div>
+                <span class="action-label">设置</span>
+            </button>
+            <button tabindex="0" type="button" class="low-emphasis action-open-info" title="Information" aria-label="帮助" data-hotkey='["global:openInfoPage","title","Information ({0})"]'>
                 <div class="action-icon">
                     <span class="icon" data-icon="question-mark-circle"></span>
                 </div>
+                <span class="action-label">帮助</span>
             </button>
         </div>
     </div>

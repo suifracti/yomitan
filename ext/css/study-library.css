@@ -1,5 +1,6 @@
-:root { color-scheme: light dark; --lib-bg: #f4f7f5; --lib-card: #fff; --lib-text: #24332e; --lib-muted: #697870; --lib-line: #dee8e2; --lib-accent: #31786d; }
-@media (prefers-color-scheme: dark) { :root { --lib-bg: #17231d; --lib-card: #202e27; --lib-text: #e9f2ed; --lib-muted: #a6b8ae; --lib-line: #354c3f; --lib-accent: #90cdbc; } }
+:root, :root[data-theme='light'] { color-scheme: light; --lib-bg: #f3f5fb; --lib-card: #fff; --lib-text: #202c40; --lib-muted: #627086; --lib-line: #e1e6ef; --lib-accent: #4c5da4; --lib-tint: #f3f5fb; --lib-accent-text: #fff; --lib-danger: #85485a; }
+:root[data-theme='dark'] { color-scheme: dark; --lib-bg: #182130; --lib-card: #182130; --lib-text: #e9edf6; --lib-muted: #a7b3c8; --lib-line: #344157; --lib-accent: #a9b9ff; --lib-tint: #222e43; --lib-accent-text: #182130; --lib-danger: #e5a8b7; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { color-scheme: dark; --lib-bg: #182130; --lib-card: #182130; --lib-text: #e9edf6; --lib-muted: #a7b3c8; --lib-line: #344157; --lib-accent: #a9b9ff; --lib-tint: #222e43; --lib-accent-text: #182130; --lib-danger: #e5a8b7; } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--lib-bg); color: var(--lib-text); font: 15px/1.65 system-ui, sans-serif; }
 main { max-width: 1080px; margin: 30px auto; padding: 0 22px 44px; }
@@ -8,7 +9,10 @@ h1 { margin: 0; font-size: 32px; } h2 { margin: 0; font-size: 20px; } h3 { margi
 p { margin: 8px 0 14px; color: var(--lib-muted); }
 .eyebrow { margin: 0; color: var(--lib-accent); font-size: 11px; letter-spacing: 0.14em; }
 a { color: var(--lib-accent); }
-nav, .study-library-tabs, .study-library-toolbar-actions, .study-library-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+nav, .study-library-tabs, .study-library-toolbar-actions, .study-library-actions, .study-library-collection-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.study-library-nav { padding: 10px 0; margin-bottom: 18px; border-bottom: 1px solid var(--lib-line); }
+.study-library-nav a { padding: 7px 12px; border-radius: 8px; text-decoration: none; }
+.study-library-nav a[aria-current='page'] { background: var(--lib-tint); color: var(--lib-text); font-weight: 650; }
 #study-library-status, .study-library-tools, .study-library-record, .study-library-empty { background: var(--lib-card); border: 1px solid var(--lib-line); border-radius: 12px; padding: 16px; }
 #study-library-status { border-left: 3px solid var(--lib-accent); min-height: 48px; margin: 20px 0 14px; }
 .study-library-tools { display: grid; grid-template-columns: 1fr minmax(200px, 340px); gap: 14px; align-items: center; margin-bottom: 18px; }
@@ -21,11 +25,25 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .study-library-tabs button[aria-pressed='true'] { background: var(--lib-accent); color: var(--lib-card); border-color: var(--lib-accent); }
 .study-library-record { margin: 14px 0; overflow-wrap: anywhere; }
 .study-library-record-heading { align-items: flex-start; }
+.study-library-record-heading h2 { color: var(--lib-accent); font-size: 24px; }
 .study-library-state { text-align: right; font-size: 12px; margin: 0; max-width: 520px; }
 .study-library-sentence { color: var(--lib-text); white-space: pre-wrap; font-size: 16px; margin: 12px 0 4px; }
-.study-library-context, .study-library-path { font-size: 13px; margin: 4px 0; }
+.study-library-context, .study-library-source { font-size: 13px; margin: 4px 0; }
+.study-library-source { color: var(--lib-muted); }
+.study-library-source strong { color: var(--lib-text); }
+.study-library-technical-details { margin-top: 10px; color: var(--lib-muted); font-size: 12px; }
+.study-library-technical-details summary { cursor: pointer; color: var(--lib-accent); }
+.study-library-path { margin: 8px 0; overflow-wrap: anywhere; }
+.study-library-locator { display: block; max-height: 14em; overflow: auto; padding: 9px; border-radius: 7px; background: var(--lib-tint); color: var(--lib-muted); font: 11px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .study-library-actions { margin-top: 14px; }
 .study-library-actions a, .study-library-actions button { font-size: 13px; }
+.study-library-actions .study-library-primary-action { display: inline-flex; align-items: center; min-height: 38px; padding: 7px 14px; border-radius: 8px; background: var(--lib-accent); color: var(--lib-accent-text); font-weight: 650; text-decoration: none; }
+.study-library-collection { margin: 0 0 18px; padding: 14px 16px; border: 1px solid var(--lib-line); border-radius: 12px; background: var(--lib-card); }
+.study-library-collection h2 { font-size: 16px; }
+.study-library-collection p { max-width: 620px; margin: 4px 0 0; font-size: 12px; }
+.study-library-collection-actions button:last-child { color: var(--lib-danger); }
+.study-library-record-details { margin-top: 9px; }
+.study-library-record-details summary { cursor: pointer; color: var(--lib-accent); font-size: 12px; }
 .study-library-conflicts { margin-top: 16px; border-top: 1px solid var(--lib-line); padding-top: 14px; }
 .study-library-conflicts fieldset { margin: 12px 0; border: 1px solid var(--lib-line); border-radius: 8px; padding: 10px 12px; }
 .study-library-conflicts legend { font-weight: 600; }
@@ -33,4 +51,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .study-library-choice code { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--lib-muted); }
 .study-library-more { display: block; min-width: 180px; margin: 18px auto 0; }
 .study-library-more[hidden] { display: none; }
-@media (max-width: 640px) { main { margin: 18px auto; padding: 0 12px 30px; } .study-library-tools { grid-template-columns: 1fr; } .study-library-tabs { grid-column: auto; } .study-library-record-heading { display: block; } .study-library-state { text-align: left; margin-top: 5px; } }
+@media (max-width: 640px) { main { margin: 18px auto; padding: 0 12px 30px; } .study-library-tools { grid-template-columns: 1fr; } .study-library-tabs { grid-column: auto; } .study-library-record-heading { display: block; } .study-library-state { text-align: left; margin-top: 5px; } .study-library-collection { align-items: flex-start; } }
+
+.study-library-collection>summary { cursor: pointer; color: var(--lib-accent); font-size: 13px; font-weight: 600; }
+.study-library-collection-body { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 10px; }

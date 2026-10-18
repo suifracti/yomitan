@@ -17,6 +17,7 @@
  */
 
 import {prepareBundledDictionary} from '../common/bundled-dictionary.js';
+import {prepareStudySettings} from '../study-settings-main.js';
 import {Application} from '../../application.js';
 import {DocumentFocusController} from '../../dom/document-focus-controller.js';
 import {querySelectorNotNull} from '../../dom/query-selector.js';
@@ -48,23 +49,12 @@ import {SecondarySearchDictionaryController} from './secondary-search-dictionary
 import {SentenceTerminationCharactersController} from './sentence-termination-characters-controller.js';
 import {SettingsController} from './settings-controller.js';
 import {SettingsDisplayController} from './settings-display-controller.js';
+import {prepareSettingsNavigation} from './settings-navigation.js';
 import {SortFrequencyDictionaryController} from './sort-frequency-dictionary-controller.js';
 import {StatusFooter} from './status-footer.js';
 import {StorageController} from './storage-controller.js';
 import {TranslationTextReplacementsController} from './translation-text-replacements-controller.js';
 import {YomitanApiController} from './yomitan-api-controller.js';
-
-window.addEventListener('message', (event) => {
-    const frame = document.getElementById('study-settings-frame');
-    if (!(frame instanceof HTMLIFrameElement) || event.origin !== location.origin || event.source !== frame.contentWindow) { return; }
-    const data = /** @type {unknown} */ (event.data);
-    if (!data || typeof data !== 'object') { return; }
-    const message = /** @type {{type?: unknown, height?: unknown}} */ (data);
-    const height = message.type === 'yomitan-study-settings-height' ? message.height : null;
-    if (typeof height === 'number' && Number.isFinite(height)) {
-        frame.style.height = `${Math.max(720, Math.min(4200, Math.ceil(height)))}px`;
-    }
-});
 
 /**
  * @param {GenericSettingController} genericSettingController
@@ -109,10 +99,23 @@ await Application.main(true, async (application) => {
     const settingsDisplayController = new SettingsDisplayController(settingsController, modalController);
     await settingsDisplayController.prepare();
 
+    const settingsRoot = querySelectorNotNull(document, '.content-center');
+    prepareSettingsNavigation(settingsRoot);
     document.body.hidden = false;
+    void prepareStudySettings(settingsRoot);
 
-    const popupPreviewController = new PopupPreviewController(settingsController);
-    popupPreviewController.prepare();
+    let popupPreviewController = null;
+    querySelectorNotNull(document, '#open-popup-preview').addEventListener('click', () => {
+        if (settingsRoot.dataset.activeSettingsCategory !== 'interface') { return; }
+        if (popupPreviewController === null) {
+            popupPreviewController = new PopupPreviewController(settingsController);
+            popupPreviewController.prepare();
+        }
+        document.body.classList.add('preview-sidebar-visible');
+    });
+    querySelectorNotNull(document, '#close-popup-preview').addEventListener('click', () => {
+        document.body.classList.remove('preview-sidebar-visible');
+    });
 
     const persistentStorageController = new PersistentStorageController(application);
     preparePromises.push(persistentStorageController.prepare());
@@ -198,5 +201,5 @@ await Application.main(true, async (application) => {
     await Promise.all(preparePromises);
 
     document.documentElement.dataset.loaded = 'true';
-    void prepareBundledDictionary(settingsController);
+    void prepareBundledDictionary(settingsController, querySelectorNotNull(document, '[data-settings-category-panel="lookup"]'));
 });

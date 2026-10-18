@@ -220,10 +220,12 @@ export function prepareStudyDictionary(entry, word) {
     prev.addEventListener('click', () => {
         --page;
         show();
+        entry.dispatchEvent(new CustomEvent('study-dictionary-pagechange'));
     });
     next.addEventListener('click', () => {
         ++page;
         show();
+        entry.dispatchEvent(new CustomEvent('study-dictionary-pagechange'));
     });
     translate.addEventListener('click', () => {
         const payload = lookup(),

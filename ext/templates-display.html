@@ -11,7 +11,7 @@
                     <span class="action-icon icon color-icon" data-icon="play-audio"></span><span class="study-action-label">播放发音</span>
                     <span class="action-button-badge icon" hidden></span>
                 </button>
-                <button type="button" class="study-audio-sources" title="选择发音来源">来源 ▾</button>
+                <button type="button" class="study-audio-sources" title="选择发音来源" data-menu-position="right below no-cover">发音来源 ▾</button>
                 <button type="button" title="更多操作" aria-label="更多操作" class="action-button action-button-collapsible" data-action="menu" data-menu-position="left below h-cover v-cover">
                     <span class="action-icon icon" data-icon="kebab-menu"></span>
                 </button>
@@ -185,8 +185,8 @@
 <!-- Popup menu -->
 <template id="audio-button-popup-menu-template"><div class="popup-menu-container scan-disable audio-button-popup-menu" tabindex="-1" role="dialog"><div class="popup-menu popup-menu-auto-size"><div class="study-menu-heading">选择发音来源</div><div class="study-menu-hint">点击来源试听 · 右侧选择卡片音频</div><div class="popup-menu-body"></div></div></div></template>
 <template id="audio-button-popup-menu-item-template"><div class="popup-menu-item-group">
-    <button type="button" class="popup-menu-item popup-menu-item-audio-button" data-menu-action="playAudioFromSource"><div class="popup-menu-item-icon icon" data-icon="none"></div><span class="popup-menu-item-label"></span></button>
-    <button type="button" class="popup-menu-item popup-menu-item-set-primary-audio-button" data-menu-action="setPrimaryAudio" title="用作 Anki 卡片音频" aria-label="用作 Anki 卡片音频"><div class="popup-menu-item-icon icon" data-icon="note-card"></div><span class="study-card-audio-label">选用</span></button>
+    <button type="button" class="popup-menu-item popup-menu-item-audio-button" data-menu-action="playAudioFromSource"><div class="popup-menu-item-icon icon" data-icon="none"></div><span class="popup-menu-item-label"></span><span class="study-audio-preview-label">试听</span><span class="study-audio-item-status" aria-live="polite"></span></button>
+    <button type="button" class="popup-menu-item popup-menu-item-set-primary-audio-button" data-menu-action="setPrimaryAudio" title="用于卡片音频" aria-label="用于卡片音频" aria-pressed="false"><div class="popup-menu-item-icon icon" data-icon="note-card"></div><span class="study-card-audio-label">用于卡片</span></button>
 </div></template>
 <template id="view-note-button-popup-menu-template"><div class="popup-menu-container scan-disable view-note-button-popup-menu" tabindex="-1" role="dialog"><div class="popup-menu popup-menu-auto-size"><div class="popup-menu-body"></div></div></div></template>
 <template id="view-note-button-popup-menu-item-template"><button type="button" class="popup-menu-item"><span class="popup-menu-item-label"></span></button></template>

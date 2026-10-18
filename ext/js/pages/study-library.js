@@ -18,8 +18,10 @@
 import {Application} from '../application.js';
 import {Frontend} from '../app/frontend.js';
 import {PopupFactory} from '../app/popup-factory.js';
+import {ThemeController} from '../app/theme-controller.js';
 import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {studyCall} from '../study/study-client.js';
+import {parseJson} from '../core/json.js';
 import {sourceKey} from '../study/study-journal.js';
 
 const PAGE_SIZE = 10;
@@ -71,6 +73,25 @@ function plainText(value) {
 }
 
 /**
+ * Recognizes the old article locator stored as JSON in the context field.
+ * @param {unknown} value
+ * @returns {?Record<string, unknown>}
+ */
+function parseLegacySourceLocator(value) {
+    if (typeof value !== 'string') { return null; }
+    let parsed;
+    try {
+        parsed = parseJson(value);
+    } catch {
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return null; }
+    const locator = /** @type {Record<string, unknown>} */ (parsed);
+    if (locator.kind !== 'article' || typeof locator.title !== 'string' || !Object.prototype.hasOwnProperty.call(locator, 'locator') || !Object.prototype.hasOwnProperty.call(locator, 'position')) { return null; }
+    return locator;
+}
+
+/**
  * Build a regular dictionary lookup while retaining the saved source context.
  * This deliberately restores ordinary source metadata only; it does not create subtitle authorization.
  * @param {{id?: string, entry?: {word?: string, sentence?: string, context?: string, url?: string, title?: string, videoTime?: number, language?: string}}} record
@@ -83,8 +104,10 @@ export function createResumeUrl(record, searchUrl) {
     const sentence = entry.sentence ?? word;
     const params = new URLSearchParams({type: 'terms', query: word, full: sentence, offset: `${Math.max(0, sentence.toLocaleLowerCase().indexOf(word.toLocaleLowerCase()))}`, studyResume: '1'});
     params.set('studySourceUrl', entry.url ?? '');
-    params.set('studySourceTitle', entry.title ?? '');
-    params.set('studyContext', entry.context ?? '');
+    const legacySource = parseLegacySourceLocator(entry.context);
+    const sourceTitle = entry.title?.trim() || (typeof legacySource?.title === 'string' ? legacySource.title.trim() : '');
+    params.set('studySourceTitle', sourceTitle);
+    params.set('studyContext', legacySource ? '' : (entry.context ?? ''));
     params.set('studyLanguage', entry.language ?? 'en');
     if (record.id) { params.set('studyRecordId', record.id); }
     if (typeof entry.videoTime === 'number' && Number.isFinite(entry.videoTime)) { params.set('studyVideoTime', `${entry.videoTime}`); }
@@ -139,16 +162,75 @@ function matchesSearch(record, query) {
  * @returns {string}
  */
 function stateSummary(record) {
-    if (record.reconcileState === 'checking') { return '正在核对最新 Obsidian / Anki 状态…'; }
+    if (record.reconcileState === 'checking') { return '正在确认最近的保存和复习状态…'; }
     const cards = noteIds(record).length;
-    const syncState = typeof record.syncState === 'string' ? record.syncState : '';
-    const labels = {'synced': '已同步', 'pending': '待同步', 'conflict': '需处理冲突', 'missing': '关联已缺失', 'paused': '已暂停', 'local-only': '仅笔记', 'saved': '笔记已保存'};
-    const syncLabel = syncState ? `同步：${/** @type {Record<string,string>} */ (labels)[syncState] ?? '待核对'}` : '';
-    const vaultLabel = record.vaultSaved === true ? 'Obsidian：已保存' : (record.vaultSaved === false ? 'Obsidian：未确认保存' : 'Obsidian：状态未知');
-    let ankiLabel = record.ankiEnabled === false ? 'Anki：复习已关闭' : (cards > 0 ? `Anki：已关联 ${cards} 条卡片` : `Anki：${record.ankiState || '状态未知'}`);
-    if (record.ankiState === 'pending') { ankiLabel = 'Anki：待同步'; }
-    const summary = [vaultLabel, ankiLabel, syncLabel, record.error].filter(Boolean).join(' · ');
-    return record.reconcileState === 'failed' ? `未核对最新状态；列表快照：${summary} · ${record.reconcileError ?? '刷新失败'}` : summary;
+    const labels = [];
+    const isFavorite = record.learningState === 'favorite-only' && record.favorite !== false;
+    switch (isFavorite ? 'favorite' : record.vaultSaved) {
+        case 'favorite': labels.push('已加入待学收藏'); break;
+        case true:
+            labels.push('笔记已保存');
+            if (record.favorite === true) { labels.push('已收藏'); }
+            break;
+        case false: labels.push('笔记尚未保存'); break;
+        default: labels.push('笔记状态待确认'); break;
+    }
+    if (record.ankiEnabled === false) {
+        labels.push('复习卡已关闭');
+    } else if (cards > 0) {
+        labels.push(`已有 ${cards} 张复习卡`);
+    } else {
+        const ankiLabels = {pending: '复习卡待同步', missing: '复习卡关联未找到', error: '复习卡同步遇到问题', linked: '复习卡已关联'};
+        labels.push(/** @type {Record<string,string>} */ (ankiLabels)[record.ankiState ?? ''] ?? '尚未关联复习卡');
+    }
+    const syncValue = /** @type {unknown} */ (record.syncState);
+    let syncState = '';
+    if (typeof syncValue === 'string') {
+        syncState = syncValue;
+    } else if (syncValue && typeof syncValue === 'object' && 'status' in syncValue && typeof syncValue.status === 'string') {
+        syncState = syncValue.status;
+    }
+    const syncLabels = {synced: '同步完成', pending: '等待同步', conflict: '有内容需要确认', missing: '关联信息待确认', error: '同步遇到问题', failed: '同步未完成', paused: '同步已暂停', ['local-only']: '仅保存在笔记', saved: '笔记已保存'};
+    if (syncState && syncState !== 'synced') { labels.push(/** @type {Record<string,string>} */ (syncLabels)[syncState] ?? '同步状态待确认'); }
+    if (record.reconcileState === 'failed') { labels.push('未核对最新状态'); }
+    if (record.error) { labels.push(`需留意：${record.error}`); }
+    if (record.reconcileError) { labels.push(record.reconcileError); }
+    return labels.join(' · ');
+}
+
+/**
+ * @param {string|null|undefined} path
+ * @param {unknown} subtitleLocator
+ * @param {?Record<string, unknown>} legacyLocator
+ * @returns {?HTMLElement}
+ */
+function makeTechnicalDetails(path, subtitleLocator, legacyLocator) {
+    if (!path && !subtitleLocator && !legacyLocator) { return null; }
+    const details = document.createElement('details');
+    details.className = 'study-library-technical-details';
+    const summary = document.createElement('summary');
+    summary.textContent = '查看记录详情';
+    details.append(summary);
+    if (path) {
+        const pathElement = document.createElement('p');
+        pathElement.className = 'study-library-path';
+        pathElement.textContent = `笔记位置：${path}`;
+        details.append(pathElement);
+    }
+    for (const [labelText, value] of [['原始字幕定位资料', subtitleLocator], ['原始来源定位资料', legacyLocator]]) {
+        if (!value) { continue; }
+        const label = document.createElement('p');
+        label.textContent = labelText;
+        const data = document.createElement('pre');
+        data.className = 'study-library-locator';
+        try {
+            data.textContent = JSON.stringify(value, null, 2) ?? '';
+        } catch {
+            data.textContent = '定位资料无法显示。';
+        }
+        details.append(label, data);
+    }
+    return details;
 }
 
 /**
@@ -193,6 +275,18 @@ export async function prepareStudyLibraryLookup(application) {
  */
 async function initializePage() {
     await Application.main(true, async (application) => {
+        const themeController = new ThemeController(document.documentElement);
+        themeController.prepare();
+        try {
+            const optionsFull = await application.api.optionsGetFull();
+            const {profiles, profileCurrent} = optionsFull;
+            const defaultProfile = (profileCurrent >= 0 && profileCurrent < profiles.length) ? profiles[profileCurrent] : null;
+            if (defaultProfile !== null) {
+                themeController.theme = defaultProfile.options.general.popupTheme;
+                themeController.siteOverride = true;
+                themeController.updateTheme();
+            }
+        } catch { /* Keep the browser-preferred fallback if profile options are unavailable. */ }
         const status = byId('study-library-status');
         const list = byId('study-library-list');
         const search = /** @type {HTMLInputElement} */ (document.getElementById('study-library-search'));
@@ -221,7 +315,12 @@ async function initializePage() {
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
             try {
+                const previous = savedWords;
                 savedWords = normalizeSavedWords(await studyCall('saved'));
+                for (const saved of previous) {
+                    if (!savedWords.some((row) => row.id === saved.id)) { updateLoadedFavorite(saved, false); }
+                }
+                for (const saved of savedWords) { updateLoadedFavorite(saved, true); }
                 savedReadError = '';
             } catch (error) {
                 savedReadError = error instanceof Error ? error.message : '本地收藏读取失败。';
@@ -231,11 +330,28 @@ async function initializePage() {
 
         /**
          * @param {LocalSavedWord} saved
+         * @returns {StudyLibraryRecord[]}
+         */
+        function matchingRecordsForSaved(saved) {
+            const key = sourceKey({...saved, url: saved.sourceUrl ?? saved.url});
+            return [...records.values()].filter((record) => (saved.libraryId && record.id === saved.libraryId) || sourceKey(record.entry) === key);
+        }
+
+        /**
+         * @param {LocalSavedWord} saved
          * @returns {boolean}
          */
         function hasNativeFavorite(saved) {
-            const key = sourceKey({...saved, url: saved.sourceUrl ?? saved.url});
-            return [...records.values()].some((record) => (record.id === saved.libraryId || sourceKey(record.entry) === key) && (record.favorite === true || record.learningState === 'favorite-only'));
+            return matchingRecordsForSaved(saved).some((record) => record.favorite === true || (record.favorite !== false && record.learningState === 'favorite-only'));
+        }
+
+        /**
+         * @param {LocalSavedWord} saved
+         * @param {boolean} favorite
+         * @returns {void}
+         */
+        function updateLoadedFavorite(saved, favorite) {
+            for (const record of matchingRecordsForSaved(saved)) { record.favorite = favorite; }
         }
 
         /**
@@ -325,18 +441,42 @@ async function initializePage() {
                 sentence.textContent = record.entry.sentence;
                 article.append(sentence);
             }
-            if (record.entry?.context) {
+            const legacyLocator = parseLegacySourceLocator(record.entry?.context);
+            if (record.entry?.context && !legacyLocator) {
                 const context = document.createElement('p');
                 context.className = 'study-library-context';
                 context.textContent = record.entry.context;
                 article.append(context);
             }
-            const path = document.createElement('p');
-            path.className = 'study-library-path';
-            path.textContent = record.path ? `笔记：${record.path}` : '';
-            if (path.textContent) { article.append(path); }
+            let sourceName = record.entry?.title?.trim() ?? '';
+            if (!sourceName && typeof legacyLocator?.title === 'string') { sourceName = legacyLocator.title.trim(); }
+            if (!sourceName && record.entry?.url) {
+                try {
+                    sourceName = new URL(record.entry.url).hostname.replace(/^www\./, '');
+                } catch { /* Keep malformed source URLs out of the visible source label. */ }
+            }
+            if (!sourceName && legacyLocator?.kind === 'article') { sourceName = '文章'; }
+            if (sourceName) {
+                const sourceLine = document.createElement('p');
+                sourceLine.className = 'study-library-source';
+                const label = document.createElement('span');
+                label.textContent = '来源：';
+                const name = document.createElement('strong');
+                name.textContent = sourceName;
+                sourceLine.append(label, name);
+                article.append(sourceLine);
+            }
+            const technicalDetails = makeTechnicalDetails(record.path, record.entry?.subtitleSource, legacyLocator);
+            if (technicalDetails) { article.append(technicalDetails); }
             const actions = document.createElement('div');
             actions.className = 'study-library-actions';
+            const resume = document.createElement('a');
+            resume.className = 'study-library-primary-action';
+            resume.href = createResumeUrl(record, chrome.runtime.getURL('/search.html'));
+            resume.target = '_blank';
+            resume.rel = 'noopener noreferrer';
+            resume.textContent = '继续学习 ↗';
+            actions.append(resume);
             if (record.openUrl) {
                 const note = document.createElement('a');
                 note.href = record.openUrl;
@@ -371,17 +511,11 @@ async function initializePage() {
                         source.href = sourceUrl;
                         source.target = '_blank';
                         source.rel = 'noopener noreferrer';
-                        source.textContent = record.entry.title ? `原来源：${record.entry.title} ↗` : '打开原来源 ↗';
+                        source.textContent = '打开来源 ↗';
                         actions.append(source);
                     }
                 } catch { /* Invalid or local source URLs remain visible through note text. */ }
             }
-            const resume = document.createElement('a');
-            resume.href = createResumeUrl(record, chrome.runtime.getURL('/search.html'));
-            resume.target = '_blank';
-            resume.rel = 'noopener noreferrer';
-            resume.textContent = '继续查词 ↗';
-            actions.append(resume);
             const favorite = document.createElement('button');
             favorite.type = 'button';
             favorite.textContent = record.favorite ? '★ 已收藏' : '☆ 收藏';
@@ -427,20 +561,48 @@ async function initializePage() {
             title.textContent = saved.word || '(未命名收藏)';
             const state = document.createElement('p');
             state.className = 'study-library-state';
-            state.textContent = saved.syncPending ? '仅扩展本地收藏 · 同步待确认' : '仅扩展本地收藏 · 尚未确认 Obsidian / Anki 状态';
+            state.textContent = saved.syncPending ? '已收藏待学 · 正等待同步确认' : '已收藏待学 · 尚未确认笔记和复习状态';
             article.append(title, state);
             const sentence = document.createElement('p');
             sentence.className = 'study-library-sentence';
             sentence.textContent = saved.sentence;
             article.append(sentence);
-            if (saved.context) {
+            const legacyLocator = parseLegacySourceLocator(saved.context);
+            if (saved.context && !legacyLocator) {
                 const context = document.createElement('p');
                 context.className = 'study-library-context';
                 context.textContent = saved.context;
                 article.append(context);
             }
+            let sourceName = saved.title?.trim() ?? '';
+            if (!sourceName && typeof legacyLocator?.title === 'string') { sourceName = legacyLocator.title.trim(); }
+            if (!sourceName && saved.url) {
+                try {
+                    sourceName = new URL(saved.url).hostname.replace(/^www\./, '');
+                } catch { /* Keep malformed source URLs out of the visible source label. */ }
+            }
+            if (!sourceName && legacyLocator?.kind === 'article') { sourceName = '文章'; }
+            if (sourceName) {
+                const sourceLine = document.createElement('p');
+                sourceLine.className = 'study-library-source';
+                const label = document.createElement('span');
+                label.textContent = '来源：';
+                const name = document.createElement('strong');
+                name.textContent = sourceName;
+                sourceLine.append(label, name);
+                article.append(sourceLine);
+            }
+            const technicalDetails = makeTechnicalDetails(null, null, legacyLocator);
+            if (technicalDetails) { article.append(technicalDetails); }
             const actions = document.createElement('div');
             actions.className = 'study-library-actions';
+            const resume = document.createElement('a');
+            resume.className = 'study-library-primary-action';
+            resume.href = createResumeUrl({entry: saved}, chrome.runtime.getURL('/search.html'));
+            resume.target = '_blank';
+            resume.rel = 'noopener noreferrer';
+            resume.textContent = '继续学习 ↗';
+            actions.append(resume);
             if (saved.url) {
                 try {
                     const parsed = new URL(saved.url);
@@ -449,17 +611,24 @@ async function initializePage() {
                         source.href = parsed.href;
                         source.target = '_blank';
                         source.rel = 'noopener noreferrer';
-                        source.textContent = saved.title ? `原来源：${saved.title} ↗` : '打开原来源 ↗';
+                        source.textContent = '打开来源 ↗';
                         actions.append(source);
                     }
                 } catch { /* Keep malformed or local source values out of clickable links. */ }
             }
-            const resume = document.createElement('a');
-            resume.href = createResumeUrl({entry: saved}, chrome.runtime.getURL('/search.html'));
-            resume.target = '_blank';
-            resume.rel = 'noopener noreferrer';
-            resume.textContent = '继续查词 ↗';
-            actions.append(resume);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.textContent = '取消收藏';
+            remove.addEventListener('click', () => {
+                remove.disabled = true;
+                void studyCall('removeWord', {id: saved.id}).then(async () => {
+                    updateLoadedFavorite(saved, false);
+                    await refreshSavedWords();
+                    setStatus('已取消收藏；原有笔记和复习卡仍保留。');
+                }).catch((error) => setStatus(error instanceof Error ? `取消收藏未完成：${error.message}` : '取消收藏未完成；原收藏仍保留。'))
+                    .finally(() => { remove.disabled = false; });
+            });
+            actions.append(remove);
             const sync = document.createElement('button');
             sync.type = 'button';
             sync.dataset.localFavoriteSync = saved.id;
@@ -609,6 +778,60 @@ async function initializePage() {
             }
         }
 
+        const exportSavedButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('study-library-export-saved'));
+        const clearSavedButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('study-library-clear-saved'));
+        exportSavedButton?.addEventListener('click', () => {
+            exportSavedButton.disabled = true;
+            void (async () => {
+                const saved = normalizeSavedWords(await studyCall('saved'));
+                const url = URL.createObjectURL(new Blob([JSON.stringify({format: 'study-saved-v1', saved}, null, 2)], {type: 'application/json'}));
+                const anchor = document.createElement('a');
+                anchor.href = url;
+                anchor.download = '英语学习-收藏语境.json';
+                anchor.click();
+                setTimeout(() => URL.revokeObjectURL(url), 30000);
+                setStatus(`已导出 ${saved.length} 条扩展中已收集收藏；包含已读取的同步收藏，未加载的原生收藏不会自动读入。`);
+            })().catch((error) => setStatus(error instanceof Error ? `收藏导出未完成：${error.message}` : '收藏导出未完成。'))
+                .finally(() => { exportSavedButton.disabled = false; });
+        });
+        clearSavedButton?.addEventListener('click', () => {
+            // eslint-disable-next-line no-alert
+            if (!confirm('清空扩展中已收集的收藏（包含已读取的同步收藏）？未加载的原生收藏不在内。只取消收藏标记，保留 Obsidian 笔记和 Anki 卡片。')) { return; }
+            clearSavedButton.disabled = true;
+            if (exportSavedButton) { exportSavedButton.disabled = true; }
+            void (async () => {
+                const saved = normalizeSavedWords(await studyCall('saved'));
+                if (saved.length === 0) {
+                    await refreshSavedWords();
+                    setStatus('当前没有扩展中已收集的收藏；笔记和复习卡不受影响。');
+                    return;
+                }
+                let removed = 0;
+                /** @type {string[]} */
+                const failed = [];
+                for (const row of saved) {
+                    try {
+                        await studyCall('removeWord', {id: row.id});
+                        updateLoadedFavorite(row, false);
+                        removed++;
+                    } catch {
+                        failed.push(row.word || '未命名收藏');
+                    }
+                }
+                await refreshSavedWords();
+                if (failed.length > 0) {
+                    const first = failed[0];
+                    setStatus(`已移除 ${removed} 条 · ${failed.length} 条未完成，仍保留${first ? `（如：${first}）` : ''}。已关联的星标等待同步确认；笔记和卡片未删除。`);
+                } else {
+                    setStatus(`已移除 ${removed} 条收藏标记；已关联的星标等待同步确认。笔记和卡片未删除。`);
+                }
+            })().catch((error) => setStatus(error instanceof Error ? `收藏清理未完成，原收藏仍保留：${error.message}` : '收藏清理未完成，原收藏仍保留。'))
+                .finally(() => {
+                    clearSavedButton.disabled = false;
+                    if (exportSavedButton) { exportSavedButton.disabled = false; }
+                });
+        });
+
         for (const button of document.querySelectorAll('[data-library-category]')) {
             button.addEventListener('click', () => {
                 category = /** @type {HTMLElement} */ (button).dataset.libraryCategory ?? 'all';
@@ -621,6 +844,11 @@ async function initializePage() {
         search.addEventListener('input', render);
         more.addEventListener('click', () => { void loadPage(false); });
         document.getElementById('study-library-refresh')?.addEventListener('click', () => { void loadPage(true); });
+        chrome.storage?.onChanged?.addListener((changes, area) => {
+            if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, 'studySavedWordsV1')) {
+                void refreshSavedWords();
+            }
+        });
         await loadPage(true);
     });
 }

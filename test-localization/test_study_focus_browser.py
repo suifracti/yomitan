@@ -9,7 +9,7 @@ with sync_playwright() as p:
     results=[]
     page=browser.new_page(viewport={'width':420,'height':600},device_scale_factor=1)
     errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
-    def load_fixture():
+    def load_fixture(term=None):
         raw=(ROOT/'test-localization/fixtures/study-focus.html').read_text()
         html, script=raw.split('<script type="module">',1)
         script=script.split('</script>',1)[0]
@@ -20,10 +20,24 @@ const cardToggle=document.createElement('button');cardToggle.type='button';cardT
 const cardPanel=document.createElement('section');cardPanel.className='study-card-add';cardPanel.setAttribute('aria-label','手动添加复习卡');cardPanel.hidden=true;
 cardPanel.innerHTML='<fieldset class=\"study-card-editor\"><label>学习点<select><option>词义</option></select></label><label>正面<textarea rows=\"2\" maxlength=\"1000\">A short prompt</textarea></label><label>背面<textarea rows=\"2\" maxlength=\"2400\">A short answer</textarea></label></fieldset><button type=\"button\">再加一张</button><button type=\"button\">添加已选卡片</button>';
 cardToggle.onclick=()=>{cardPanel.hidden=!cardPanel.hidden;document.querySelector('.study-focus-shell')?.classList.toggle('sf-card-editor-open',!cardPanel.hidden);if(!cardPanel.hidden)requestAnimationFrame(()=>cardPanel.scrollIntoView({block:'nearest'}));};
-const sourceMenu=document.createElement('button');sourceMenu.type='button';sourceMenu.className='study-audio-sources';sourceMenu.title='选择发音来源';sourceMenu.textContent='来源 ▾';document.querySelector('.study-entry .actions').append(sourceMenu);
+const sourceMenu=document.createElement('button');sourceMenu.type='button';sourceMenu.className='study-audio-sources';sourceMenu.title='选择发音来源';sourceMenu.textContent='发音来源 ▾';document.querySelector('.study-entry .actions').append(sourceMenu);
 studyContext.append(cardToggle,cardPanel);
 document.querySelector('[data-study-save=note]').addEventListener('click',()=>{cardToggle.hidden=false;});
 """
+        if term:
+            example = {'improve': {'ipa':'/ɪmˈpruːv/', 'forms':'过去式 / 过去分词：improved · 现在分词：improving · 第三人称：improves', 'sentence':'I am trying to improve three major things in my life.', 'senses':[('vt. 及物动词','改善，提高，改进'),('vi. 不及物动词','变得更好，增加')]}, 'absolutely': {'ipa':'/ˈæbsəluːtli/', 'forms':'', 'sentence':'This is absolutely useful.', 'senses':[('adv. 副词','完全地，绝对地，确确实实地')]}}[term]
+            case_script = """
+const sample=CASE_DATA;
+window.display.query=CASE_TERM;document.querySelector('.study-reading-phonetic').textContent=sample.ipa;
+window.display.history.state.sentence={text:sample.sentence};
+const sourceP=document.querySelector('.study-source p');sourceP.replaceChildren(sample.sentence.slice(0,sample.sentence.indexOf(CASE_TERM)));const mark=document.createElement('mark');mark.textContent=CASE_TERM;sourceP.append(mark,sample.sentence.slice(sample.sentence.indexOf(CASE_TERM)+CASE_TERM.length));
+document.querySelector('.study-reading-meaning').innerHTML=sample.senses.map(([pos,meaning])=>'<div class="study-reading-sense"><span class="study-pos">'+pos+'</span><span class="study-meaning-text">'+meaning+'</span></div>').join('');
+document.querySelector('[data-study-meta-role=forms]').textContent=sample.forms;
+const grammar=[...document.querySelectorAll('[data-sc-content=summary-entry]')].find(e=>e.textContent==='词形与语法').parentElement;
+grammar.querySelector('p').textContent=sample.forms||'absolutely (comparative more absolutely, superlative most absolutely)';
+document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.textContent=CASE_TERM==='improve'?['To make something better.','To become better.','To increase in quality.','To put to good use.'][i]:['In an absolute manner.','Completely, without qualification.','As an intensifier: extremely, very, indeed.','Yes; certainly.'][i];});
+""".replace('CASE_DATA',json.dumps(example,ensure_ascii=False)).replace('CASE_TERM',json.dumps(term))
+            script=script.replace("prepareStudyDictionary(document.querySelector('.study-entry'),'ability');",case_script+"\nprepareStudyDictionary(document.querySelector('.study-entry'),"+json.dumps(term)+");")
         script=script.replace("prepareStudyFocus(window.display,{call:window.mockCall});",card_fixture+"\nprepareStudyFocus(window.display,{call:window.mockCall});")
         script=script.replace("import {prepareStudyFocus} from '/source/ext/js/display/study-focus.js';",'')
         module=(ROOT/'ext/js/display/study-focus.js').read_text()
@@ -36,7 +50,8 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
         module=module.replace('export function prepareStudyFocus','function prepareStudyFocus')
         module=module.replace("new URL('../../css/study-focus.css', import.meta.url).href", "'data:text/css,'")
         page.set_content(html+'</body></html>')
-        page.add_style_tag(content=(ROOT/'ext/css/study-focus.css').read_text())
+        for css in ['material.css', 'display.css', 'structured-content.css', 'study-card.css', 'study-focus.css']:
+            page.add_style_tag(content=(ROOT/'ext/css'/css).read_text())
         dictionary=(ROOT/'ext/js/display/study-dictionary.js').read_text().replace("import {studyCall} from '../study/study-client.js';", "const dictionaryCall=(a,d)=>globalThis.dictionaryCall(a,d);").replace('export function ', 'function ').replace('await studyCall(', 'await dictionaryCall(').replace('void studyCall(', 'void dictionaryCall(')
         page.add_script_tag(content='(()=>{'+dictionary+'\n'+module+'\n'+script+'})();')
         page.wait_for_function('window.ready===true')
@@ -44,12 +59,20 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     load_fixture()
     def check(name,code):
         result=page.evaluate(code)
+        if not result:
+            page.screenshot(path=str(OUTPUT/'failure.png'))
+            print(page.evaluate('()=>Object.fromEntries([".sf-heading",".sf-tabs",".sf-body",".sf-dictionary",".sf-dictionary-scroll",".sf-save-bar","[data-study-dictionary-next]","[data-study-dictionary-translate]"].map(s=>{const e=document.querySelector(s),r=e?.getBoundingClientRect();return [s,r?{y:r.y,h:r.height,w:r.width,client:e.clientHeight}:null]}))'))
         assert result, (name, result)
         results.append({'test':name,'passed':True})
     check('first page puts Chinese meaning beside the authentic source',
         '()=>document.querySelector(".sf-tab[aria-selected=true]").textContent==="词义与原句" && document.querySelector(".sf-heading .sf-gloss-text")?.textContent==="能力，才干" && !document.querySelector(".sf-source-pane").hidden && document.querySelector(".sf-source-pane mark").textContent==="ability"')
+    check('quick dictionary action keeps the separate view-card label', '()=>document.querySelector("[data-action=save-note] .study-action-label").textContent==="快速词典卡" && document.querySelector("[data-action=view-note] .study-action-label").textContent==="查看卡片"')
     check('one source and readable current answer','()=>document.querySelectorAll(".sf-source-pane .study-source").length===1 && document.querySelector(".sf-answer").textContent.includes("入睡的能力")')
     check('lookup does not generate or save new learning; existing records may reconcile','()=>window.models===0 && window.saveClicks===0 && window.calls.every(([x])=>["libraryMemory","libraryRead","libraryReconcile"].includes(x)) && window.dictionaryCalls.every(([x])=>x==="dictionaryPeek")')
+    check('common forms are directly visible beside the fixed word header', '()=>document.querySelector(".sf-heading .sf-forms-preview")?.textContent.includes("abilities")')
+    page.locator('.sf-forms-preview').click()
+    check('word-header forms open their full dictionary reference without scrolling the frame', '()=>{const d=document.querySelector(".sf-dictionary-scroll").getBoundingClientRect(),r=document.querySelector(".sf-dictionary-forms").getBoundingClientRect();return document.querySelector(".sf-tab[aria-selected=true]").textContent==="详细词典"&&r.top>=d.top-1&&r.top<d.bottom&&document.querySelector(".sf-heading").getBoundingClientRect().top===36;}')
+    page.get_by_role('tab',name='词义与原句',exact=True).click()
     check('previous history hidden for first turn','()=>document.querySelector(".study-conversation-history").hidden')
     check('Chinese meaning and tabs are outside the one learning scroller', '()=>document.querySelector(".sf-heading .sf-gloss-text") && document.querySelector(".sf-learning-scroll .sf-source-pane") && !document.querySelector(".sf-learning-scroll .sf-tabs") && !document.querySelector(".sf-learning-scroll .sf-compose")')
     pinned_before=page.locator('.sf-heading').bounding_box()
@@ -64,10 +87,14 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     page.locator('.study-followup').fill('这里为什么用 to？')
     page.get_by_role('tab',name='详细词典',exact=True).click()
     check('dictionary keeps the same shared Chinese header while hiding the sentence','()=>document.querySelector(".sf-source-pane").hidden && !document.querySelector(".sf-dictionary").hidden && !document.querySelector(".sf-header-sense").hidden && document.querySelector(".sf-header-sense").textContent.includes("才干")')
-    check('dictionary starts with English and no duplicate Chinese or preview block', '()=>!!document.querySelector(".sf-dictionary .study-original-dictionary[open]") && !document.querySelector(".sf-dictionary > .study-reading-meaning") && !document.querySelector(".sf-dictionary > .study-reading-english") && !document.querySelector(".sf-dictionary-info").open')
-    check('grammar and etymology are in the folded reference area', '()=>document.querySelectorAll(".sf-dictionary-info [data-sc-content=summary-entry]").length===2 && !document.querySelector(".study-original-dictionary [data-sc-content=summary-entry]")')
+    check('dictionary starts with English and no duplicate Chinese or preview block', '()=>!!document.querySelector(".sf-dictionary .study-original-dictionary[open]") && !document.querySelector(".sf-dictionary > .study-reading-meaning") && !document.querySelector(".sf-dictionary > .study-reading-english") && document.querySelector(".sf-dictionary-info").tagName==="SECTION"')
+    check('grammar and etymology are directly open with no nested reference fold', '()=>[...document.querySelectorAll(".sf-dictionary-scroll [data-sc-content=summary-entry]")].every(n=>n.closest("details").open) && document.querySelectorAll(".sf-dictionary-scroll [data-sc-content=summary-entry]").length===2 && !document.querySelector(".study-original-dictionary [data-sc-content=summary-entry]")')
     check('live dictionary wrappers are never paginated as a parent of their own senses', '()=>{const row=document.querySelector("[data-sc-content=glosses]>li[data-study-sense-hidden=false]");return row && row.getBoundingClientRect().height>0 && !row.closest(".gloss-item[data-study-sense-hidden=true]");}')
+    check('dictionary heading and page controls stay outside the only dictionary scroller', '()=>document.querySelector(".sf-dictionary-heading-dock .study-dictionary-heading") && document.querySelector(".sf-dictionary-pager .study-dictionary-pagination") && document.querySelector(".sf-dictionary-scroll .study-original-dictionary") && !/(auto|scroll)/.test(getComputedStyle(document.querySelector(".sf-dictionary")).overflowY)')
+    page.locator('.sf-dictionary-scroll').evaluate('(e)=>{e.style.scrollBehavior="auto";e.scrollTop=e.scrollHeight}')
+    check('next group stays reachable after long dictionary scrolling', '()=>{const b=document.querySelector("[data-study-dictionary-next]").getBoundingClientRect(),s=document.querySelector(".sf-save-bar").getBoundingClientRect();return b.top>0&&b.bottom<=s.top+1;}')
     page.locator('[data-study-dictionary-next]').click();page.wait_for_timeout(30)
+    check('changing group resets only dictionary content scroll', '()=>document.querySelector(".sf-dictionary-scroll").scrollTop===0')
     check('dictionary pages keep original sense nodes and counts', '()=>document.querySelector(".study-sense-count").textContent.includes("2/2") && document.querySelector("[data-study-sense-hidden=false]").textContent.includes("special talent")')
     page.evaluate('window.dictionaryFail=true')
     page.locator('[data-study-dictionary-translate]').click();page.wait_for_timeout(30)
@@ -113,6 +140,17 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     page.locator('.sf-learning-scroll').evaluate('(e)=>e.scrollTop=e.scrollHeight')
     after=page.locator('.sf-compose').bounding_box()
     assert before['y']==after['y'];results.append({'test':'composer stays fixed while source and long AI answer scroll together','passed':True})
+    load_fixture()
+    page.evaluate("""()=>{
+        window.fire('contentUpdateStart');
+        const original=[...document.querySelectorAll('[data-sc-content=summary-entry]')].find(n=>n.textContent==='词源').closest('details');
+        original.parentElement.dataset.dictionary='Wiktionary';
+        original.after(original.cloneNode(true));
+        const other=document.createElement('section');other.dataset.dictionary='Other dictionary';other.append(original.cloneNode(true));
+        document.querySelector('.study-dictionary-details').append(other);
+        window.fire('contentUpdateComplete');
+    }""")
+    check('identical metadata deduplicates only within its known dictionary source', '()=>{const rows=[...document.querySelectorAll(".sf-dictionary-scroll [data-sc-content=summary-entry]")];return rows.length===4&&rows.filter(e=>!e.closest("details").hidden).length===3&&rows.some(e=>e.textContent.includes("Other dictionary"));}')
     for width,height in [(400,550),(400,250),(320,550),(420,600),(720,600)]:
         page.set_viewport_size({'width':width,'height':height});load_fixture()
         page.locator('.study-more-actions').evaluate('(e)=>e.open=true')
@@ -142,7 +180,7 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     page.evaluate('window.fire("contentUpdateStart"); window.fire("contentUpdateComplete")');page.wait_for_timeout(50)
     check('lookup lifecycle does not duplicate controls or lose source', '()=>document.querySelectorAll(".study-focus-shell").length===1 && document.querySelectorAll(".sf-source-pane .study-source").length===1 && document.querySelectorAll("[data-study-save=note]").length===1')
     page.evaluate('document.querySelector(".study-translation-output").replaceChildren()');page.wait_for_timeout(40)
-    check('shared hint keeps every Chinese POS row instead of just the first', '()=>!document.querySelector(".sf-short-gloss").hidden && document.querySelector(".sf-gloss-text").textContent==="能力，才干" && document.querySelector(".sf-gloss-pos").textContent.includes("名词") && document.querySelector(".sf-short-gloss").textContent.includes("使能够") && document.querySelector(".sf-gloss-kicker").textContent.includes("未按本句判断")')
+    check('shared hint keeps every Chinese POS row instead of just the first', '()=>!document.querySelector(".sf-short-gloss").hidden && document.querySelector(".sf-gloss-text").textContent==="能力，才干" && document.querySelector(".sf-gloss-pos").textContent.includes("名词") && document.querySelector(".sf-short-gloss").textContent.includes("使能够") && !document.querySelector(".sf-gloss-kicker")')
     page.get_by_role('tab',name='详细词典',exact=True).click()
     check('usage stays in the dictionary and sentence editing stays beside the sentence', '()=>document.querySelector(".sf-dictionary-info .study-token-summary") && document.querySelector(".sf-source-pane .study-more-actions") && document.querySelectorAll(".sf-audio-tools button:not(.study-audio-sources)").length===1 && document.querySelector(".sf-audio-primary-hidden")')
     page.evaluate('window.fire("contentUpdateStart"); window.chrome.permissions.contains=async()=>false;window.calls=[];window.fire("contentUpdateComplete")');page.wait_for_timeout(50)
@@ -177,12 +215,12 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     assert page.locator('.sf-gloss-preview').text_content()==shared and '变得更好' in shared
     check('improve shares all Chinese POS rows and offers full meanings explicitly', '()=>document.querySelector(".sf-gloss-toggle").textContent.includes("共 2 项") && !document.querySelector(".sf-gloss-toggle").hidden')
     page.locator('.sf-gloss-toggle').click()
-    check('full Chinese opens in current main scroll without expanding fixed header', '()=>!document.querySelector(".sf-all-meanings").hidden && document.querySelector(".sf-dictionary > .sf-all-meanings .sf-gloss-text").textContent.includes("改善")')
+    check('full Chinese opens in current main scroll without expanding fixed header', '()=>!document.querySelector(".sf-all-meanings").hidden && document.querySelector(".sf-dictionary-scroll > .sf-all-meanings .sf-gloss-text").textContent.includes("改善")')
     page.get_by_role('tab',name='词义与原句',exact=True).click()
     check('full Chinese stays open across the first two pages with one shared panel', '()=>document.querySelectorAll(".sf-all-meanings").length===1 && !document.querySelector(".sf-all-meanings").hidden && document.querySelector(".sf-learning-scroll > .sf-all-meanings").textContent.includes("变得更好")')
     page.screenshot(path=str(OUTPUT/'previews'/'shared-meanings-420.png'))
     page.evaluate("""()=>{window.fire('contentUpdateStart');document.querySelector('.study-reading-meaning').replaceChildren();window.fire('contentUpdateComplete');}""");page.wait_for_timeout(30)
-    check('absent Chinese is explicit and never generated', '()=>document.querySelector(".sf-gloss-unavailable").textContent.includes("没有提供中文") && window.models===0')
+    check('absent Chinese is explicit and never generated', '()=>document.querySelector(".sf-gloss-unavailable").textContent.includes("暂无中文释义") && window.models===0')
     load_fixture()
     check('a plain web address is labeled as opening the source', '()=>document.querySelector(".sf-source-footer > a").textContent==="打开来源"')
     page.evaluate('''() => { window.mockOverride = async (action) => { window.calls.push([action, null]); if (action==="libraryMemory") return {total:0, coverage:{status:"partial"}, items:[], anki:{status:"unavailable", items:[]}}; if (action==="libraryRead") return {items:[]}; throw new Error(action); }; }''')
@@ -227,6 +265,31 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     check('collapsed search keeps original card intact',
         '()=>document.querySelector(".sf-search-toggle").getAttribute("aria-expanded")==="false" && getComputedStyle(document.querySelector("#sticky-search-header")).display==="none" && document.querySelector(".sf-gloss-text")?.textContent==="能力，才干"')
 
+    for width,height in [(400,550),(400,250),(320,550),(420,600),(720,600)]:
+        page.set_viewport_size({'width':width,'height':height});load_fixture()
+        page.get_by_role('tab',name='详细词典',exact=True).click()
+        page.locator('[data-study-sense-hidden=false]').first.evaluate('(e)=>e.append(document.createTextNode(" Long dictionary definition.".repeat(90)))')
+        page.locator('.sf-dictionary-scroll').evaluate('(e)=>e.scrollTop=e.scrollHeight')
+        check(f'dictionary paging and translation remain visible at {width}x{height}', '''()=>{
+            const p=document.querySelector('[data-study-dictionary-next]').getBoundingClientRect();
+            const t=document.querySelector('[data-study-dictionary-translate]').getBoundingClientRect();
+            const s=document.querySelector('.sf-save-bar').getBoundingClientRect();
+            const scroll=document.querySelector('.sf-dictionary-scroll');
+            return p.height>0&&p.top>=0&&p.bottom<=s.top+1&&s.bottom<=innerHeight+1&&t.top>=0&&t.bottom< p.top&&scroll.clientHeight>15&&document.documentElement.scrollWidth<=innerWidth+1;
+        }''')
+        page.locator('[data-study-dictionary-next]').click();page.wait_for_timeout(20)
+        check(f'dictionary group starts at top and keeps forms at {width}x{height}', '()=>document.querySelector(".sf-dictionary-scroll").scrollTop===0 && document.querySelector(".sf-forms-preview").getBoundingClientRect().height>0')
+        page.screenshot(path=str(OUTPUT/'previews'/f'dictionary-fixed-{width}x{height}.png'))
+    for term in ['improve','absolutely']:
+        page.set_viewport_size({'width':400,'height':550});load_fixture(term)
+        page.get_by_role('tab',name='详细词典',exact=True).click()
+        check(f'{term} directly exposes full forms and keeps dictionary controls fixed', '()=>{const info=document.querySelector(".sf-dictionary-info");return info.tagName==="SECTION" && [...info.querySelectorAll("details:not(.study-token-summary)")].every(e=>e.open) && document.querySelector(".sf-dictionary-pager [data-study-dictionary-next]").getBoundingClientRect().bottom<=document.querySelector(".sf-save-bar").getBoundingClientRect().top+1;}')
+        if term=='improve':
+            check('compact header does not repeat the exact same forms paragraph below', '()=>!document.querySelector(".sf-gloss-kicker") && getComputedStyle(document.querySelector(".sf-forms-original")).display==="none" && document.querySelector(".sf-dictionary-forms").hidden')
+            check('improve retains both transitive and intransitive Chinese with the supplied form strings', '()=>document.querySelector(".sf-short-gloss").textContent.includes("改善") && document.querySelector(".sf-short-gloss").textContent.includes("变得更好") && document.querySelector(".sf-forms-preview").textContent.includes("improved")')
+        else:
+            check('absolutely keeps dictionary grammar without creating an empty headword forms row', '()=>!document.querySelector(".sf-forms-preview") && document.querySelector(".sf-dictionary-forms").textContent.includes("comparative more absolutely")')
+        page.screenshot(path=str(OUTPUT/'previews'/f'{term}-dictionary-400.png'))
     # Restore normal component state for distributable screenshots.
     page.set_viewport_size({'width':420,'height':600});load_fixture()
     page.get_by_role('tab',name='详细词典',exact=True).click();page.screenshot(path=str(OUTPUT/'previews'/'dictionary-420.png'))
@@ -290,5 +353,7 @@ document.querySelector('[data-study-save=note]').addEventListener('click',()=>{c
     assert not errors, errors
     results.append({'test':'no browser JS exceptions','passed':True})
     (OUTPUT/'test-results.json').write_text(json.dumps({'checks':results,'count':len(results),'scope':'Chromium component integration with simulated storage/Native; no user Mac or real AI/Anki writes'},ensure_ascii=False,indent=2))
-    print(json.dumps({'passed':len(results),'errors':errors},ensure_ascii=False))
+    print(json.dumps({'passed':len(results),'errors':errors},ensure_ascii=False), flush=True)
+    page.unroute_all(behavior='ignoreErrors')
+    page.close()
     browser.close()

@@ -15,12 +15,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-const embedded = new URLSearchParams(location.search).get('embed') === '1';
-if (!embedded) {
-    location.replace('/settings.html#learning');
-} else {
-    document.documentElement.dataset.embedded = 'true';
-    await import('./study-settings-main.js');
-}
+location.replace('/settings.html#save');
 
 export {};

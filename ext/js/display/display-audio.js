@@ -53,6 +53,8 @@ export class DisplayAudio {
         this._entriesToken = {};
         /** @type {Set<PopupMenu>} */
         this._openMenus = new Set();
+        /** @type {WeakMap<HTMLButtonElement, {dictionaryEntryIndex: number, headwordIndex: number}>} */
+        this._audioSourceButtonIndexes = new WeakMap();
         /** @type {import('display-audio').AudioSource[]} */
         this._audioSources = [];
         /** @type {Map<import('settings').AudioSourceType, string>} */
@@ -72,6 +74,8 @@ export class DisplayAudio {
         /** @type {(event: MouseEvent) => void} */
         this._onAudioPlayButtonClickBind = this._onAudioPlayButtonClick.bind(this);
         /** @type {(event: MouseEvent) => void} */
+        this._onAudioSourceButtonClickBind = this._onAudioSourceButtonClick.bind(this);
+        /** @type {(event: MouseEvent) => void} */
         this._onAudioPlayButtonContextMenuBind = this._onAudioPlayButtonContextMenu.bind(this);
         /** @type {(event: import('popup-menu').MenuCloseEvent) => void} */
         this._onAudioPlayMenuCloseClickBind = this._onAudioPlayMenuCloseClick.bind(this);
@@ -88,6 +92,13 @@ export class DisplayAudio {
 
     /** */
     prepare() {
+        if (!document.querySelector('link[data-display-audio-menu]')) {
+            const style = document.createElement('link');
+            style.rel = 'stylesheet';
+            style.href = new URL('../../css/study-audio-menu.css', import.meta.url).href;
+            style.dataset.displayAudioMenu = 'true';
+            document.head.appendChild(style);
+        }
         this._audioSystem.prepare();
         /* eslint-disable @stylistic/no-multi-spaces */
         this._display.hotkeyHandler.registerActions([
@@ -218,6 +229,14 @@ export class DisplayAudio {
             eventListeners.addEventListener(button, 'contextmenu', this._onAudioPlayButtonContextMenuBind, false);
             eventListeners.addEventListener(button, 'menuClose', this._onAudioPlayMenuCloseClickBind, false);
         }
+        for (const button of element.querySelectorAll('.study-audio-sources')) {
+            this._audioSourceButtonIndexes.set(button, {
+                dictionaryEntryIndex: this._display.getElementDictionaryEntryIndex(button),
+                headwordIndex: this._getAudioPlayButtonHeadwordIndex(button),
+            });
+            eventListeners.addEventListener(button, 'click', this._onAudioSourceButtonClickBind, false);
+            eventListeners.addEventListener(button, 'menuClose', this._onAudioPlayMenuCloseClickBind, false);
+        }
     }
 
     /** */
@@ -344,20 +363,45 @@ export class DisplayAudio {
     }
 
     /**
+     * @param {MouseEvent} e
+     */
+    _onAudioSourceButtonClick(e) {
+        e.preventDefault();
+
+        const button = /** @type {HTMLButtonElement} */ (e.currentTarget);
+        for (const menu of this._openMenus) {
+            if (menu.sourceElement === button) {
+                menu.close();
+                return;
+            }
+        }
+
+        const {headwordIndex, dictionaryEntryIndex} = this._getAudioSourceButtonIndexes(button);
+        this._showAudioMenu(button, dictionaryEntryIndex, headwordIndex);
+    }
+
+    /**
      * @param {import('popup-menu').MenuCloseEvent} e
      */
     _onAudioPlayMenuCloseClick(e) {
         const button = /** @type {Element} */ (e.currentTarget);
-        const headwordIndex = this._getAudioPlayButtonHeadwordIndex(button);
-        const dictionaryEntryIndex = this._display.getElementDictionaryEntryIndex(button);
+        const indices = button.matches('.study-audio-sources') ?
+            this._getAudioSourceButtonIndexes(/** @type {HTMLButtonElement} */ (button)) :
+            null;
+        const headwordIndex = indices?.headwordIndex ?? this._getAudioPlayButtonHeadwordIndex(button);
+        const dictionaryEntryIndex = indices?.dictionaryEntryIndex ?? this._display.getElementDictionaryEntryIndex(button);
 
         const {detail: {action, item, menu, shiftKey}} = e;
         switch (action) {
             case 'playAudioFromSource':
-                if (shiftKey) {
+                if (button.matches('.study-audio-sources')) {
                     e.preventDefault();
+                    this._setMenuItemStatus(menu, item, 'loading');
+                    void this._playAudioFromSource(dictionaryEntryIndex, headwordIndex, item, menu);
+                } else {
+                    if (shiftKey) { e.preventDefault(); }
+                    void this._playAudioFromSource(dictionaryEntryIndex, headwordIndex, item);
                 }
-                void this._playAudioFromSource(dictionaryEntryIndex, headwordIndex, item);
                 break;
             case 'setPrimaryAudio':
                 e.preventDefault();
@@ -481,8 +525,9 @@ export class DisplayAudio {
      * @param {number} dictionaryEntryIndex
      * @param {number} headwordIndex
      * @param {?HTMLElement} item
+     * @param {?PopupMenu} [menu]
      */
-    async _playAudioFromSource(dictionaryEntryIndex, headwordIndex, item) {
+    async _playAudioFromSource(dictionaryEntryIndex, headwordIndex, item, menu = null) {
         if (item === null) { return; }
         const {source, subIndex} = this._getMenuItemSourceInfo(item);
         if (source === null) { return; }
@@ -490,12 +535,37 @@ export class DisplayAudio {
         try {
             const token = this._entriesToken;
             const {valid} = await this._playAudio(dictionaryEntryIndex, headwordIndex, [source], subIndex);
-            if (valid && token === this._entriesToken) {
+            if (menu !== null) {
+                if (!menu.isClosed) {
+                    if (valid && token === this._entriesToken) {
+                        this._setMenuItemStatus(menu, item, 'available');
+                    } else if (!valid) {
+                        this._setMenuItemStatus(menu, item, 'failed');
+                    }
+                }
+            } else if (valid && token === this._entriesToken) {
                 this._setPrimaryAudio(dictionaryEntryIndex, headwordIndex, item, null, false);
             }
         } catch (e) {
-            // NOP
+            if (menu !== null && !menu.isClosed) { this._setMenuItemStatus(menu, item, 'failed'); }
         }
+    }
+
+    /**
+     * @param {PopupMenu} menu
+     * @param {?HTMLElement} item
+     * @param {'loading'|'available'|'failed'} status
+     */
+    _setMenuItemStatus(menu, item, status) {
+        if (menu.isClosed || item === null) { return; }
+        const group = /** @type {?HTMLElement} */ (item.closest('.popup-menu-item-group'));
+        if (group === null) { return; }
+        group.dataset.status = status;
+        group.setAttribute('aria-busy', `${status === 'loading'}`);
+        const statusNode = group.querySelector('.study-audio-item-status');
+        if (statusNode !== null) { statusNode.textContent = this._getMenuItemStatusLabel(status); }
+        const cardButton = /** @type {?HTMLButtonElement} */ (group.querySelector('.popup-menu-item-set-primary-audio-button'));
+        if (cardButton !== null) { cardButton.disabled = status === 'failed' || group.dataset.downloadable !== 'true'; }
     }
 
     /**
@@ -508,7 +578,8 @@ export class DisplayAudio {
     _setPrimaryAudio(dictionaryEntryIndex, headwordIndex, item, menu, canToggleOff) {
         if (item === null) { return; }
         const {source, subIndex} = this._getMenuItemSourceInfo(item);
-        if (source === null || !source.downloadable) { return; }
+        const itemGroup = item.closest('.popup-menu-item-group');
+        if (source === null || !source.downloadable || itemGroup?.dataset.valid === 'false' || itemGroup?.dataset.status === 'failed') { return; }
 
         const headword = this._getHeadword(dictionaryEntryIndex, headwordIndex);
         if (headword === null) { return; }
@@ -548,6 +619,17 @@ export class DisplayAudio {
             }
         }
         return 0;
+    }
+
+    /**
+     * @param {HTMLButtonElement} button
+     * @returns {{dictionaryEntryIndex: number, headwordIndex: number}}
+     */
+    _getAudioSourceButtonIndexes(button) {
+        return this._audioSourceButtonIndexes.get(button) ?? {
+            dictionaryEntryIndex: this._display.getElementDictionaryEntryIndex(button),
+            headwordIndex: this._getAudioPlayButtonHeadwordIndex(button),
+        };
     }
 
     /**
@@ -867,6 +949,7 @@ export class DisplayAudio {
                 /** @type {HTMLElement} */
                 const cardButton = querySelectorNotNull(node, '.popup-menu-item-set-primary-audio-button');
                 cardButton.hidden = !downloadable;
+                cardButton.disabled = !downloadable || valid === false;
 
                 if (valid !== null) {
                     /** @type {HTMLElement} */
@@ -881,6 +964,11 @@ export class DisplayAudio {
                 node.dataset.valid = `${valid}`;
                 node.dataset.sourceInOptions = `${isInOptions}`;
                 node.dataset.downloadable = `${downloadable}`;
+                const status = this._getMenuItemStatus(source, term, reading, entries[i]);
+                node.dataset.status = status;
+                node.setAttribute('aria-busy', `${status === 'loading'}`);
+                cardButton.disabled = !downloadable || status === 'failed';
+                querySelectorNotNull(node, '.study-audio-item-status').textContent = this._getMenuItemStatusLabel(status);
 
                 menuItemContainer.appendChild(node);
             }
@@ -951,6 +1039,42 @@ export class DisplayAudio {
     }
 
     /**
+     * @param {import('display-audio').AudioSource} source
+     * @param {string} term
+     * @param {string} reading
+     * @param {import('display-audio').MenuItemEntry} entry
+     * @returns {'idle'|'loading'|'available'|'failed'}
+     */
+    _getMenuItemStatus(source, term, reading, entry) {
+        if (entry.valid === true) { return 'available'; }
+        if (entry.valid === false) { return 'failed'; }
+
+        const cacheEntry = this._getCacheItem(term, reading, false);
+        const sourceInfo = cacheEntry?.sourceMap.get(source.index);
+        if (typeof sourceInfo === 'undefined') { return 'idle'; }
+        if (sourceInfo.infoList === null) { return 'loading'; }
+
+        if (entry.index !== null) {
+            const info = sourceInfo.infoList[entry.index];
+            if (typeof info !== 'undefined' && info.audioPromise !== null && !info.audioResolved) { return 'loading'; }
+        }
+        return 'idle';
+    }
+
+    /**
+     * @param {'idle'|'loading'|'available'|'failed'} status
+     * @returns {string}
+     */
+    _getMenuItemStatusLabel(status) {
+        switch (status) {
+            case 'loading': return '加载中…';
+            case 'available': return '可试听';
+            case 'failed': return '不可用';
+            default: return '';
+        }
+    }
+
+    /**
      * @param {string} term
      * @param {string} reading
      * @returns {?import('display-audio').PrimaryCardAudio}
@@ -977,6 +1101,13 @@ export class DisplayAudio {
             const subIndexNumber = typeof subIndex === 'string' ? Number.parseInt(subIndex, 10) : null;
             const isPrimaryCardAudio = (indexNumber === primaryCardAudioIndex && subIndexNumber === primaryCardAudioSubIndex);
             node.dataset.isPrimaryCardAudio = `${isPrimaryCardAudio}`;
+            const cardButton = /** @type {?HTMLButtonElement} */ (node.querySelector('.popup-menu-item-set-primary-audio-button'));
+            if (cardButton !== null) {
+                cardButton.setAttribute('aria-pressed', `${isPrimaryCardAudio}`);
+                cardButton.title = isPrimaryCardAudio ? '取消卡片音频' : '用于卡片音频';
+                const label = cardButton.querySelector('.study-card-audio-label');
+                if (label !== null) { label.textContent = isPrimaryCardAudio ? '已用于卡片' : '用于卡片'; }
+            }
         }
     }
 

@@ -414,10 +414,10 @@ test('default English scanning looks up one word; only explicit selection search
     dom.window.close();
 });
 
-test('toolbar favorite saves/removes local context, survives reopening and never calls the native/model service', async () => {
+test('toolbar favorite survives reopening and offline synchronization without calling a model', async () => {
     const {StudyService} = await import('../ext/js/study/study-service.js');
     const data = {};let native = 0;
-    const service = new StudyService({get: async key => ({[key]: structuredClone(data[key])}), set: async value => Object.assign(data, structuredClone(value))}, () => {native++;throw Error('Favorite must be local only');});
+    const service = new StudyService({get: async key => ({[key]: structuredClone(data[key])}), set: async value => Object.assign(data, structuredClone(value))}, () => {native++;throw Error('Favorite synchronization intentionally offline');});
     const actions = [];
     globalThis.chrome = {runtime: {sendMessage: async ({studyAction, data}) => {actions.push(studyAction);try {return {ok: true, value: await service.handle(studyAction, data)};} catch (e) {return {ok:false,error:e.message};}}}};
     const mount = () => {
@@ -434,23 +434,18 @@ test('toolbar favorite saves/removes local context, survives reopening and never
     f.handlers.get('contentClear')();f.dom.window.close();
     f = mount();await tick();await tick();star = document.querySelector('.study-favorite');assert.equal(star.getAttribute('aria-pressed'), 'true');
     star.click();await tick();await tick();assert.equal((await service.handle('saved', {})).length, 0);assert.equal(star.getAttribute('aria-pressed'), 'false');
-    assert.equal(native, 0);assert.ok(!actions.some(a => ['generate', 'rememberEntry', 'draftCards', 'librarySave'].includes(a)));
+    assert.ok(native > 0, 'favorite delivery is attempted while its local state survives offline');assert.ok(!actions.some(a => ['generate', 'rememberEntry', 'draftCards', 'librarySave'].includes(a)));
     f.handlers.get('contentClear')();f.dom.window.close();
 });
 
-test('the already-open collection page refreshes when a card favorite changes', async () => {
-    const {readFileSync} = await import('node:fs');
-    const dom = setup(readFileSync(new URL('../ext/study-settings.html', import.meta.url), 'utf8'));
-    let changed, rows = [];
-    globalThis.chrome = {permissions: {contains: async () => false}, runtime: {sendMessage: async ({studyAction}) => ({ok: true, value: studyAction === 'settings' ? {model:'gpt-6.1-sol',effort:'low',cacheEnabled:true} : rows})}, storage: {onChanged: {addListener: listener => changed = listener}}};
-    await import('../ext/js/pages/study-settings-main.js?favorite-refresh');await tick();
-    assert.match(document.querySelector('#saved').textContent, /右上角 ☆/);
-    rows = [{id:'fixture',word:'absolutely',sentence:'A public fixture.',url:'https://example.test/article',title:'Fixture'}];
-    changed({studySavedWordsV1:{}}, 'local');await tick();
-    assert.equal(document.querySelector('.saved-word strong').textContent, 'absolutely');
-    rows = [];changed({studySavedWordsV1:{}}, 'local');await tick();
-    assert.match(document.querySelector('#saved').textContent, /还没有收藏/);
-    dom.window.close();
+test('the old learning settings entry redirects to the unified page; collection tools live in the library', () => {
+    const html = readFileSync(new URL('../ext/study-settings.html', import.meta.url), 'utf8');
+    const redirect = readFileSync(new URL('../ext/js/pages/study-settings.js', import.meta.url), 'utf8');
+    const library = readFileSync(new URL('../ext/study-library.html', import.meta.url), 'utf8');
+    assert.match(redirect, /location.replace\('\/settings.html#save'\)/);
+    assert.doesNotMatch(html, /id="saved"|study-settings-main.js/);
+    assert.match(library, /id="study-library-export-saved"/);
+    assert.match(library, /id="study-library-clear-saved"/);
 });
 
 test('extractSentence preserves leading contractions like I\'m without dropping initial characters', async () => {
