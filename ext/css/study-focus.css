@@ -100,6 +100,7 @@
     background: var(--sf-source);
 }
 .sf-source-pane:focus-within { border-color: var(--sf-accent); }
+.sf-source-pane > .sf-short-gloss { flex: none; }
 .sf-source-reading {
     flex: 0 1 auto;
     min-height: 0;

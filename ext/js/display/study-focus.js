@@ -203,7 +203,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         // all remaining height. Put the existing Chinese sense ABOVE the tabs,
         // alongside the headword; it must be visible without inner scrolling.
         if (hasSentence) {
-            sourceReading.prepend(shortGloss);
+            // Keep the Chinese meaning fixed while the source/translation scrolls.
+            sourcePane.prepend(shortGloss);
         } else {
             const standaloneSense = make('div', 'sf-standalone-sense');
             standaloneSense.append(shortGloss, noSource);
