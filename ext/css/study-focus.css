@@ -319,3 +319,51 @@
     .study-focus-active .sf-save-bar { padding: 3px 10px 4px; }
     .study-focus-active .sf-compose { padding: 4px 10px; }
 }
+
+/* The first two tabs share one Chinese hint; full text belongs to the active content scroller. */
+.sf-gloss-caption { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.sf-gloss-caption .sf-gloss-kicker { font-size: 10px; }
+.sf-gloss-caption .sf-gloss-toggle { border: 0; padding: 0; min-height: 16px; background: none; font-size: 10px; white-space: nowrap; }
+.sf-gloss-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-height: 40px; overflow: hidden; line-height: 20px; }
+.sf-gloss-preview .sf-gloss-row { display: block; line-height: 20px; }
+.sf-gloss-preview .sf-gloss-text { font-size: 14px; line-height: inherit; }
+.sf-gloss-preview .sf-gloss-pos { margin-right: 8px; font-size: 11px; }
+.sf-all-meanings { margin: 10px 14px 14px; padding: 10px; border: 1px solid var(--sf-line); border-radius: 8px; background: var(--sf-source); }
+.sf-dictionary > .sf-all-meanings { margin-inline: 0; }
+.sf-meanings-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 7px; }
+.sf-meanings-heading h3 { font-size: 13px; margin: 0; }
+.sf-meanings-heading button { font-size: 10px; min-height: 24px; }
+.sf-all-meanings .sf-gloss-row { display: block; margin-top: 7px; line-height: 1.65; }
+.sf-all-meanings .sf-gloss-pos { margin-right: 8px; }
+.sf-all-meanings .sf-gloss-text { font-size: 14px; font-weight: 500; }
+.sf-dictionary-reference { display: none !important; }
+.sf-dictionary > .study-dictionary-details { border: 0; margin: 0; padding: 0; }
+.sf-dictionary > .study-dictionary-details > summary,
+.sf-dictionary .study-original-dictionary > summary { display: none; }
+.sf-dictionary .study-original-dictionary { margin: 0; border: 0; padding: 0; }
+.sf-dictionary .study-dictionary-heading { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; padding: 0; border: 0; }
+.sf-dictionary .study-dictionary-heading-label { font-size: 13px; font-weight: 600; margin-right: auto; }
+.sf-dictionary .study-dictionary-heading button,
+.sf-dictionary .study-dictionary-pagination button { font-size: 11px; min-height: 26px; padding: 3px 7px; border: 1px solid var(--sf-line); border-radius: 6px; background: var(--sf-paper); color: var(--sf-accent); }
+.sf-dictionary .study-dictionary-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; border-top: 1px solid var(--sf-line); padding-top: 10px; margin: 12px 0 8px; }
+.sf-dictionary .study-sense-count { font-size: 10px; color: var(--sf-muted); }
+.sf-dictionary .study-dictionary-status { display: block; font-size: 11px; line-height: 1.6; margin-block: 6px; color: var(--sf-muted); }
+.sf-dictionary .study-dictionary-status:empty { display: none; }
+.sf-dictionary-info { margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--sf-line); }
+.sf-dictionary-info > summary { font-size: 12px; color: var(--sf-muted); cursor: pointer; }
+.sf-dictionary-info .entry-header { margin-top: 8px; }
+.sf-dictionary-info .study-token-summary { font-size: 11px; color: var(--sf-muted); }
+
+@media (max-height: 350px) {
+    .sf-gloss-preview { max-height: 36px; line-height: 18px; }
+    .sf-gloss-preview .sf-gloss-row { line-height: 18px; }
+    .sf-header-sense .sf-gloss-preview .sf-gloss-text { font-size: 13px; line-height: 18px; }
+    .sf-gloss-preview .sf-gloss-pos { font-size: 10px; }
+    .sf-gloss-caption .sf-gloss-toggle { min-height: 0; font-size: 9px; line-height: 14px; }
+    .study-focus-active .sf-compose { padding-block: 3px; }
+    .sf-save-bar [data-study-save='note'] { min-height: 26px; font-size: 11px; padding-block: 3px; }
+    .sf-header-sense .sf-no-source-note { font-size: 9px; line-height: 1.2; }
+}
+
+.study-focus-active .sf-dictionary-info .study-metadata > [data-sc-study-role=tags] { display: flex; }
+.study-focus-active .sf-dictionary-info .study-metadata > [data-study-meta-role=frequency] { display: block; }

@@ -133,6 +133,12 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const learn = make('section', 'sf-learn');
         const dictionary = make('section', 'sf-dictionary');
         const records = make('section', 'sf-records');
+        const fullMeanings = make('section', 'sf-all-meanings');
+        fullMeanings.hidden = true;
+        owned.push(fullMeanings);
+        let allMeaningsOpen = false;
+        let learningScroll;
+        let syncGlossOverflow = () => {};
         const panels = [learn, dictionary, records];
         const labels = ['词义与原句', '详细词典', '我的记录'];
         const tabButtons = labels.map((label, index) => {
@@ -163,26 +169,51 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             shell.dataset.panel = String(index);
             // The original sentence belongs to the first learning page only.
             sourcePane.hidden = !hasSentence || index !== 0;
-            headerSense.hidden = index !== 0;
+            headerSense.hidden = index === 2;
+            fullMeanings.hidden = !allMeaningsOpen || index === 2;
+            if (index < 2) { (index === 0 ? learningScroll : dictionary)?.prepend(fullMeanings); }
+            requestAnimationFrame(syncGlossOverflow);
             requestAnimationFrame(resizeFollowup);
         };
         body.append(...panels);
         shell.append(heading, tabs, body);
 
-        // Full senses stay on the dictionary panel. The reading panel only borrows one labeled hint.
-        for (const selector of ['.study-reading-meaning', '.study-reading-english', '.study-reading-info']) {
-            move(anchor.querySelector(selector), dictionary);
-        }
+        // Keep the original meaning/preview data for the shared header and saving,
+        // but show only the full English dictionary as the main second-page content.
+        const dictionaryReference = make('div', 'sf-dictionary-reference');
+        dictionaryReference.hidden = true;
+        const dictionaryInfo = make('details', 'sf-dictionary-info');
+        dictionaryInfo.append(make('summary', 'scan-disable', '词形与资料'));
         const entryHeader = entry?.querySelector('.entry-header');
-        move(entryHeader, dictionary);
-        // The cloned English preview delegates retry/save lookup to the original
-        // header. Keep that original first in entry query order.
-        const englishReference = dictionary.querySelector('.study-reading-english');
-        if (entryHeader && englishReference) { englishReference.before(entryHeader); }
+        move(entryHeader, dictionaryInfo);
+        move(anchor.querySelector('.study-reading-meaning'), dictionaryReference);
+        move(anchor.querySelector('.study-reading-english'), dictionaryReference);
+        move(anchor.querySelector('.study-reading-info'), entryHeader?.querySelector('.study-metadata') ? dictionaryReference : dictionaryInfo);
         move(entry?.querySelector('.study-dictionary-details'), dictionary);
         const dictDisclosure = dictionary.querySelector('.study-dictionary-details');
         if (dictDisclosure) { dictDisclosure.open = true; }
-        const direct = dictionary.querySelector('.note-actions-container');
+        const originalDictionary = dictionary.querySelector('.study-original-dictionary');
+        if (originalDictionary) { originalDictionary.open = true; }
+        for (const label of dictionary.querySelectorAll('[data-sc-content=summary-entry]')) {
+            if (['词形与语法', '词源', 'Grammar', 'Etymology'].includes(label.textContent?.trim() || '')) {
+                const details = label.closest('details');
+                if (details) { move(details, dictionaryInfo); }
+            }
+        }
+        dictionary.append(dictionaryInfo, dictionaryReference);
+        owned.push(dictionaryInfo, dictionaryReference);
+        const quickLabels = new Map();
+        const syncQuickLabels = () => {
+            for (const label of dictionaryInfo.querySelectorAll('.note-actions-container .study-action-label')) {
+                if (!quickLabels.has(label)) { quickLabels.set(label, label.textContent); }
+                if (label.textContent !== '快速词典卡') { label.textContent = '快速词典卡'; }
+            }
+        };
+        const quickObserver = new MutationObserver(syncQuickLabels);
+        quickObserver.observe(dictionaryInfo, {childList: true, subtree: true});
+        observers.push(quickObserver);
+        syncQuickLabels();
+        const direct = dictionaryInfo.querySelector('.note-actions-container');
         if (direct) { direct.dataset.studyQuickCard = 'true'; }
 
         // Reuse the existing input, save intent, feedback and request controls.
@@ -218,10 +249,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         context.append(compose); owned.push(compose);
         // Usage and source editing are real secondary tools, never deleted.
         const usage = context.querySelector('.study-token-summary');
-        if (usage) { move(usage, dictionary); usage.classList.add('sf-usage-reference'); }
+        if (usage) { move(usage, dictionaryInfo); usage.classList.add('sf-usage-reference'); }
         const editSource = context.querySelector('.study-more-actions');
         // Correct a captured sentence beside that sentence. A word-only lookup keeps the same editor on the dictionary page.
-        if (editSource) { move(editSource, hasSentence ? sourcePane : dictionary); }
+        if (editSource) { move(editSource, hasSentence ? sourcePane : dictionaryInfo); }
         const neighborAction = editSource?.querySelector('[data-study-use-context]');
         const sourceTools = make('div', 'sf-source-tools');
         const openContextEditor = () => { if (current() && editSource) { editSource.open = true; resizeEditors(); } };
@@ -271,7 +302,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const node = context.querySelector(selector);
             if (node) { move(node, saveBar); }
         }
-        const learningScroll = make('div', 'sf-learning-scroll');
+        learningScroll = make('div', 'sf-learning-scroll');
         learningScroll.setAttribute('aria-label', '原句与问答内容');
         context.prepend(learningScroll); owned.push(learningScroll);
         learningScroll.append(sourcePane, focusAnswer);
@@ -283,8 +314,12 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
             const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
             input.style.height = '0px';
-            input.style.height = `${Math.min(input.scrollHeight + border, line * 3 + padding + border)}px`;
+            const dock = getComputedStyle(compose);
+            const available = Math.max(line + padding + border, context.clientHeight - parseFloat(dock.paddingTop) - parseFloat(dock.paddingBottom) - 16);
+            input.style.height = `${Math.min(input.scrollHeight + border, line * 3 + padding + border, available)}px`;
         };
+        const inputSizeObserver = new ResizeObserver(() => { resizeFollowup(); });
+        inputSizeObserver.observe(context); observers.push(inputSizeObserver);
         input?.addEventListener('input', resizeFollowup);
         window.addEventListener('resize', resizeFollowup);
         window.addEventListener('resize', resizeEditors);
@@ -307,34 +342,62 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             observers.push(observer);
         }
 
+        let glossSignature = '';
         const paintDictionaryHint = (host) => {
-            host.replaceChildren();
-            // The pinned meaning may be absent in a standalone or nested lookup.
-            // The original dictionary row is the fallback, never an AI guess.
-            const sense = dictionary.querySelector('.study-reading-sense') ||
-                entry?.querySelector('.study-primary-meaning > div:not([data-sc-study-role="label"])');
-            let gloss = sense?.querySelector('.study-meaning-text')?.textContent?.trim() || '';
-            if (!gloss && sense) {
-                const plain = /** @type {HTMLElement} */ (sense.cloneNode(true));
+            const collect = (rows) => [...rows].map((sense) => {
+                const plain = sense.cloneNode(true);
                 plain.querySelectorAll('.study-pos, [data-sc-study-role="label"]').forEach((node) => node.remove());
-                gloss = plain.textContent?.trim() || '';
-            }
-            if (!gloss || !/\p{Script=Han}/u.test(gloss)) {
-                host.append(make('span', 'sf-gloss-kicker', '简明中文释义'),
-                    make('p', 'sf-gloss-unavailable', '当前词典没有提供中文义项，可查看详细词典或继续问 AI。'));
+                const text = sense.querySelector('.study-meaning-text')?.textContent?.trim() || plain.textContent?.trim() || '';
+                return {pos: sense.querySelector('.study-pos'), text};
+            }).filter(({text}) => /\p{Script=Han}/u.test(text));
+            let senses = collect(dictionaryReference.querySelectorAll('.study-reading-sense'));
+            if (!senses.length) { senses = collect(entry?.querySelectorAll('.study-primary-meaning > div:not([data-sc-study-role="label"])') || []); }
+            const signature = JSON.stringify(senses.map(({pos, text}) => [pos?.textContent || '', text]));
+            if (signature === glossSignature) { return; }
+            glossSignature = signature;
+            host.replaceChildren(); fullMeanings.replaceChildren();
+            if (!senses.length) {
+                host.append(make('p', 'sf-gloss-unavailable', '当前词典没有提供中文义项，可查看详细词典或继续问 AI。'));
+                allMeaningsOpen = false; fullMeanings.hidden = true;
                 return;
             }
-            const row = make('div', 'sf-gloss-row');
-            const pos = sense?.querySelector('.study-pos');
-            if (pos) {
-                const copy = /** @type {HTMLElement} */ (pos.cloneNode(true));
-                copy.classList.add('sf-gloss-pos');
-                row.append(copy);
-            }
-            row.append(make('strong', 'sf-gloss-text', gloss));
-            host.append(make('span', 'sf-gloss-kicker',
-                hasSentence ? '中文词义 · 词典参考，未按本句判断' : '中文词义 · 词典参考'), row);
+            const appendRow = (parent, {pos, text}) => {
+                const row = make('div', 'sf-gloss-row');
+                if (pos) {
+                    const copy = pos.cloneNode(true); copy.classList.add('sf-gloss-pos'); row.append(copy);
+                }
+                row.append(make('strong', 'sf-gloss-text', text)); parent.append(row);
+            };
+            const preview = make('div', 'sf-gloss-preview');
+            const caption = make('div', 'sf-gloss-caption');
+            caption.append(make('span', 'sf-gloss-kicker', hasSentence ? '词典中文 · 未按本句判断' : '词典中文'));
+            const toggle = button(`全部词义 · 共 ${senses.length} 项`);
+            toggle.classList.add('sf-gloss-toggle');
+            toggle.setAttribute('aria-expanded', String(allMeaningsOpen));
+            caption.append(toggle);
+            for (const sense of senses) { appendRow(preview, sense); }
+            host.append(caption, preview);
+            const fullHeader = make('div', 'sf-meanings-heading');
+            fullHeader.append(make('h3', '', '全部中文词义'));
+            const collapse = button('收起全部'); fullHeader.append(collapse);
+            fullMeanings.append(fullHeader);
+            for (const sense of senses) { appendRow(fullMeanings, sense); }
+            const setExpanded = (expanded) => {
+                allMeaningsOpen = expanded;
+                fullMeanings.hidden = !expanded || activeTab === 2;
+                toggle.setAttribute('aria-expanded', String(expanded));
+                if (expanded) { (activeTab === 0 ? learningScroll : dictionary).scrollTop = 0; }
+            };
+            toggle.addEventListener('click', () => { setExpanded(!allMeaningsOpen); });
+            collapse.addEventListener('click', () => { setExpanded(false); });
+            syncGlossOverflow = () => {
+                if (!current() || !preview.getClientRects().length) { return; }
+                toggle.hidden = !allMeaningsOpen && preview.scrollHeight <= preview.clientHeight + 1;
+            };
+            requestAnimationFrame(syncGlossOverflow);
         };
+        const glossObserver = new ResizeObserver(() => { syncGlossOverflow(); });
+        glossObserver.observe(headerSense); observers.push(glossObserver);
         const updateAnswer = () => {
             if (!current()) { return; }
             const turns = [...(output?.querySelectorAll('.study-conversation-turn') || [])];
@@ -518,6 +581,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             context.querySelector('.sf-visually-covered')?.classList.remove('sf-visually-covered');
             for (const panel of output?.querySelectorAll('.sf-current-history') || []) { panel.classList.remove('sf-current-history'); }
             usage?.classList.remove('sf-usage-reference');
+            for (const [label, text] of quickLabels) { label.textContent = text; }
             d.documentElement.classList.remove('study-focus-active', 'sf-search-open');
         };
     });

@@ -68,8 +68,9 @@ export function dictionaryText(element) {
  */
 export function prepareStudyDictionary(entry, word) {
     const d = entry.ownerDocument;
-    const raw = [...entry.querySelectorAll('[data-sc-content=glosses]>li')];
-    const phrases = [...entry.querySelectorAll('.definition-item ul>li')].filter((node) => !node.closest('[data-sc-content=glosses], [data-sc-content=extra-info], [data-sc-content=tags], details'));
+    // Keep a nested meaning with its parent; never page an ancestor wrapper separately.
+    const raw = [...entry.querySelectorAll('[data-sc-content=glosses]>li')].filter((node) => !node.parentElement?.parentElement?.closest('[data-sc-content=glosses]'));
+    const phrases = [...entry.querySelectorAll('.definition-item ul>li')].filter((node) => !node.closest('[data-sc-content=glosses], [data-sc-content=extra-info], [data-sc-content=tags], details') && !node.querySelector('[data-sc-content=glosses]'));
     const candidates = raw.length > 0 ? [...raw, ...phrases] : [...entry.querySelectorAll('[data-sc-study-role=english]>div>div, [data-sc-study-role=english]>div:not(:has(div))')];
     const senses = candidates.filter((n) => n instanceof HTMLElement).map((node, i) => ({node: /** @type {HTMLElement} */ (node), id: `${i}`, text: dictionaryText(/** @type {HTMLElement} */ (node))}));
     if (senses.length === 0) { return () => {}; }
@@ -104,24 +105,32 @@ export function prepareStudyDictionary(entry, word) {
         }
     }
     const bar = d.createElement('div');
-    bar.className = 'study-dictionary-controls scan-disable';
+    bar.className = 'study-dictionary-controls study-dictionary-heading scan-disable';
     const prev = d.createElement('button'),
         next = d.createElement('button'),
         translate = d.createElement('button'),
         stop = d.createElement('button');
     for (const b of [prev, next, translate, stop]) { b.type = 'button'; }
+    prev.dataset.studyDictionaryPrev = '';
+    next.dataset.studyDictionaryNext = '';
+    translate.dataset.studyDictionaryTranslate = '';
     prev.textContent = '上一组';
     next.textContent = '下一组';
     translate.textContent = '翻译本组英文';
-    translate.title = '仅翻译当前组的释义、短语和首个例句；其他组需切换后再点';
     stop.textContent = '取消';
     stop.hidden = true;
+    const headingLabel = d.createElement('span');
+    headingLabel.className = 'study-dictionary-heading-label';
+    headingLabel.textContent = '英文释义与例句';
     const label = d.createElement('span'),
         status = d.createElement('span');
+    const pagination = d.createElement('div');
+    pagination.className = 'study-dictionary-pagination scan-disable';
     label.className = 'study-sense-count';
     status.className = 'study-dictionary-status';
     status.setAttribute('role', 'status');
-    bar.append(label, prev, next, translate, stop, status);
+    pagination.append(prev, label, next);
+    bar.append(headingLabel, translate, stop);
     const original = entry.querySelector('.entry-body-section[data-section-type=definitions], .entry-body>.definition-list');
     const fold = d.createElement('details');
     fold.className = 'study-original-dictionary';
@@ -131,8 +140,11 @@ export function prepareStudyDictionary(entry, word) {
     foldLabel.textContent = '英英词典与例句';
     if (original) {
         original.before(fold);
-        fold.append(foldLabel, bar, original);
-    } else { entry.querySelector('.entry-body')?.prepend(bar); }
+        fold.append(foldLabel, bar, original, pagination, status);
+    } else {
+        const body = entry.querySelector('.entry-body');
+        body?.prepend(bar); body?.append(pagination, status);
+    }
     let page = 0,
         version = 0,
         active = true;
@@ -141,6 +153,10 @@ export function prepareStudyDictionary(entry, word) {
     /** @type {?import('study').DictionaryLookup} */
     let running = null;
     const lookup = () => ({word, items: pages[page].map(({id, text}) => ({id, text: text.slice(0, 1800)}))});
+    const updateScopeTitle = () => {
+        const title = `仅翻译当前组的释义、短语与首例；其他组需切换后再点，其他例句保留英文。${pages[page].some((s) => s.text.length > 1800) ? '超长段仅发送前 1800 字，原文保留；不发送网页。' : ''}`;
+        status.title = translate.title = title;
+    };
     /**
      * @param {import('study').DictionaryResult} result
      * @param {boolean} cached
@@ -156,7 +172,7 @@ export function prepareStudyDictionary(entry, word) {
             row.append(badge, d.createTextNode(result.items[i].translation));
             sense.node.append(row);
         }
-        status.textContent = (cached ? '已缓存' : '本次生成') + (pages[page].some((s) => s.text.length > 1800) ? ' · 超长段仅翻译前 1800 字，原文保留' : ' · 本组释义、短语与首例已译；其他例句保留原文');
+        status.textContent = cached ? '已缓存' : '本次生成';
         stop.hidden = true;
         translate.disabled = true;
         translate.textContent = '本组已译';
@@ -183,7 +199,7 @@ export function prepareStudyDictionary(entry, word) {
             } else {
                 translate.disabled = false;
                 stop.hidden = true;
-                status.textContent = pages[page].some((s) => s.text.length > 1800) ? '超长段仅发送前 1800 字；不发送网页' : '只翻译本组释义、短语与首例；更多例句保留英文';
+                status.textContent = '';
             }
         } catch { if (active && token === version) { status.textContent = '缓存不可用；原英文仍可阅读。'; } }
     };
@@ -197,6 +213,8 @@ export function prepareStudyDictionary(entry, word) {
         prev.disabled = page === 0; next.disabled = page === pages.length - 1;
         prev.hidden = next.hidden = pages.length === 1;
         label.textContent = `第 ${page + 1}/${pages.length} 组 · ${senses.length} 条释义/短语`;
+        status.textContent = '';
+        updateScopeTitle();
         void restore();
     };
     prev.addEventListener('click', () => {
