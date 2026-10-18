@@ -32,6 +32,16 @@
     border-bottom: 1px solid var(--sf-line);
     height: 36px;
 }
+/* The original Search host remains functional. In a full-word card, its
+   legacy intro/options/textbox are opt-in via the visible "换词" control. */
+:root.study-focus-active[data-page-type="search"] #above-sticky-header,
+:root.study-focus-active[data-page-type="search"] #sticky-search-header { display: none !important; }
+:root.study-focus-active.sf-search-open[data-page-type="search"] #above-sticky-header,
+:root.study-focus-active.sf-search-open[data-page-type="search"] #sticky-search-header { display: flex !important; }
+:root.study-focus-active[data-page-type="search"] #intro { display: none !important; }
+:root.study-focus-active.sf-search-open[data-page-type="search"] #sticky-search-header { padding-top: 0; position: relative; }
+:root.study-focus-active.sf-search-open[data-page-type="search"] #above-sticky-header .search-header { padding-block: 0; }
+.study-focus-active .sf-search-toggle { font-size: 11px; min-width: 42px; }
 .study-focus-active .content-body-inner { padding: 0; }
 .study-focus-active .study-reading-anchor { display: none; }
 .study-focus-active .study-toolbar-glance { display: none !important; }
@@ -41,7 +51,7 @@
 .study-focus-active .study-focus-shell {
     box-sizing: border-box;
     height: calc(100dvh - 36px);
-    min-height: 290px;
+    min-height: 0;
     display: grid;
     grid-template-rows: auto auto auto minmax(0, 1fr);
     color: var(--sf-ink);
@@ -274,8 +284,21 @@
 .sf-dictionary > .study-more-actions { padding: 10px 0; border-top: 1px solid var(--sf-line); }
 .sf-dictionary .study-source-editor { width: 100%; box-sizing: border-box; }
 
-.study-focus-active .study-focus-shell.sf-no-source { grid-template-rows: auto auto minmax(0, 1fr); }
+.study-focus-active .study-focus-shell.sf-no-source { grid-template-rows: auto auto minmax(0, 1fr) auto; }
 .sf-no-source .sf-source-pane { display: none; }
 @media (min-width: 660px) {
     .sf-no-source .sf-tabs, .sf-no-source .sf-body { grid-column: 1 / -1; }
+}
+@media (max-height: 350px) {
+    /* 400x250 dictionary windows: the Chinese first sense, rather than the
+       historical search chrome, must be the first readable content. */
+    .study-focus-active .sf-heading { padding: 7px 11px 5px; gap: 6px; }
+    .study-focus-active .sf-word strong { font-size: 19px; }
+    .study-focus-active .sf-tabs { padding-inline: 11px; gap: 12px; }
+    .study-focus-active .sf-tab { padding: 5px 1px 6px; }
+    .study-focus-active .sf-answer { padding: 7px 11px 4px; }
+    .study-focus-active .sf-short-gloss { margin-bottom: 3px; }
+    .study-focus-active .sf-no-source-note { margin-top: 3px; padding-top: 5px; }
+    .study-focus-active .sf-save-bar { padding: 4px 10px 6px; }
+    .study-focus-active .sf-compose { padding: 6px 10px; }
 }
