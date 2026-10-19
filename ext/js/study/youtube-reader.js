@@ -97,6 +97,8 @@ export class YoutubeReader {
         this._video = null;
         /** @type {number} */
         this._generation = 0;
+        /** @type {AbortController|null} */
+        this._loadController = null;
         /** @type {string[]} Caption requests made by the player itself (they carry its own tokens). */
         this._seen = [];
         /** @type {() => void} */
@@ -154,6 +156,8 @@ export class YoutubeReader {
     /** */
     _reset() {
         ++this._generation;
+        this._loadController?.abort();
+        this._loadController = null;
         this._translateRun = '';
         this._queue.cancel();
         this._translating = false;
@@ -253,7 +257,12 @@ export class YoutubeReader {
     async _load(generation) {
         const view = this._view;
         const videoId = this._videoId;
-        if (!view || !videoId) { return; }
+        if (!view || !videoId || generation !== this._generation || this._loadController) { return; }
+        const controller = new AbortController();
+        this._loadController = controller;
+        /** @type {ReturnType<typeof setTimeout>|null} */
+        let timeout = null;
+        let timedOut = false;
         view.load.disabled = true;
         try {
             const url = await this._findCaptionUrl(videoId, generation);
@@ -266,7 +275,11 @@ export class YoutubeReader {
             url.searchParams.delete('tlang');
             url.searchParams.set('fmt', 'json3');
             this._status('正在读取字幕…');
-            const response = await fetch(url.href, {credentials: 'include'});
+            timeout = setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+            }, WAIT_MS);
+            const response = await fetch(url.href, {credentials: 'include', signal: controller.signal});
             const text = response.ok ? await response.text() : '';
             if (generation !== this._generation) { return; }
             if (!text.trim()) {
@@ -286,8 +299,10 @@ export class YoutubeReader {
             }, cuesFromTimedText(text));
             this._render(session);
         } catch (error) {
-            if (generation === this._generation) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
+            if (generation === this._generation) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
+            if (timeout !== null) { clearTimeout(timeout); }
+            if (this._loadController === controller) { this._loadController = null; }
             view.load.disabled = false;
         }
     }

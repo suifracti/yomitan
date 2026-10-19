@@ -202,3 +202,52 @@ test('caption reload still reopens CC and accepts the current player request', a
         vi.useRealTimers();
     }
 });
+
+for (const stage of ['response', 'body', 'navigation']) {
+    test(`stops a stalled subtitle fetch during ${stage} and releases the load button`, async () => {
+        vi.useFakeTimers();
+        /** @type {AbortSignal|null|undefined} */
+        let signal;
+        const stalled = () => new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {once: true});
+        });
+        vi.stubGlobal('fetch', vi.fn(async (_url, /** @type {RequestInit|undefined} */ options) => {
+            signal = options?.signal;
+            if (stage !== 'body') { return await stalled(); }
+            return {ok: true, status: 200, text: stalled};
+        }));
+        const reader = new YoutubeReader();
+        reader.start();
+        reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
+        const load = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-head button:last-child'));
+        try {
+            load.click();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(load.disabled).toBe(true);
+            if (stage === 'navigation') {
+                // eslint-disable-next-line no-underscore-dangle -- Simulate navigation while the fetch is pending.
+                reader._reset();
+                await vi.advanceTimersByTimeAsync(0);
+            } else {
+                await vi.advanceTimersByTimeAsync(15000);
+            }
+            expect(signal?.aborted).toBe(true);
+            expect(load.disabled).toBe(false);
+            if (stage !== 'navigation') {
+                expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('超时');
+            }
+            if (stage === 'response') {
+                vi.stubGlobal('fetch', async () => ({ok: true, status: 200, text: async () => timedText}));
+                load.click();
+                await vi.advanceTimersByTimeAsync(0);
+                expect(document.querySelectorAll('#study-yt-reader .r-cue')).toHaveLength(3);
+                expect(load.disabled).toBe(false);
+            }
+        } finally {
+            // eslint-disable-next-line no-underscore-dangle -- Clean up this reader's pending load even if the assertion fails.
+            reader._reset();
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+        }
+    });
+}
