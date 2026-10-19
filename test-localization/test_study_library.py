@@ -512,6 +512,19 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(resync['cards'][0]['noteId'], synced['cards'][0]['noteId'])
 
 
+    def test_unstar_before_first_delivery_is_an_idempotent_noop_without_a_note(self):
+        request = {'action': 'libraryFavorite', 'entry': ENTRY, 'favorite': False, 'language': 'en'}
+        result = self.lib.handle(request)
+        self.assertFalse(result['favorite'])
+        self.assertFalse(result['vaultSaved'])
+        self.assertEqual(result['syncState'], 'missing')
+        self.assertEqual(self.lib.handle(request)['id'], result['id'])
+        self.assertFalse(list(self.vault.rglob('*.md')))
+        self.assertEqual(self.cards, {})
+        saved = self.save()
+        self.assertEqual(saved['id'], result['id'])
+        self.assertTrue(saved['vaultSaved'])
+
     def test_favorite_only_is_idempotent_and_explicit_save_reuses_same_context(self):
         entry = {**ENTRY, 'word': 'focus', 'sentence': 'Focus on the task.'}
         favorite = self.lib.handle({'action':'libraryFavorite','entry':entry,'favorite':True,'language':'en'})

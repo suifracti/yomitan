@@ -196,6 +196,13 @@ def favorite(lib, p):
         r, body, version = lib.read(ident)
     except FileNotFoundError:
         existing = False
+        if not p.get('favorite') and p.get('entry'):
+            # A cancelled offline favorite may never have reached this library. Acknowledge
+            # the absent state without creating a placeholder note or touching Anki.
+            return {'id': ident, 'entry': p['entry'], 'favorite': False,
+                    'learningState': 'favorite-only', 'syncState': 'missing',
+                    'version': '', 'path': '', 'openUrl': '', 'vaultSaved': False,
+                    'ankiState': 'saved', 'noteId': None}
         if not p.get('favorite') or not p.get('entry'):
             raise ValueError('找不到要取消收藏的学习记录。') from None
         e = p['entry']

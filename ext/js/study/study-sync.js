@@ -65,7 +65,7 @@ export class StudySync {
     async enqueue(task, expectedRevision) {
         /** @type {string|undefined} */
         let revision;
-        await this.service.write(OUTBOX, (value) => {
+        await this.service.write(OUTBOX, async (value) => {
             const rows = /** @type {import('study').SyncTask[]} */ (Array.isArray(value) ? value : []);
             const previous = rows.find((r) => r.key === task.key);
             // A late receipt must not discard an answer queued while the bridge was busy.
@@ -79,6 +79,12 @@ export class StudySync {
                 ...(task.entry && task.action === 'libraryUpdate' ? {entry: {...old?.entry, ...task.entry}} : {}),
                 ...(turns.size > 0 ? {turns: [...turns.values()]} : {})}];
             if (new TextEncoder().encode(JSON.stringify(next)).length > 2000000) { throw new Error('待同步内容较多，请先补齐；未删除旧记录。'); }
+            if (task.action === 'libraryFavorite') {
+                // Publish pending metadata before a worker can pick up this revision.
+                const saved = (await this.service.storage.get(SAVED_KEY))[SAVED_KEY];
+                await this.service.storage.set({[SAVED_KEY]: (/** @type {import('study').SavedWord[]} */ (Array.isArray(saved) ? saved : []))
+                    .map((row) => (`favorite:${sourceKey(row)}` === task.key ? {...row, syncPending: true} : row))});
+            }
             return next;
         });
         // Only actual incoming work wakes the worker, not its own deferred reconcile receipts.
@@ -186,7 +192,13 @@ export class StudySync {
                 }
                 if (row && task.action === 'libraryFavorite') {
                     const libraryId = row.id;
-                    await this.service.write(SAVED_KEY, (value) => /** @type {import('study').SavedWord[]} */ (Array.isArray(value) ? value : []).map((r) => (`favorite:${sourceKey(r)}` === key ? {...r, libraryId, syncPending: false} : r)));
+                    await this.service.write(SAVED_KEY, async (value) => {
+                        // Read directly inside the writer queue; service.read would wait on this write itself.
+                        const outbox = (await this.service.storage.get(OUTBOX))[OUTBOX];
+                        const latest = (/** @type {import('study').SyncTask[]} */ (Array.isArray(outbox) ? outbox : [])).find((item) => item.key === key);
+                        return /** @type {import('study').SavedWord[]} */ (Array.isArray(value) ? value : [])
+                            .map((item) => (`favorite:${sourceKey(item)}` === key ? {...item, libraryId, syncPending: latest?.revision !== revision} : item));
+                    });
                 }
                 await this.service.write(OUTBOX, (value) => /** @type {import('study').SyncTask[]} */ (Array.isArray(value) ? value : []).filter((r) => r.key !== key || r.revision !== revision));
             } catch (error) {

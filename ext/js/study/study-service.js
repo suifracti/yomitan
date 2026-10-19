@@ -481,7 +481,7 @@ export class StudyService {
         const guard = key === 'studyLearningJournalV1' ? this.#cueJournalGuard : null;
         const operation = this.writes.then(async () => {
             const value = (await this.storage.get(key))[key];
-            const next = change(value);
+            const next = await change(value);
             if (guard && !guard()) { throw new Error('字幕请求已取消或失效，未写入迟到回答。'); }
             await this.storage.set({[key]: next});
         });
@@ -951,9 +951,13 @@ export class StudyService {
                     url = link.href;
                 }
             }
-            const row = {id: crypto.randomUUID(), ...lookup, url, sourceUrl, title: String(source.title ?? '').slice(0, 300), videoTime, created: Date.now(), syncPending: true};
+            let row = {id: crypto.randomUUID(), ...lookup, url, sourceUrl, title: String(source.title ?? '').slice(0, 300), videoTime, created: Date.now(), syncPending: true};
+            const identity = sourceKey(row);
             await this.write(SAVED_KEY, (v) => {
-                const rows = (/** @type {import('study').SavedWord[]} */ (Array.isArray(v) ? v : [])).filter((r) => r.word !== lookup.word || r.sentence !== lookup.sentence || r.url !== url);
+                const current = /** @type {import('study').SavedWord[]} */ (Array.isArray(v) ? v : []);
+                const previous = current.find((item) => sourceKey(item) === identity);
+                const rows = current.filter((item) => sourceKey(item) !== identity);
+                row = {...previous, ...row, id: previous?.id ?? row.id, created: previous?.created ?? row.created};
                 if (rows.length >= 200) { throw new Error('本地收藏已满（200 条）；请先导出并手动清理，不会自动删除旧收藏。'); }
                 return [...rows, row];
             });
