@@ -55,11 +55,16 @@ export class StudySync {
         });
     }
 
-    /** @param {import('study').SyncTask} task */
-    async enqueue(task) {
+    /**
+     * @param {import('study').SyncTask} task
+     * @param {string} [expectedRevision] Only replace the delivery snapshot that produced this receipt.
+     */
+    async enqueue(task, expectedRevision) {
         await this.service.write(OUTBOX, (value) => {
             const rows = /** @type {import('study').SyncTask[]} */ (Array.isArray(value) ? value : []);
             const previous = rows.find((r) => r.key === task.key);
+            // A late receipt must not discard an answer queued while the bridge was busy.
+            if (expectedRevision !== void 0 && previous?.revision !== expectedRevision) { return rows; }
             const old = task.action === 'libraryUpdate' && previous?.action === task.action ? previous : void 0;
             const turns = new Map([...(old?.turns ?? []), ...(task.turns ?? [])].map((t) => [t.id, t]));
             const next = [...rows.filter((r) => r.key !== task.key), {...old,
@@ -148,7 +153,7 @@ export class StudySync {
                         id: row.id,
                         language: task.language,
                         ...(task.targetId ? {targetId: task.targetId} : {}),
-                        error: row.conflicts?.length ? '字段有冲突，请在我的记录或学习库选择保留哪一边。' : (row.error ?? '关联卡片待同步或已缺失，请在学习库查看。')});
+                        error: row.conflicts?.length ? '字段有冲突，请在我的记录或学习库选择保留哪一边。' : (row.error ?? '关联卡片待同步或已缺失，请在学习库查看。')}, revision);
                     continue;
                 }
                 if (row && task.action === 'libraryFavorite') {
