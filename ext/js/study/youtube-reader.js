@@ -299,6 +299,8 @@ export class YoutubeReader {
      * @returns {Promise<URL|null>}
      */
     async _findCaptionUrl(videoId, generation) {
+        const current = () => generation === this._generation && youtubeVideoId(location.href) === videoId;
+        if (!current()) { return null; }
         const find = () => {
             for (let i = this._seen.length - 1; i >= 0; --i) {
                 const url = captionUrl(this._seen[i], videoId, location.href);
@@ -316,13 +318,14 @@ export class YoutubeReader {
             cc.click();
             await new Promise((resolve) => { setTimeout(resolve, 300); });
         }
+        if (!current() || !cc.isConnected || document.querySelector('#movie_player .ytp-subtitles-button') !== cc) { return null; }
         cc.click();
         const deadline = Date.now() + WAIT_MS;
-        while (!url && generation === this._generation && Date.now() < deadline) {
+        while (!url && current() && Date.now() < deadline) {
             await new Promise((resolve) => { setTimeout(resolve, 250); });
             url = find();
         }
-        return url;
+        return current() ? url : null;
     }
 
     /**

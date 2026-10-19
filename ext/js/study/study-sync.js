@@ -212,13 +212,16 @@ export class StudySync {
      * @param {import('study').LibraryRecord[]} records
      */
     async favoritesFrom(records) {
-        const pending = await this.pending();
-        await this.service.write(SAVED_KEY, (value) => {
+        await this.service.write(SAVED_KEY, async (value) => {
+            // Decide against the outbox current at this write, not a snapshot taken before it queued.
+            const outbox = (await this.service.storage.get(OUTBOX))[OUTBOX];
+            const pending = /** @type {import('study').SyncTask[]} */ (Array.isArray(outbox) ? outbox : []);
             let rows = /** @type {import('study').SavedWord[]} */ (Array.isArray(value) ? value : []);
             for (const record of records) {
                 if (typeof record.favorite !== 'boolean' || !record.entry || record.entry.subtitleSource) { continue; }
                 if (pending.some((p) => p.action === 'libraryFavorite' && (p.id === record.id || (p.entry && sourceKey(p.entry) === sourceKey(record.entry))))) { continue; }
                 const old = rows.find((r) => r.libraryId === record.id || sourceKey(r) === sourceKey(record.entry));
+                if (old?.syncPending) { continue; }
                 rows = rows.filter((r) => r !== old);
                 if (record.favorite) { rows.push({...record.entry, url: old?.url ?? record.entry.url, sourceUrl: record.entry.url, id: old?.id ?? crypto.randomUUID(), libraryId: record.id, created: old?.created ?? Date.now(), syncPending: false}); }
             }

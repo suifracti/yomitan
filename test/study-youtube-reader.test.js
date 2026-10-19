@@ -156,3 +156,49 @@ for (const mode of ['language', 'clear']) {
         } finally { vi.unstubAllGlobals(); }
     });
 }
+
+for (const change of ['navigation', 'player replacement']) {
+    test(`caption reload does not click an obsolete player after ${change}`, async () => {
+        vi.useFakeTimers();
+        const reader = new YoutubeReader();
+        const cc = /** @type {HTMLButtonElement} */ (document.querySelector('#movie_player .ytp-subtitles-button'));
+        cc.setAttribute('aria-pressed', 'true');
+        const click = vi.spyOn(cc, 'click');
+        try {
+            // eslint-disable-next-line no-underscore-dangle -- Exercise the in-flight caption lookup without mounting another reader.
+            const pending = reader._findCaptionUrl('abcdefghijk', reader._generation);
+            expect(click).toHaveBeenCalledTimes(1);
+            if (change === 'navigation') {
+                // eslint-disable-next-line no-underscore-dangle -- Navigation invalidates the generation via the existing reset.
+                reader._reset();
+            } else {
+                cc.replaceWith(cc.cloneNode(true));
+            }
+            await vi.advanceTimersByTimeAsync(11000);
+            expect(await pending).toBe(null);
+            expect(click).toHaveBeenCalledTimes(1);
+        } finally {
+            click.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+}
+
+test('caption reload still reopens CC and accepts the current player request', async () => {
+    vi.useFakeTimers();
+    const reader = new YoutubeReader();
+    const cc = /** @type {HTMLButtonElement} */ (document.querySelector('#movie_player .ytp-subtitles-button'));
+    cc.setAttribute('aria-pressed', 'true');
+    const click = vi.spyOn(cc, 'click');
+    try {
+        // eslint-disable-next-line no-underscore-dangle -- Cover the normal branch of the same in-flight caption lookup.
+        const pending = reader._findCaptionUrl('abcdefghijk', reader._generation);
+        reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
+        await vi.advanceTimersByTimeAsync(550);
+        expect((await pending)?.searchParams.get('lang')).toBe('en');
+        expect(click).toHaveBeenCalledTimes(2);
+    } finally {
+        click.mockRestore();
+        vi.useRealTimers();
+    }
+});

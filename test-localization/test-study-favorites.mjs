@@ -86,3 +86,43 @@ test('a favorite is marked pending before its delivery can be picked up', async 
     await h.service.sync.flush();
     assert.equal(h.data[SAVED_KEY][0].syncPending, false);
 });
+
+test('a delayed library readback cannot remove a newer locally queued favorite', async () => {
+    const h = setup(() => ({cancel() {}, promise: Promise.resolve({ok: false, error: 'offline'})}));
+    const favorite = {...entry, id: 'local', libraryId: h.row.id, created: 1, syncPending: false};
+    h.data[SAVED_KEY] = [favorite];
+    const write = h.service.write.bind(h.service);
+    let release, blocked;
+    const waiting = new Promise((resolve) => { release = resolve; });
+    const reached = new Promise((resolve) => { blocked = resolve; });
+    let held = false;
+    h.service.write = async (key, change) => {
+        if (key === SAVED_KEY && !held) {
+            held = true;
+            blocked();
+            await waiting;
+        }
+        return write(key, change);
+    };
+    const readback = h.service.sync.favoritesFrom([{...h.row, favorite: false}]);
+    try {
+        await reached;
+        await h.service.handle('saveWord', entry);
+        await h.service.sync.flush();
+        assert.equal((await h.service.sync.pending()).length, 1);
+    } finally { release(); }
+    await readback;
+    const local = await h.service.handle('saved', {});
+    assert.equal(local.length, 1, 'stale remote unstar must not erase the newer local favorite');
+    assert.equal(local[0].id, favorite.id);
+    assert.equal(local[0].syncPending, true);
+});
+
+test('local favorite stays visible between its save and outbox publication', async () => {
+    const h = setup();
+    h.data[SAVED_KEY] = [{...entry, id: 'local', libraryId: h.row.id, created: 1, syncPending: true}];
+    assert.deepEqual(await h.service.sync.pending(), []);
+    await h.service.sync.favoritesFrom([{...h.row, favorite: false}]);
+    assert.equal(h.data[SAVED_KEY].length, 1);
+    assert.equal(h.data[SAVED_KEY][0].syncPending, true);
+});
