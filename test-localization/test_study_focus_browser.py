@@ -53,6 +53,7 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
         module=module.replace('export function prepareStudyFocus','function prepareStudyFocus')
         module=module.replace("new URL('../../css/study-focus.css', import.meta.url).href", "'data:text/css,'")
         page.set_content(html+'</body></html>')
+        page.add_style_tag(content=(ROOT/'ext/js/study/study-tokens.css').read_text())
         for css in ['material.css', 'display.css', 'structured-content.css', 'study-card.css', 'study-focus.css']:
             page.add_style_tag(content=(ROOT/'ext/css'/css).read_text())
         dictionary=(ROOT/'ext/js/display/study-dictionary.js').read_text().replace("import {studyCall} from '../study/study-client.js';", "const dictionaryCall=(a,d)=>globalThis.dictionaryCall(a,d);").replace('export function ', 'function ').replace('await studyCall(', 'await dictionaryCall(').replace('void studyCall(', 'void dictionaryCall(')

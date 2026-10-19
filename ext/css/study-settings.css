@@ -2,20 +2,12 @@
 
 /* Styles for the unified settings page; all form selectors stay inside its own sections. */
 :root {
-    --study-accent: #4c5da4;
-    --study-ink: #202c40;
-    --study-muted: #627086;
-    --study-line: #e1e6ef;
-    --study-paper: #ffffff;
-    --study-tint: #f3f5fb;
-}
-:root[data-theme='dark'] {
-    --study-accent: #a9b9ff;
-    --study-ink: #e9edf6;
-    --study-muted: #a7b3c8;
-    --study-line: #344157;
-    --study-paper: #182130;
-    --study-tint: #222e43;
+    --study-accent: var(--st-accent);
+    --study-ink: var(--st-ink);
+    --study-muted: var(--st-muted);
+    --study-line: var(--st-line);
+    --study-paper: var(--st-sheet);
+    --study-tint: var(--st-tint);
 }
 
 .settings-product-nav {

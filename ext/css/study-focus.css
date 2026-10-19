@@ -2,29 +2,17 @@
 /* Scene-specific presentation: reading and understanding stay in one viewport.
    The original lookup/journal/save machinery remains the only business layer. */
 :root.study-focus-active {
-    --sf-accent: #4c5da4;
-    --sf-accent-strong: #344783;
-    --sf-ink: #202c40;
-    --sf-muted: #627086;
-    --sf-line: #e1e6ef;
-    --sf-paper: #fff;
-    --sf-tint: #f3f5fb;
-    --sf-source: #f4f6f9;
-    --sf-mark: #dfe6fb;
+    --sf-accent: var(--st-accent);
+    --sf-accent-strong: var(--st-accent-strong);
+    --sf-ink: var(--st-ink);
+    --sf-muted: var(--st-muted);
+    --sf-line: var(--st-line);
+    --sf-paper: var(--st-paper);
+    --sf-tint: var(--st-tint);
+    --sf-source: var(--st-sheet);
+    --sf-mark: var(--st-mark);
     color: var(--sf-ink);
     background: var(--sf-paper);
-}
-:root.study-focus-active[data-theme='dark'],
-:root.study-focus-active[data-glossary-layout-mode='dark'] {
-    --sf-accent: #a9b9ff;
-    --sf-accent-strong: #d1dbff;
-    --sf-ink: #e9edf6;
-    --sf-muted: #a7b3c8;
-    --sf-line: #344157;
-    --sf-paper: #182130;
-    --sf-tint: #222e43;
-    --sf-source: #202c3d;
-    --sf-mark: #34466c;
 }
 .study-focus-active .study-toolbar {
     background: var(--sf-paper);
@@ -643,4 +631,82 @@
 .sf-save-bar>.study-card-add-toggle:disabled { color: var(--sf-muted); cursor: default; }
 @media (max-height: 360px) {
     .sf-save-bar>.study-card-add-toggle { min-height: 24px; padding-block: 2px; font-size: 11px; }
+}
+
+/* Paper reading: hierarchy comes from type and hairlines, not boxes.
+   Colors resolve through js/study/study-tokens.css. */
+.study-focus-active .study-focus-shell,
+.sf-main-card,
+.sf-dictionary-card { font-family: var(--st-sans); }
+.sf-word strong { font-family: var(--st-serif); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+.sf-ipa { font-size: var(--st-size-2); }
+.study-focus-active .sf-source-pane { margin: 0; border: 0; border-bottom: 1px solid var(--sf-line); border-radius: 0; background: transparent; }
+.study-focus-active .sf-source-pane:focus-within { border-color: var(--sf-line); }
+.study-focus-active .sf-source-pane .study-source { padding: 12px 16px 6px; }
+.study-focus-active .sf-source-pane .study-source-label { font-size: 11px; letter-spacing: 0.04em; }
+.study-focus-active .sf-source-pane .study-source p { font-family: var(--st-serif); font-size: var(--st-size-3); line-height: 1.6; }
+.study-focus-active .sf-source-pane .study-source mark { padding: 0 2px; border: 0; border-radius: 2px; background: var(--st-mark); color: inherit; font-weight: 600; }
+.study-focus-active .sf-source-pane .study-source-translation-row { border-top: 0; margin-top: 2px; padding-top: 0; }
+.study-focus-active .sf-source-pane .study-source-translation { color: var(--sf-ink); font-size: 14px; line-height: 1.65; }
+.study-focus-active .sf-source-footer { padding-inline: 16px; }
+.study-focus-active .sf-source-footer .sf-button,
+.study-focus-active .sf-source-time,
+.study-focus-active .sf-source-details { font-size: 11px; }
+.study-focus-active .sf-answer { padding: 14px 16px 10px; }
+.study-focus-active .sf-section-label { color: var(--sf-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
+.study-focus-active .sf-asked { margin: 0 0 6px; color: var(--sf-ink); font-size: var(--st-size-2); font-weight: 600; line-height: 1.5; }
+.study-focus-active .sf-meaning { font-size: var(--st-size-3); line-height: 1.75; }
+.study-focus-active .sf-notes { font-size: 14px; }
+.study-focus-active .sf-gloss-text { font-weight: 600; }
+.study-focus-active .sf-gloss-pos { padding: 0 4px; border-radius: 3px; background: var(--sf-tint); font-size: 11px; }
+.study-focus-active .sf-word-facts .study-tag,
+.study-focus-active .sf-form-piece { border-radius: 3px; background: var(--sf-tint); }
+.study-focus-shell :where(button:not(.sf-tab, .sf-forms-preview, .sf-gloss-toggle)) { border-radius: var(--st-radius-1); transition: background-color var(--st-fast), border-color var(--st-fast), color var(--st-fast); }
+.study-focus-shell :where(button:not(.sf-tab, .sf-forms-preview, .sf-gloss-toggle)):hover:not(:disabled) { border-color: var(--sf-accent); }
+.study-focus-shell :where(button, textarea, input, select):focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 1px; }
+.study-focus-active .sf-compose { padding: 8px 16px; }
+.study-focus-active #study-context .sf-compose textarea.study-followup { border-radius: var(--st-radius-1); background: var(--st-sheet); font-size: var(--st-size-2); }
+/* Remember and make-cards are one pair: both always visible, neither demoted. */
+.sf-save-bar { padding: 8px 16px 12px; }
+.sf-save-bar [data-study-save='note'],
+.sf-save-bar>.study-card-add-toggle { min-height: 32px; padding-inline: 14px; border-radius: var(--st-radius-1); font-size: var(--st-size-2); font-weight: 600; }
+.sf-save-bar>.study-card-add-toggle { border: 1px solid var(--sf-accent); background: var(--sf-paper); color: var(--sf-accent); }
+.sf-save-bar>.study-card-add-toggle:hover:not(:disabled) { background: var(--st-accent-soft); }
+.sf-save-bar .study-request-status,
+.sf-saved-summary,
+.sf-save-bar .study-anki-status,
+.sf-save-bar .study-pending-recovery { font-size: 12px; }
+.sf-saved-summary[data-state='pending'] { color: var(--st-warn); }
+.sf-tab { font-size: var(--st-size-2); }
+/* The current word tab always shows its close control; others reveal it on
+   hover or keyboard focus, in a reserved slot so widths never jump. */
+.sf-word-tab>.sf-word-tab-close { opacity: 0; transition: opacity var(--st-fast); }
+.sf-word-tab:hover>.sf-word-tab-close,
+.sf-word-tab:focus-within>.sf-word-tab-close,
+.sf-word-tab:has(>[aria-pressed='true'])>.sf-word-tab-close { opacity: 1; }
+.sf-workspace-tabs { background: var(--sf-paper); }
+.sf-workspace-tabs button[aria-pressed=true] { background: var(--st-sheet); }
+:root[data-study-workspace=true],
+:root[data-study-workspace=true] body,
+:root[data-study-workspace=true] .content-body-inner { background: var(--sf-paper); }
+.sf-main-card,
+.sf-dictionary-card { border-radius: var(--st-radius-2); background: var(--st-sheet); box-shadow: var(--st-shadow-1); }
+.sf-dictionary-rail>.sf-pane-button { height: auto; min-height: 56px; padding: 6px 3px; font-size: 12px; }
+.sf-learning-scroll>.study-card-add { padding: 10px 12px; border-radius: var(--st-radius-2); background: var(--st-sheet); }
+@media (min-width: 660px) {
+    .study-focus-active .sf-source-pane .study-source p { font-size: var(--st-size-4); line-height: 1.7; }
+    .study-focus-active .sf-source-pane .study-source-translation { font-size: var(--st-size-3); }
+}
+@media (max-height: 350px) {
+    .study-focus-active .sf-word strong { font-size: 19px; line-height: 1.25; }
+    .study-focus-active .sf-ipa { font-size: 12px; }
+    .study-focus-active .sf-tab { font-size: 12px; }
+    .study-focus-active .sf-source-pane .study-source { padding: 6px 11px 3px; }
+    .study-focus-active .sf-save-bar { padding: 2px 10px; }
+    .study-focus-active .sf-compose { padding: 3px 10px; }
+    .study-focus-active .sf-answer { padding: 7px 11px 4px; }
+    .study-focus-active .sf-source-footer { padding-inline: 11px; }
+    .sf-save-bar [data-study-save='note'],
+    .sf-save-bar>.study-card-add-toggle { min-height: 24px; padding: 2px 10px; font-size: 11px; }
+    .sf-dictionary-rail>.sf-pane-button { min-height: 36px; font-size: 11px; }
 }

@@ -539,7 +539,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             // It is labeled separately from the contextual interpretation.
             shortGloss.hidden = shortGloss.childElementCount === 0;
             resizeFollowup();
-            asked.textContent = mine;
+            // The question reads as a heading over the full-width answer.
+            asked.textContent = mine.replace(/^\s*我[:：]\s*/, '你问：');
             asked.hidden = !mine || mine === '我：请解释这句话和这个词的用法';
             meaning.textContent = meaningText;
             meaning.hidden = !meaningText;

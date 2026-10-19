@@ -1,0 +1,89 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Paper-reading design tokens: the single palette, type and spacing source for
+   the word card, card making, study library, settings and the YouTube reader.
+   Kept under js/ because manifest web_accessible_resources already exposes
+   js/*, so content scripts load this same file through chrome.runtime.getURL. */
+:root,
+.st-scope {
+    --st-paper: #fbfaf7;
+    --st-sheet: #fff;
+    --st-ink: #1f2430;
+    --st-muted: #5a6172;
+    --st-faint: #8a8f9c;
+    --st-line: #e6e3dc;
+    --st-tint: #f3f1ec;
+    --st-accent: #3b4a8c;
+    --st-accent-strong: #2a3770;
+    --st-accent-ink: #fff;
+    --st-accent-soft: #eceef7;
+    --st-mark: rgb(255 214 92 / 45%);
+    --st-mark-line: #d9a91c;
+    --st-ok: #3f6b4a;
+    --st-warn: #8a5a12;
+    --st-danger: #9a3b4b;
+    --st-shadow-1: 0 1px 2px rgb(31 36 48 / 6%);
+    --st-shadow-2: 0 6px 20px rgb(31 36 48 / 10%);
+    --st-serif: 'Iowan Old Style', 'Palatino Linotype', palatino, georgia, 'Songti SC', serif;
+    --st-sans: -apple-system, blinkmacsystemfont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --st-size-1: 12px;
+    --st-size-2: 13px;
+    --st-size-3: 15px;
+    --st-size-4: 17px;
+    --st-size-5: 20px;
+    --st-radius-1: 6px;
+    --st-radius-2: 10px;
+    --st-fast: 120ms;
+    --st-slow: 200ms;
+}
+:root[data-theme=dark],
+:root[data-glossary-layout-mode=dark],
+html[dark] .st-scope,
+.st-scope[data-st-theme=dark] {
+    --st-paper: #1c1e24;
+    --st-sheet: #22252c;
+    --st-ink: #e8e4da;
+    --st-muted: #a9adb8;
+    --st-faint: #7d828e;
+    --st-line: #353943;
+    --st-tint: #2a2d35;
+    --st-accent: #a9b6ef;
+    --st-accent-strong: #ccd4ff;
+    --st-accent-ink: #1c1e24;
+    --st-accent-soft: #2c3350;
+    --st-mark: rgb(230 184 60 / 30%);
+    --st-mark-line: #c99b2a;
+    --st-ok: #9cc9a6;
+    --st-warn: #e0b46a;
+    --st-danger: #e5a3b1;
+    --st-shadow-1: 0 1px 2px rgb(0 0 0 / 30%);
+    --st-shadow-2: 0 6px 20px rgb(0 0 0 / 40%);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]):not([data-glossary-layout-mode]) {
+        --st-paper: #1c1e24;
+        --st-sheet: #22252c;
+        --st-ink: #e8e4da;
+        --st-muted: #a9adb8;
+        --st-faint: #7d828e;
+        --st-line: #353943;
+        --st-tint: #2a2d35;
+        --st-accent: #a9b6ef;
+        --st-accent-strong: #ccd4ff;
+        --st-accent-ink: #1c1e24;
+        --st-accent-soft: #2c3350;
+        --st-mark: rgb(230 184 60 / 30%);
+        --st-mark-line: #c99b2a;
+        --st-ok: #9cc9a6;
+        --st-warn: #e0b46a;
+        --st-danger: #e5a3b1;
+        --st-shadow-1: 0 1px 2px rgb(0 0 0 / 30%);
+        --st-shadow-2: 0 6px 20px rgb(0 0 0 / 40%);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    :root,
+    .st-scope {
+        --st-fast: 0ms;
+        --st-slow: 0ms;
+    }
+}

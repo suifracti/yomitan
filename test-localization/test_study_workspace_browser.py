@@ -20,7 +20,7 @@ async def main(port):
         await page.expose_function('resizeStudyHost', resize_host)
         raw=(ROOT/'test-localization/fixtures/study-focus.html').read_text()
         raw=raw.replace("import {prepareStudyFocus} from '/source/ext/js/display/study-focus.js';", "import {prepareStudyFocus} from '/js/display/study-focus.js';import {prepareStudyDictionary} from '/js/display/study-dictionary.js';")
-        raw=raw.replace('</head>', ''.join('<link rel="stylesheet" href="/css/'+name+'">' for name in ['material.css','display.css','structured-content.css','study-card.css'])+'</head>')
+        raw=raw.replace('</head>', '<link rel="stylesheet" href="/js/study/study-tokens.css">'+''.join('<link rel="stylesheet" href="/css/'+name+'">' for name in ['material.css','display.css','structured-content.css','study-card.css'])+'</head>')
         raw=raw.replace('prepareStudyFocus(window.display,{call:window.mockCall});', """
 window.display.parentPopupId='test-root';
 window.display.invokeParentFrame=async(action,data)=>{
