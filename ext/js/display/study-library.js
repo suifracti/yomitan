@@ -131,6 +131,11 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             mediaChoice.disabled = !hasSentence || !currentSaved?.media?.audio?.name || Boolean(currentSaved?.entry.subtitleSource);
             mediaChoice.title = mediaChoice.disabled ? '这条记录没有可用于制卡的真实原声片段；可以先做文字卡。' : '使用这条记录已附带的真实原声与原句，不采集整页截图。';
         }
+        if (currentSaved?.media?.audio?.name) {
+            setAudioState('ready');
+        } else if (audioState.dataset.state === 'ready') {
+            setAudioState('none');
+        }
     };
     const draftCards = d.createElement('div');
     draftCards.className = 'study-card-draft-list';
@@ -242,7 +247,26 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         void media.cancelCapture?.().catch(() => {});
         addStatus.textContent = '已取消；未附加原声，也未制卡。';
     });
-    cardPanel.append(choices, choiceHint, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
+    // The video card states its audio honestly before any card text.
+    const audioState = d.createElement('p');
+    audioState.className = 'study-card-audio-state';
+    audioState.dataset.state = 'none';
+    /** @type {Record<string, string>} */
+    const audioLabels = {none: '未采集', capturing: '采集中…', failed: '采集失败', ready: '已保存，可制卡'};
+    /**
+     * @param {number} value
+     * @returns {string}
+     */
+    const clock = (value) => `${Math.floor(value / 60)}:${(value % 60).toFixed(1).padStart(4, '0')}`;
+    /** @param {'none'|'capturing'|'failed'|'ready'} state */
+    const setAudioState = (state) => {
+        audioState.dataset.state = state;
+        const range = media.range ? ` · ${clock(media.range.start)}–${clock(media.range.end)}` : '';
+        audioState.textContent = `原声 · ${audioLabels[state]}${range}`;
+        audioState.hidden = state === 'none' && captureAudio.hidden;
+    };
+    setAudioState('none');
+    cardPanel.append(choices, choiceHint, audioState, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
     /**
      *
      */
@@ -402,6 +426,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         const live = () => isCurrent() && !disposed && operation === mediaOperation && media.isSourceCurrent?.() !== false;
         run(async () => {
             captureAudio.disabled = true; cancelCapture.hidden = false;
+            setAudioState('capturing');
             try {
                 const saved = await ensureNote();
                 if (!live()) { return; }
@@ -422,12 +447,14 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                     origin: 'capture'}));
                 if (!live()) { return; }
                 showAnkiStatus(row);
+                setAudioState('ready');
                 addStatus.textContent = '真实原声已保存；现在可选择“视频声音字幕”制卡。';
                 if (d.defaultView) { container.dispatchEvent(new d.defaultView.Event('study-saved')); }
             } finally {
                 if (isCurrent() && !disposed) {
                     captureAudio.disabled = false;
                     cancelCapture.hidden = true;
+                    if (audioState.dataset.state === 'capturing') { setAudioState(operation === mediaOperation ? 'failed' : 'none'); }
                 }
             }
         });

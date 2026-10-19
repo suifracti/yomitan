@@ -17,10 +17,14 @@ settings.
   answer, "记住它" and "制卡" as one equally visible pair, current word tab
   always shows ×.
 
+- Step 1.2 — card-making panel: card types as pill choices; each editor shows
+  front and back together (side by side when the panel is at least 420px,
+  stacked when narrower). The video card shows an explicit audio state line
+  (未采集 / 采集中… / 采集失败 / 已保存，可制卡) with the clip range, next
+  to the existing capture button.
+
 ## Next
 
-- Step 1.2 — card-making panel: compact type choices, front and back visible
-  together (side by side when wide), clear audio state for the video card.
 - Batch 2 — YouTube caption panel (UI only).
 - Batch 3 — study library list with detail pane; settings left nav.
 

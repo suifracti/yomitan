@@ -710,3 +710,48 @@
     .sf-save-bar>.study-card-add-toggle { min-height: 24px; padding: 2px 10px; font-size: 11px; }
     .sf-dictionary-rail>.sf-pane-button { min-height: 36px; font-size: 11px; }
 }
+
+/* Card making: front and back are read together, side by side when the
+   panel is wide and stacked when narrow; no flipping. */
+.study-card-add { container-type: inline-size; }
+.study-card-type-choices button { border-radius: 999px; padding: 4px 11px; font-size: var(--st-size-1); }
+.study-card-type-choices button:hover:not(:disabled) { border-color: var(--sf-accent); background: var(--st-accent-soft); }
+.study-card-choice-hint { font-size: 11px; }
+.study-card-add fieldset.study-card-editor {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-areas: 'pick kind kind remove' 'front front front front' 'back back back back' 'deck deck deck deck';
+    gap: 6px 8px;
+    margin: 0 0 8px;
+    padding: 8px 10px 10px;
+    border-color: var(--sf-line);
+    border-radius: var(--st-radius-1);
+    background: var(--sf-paper);
+}
+.study-card-add .study-card-editor>label { grid-column: 1 / -1; }
+.study-card-add .study-card-editor>.study-card-select-label { grid-area: pick; align-self: center; }
+.study-card-add .study-card-editor>label:has(>select) { grid-area: kind; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.study-card-add .study-card-editor>label:has(>[data-study-card-front]) { grid-area: front; }
+.study-card-add .study-card-editor>label:has(>[data-study-card-back]) { grid-area: back; }
+.study-card-add .study-card-editor>label:has(>[data-study-card-deck]) { grid-area: deck; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.study-card-editor>button { grid-area: remove; align-self: center; border: 0; background: none; color: var(--sf-muted); }
+.study-card-editor label { font-size: 11px; }
+.study-card-editor textarea,
+.study-card-editor input:not([type='checkbox']),
+.study-card-editor select { padding: 6px 8px; border-radius: var(--st-radius-1); background: var(--st-sheet); font-size: var(--st-size-2); line-height: 1.5; }
+.study-card-editor textarea[data-study-card-front] { font-family: var(--st-serif); }
+@container (min-width: 420px) {
+    .study-card-add fieldset.study-card-editor { grid-template-areas: 'pick kind kind remove' 'front front back back' 'deck deck deck deck'; }
+}
+.study-card-audio-state { margin: 6px 0; color: var(--sf-muted); font-size: 12px; }
+.study-card-audio-state[hidden] { display: none; }
+.study-card-audio-state[data-state='capturing'] { color: var(--sf-accent); }
+.study-card-audio-state[data-state='failed'] { color: var(--st-danger); }
+.study-card-audio-state[data-state='ready'] { color: var(--st-ok); }
+.study-card-add-status { font-size: 12px; }
+@media (max-height: 350px) {
+    .study-card-add fieldset.study-card-editor { gap: 3px 6px; padding: 3px 6px 5px; }
+    .study-card-editor textarea,
+    .study-card-editor input:not([type='checkbox']),
+    .study-card-editor select { padding: 3px 6px; font-size: 12px; line-height: 1.35; }
+    .sf-learning-scroll>.study-card-add { padding: 4px 6px; }
+}
