@@ -38,9 +38,19 @@ settings.
   "已译 x/y"; the translate button's tooltip says it starts from the current
   playback position. The status line wraps under the buttons.
 
+- Step 3.1 — study library as a retrieval list. Rows are unboxed with
+  hairlines: word (serif) on the left; sentence with the studied word
+  highlighted, source and state in the middle; "继续学习" and "详情" on the
+  right. "详情" opens the row in place to show context, record details and the
+  less frequent actions (note, Anki, favorite, sync). Conflicts always show.
+  Filters are pills, the status is a single line, the shared top nav marks
+  the current page with an underline. Deviation from the plan: details open
+  inline rather than in a right-hand pane, to keep `pages/study-library.js`
+  changes small (two helpers, no data flow changes).
+
 ## Next
 
-- Batch 3 — study library list with detail pane; settings left nav.
+- Step 3.2 — settings page: left nav and right form on the token palette.
 
 ## Caveats
 

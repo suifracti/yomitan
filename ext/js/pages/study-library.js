@@ -234,6 +234,45 @@ function makeTechnicalDetails(path, subtitleLocator, legacyLocator) {
 }
 
 /**
+ * Writes the sentence with the studied word marked, without parsing any HTML.
+ * @param {HTMLElement} element
+ * @param {string} sentence
+ * @param {string} word
+ */
+function writeSentence(element, sentence, word) {
+    if (typeof sentence !== 'string') { sentence = ''; }
+    const at = word ? sentence.toLocaleLowerCase().indexOf(word.toLocaleLowerCase()) : -1;
+    if (at < 0) {
+        element.textContent = sentence;
+        return;
+    }
+    const mark = document.createElement('mark');
+    mark.textContent = sentence.slice(at, at + word.length);
+    element.replaceChildren(sentence.slice(0, at), mark, sentence.slice(at + word.length));
+}
+
+/**
+ * Rows stay compact for scanning; the toggle reveals context, record details
+ * and the less frequent actions in place.
+ * @param {HTMLElement} article
+ * @param {HTMLElement} actions
+ */
+function addDetailToggle(article, actions) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'study-library-detail-toggle';
+    toggle.textContent = '详情';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.addEventListener('click', () => {
+        const open = article.dataset.open !== 'true';
+        article.dataset.open = `${open}`;
+        toggle.setAttribute('aria-expanded', `${open}`);
+        toggle.textContent = open ? '收起' : '详情';
+    });
+    actions.querySelector('.study-library-primary-action')?.after(toggle);
+}
+
+/**
  * @param {string} id
  * @returns {HTMLElement}
  */
@@ -438,7 +477,7 @@ async function initializePage() {
             if (record.entry?.sentence) {
                 const sentence = document.createElement('p');
                 sentence.className = 'study-library-sentence';
-                sentence.textContent = record.entry.sentence;
+                writeSentence(sentence, record.entry.sentence, record.entry.word || '');
                 article.append(sentence);
             }
             const legacyLocator = parseLegacySourceLocator(record.entry?.context);
@@ -543,6 +582,7 @@ async function initializePage() {
                 void refreshOne(record.id).catch((error) => setStatus(error instanceof Error ? error.message : '同步尚未完成。')).finally(() => { refresh.disabled = false; });
             });
             actions.append(refresh);
+            addDetailToggle(article, actions);
             article.append(actions);
             const conflicts = renderConflicts(record);
             if (conflicts) { article.append(conflicts); }
@@ -565,7 +605,7 @@ async function initializePage() {
             article.append(title, state);
             const sentence = document.createElement('p');
             sentence.className = 'study-library-sentence';
-            sentence.textContent = saved.sentence;
+            writeSentence(sentence, saved.sentence, saved.word || '');
             article.append(sentence);
             const legacyLocator = parseLegacySourceLocator(saved.context);
             if (saved.context && !legacyLocator) {
@@ -635,6 +675,7 @@ async function initializePage() {
             sync.textContent = saved.syncPending ? '重试同步收藏' : '同步收藏';
             sync.addEventListener('click', () => { void syncLocalFavorite(saved, sync); });
             actions.append(sync);
+            addDetailToggle(article, actions);
             article.append(actions);
             return article;
         }
