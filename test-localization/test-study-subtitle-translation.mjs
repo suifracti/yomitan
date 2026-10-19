@@ -33,3 +33,69 @@ test('cancellation discards a late subtitle reply and never caches it',async()=>
  resolve({ok:true,result:{items:request.items.map(r=>({id:r.id,translation:'late'}))}});
  await assert.rejects(pending,/取消/);assert.equal(cancelled,true);assert.equal(db[CACHE_KEY],undefined);
 });
+
+test('a recreated service reuses persisted subtitle translations with current row IDs', async () => {
+    const h = harness();
+    await h.service.handle('subtitleTranslate', request);
+    const restarted = new StudyService(h.service.storage, h.service.native);
+    const items = request.items.map((item, i) => ({...item, id: `reload-${i}`}));
+    const result = await restarted.handle('subtitleTranslate', {...request, requestId: 'reload', items});
+    assert.equal(h.calls.length, 1, 'cached subtitles must not call the model again after reload');
+    assert.deepEqual(result.items, items.map((item) => ({id: item.id, translation: '译：' + item.text})));
+});
+
+test('a partially cached batch translates only missing rows and restores input order', async () => {
+    const h = harness();
+    await h.service.handle('subtitleTranslate', {...request, items: [request.items[0]]});
+    const result = await h.service.handle('subtitleTranslate', {...request, requestId: 'partial'});
+    assert.deepEqual(h.calls[1].items, [{id: 'line-1', text: request.items[1].text}]);
+    assert.deepEqual(result.items.map((item) => item.id), ['line-0', 'line-1']);
+    assert.deepEqual(result.items.map((item) => item.translation), request.items.map((item) => '译：' + item.text));
+});
+
+test('expired or disabled cache does not suppress an explicit translation', async () => {
+    const h = harness();
+    await h.service.handle('subtitleTranslate', request);
+    h.db[CACHE_KEY] = h.db[CACHE_KEY].map((row) => ({...row, created: 0}));
+    await h.service.handle('subtitleTranslate', {...request, requestId: 'expired'});
+    assert.equal(h.calls.length, 2);
+    h.db[SETTINGS_KEY].cacheEnabled = false;
+    const before = structuredClone(h.db[CACHE_KEY]);
+    await h.service.handle('subtitleTranslate', {...request, requestId: 'disabled'});
+    assert.equal(h.calls.length, 3);
+    assert.deepEqual(h.db[CACHE_KEY], before, 'disabled cache is neither reused nor rewritten');
+});
+
+test('cancellation while settings are being read prevents a later model call', async () => {
+    let release;
+    const reading = new Promise((resolve) => { release = resolve; });
+    const calls = [];
+    const service = new StudyService({get: async (key) => {
+        await reading;
+        return {[key]: {model: 'fixture', effort: 'low', cacheEnabled: true}};
+    }, set: async () => {}}, (payload) => {
+        calls.push(payload);
+        return {cancel() {}, promise: Promise.resolve({ok: true, result: {items: request.items.map((item) => ({id: item.id, translation: 'late'}))}})};
+    });
+    const pending = service.handle('subtitleTranslate', request);
+    await service.handle('subtitleCancel', {requestId: request.requestId});
+    release();
+    await assert.rejects(pending, /取消/);
+    assert.equal(calls.length, 0);
+});
+
+test('subtitle cache is separated by language, context, model and effort', async () => {
+    const h = harness();
+    await h.service.handle('subtitleTranslate', {...request, language: 'fr'});
+    await h.service.handle('subtitleTranslate', request);
+    assert.equal(h.calls.length, 2, 'French rows must not be mistaken for English cache');
+    await h.service.handle('subtitleTranslate', {...request, requestId: 'context',
+        items: request.items.map((item) => ({...item, context: 'Different neighboring lines.'}))});
+    assert.equal(h.calls.length, 3);
+    h.db[SETTINGS_KEY].model = 'other';
+    await h.service.handle('subtitleTranslate', {...request, requestId: 'model', config: {model: 'other', effort: 'low'}});
+    assert.equal(h.calls.length, 4);
+    h.db[SETTINGS_KEY].effort = 'high';
+    await h.service.handle('subtitleTranslate', {...request, requestId: 'effort', config: {model: 'other', effort: 'high'}});
+    assert.equal(h.calls.length, 5);
+});
