@@ -23,9 +23,23 @@ settings.
   (未采集 / 采集中… / 采集失败 / 已保存，可制卡) with the clip range, next
   to the existing capture button.
 
+- Batch 2 — YouTube caption panel (`ext/js/study/youtube-reader.js`, UI
+  only; translation, capture and cancel logic untouched). The panel root
+  carries `st-scope` and links the tokens file through
+  `chrome.runtime.getURL`, with fallbacks if it has not loaded. Serif English,
+  Chinese translation in ink at near-English size, current line marked with a
+  tint and left bar (size and line height never change). Separate states:
+  playing (`is-current`), the sentence bound to the word card (`is-lookup`,
+  highlighter underline) and looping (`is-looping`). "循环" is a row tool
+  outside the sentence node; it reuses `session.seekSeconds()` and exits on a
+  second click, a jump elsewhere, another row's seek, video switch or
+  re-render, a replaced video element, or a word lookup (so audio capture
+  never fights the loop). Selecting text pauses follow. Progress reads
+  "已译 x/y"; the translate button's tooltip says it starts from the current
+  playback position. The status line wraps under the buttons.
+
 ## Next
 
-- Batch 2 — YouTube caption panel (UI only).
 - Batch 3 — study library list with detail pane; settings left nav.
 
 ## Caveats
@@ -34,4 +48,7 @@ settings.
   (`test_study_focus_browser.py`, `test_study_workspace_browser.py`).
 - Pre-existing stylelint and eslint errors in the older study files are
   unchanged in count; new files are lint-clean.
-- Real Chrome extension acceptance is still pending (user).
+- Real Chrome extension acceptance is still pending (user). The YouTube
+  panel was checked in a fixture page with the bundled module; real-YouTube
+  injection was blocked by the page's CSP this time, and the host placement
+  code is unchanged from the earlier real-page check.

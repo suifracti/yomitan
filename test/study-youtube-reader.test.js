@@ -78,6 +78,22 @@ test('loads the player caption request read-only and keeps sentences per caption
     current = 3.5;
     video.dispatchEvent(new Event('timeupdate'));
     expect(rows.map((r) => r.classList.contains('is-current'))).toEqual([false, false, true]);
+
+    // Row tools live outside the sentence node; looping replays one caption until the learner leaves it.
+    expect(rows[1].querySelector('.r-text .r-tools')).toBe(null);
+    const loop = /** @type {HTMLButtonElement} */ (rows[1].querySelector('.r-tools .r-loop'));
+    loop.click();
+    expect(current).toBe(1);
+    expect(loop.getAttribute('aria-pressed')).toBe('true');
+    expect(rows[1].classList.contains('is-looping')).toBe(true);
+    current = 3.1;
+    video.dispatchEvent(new Event('timeupdate'));
+    expect(current).toBe(1);
+    current = 10;
+    video.dispatchEvent(new Event('timeupdate'));
+    expect(current).toBe(10);
+    expect(loop.getAttribute('aria-pressed')).toBe('false');
+    expect(rows[1].classList.contains('is-looping')).toBe(false);
     vi.unstubAllGlobals();
 });
 
