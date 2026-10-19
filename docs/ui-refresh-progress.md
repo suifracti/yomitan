@@ -48,9 +48,37 @@ settings.
   inline rather than in a right-hand pane, to keep `pages/study-library.js`
   changes small (two helpers, no data flow changes).
 
-## Next
+- Step 3.2 — settings page: the existing Yomitan left nav and right form are
+  kept; study panels lose their card boxes in favor of hairline sections with
+  serif headings, inputs sit on the sheet color, the floating save bar keeps a
+  shadow so its saved/unsaved state stays readable, and the top nav matches
+  the library. Apply-then-save and "创建缺少的牌组" behavior is unchanged.
 
-- Step 3.2 — settings page: left nav and right form on the token palette.
+## Status
+
+All three batches are done. Scheduled resume runs should only verify (fetch,
+tests, daily directory byte check) and not start new work.
+
+## Verification (final)
+
+- `tsc -p jsconfig.json`: per-file diagnostic counts identical to the
+  baseline before the refresh.
+- eslint, stylelint and html-validate are clean on new and changed code;
+  pre-existing errors in older study CSS/JS are unchanged in count.
+- vitest: reader, subtitle session and library page suites (42 tests).
+- `test-study-flexible-cards.mjs` (9), `test_study_focus_browser.py` (105),
+  `test_study_workspace_browser.py` (33).
+- Fixture screenshots checked: word card 320/400×250/420/720 light and dark,
+  card editor 320 and 720, caption panel light and dark, library 380 and 900,
+  settings 420 and 1100.
+
+## Not verified
+
+- The real extension in Chrome (word card, card making, caption panel on a
+  live YouTube page, library and settings with real data) — waits for the
+  user.
+- The settings page base background still follows Yomitan's own palette;
+  only the study panels use the paper tokens.
 
 ## Caveats
 
