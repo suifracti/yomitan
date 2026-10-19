@@ -45,4 +45,8 @@ await Application.main(false, async (application) => {
         browser: browser,
     });
     await frontend.prepare();
+    if (window.self === window.top && /(^|\.)youtube\.com$/.test(location.hostname)) {
+        const {startYoutubeReader} = await import('../study/youtube-reader.js');
+        startYoutubeReader();
+    }
 });
