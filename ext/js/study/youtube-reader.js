@@ -430,6 +430,8 @@ export class YoutubeReader {
             const config = /** @type {import('study').StudyConfig} */ (await this._call('subtitleSettings'));
             if (this._session !== session || this._translateRun !== runId) { return; }
             const result = await this._queue.translate(items, {...config,
+                // The service owns cache language, expiry and clearing; do not bypass it with a second memo.
+                cacheEnabled: false,
                 onItem: (row) => {
                     if (this._session !== session) { return; }
                     const target = this._rows.get(row.id)?.querySelector('.r-translation');

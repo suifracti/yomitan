@@ -17,6 +17,7 @@
 
 // Private content-script row identity. DOM attributes never grant a capture or save permission.
 /** @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} Row */
+/** @typedef {{element: Element, row: Row, video: HTMLVideoElement|null, src: string, media: string, srcObject: HTMLVideoElement['srcObject']}} Bound */
 /** @typedef {(video: HTMLVideoElement, start: number, duration: number, options: {signal: AbortSignal, isCurrent: () => boolean}) => Promise<import('study').MediaCapture>} Capture */
 export class YoutubeStudyContext {
     /** @param {Capture} [capture] */
@@ -25,7 +26,7 @@ export class YoutubeStudyContext {
         this.captureAudio = capture;
         /** @type {WeakMap<Element, Row>} */
         this.rows = new WeakMap();
-        /** @type {Map<string, {element: Element, row: Row}>} */
+        /** @type {Map<string, Bound>} */
         this.tokens = new Map();
         /** @type {Map<string, AbortController>} */
         this.active = new Map();
@@ -59,7 +60,13 @@ export class YoutubeStudyContext {
         const offset = prefix.toString().length;
         if (row.text.slice(offset, offset + range.toString().length) !== range.toString()) { return null; }
         const token = crypto.randomUUID();
-        this.tokens.set(token, {element, row});
+        const video = row.video();
+        this.tokens.set(token, {element,
+            row,
+            video,
+            src: video?.src || '',
+            media: video?.currentSrc || video?.src || '',
+            srcObject: video?.srcObject ?? null});
         while (this.tokens.size > 100) { this.tokens.delete(/** @type {string} */ (this.tokens.keys().next().value)); }
         return {token,
             sentence: {text: row.text, offset, adjacent: row.context},
@@ -82,11 +89,13 @@ export class YoutubeStudyContext {
         if (!bound || !bound.element.isConnected || !bound.row.isCurrent() || this.active.size > 0) { throw new Error('字幕或视频已改变，或已有采集；请重新选词。'); }
         const {row} = bound;
         if (start !== row.start || Math.abs(duration - (row.end - row.start)) > 0.001 || duration <= 0 || duration > 30) { throw new Error('只能采集当前字幕的真实时间，最多30秒。'); }
-        const video = row.video();
-        if (!video) { throw new Error('没有找到当前视频。'); }
+        const video = bound.video;
+        const mediaCurrent = () => video !== null && video.isConnected && row.video() === video &&
+        video.src === bound.src && (video.currentSrc || video.src) === bound.media && (video.srcObject ?? null) === bound.srcObject;
+        if (!video || !mediaCurrent()) { throw new Error('视频来源已改变，请重新选词后采集。'); }
         const controller = new AbortController(); this.active.set(token, controller);
         try {
-            return await this.captureAudio(video, start, duration, {signal: controller.signal, isCurrent: () => bound.element.isConnected && row.isCurrent() && row.video() === video});
+            return await this.captureAudio(video, start, duration, {signal: controller.signal, isCurrent: () => bound.element.isConnected && row.isCurrent() && mediaCurrent()});
         } finally { this.active.delete(token); }
     }
 }

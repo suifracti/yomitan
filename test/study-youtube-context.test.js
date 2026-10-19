@@ -72,3 +72,27 @@ test('existing Frontend popup path receives cue time and translation, not the AS
     expect(state.studyMediaRange).toEqual({start: 1.25, end: 3.5});
     expect(state.studySentenceTranslation).toBe('我们每天进步。');
 });
+
+test('a selection cannot capture a different media source later loaded in the same video', async () => {
+    const {context, capture, range} = setup();
+    const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+    video.src = 'https://example.test/original.webm';
+    const source = context.read(range);
+    video.src = 'https://example.test/different.webm';
+    try {
+        await expect(context.capture(source.token, 1.25, 2.25)).rejects.toThrow(/视频.*改变/);
+        expect(capture).not.toHaveBeenCalled();
+    } finally { video.removeAttribute('src'); }
+});
+
+test('a selection cannot transfer capture to a replacement video element', async () => {
+    const {context, capture, range} = setup();
+    const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+    const source = context.read(range);
+    const replacement = document.createElement('video');
+    video.replaceWith(replacement);
+    try {
+        await expect(context.capture(source.token, 1.25, 2.25)).rejects.toThrow(/视频.*改变/);
+        expect(capture).not.toHaveBeenCalled();
+    } finally { replacement.replaceWith(video); }
+});

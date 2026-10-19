@@ -118,3 +118,41 @@ test('explicit batch translation stays on its original rows and reaches the ordi
     expect(document.querySelector('[data-asb-study-cue]')).toBe(null);
     vi.unstubAllGlobals();
 });
+
+for (const mode of ['language', 'clear']) {
+    test(`reader respects the service cache after ${mode === 'language' ? 'a subtitle language change' : 'clearing translations'}`, async () => {
+        const {StudyService} = await import('../ext/js/study/study-service.js');
+        const {SETTINGS_KEY} = await import('../ext/js/study/study-data.js');
+        /** @type {Record<string, unknown>} */
+        const data = {[SETTINGS_KEY]: {model: 'fixture', effort: 'low', cacheEnabled: true}};
+        let nativeCalls = 0;
+        const service = new StudyService({get: async (key) => ({[key]: data[key]}), set: async (values) => { Object.assign(data, values); }}, (payload) => {
+            const p = /** @type {{language: string, items: {id: string}[]}} */ (payload);
+            ++nativeCalls;
+            return {cancel() {}, promise: Promise.resolve({ok: true, result: {items: p.items.map((item) => ({id: item.id, translation: p.language === 'fr' ? '面包' : '疼痛'}))}})};
+        });
+        vi.stubGlobal('fetch', async () => ({ok: true, status: 200, text: async () => JSON.stringify({events: [{tStartMs: 0, dDurationMs: 1500, segs: [{utf8: 'Pain'}]}]})}));
+        const reader = new YoutubeReader({call: service.handle.bind(service)});
+        reader.start();
+        /**
+         * @param {string} language
+         * @returns {Promise<string>}
+         */
+        const translate = async (language) => {
+            reader.rememberRequest(`https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=${language}`);
+            const load = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-head button:last-child'));
+            load.click();
+            await vi.waitFor(() => expect(load.disabled).toBe(false));
+            const button = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-translate'));
+            button.click();
+            await vi.waitFor(() => expect(button.disabled).toBe(false));
+            return document.querySelector('.r-translation')?.textContent || '';
+        };
+        try {
+            expect(await translate(mode === 'language' ? 'fr' : 'en')).toBe(mode === 'language' ? '面包' : '疼痛');
+            if (mode === 'clear') { await service.handle('clearCache', {}); }
+            expect(await translate('en')).toBe('疼痛');
+            expect(nativeCalls).toBe(2);
+        } finally { vi.unstubAllGlobals(); }
+    });
+}
