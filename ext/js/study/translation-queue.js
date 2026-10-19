@@ -58,10 +58,10 @@ export class TranslationQueue {
 
     /**
      * @param {TranslationItem[]} items
-     * @param {{target?: string, model?: string, effort?: string, promptVersion?: string, onItem?: (row: TranslationRow) => void, signal?: AbortSignal}} [options]
+     * @param {{target?: string, model?: string, effort?: string, promptVersion?: string, cacheEnabled?: boolean, onItem?: (row: TranslationRow) => void, signal?: AbortSignal}} [options]
      * @returns {Promise<{items: TranslationRow[], nativeCalls: number, cancelled: boolean}>}
      */
-    async translate(items, {target = 'zh-CN', model, effort, promptVersion = 'reading-v1', onItem = () => {}, signal} = {}) {
+    async translate(items, {target = 'zh-CN', model, effort, promptVersion = 'reading-v1', cacheEnabled = true, onItem = () => {}, signal} = {}) {
         if (!Array.isArray(items) || items.length > 5000) { throw new TypeError('翻译范围无效'); }
         if (typeof model !== 'string' || !model || typeof effort !== 'string' || !effort) { throw new TypeError('应读取用户现有模型配置，不能自动选择另一个模型'); }
         const ids = new Set();
@@ -88,7 +88,7 @@ export class TranslationQueue {
         /** @type {TranslationItem[]} */
         const pending = [];
         for (const item of items) {
-            const cached = this.#cache.get(keyOf(item));
+            const cached = cacheEnabled ? this.#cache.get(keyOf(item)) : void 0;
             if (typeof cached === 'string') {
                 /** @type {TranslationRow} */
                 const row = {...item, translation: cached, state: 'cached'};
@@ -135,7 +135,7 @@ export class TranslationQueue {
                     const ok = typeof text === 'string' && Boolean(text.trim()) && text.length <= 6000;
                     /** @type {TranslationRow} */
                     const row = ok ? {...item, state: 'translated', translation: text} : {...item, state: 'failed', error: '本行未收到有效译文'};
-                    if (ok) {
+                    if (ok && cacheEnabled) {
                         this.#cache.set(keyOf(item), text);
                         while (this.#cache.size > 1000) { this.#cache.delete(/** @type {string} */ (this.#cache.keys().next().value)); }
                     }

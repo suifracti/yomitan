@@ -30,9 +30,13 @@ const validLibraryId = (value) => typeof value === 'string' && /^[a-f0-9]{32}$/.
  * @param {HTMLElement} container
  * @param {() => import('study').LibraryEntry} getEntry
  * @param {() => boolean} isCurrent
+ * @param {{capture?: import('study').CaptureMedia, cancelCapture?: () => Promise<void>, range?: import('study').MediaRange, isSourceCurrent?: () => boolean}} [media]
+ * @returns {() => void}
  */
-export function mountStudyLibrary(container, getEntry, isCurrent) {
+export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const d = container.ownerDocument;
+    let mediaOperation = 0;
+    let disposed = false;
     const actions = d.createElement('div');
     actions.className = 'study-learning-actions study-save-actions';
     const save = d.createElement('button');
@@ -222,7 +226,23 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
     submitCards.dataset.studyCardsSubmit = '';
     submitCards.textContent = '添加已选卡片';
     submitCards.disabled = true;
-    cardPanel.append(choices, choiceHint, draftCards, manualCards, addRow, submitCards, addStatus);
+    const captureAudio = d.createElement('button');
+    captureAudio.type = 'button'; captureAudio.className = 'scan-disable';
+    captureAudio.dataset.studyCapture = '';
+    captureAudio.textContent = '采集并保存本句原声';
+    captureAudio.title = '会定位并播放这句字幕，采集真实音轨；保存到笔记，不自动制卡。';
+    captureAudio.hidden = !media.capture || !media.range;
+    const cancelCapture = d.createElement('button');
+    cancelCapture.type = 'button'; cancelCapture.className = 'scan-disable';
+    cancelCapture.dataset.studyCaptureCancel = '';
+    cancelCapture.textContent = '取消采集';
+    cancelCapture.hidden = true;
+    cancelCapture.addEventListener('click', () => {
+        mediaOperation++;
+        void media.cancelCapture?.().catch(() => {});
+        addStatus.textContent = '已取消；未附加原声，也未制卡。';
+    });
+    cardPanel.append(choices, choiceHint, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
     /**
      *
      */
@@ -356,6 +376,62 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
                 }
             });
     };
+    const ensureNote = async () => {
+        const entry = getEntry();
+        const unchanged = currentSaved && ['word', 'sentence', 'context', 'meaning', 'translation', 'notes', 'url', 'title'].every((key) => currentSaved?.entry?.[/** @type {keyof import('study').LibraryEntry} */ (key)] === entry[/** @type {keyof import('study').LibraryEntry} */ (key)]);
+        if (unchanged && currentSaved) { return currentSaved; }
+        const recordId = currentSaved?.id || container.dataset.studyRecordId || entry.recordId;
+        const row = /** @type {import('study').LibraryRecord} */ (await studyCall('rememberEntry', {entry, ...(validLibraryId(recordId) ? {recordId} : {})}));
+        if (!row || !validLibraryId(row.id)) { throw new Error('笔记保存未返回确认，未继续制卡或附加原声。'); }
+        if (isCurrent() && !disposed) { showAnkiStatus(row); }
+        return row;
+    };
+    captureAudio.addEventListener('click', () => {
+        const range = media.range;
+        const capture = media.capture;
+        if (!range || !capture || busy || disposed) { return; }
+        if (media.isSourceCurrent?.() === false) {
+            addStatus.textContent = '原句已调整，请重新选择对应字幕再采集。';
+            return;
+        }
+        if (range.end <= range.start || range.end - range.start > 30) {
+            addStatus.textContent = '本句超过30秒，请选择更短的字幕；不会自动截断。';
+            return;
+        }
+        const operation = ++mediaOperation;
+        const live = () => isCurrent() && !disposed && operation === mediaOperation && media.isSourceCurrent?.() !== false;
+        run(async () => {
+            captureAudio.disabled = true; cancelCapture.hidden = false;
+            try {
+                const saved = await ensureNote();
+                if (!live()) { return; }
+                if (saved.cards?.some((card) => !card.noteId)) { throw new Error('请先完成已有卡片的补交，再采集下一句原声。'); }
+                addStatus.textContent = '正在定位并采集本句原声…';
+                const recorded = await capture(range.start, range.end - range.start);
+                if (!live()) { return; }
+                if (!recorded.assets.some((asset) => asset.kind === 'audio' && asset.data)) { throw new Error('没有取得真实音轨，未附加媒体。'); }
+                const read = /** @type {{items: {record: import('study').LibraryRecord}[]}} */ (await studyCall('libraryRead', {ids: [saved.id], language}));
+                if (!live()) { return; }
+                const fresh = read.items?.[0]?.record;
+                if (!fresh || fresh.id !== saved.id || fresh.entry.sentence !== getEntry().sentence) { throw new Error('记录语境已改变，请重新确认保存后采集。'); }
+                const row = /** @type {import('study').LibraryRecord} */ (await studyCall('libraryMedia', {id: saved.id,
+                    version: fresh.version,
+                    assets: recorded.assets,
+                    start: range.start,
+                    end: range.end,
+                    origin: 'capture'}));
+                if (!live()) { return; }
+                showAnkiStatus(row);
+                addStatus.textContent = '真实原声已保存；现在可选择“视频声音字幕”制卡。';
+                if (d.defaultView) { container.dispatchEvent(new d.defaultView.Event('study-saved')); }
+            } finally {
+                if (isCurrent() && !disposed) {
+                    captureAudio.disabled = false;
+                    cancelCapture.hidden = true;
+                }
+            }
+        });
+    });
     retry.addEventListener('click', () => run(async () => {
         pendingLabel.textContent = '正在继续上次未完成的学习…';
         const row = /** @type {?import('study').LibraryRecord} */ (await studyCall('retryPending', {language}));
@@ -425,16 +501,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
             seen.add(key);
         }
         run(async () => {
-            let saved = currentSaved;
-            if (!saved || !validLibraryId(saved.id)) {
-                addStatus.textContent = '正在保存笔记并准备已选卡片…';
-                const entry = getEntry();
-                const recordId = container.dataset.studyRecordId || entry.recordId;
-                saved = /** @type {import('study').LibraryRecord} */ (await studyCall('rememberEntry', {entry, ...(validLibraryId(recordId) ? {recordId} : {})}));
-                if (!isCurrent()) { return; }
-                showAnkiStatus(saved);
-            }
-            if (!saved || !validLibraryId(saved.id)) { throw new Error('笔记保存未返回确认，尚未制卡。'); }
+            const saved = await ensureNote();
+            if (!isCurrent() || disposed) { return; }
             if (saved.ankiEnabled === false) { throw new Error('笔记已保存；Anki 制卡尚未启用。'); }
             const currentLanguage = saved.entry?.language ?? getEntry().language ?? 'en';
             addStatus.textContent = '正在添加已选卡片…';
@@ -507,4 +575,9 @@ export function mountStudyLibrary(container, getEntry, isCurrent) {
         container.append(actions, destination, openNote, status, ankiRow, recovery, addCard, cardPanel);
     }
     void refreshPending().catch(() => {});
+    return () => {
+        disposed = true;
+        mediaOperation++;
+        void media.cancelCapture?.().catch(() => {});
+    };
 }

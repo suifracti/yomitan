@@ -17,6 +17,7 @@
  */
 
 import {StudySync} from './study-sync.js';
+import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
 import {rememberSaved} from './study-remember.js';
 import {CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
@@ -74,6 +75,8 @@ export class StudyService {
         this.pending = new Map();
         /** @type {Map<string, {promise: Promise<import('study').DictionaryResult>, cancel: () => void, lookup: import('study').DictionaryLookup}>} */
         this.dictionaryPending = new Map();
+        /** @type {SubtitleTranslation} */
+        this.subtitles = new SubtitleTranslation(this);
         /** @type {number} */
         this.epoch = 0;
         /** @type {Promise<void>} */
@@ -682,6 +685,8 @@ export class StudyService {
         }
 
 
+        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel'].includes(action)) { return await this.subtitles.handle(action, value); }
+
         if (action === 'pendingPeek' || action === 'retryPending') {
             const {language = 'en'} = /** @type {{language?: string}} */ (value ?? {});
             if (!['en', 'ja'].includes(language)) { throw new Error('学习语言无效。'); }
@@ -1120,6 +1125,19 @@ export function prepareStudyService(lookupDictionary = null) {
         const {studyAction, data} = /** @type {{studyAction?: string, data?: unknown}} */ (/** @type {unknown} */ (message ?? {}));
         if (typeof studyAction !== 'string') {
             return false;
+        }
+        // Content scripts get only the explicit reader's read/translate/cancel path, never library writes.
+        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel'].includes(studyAction) && sender.id === chrome.runtime.id && sender.frameId === 0 &&
+        /^https:\/\/(?:www\.|m\.)?youtube\.com\/watch(?:[?#]|$)/.test(sender.url || '')) {
+            const request = /** @type {{requestId?: string}} */ (data || {});
+            const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
+            void (async () => {
+                if (studyAction === 'subtitleTranslate' && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
+                    throw new Error('请先在学习设置中授权本机翻译，再点翻译字幕。');
+                }
+                return await service.handle(studyAction, scoped);
+            })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '字幕翻译未完成。'}));
+            return true;
         }
         const prefix = chrome.runtime.getURL('');
         const pathname = sender.url?.slice(prefix.length).split(/[?#]/)[0];

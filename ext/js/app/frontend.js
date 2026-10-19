@@ -28,6 +28,7 @@ import {TextSourceElement} from '../dom/text-source-element.js';
 import {TextSourceGenerator} from '../dom/text-source-generator.js';
 import {TextSourceRange} from '../dom/text-source-range.js';
 import {TextScanner} from '../language/text-scanner.js';
+import {youtubeStudyContext} from '../study/youtube-study-context.js';
 
 /**
  * @typedef {object} StudySubtitle
@@ -438,6 +439,8 @@ export class Frontend {
         /* eslint-disable @stylistic/no-multi-spaces */
         this._application.crossFrame.registerHandlers([
             ['frontendClosePopup',       this._onApiClosePopup.bind(this)],
+            ['frontendCaptureStudyMedia', (/** @type {{token: string, start: number, duration: number}} */ {token, start, duration}) => youtubeStudyContext.capture(token, start, duration)],
+            ['frontendCancelStudyMedia', (/** @type {{token: string}} */ {token}) => { youtubeStudyContext.cancel(token); }],
             ['frontendStudyShortcut',    this._onApiStudyShortcut.bind(this)],
             ['frontendCopySelection',    this._onApiCopySelection.bind(this)],
             ['frontendGetPopupSelectionText', this._onApiGetPopupSelectionText.bind(this)],
@@ -1198,8 +1201,9 @@ export class Frontend {
         if (sentence !== null) { detailsState.sentence = sentence; }
         const start = textSource instanceof TextSourceRange ? textSource.range.startContainer : null;
         const parent = start instanceof Element ? start : start?.parentElement;
+        const youtube = textSource instanceof TextSourceRange ? youtubeStudyContext.read(textSource.range) : null;
         let subtitle = parent?.closest('.asbplayer-subtitles, .asbplayer-fullscreen-subtitles, .asbplayer-subtitles-container-bottom, .asbplayer-subtitles-container-top, #movie_player, .html5-video-player, .bpx-player-container, .bilibili-player-video-wrap, [data-asb-subtitle-index], .ytp-caption-window-container, .bpx-player-subtitle-panel, [data-asb-study-cue]');
-        if (!subtitle && parent && this._pageType === 'web' && /^https:\/\/(?:www\.|m\.)?(?:youtube\.com|bilibili\.com)\//.test(url ?? '')) {
+        if (!youtube && !subtitle && parent && this._pageType === 'web' && /^https:\/\/(?:www\.|m\.)?(?:youtube\.com|bilibili\.com)\//.test(url ?? '')) {
             // Some caption extensions portal their overlay into body, outside the player DOM.
             // Video geometry is deny-only, never evidence for trusting a caption or authorizing writes.
             const rects = textSource.getRects();
@@ -1214,7 +1218,14 @@ export class Frontend {
         const scanner = /** @type {SubtitleTextScanner} */ (this._textScanner);
         const snapshot = scanner?.studySources?.get ? scanner.studySources.get(textSource) : null;
         this._studyCueCurrent = snapshot?.sourceConfirmed && snapshot.queryId ? {source: textSource, query: scanner.studyQuery, snapshot} : null;
-        if (snapshot) {
+        if (youtube) {
+            detailsState.sentence = {...sentence, ...youtube.sentence};
+            detailsState.url = youtube.url;
+            detailsState.videoTime = youtube.videoTime;
+            detailsState.studyMediaToken = youtube.token;
+            detailsState.studyMediaRange = youtube.mediaRange;
+            detailsState.studySentenceTranslation = youtube.translation;
+        } else if (snapshot) {
             // Keep the entire frozen snapshot in the existing history sentence; no Native schema changes.
             const frozenSentence = {...sentence, text: snapshot.text, offset: snapshot.selectionStart, adjacent: snapshot.adjacentCues.map((c) => c.text).join('\n'), studySubtitle: snapshot};
             detailsState.sentence = frozenSentence;

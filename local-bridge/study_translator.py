@@ -56,6 +56,8 @@ ORGANIZE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': 
 
 
 def normalize_request(value):
+    if isinstance(value, dict) and value.get('action') == 'subtitles':
+        return _normalize_subtitle_request(value)
     if isinstance(value, dict) and value.get('action') == 'niratanCapture':
         from niratan_capture import normalize_request as capture_request
         return capture_request(value)
@@ -67,6 +69,39 @@ def normalize_request(value):
             raise ValueError('学习语言须明确为 en 或 ja。')
         return {**normalize_request({k: v for k, v in value.items() if k != 'language'}), 'language': value['language']}
     return _normalize_request(value)
+
+
+def _normalize_subtitle_request(value):
+    import re
+    allowed = {'action', 'items', 'language', 'context', 'title', 'config'}
+    if set(value) - allowed or not isinstance(value.get('items'), list) or not 1 <= len(value['items']) <= 8:
+        raise ValueError('字幕批次请求字段或条目数量无效。')
+    language = value.get('language', 'en')
+    if not isinstance(language, str) or not language.strip() or len(language) > 32:
+        raise ValueError('字幕语言无效。')
+    ids, items, total = set(), [], 0
+    for row in value['items']:
+        if (not isinstance(row, dict) or set(row) != {'id', 'text'}
+                or not isinstance(row['id'], str)
+                or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', row['id']) or row['id'] in ids
+                or not isinstance(row['text'], str) or not row['text'].strip()
+                or len(row['text']) > 2400):
+            raise ValueError('字幕条目编号、文本或长度无效。')
+        ids.add(row['id'])
+        total += len(row['text'])
+        items.append({'id': row['id'], 'text': row['text']})
+    if total > 6000:
+        raise ValueError('字幕批次文本最多 6000 字。')
+    result = {'action': 'subtitles', 'items': items, 'language': language}
+    for key, limit in (('context', 1200), ('title', 300)):
+        if key in value:
+            if not isinstance(value[key], str) or len(value[key]) > limit:
+                raise ValueError(f'字幕{key}格式或长度无效。')
+            result[key] = value[key]
+    if 'config' in value:
+        result['config'] = normalize_config(value['config'])
+    return result
+
 
 def _normalize_request(value):
     if not isinstance(value, dict):

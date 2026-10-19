@@ -80,3 +80,41 @@ test('loads the player caption request read-only and keeps sentences per caption
     expect(rows.map((r) => r.classList.contains('is-current'))).toEqual([false, false, true]);
     vi.unstubAllGlobals();
 });
+
+test('explicit batch translation stays on its original rows and reaches the ordinary word-card context', async () => {
+    const calls = [];
+    vi.stubGlobal('fetch', async () => ({ok: true, status: 200, text: async () => timedText}));
+    const reader = new YoutubeReader({call: async (action, data) => {
+        calls.push(action);
+        if (action === 'subtitleSettings') {
+            return {model: 'fixture', effort: 'low', cacheEnabled: true};
+        }
+        if (action === 'subtitleTranslate') {
+            const {items} = /** @type {{items: {id: string}[]}} */ (data);
+            return {items: items.map((r) => ({id: r.id, translation: '译文 ' + r.id}))};
+        }
+        return true;
+    }});
+    reader.start();
+    reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
+    await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-head button:last-child')).not.toBe(null));
+    document.querySelector('#study-yt-reader .r-head button:last-child').click();
+    await vi.waitFor(() => expect(document.querySelectorAll('#study-yt-reader .r-cue')).toHaveLength(3));
+    expect(calls).toEqual([]);
+    document.querySelector('video').currentTime = 0;
+    document.querySelector('#study-yt-reader .r-translate').click();
+    await vi.waitFor(() => expect([...document.querySelectorAll('.r-translation')].filter((r) => r.textContent.startsWith('译文'))).toHaveLength(3));
+    const {youtubeStudyContext} = await import('../ext/js/study/youtube-study-context.js');
+    const node = document.querySelectorAll('#study-yt-reader .r-text')[1].firstChild;
+    const range = document.createRange();
+    range.setStart(node, 4);
+    range.setEnd(node, 9);
+    const source = youtubeStudyContext.read(range);
+    expect(source.videoTime).toBe(1);
+    expect(source.translation).toBe('译文 1');
+    expect(source.url).toContain('t=1s');
+    expect(source.sentence.text).toBe('The brain can change');
+    expect(calls).toEqual(['subtitleSettings', 'subtitleTranslate']);
+    expect(document.querySelector('[data-asb-study-cue]')).toBe(null);
+    vi.unstubAllGlobals();
+});

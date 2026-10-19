@@ -84,6 +84,9 @@ export type HistoryState = {
     studyLanguage?: string;
     /** Playback position only when source is a recognized subtitle and exactly one visible video exists. */
     videoTime?: number;
+    studyMediaToken?: string;
+    studyMediaRange?: import('study').MediaRange;
+    studySentenceTranslation?: string;
     /** What was the cause of the navigation. */
     cause?: 'queryParser';
     /** The sentence context. */

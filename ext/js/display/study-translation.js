@@ -132,7 +132,7 @@ export function updateStudySourcePreview(target, text) {
 }
 
 /**
- * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, meaning?: string}) => void}}
+ * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, meaning?: string}) => void}}
  */
 export function prepareStudyTranslation() {
     let generation = 0;
@@ -386,7 +386,7 @@ export function prepareStudyTranslation() {
             const paintSentenceTranslation = (turns) => {
                 if (!sentenceChinese || !translateSentence) { return; }
                 const answer = [...turns].reverse().find((turn) => turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
-                const text = answer?.translation?.trim() ?? '';
+                const text = answer?.translation?.trim() || (editor.value.trim() === sentence.trim() ? source.translation || '' : '');
                 sentenceChinese.textContent = text;
                 sentenceChinese.hidden = !text;
                 translateSentence.hidden = Boolean(text);
@@ -751,15 +751,23 @@ export function prepareStudyTranslation() {
             hint.textContent = '回车发送 · Shift+回车换行';
             footer.append(hint, tokens);
             container.append(actions, status, history, question, footer, more);
-            mountStudyLibrary(container, () => {
+            const disposeLibrary = mountStudyLibrary(container, () => {
                 const current = latestSource === identity() ? latest : null;
                 const explanation = latestSource === identity() ? latestExplanation : null;
                 const english = container.closest('.study-entry')?.querySelector('.study-primary-english');
                 const translated = english?.querySelector('[data-study-translated=true]')?.textContent;
                 const dictionaryTranslation = translated ? `词典英文：${english?.querySelector('.study-english-original')?.textContent ?? ''}\nAI 辅助中文：${translated}` : '';
 
-                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: current?.translation ?? '', notes: explanation?.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
-            }, isCurrent);
+                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
+            }, isCurrent, {capture: source.capture,
+                cancelCapture: source.cancelCapture,
+                range: source.mediaRange,
+                isSourceCurrent: () => editor.value.trim() === sentence.trim()});
+            const previousCleanup = cleanup;
+            cleanup = () => {
+                previousCleanup?.();
+                disposeLibrary();
+            };
             for (const control of container.querySelectorAll('button, input, textarea, select, summary')) {
                 control.classList.add('scan-disable');
             }

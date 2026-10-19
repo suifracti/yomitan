@@ -93,6 +93,14 @@ export type ApiSurface = {
         params: {usePointer: boolean};
         return: void;
     };
+    frontendCaptureStudyMedia: {
+        params: {token: string; start: number; duration: number};
+        return: import('study').MediaCapture;
+    };
+    frontendCancelStudyMedia: {
+        params: {token: string};
+        return: void;
+    };
     frontendClosePopup: {
         params: void;
         return: void;
