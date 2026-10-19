@@ -81,16 +81,19 @@ for (const state of ['pending', 'conflict', 'synced']) {
         await updating;
         await h.service.journal.append({...entry, question: '这里为什么这样用？'},
             {translation: '更新后的译文', meaning: '新补充的本句含义', notes: '新的回答'});
-        const newest = (await sync.pending())[0];
         release();
         await sync.flush();
         const pending = await sync.pending();
-        assert.equal(pending.length, 1);
-        assert.equal(pending[0].action, 'libraryUpdate');
-        assert.equal(pending[0].revision, newest.revision);
-        assert.equal(pending[0].entry.meaning, '新补充的本句含义');
-        assert.ok(pending[0].turns.some((turn) => turn.question === '这里为什么这样用？'));
-        assert.equal(pending[0].targetId, h.row.targetId);
+        const updates = h.calls.filter((payload) => payload.action === 'libraryUpdate');
+        assert.equal(updates.length, 2);
+        assert.equal(updates[1].entry.meaning, '新补充的本句含义');
+        assert.ok(updates[1].turns.some((turn) => turn.question === '这里为什么这样用？'));
+        assert.equal(updates[1].targetId, h.row.targetId);
+        assert.equal(pending.length, state === 'synced' ? 0 : 1);
+        if (pending.length) {
+            assert.equal(pending[0].action, 'libraryReconcile');
+            assert.equal(pending[0].targetId, h.row.targetId);
+        }
         replyState = 'synced';
         await sync.flush();
         assert.equal((await sync.pending()).length, 0);
@@ -110,4 +113,103 @@ test('an unchanged failed delivery still becomes a reconcile task, not a fresh s
     assert.equal(pending[0].action, 'libraryReconcile');
     assert.equal(pending[0].id, h.row.id);
     assert.equal(pending[0].targetId, h.row.targetId);
+});
+
+test('answers arriving during a sync are delivered before the same flush finishes', async () => {
+    const h = setup(), sync = h.service.sync;
+    let release, began;
+    const started = new Promise((resolve) => { began = resolve; });
+    h.service.native = (payload) => {
+        h.calls.push(payload);
+        if (payload.action === 'libraryUpdate' && !release) {
+            return {cancel() {}, promise: new Promise((resolve) => {
+                release = () => resolve({ok: true, library: {...h.row, syncState: 'synced'}});
+                began();
+            })};
+        }
+        return {cancel() {}, promise: Promise.resolve({ok: true, library: {...h.row, syncState: 'synced'}})};
+    };
+    await sync.bind(entry, h.row);
+    await h.service.journal.append(entry, {translation: '先保存这句', meaning: '', notes: ''});
+    await started;
+    await h.service.journal.append({...entry, question: '补问一句'}, {translation: '新译文', meaning: '新含义', notes: '新回答'});
+    release();
+    await sync.flush();
+    const updates = h.calls.filter((payload) => payload.action === 'libraryUpdate');
+    assert.equal(updates.length, 2, 'the newer answer should not need a later refresh');
+    assert.equal(updates[1].entry.meaning, '新含义');
+    assert.ok(updates[1].turns.some((turn) => turn.question === '补问一句'));
+    assert.equal(updates[1].targetId, h.row.targetId);
+    assert.equal((await sync.pending()).length, 0);
+    assert.equal((await h.service.journal.get(entry)).length, 0);
+});
+
+test('new work gets one delivery attempt while offline, with no automatic retry loop', async () => {
+    const h = setup(), sync = h.service.sync;
+    let release, began;
+    const started = new Promise((resolve) => { began = resolve; });
+    let offline = true;
+    h.service.native = (payload) => {
+        h.calls.push(payload);
+        if (payload.action === 'libraryUpdate' && !release) {
+            return {cancel() {}, promise: new Promise((resolve) => {
+                release = () => resolve({ok: false, error: 'offline'});
+                began();
+            })};
+        }
+        return {cancel() {}, promise: Promise.resolve(offline ? {ok: false, error: 'offline'} :
+            {ok: true, library: {...h.row, syncState: 'synced'}})};
+    };
+    await sync.bind(entry, h.row);
+    await h.service.journal.append(entry, {translation: '旧译文', meaning: '', notes: ''});
+    await started;
+    await h.service.journal.append(entry, {translation: '更新译文', meaning: '更新含义', notes: ''});
+    release();
+    await sync.flush();
+    assert.equal(h.calls.length, 2, 'each new revision gets one attempt, not an offline spin');
+    const pending = await sync.pending();
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].entry.meaning, '更新含义');
+    assert.equal((await h.service.journal.get(entry)).length, 2);
+    offline = false;
+    await sync.flush();
+    assert.equal((await sync.pending()).length, 0);
+    assert.equal(h.calls.filter((payload) => payload.action === 'libraryUpdate').length, 3);
+});
+
+test('new context follows a busy context without retrying its deferred conflict', async () => {
+    const h = setup(), sync = h.service.sync;
+    const other = {...entry, sentence: 'We improve this sentence.', url: 'https://example.test/b'};
+    const otherRow = {...h.row, id: 'c'.repeat(32), targetId: 'd'.repeat(32), entry: other};
+    let release, began;
+    const started = new Promise((resolve) => { began = resolve; });
+    h.service.native = (payload) => {
+        h.calls.push(payload);
+        const row = payload.id === otherRow.id ? otherRow : h.row;
+        const result = {ok: true, library: {...row, syncState: row === h.row ? 'conflict' : 'synced',
+            conflicts: row === h.row ? [{field: 'meaning'}] : []}};
+        if (payload.action === 'libraryUpdate' && payload.id === h.row.id && !release) {
+            return {cancel() {}, promise: new Promise((resolve) => {
+                release = () => resolve(result);
+                began();
+            })};
+        }
+        return {cancel() {}, promise: Promise.resolve(result)};
+    };
+    await sync.bind(entry, h.row);
+    await sync.bind(other, otherRow);
+    await h.service.journal.append(entry, {translation: '原语境译文', meaning: '', notes: ''});
+    await started;
+    await h.service.journal.append(other, {translation: '第二个语境译文', meaning: '', notes: ''});
+    release();
+    await sync.flush();
+    const sent = h.calls.find((payload) => payload.action === 'libraryUpdate' && payload.id === otherRow.id);
+    assert.equal(sent.targetId, otherRow.targetId);
+    assert.equal(sent.entry.translation, '第二个语境译文');
+    assert.equal(h.calls.filter((payload) => payload.action === 'libraryReconcile' && payload.id === h.row.id).length, 1);
+    const pending = await sync.pending();
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].id, h.row.id);
+    assert.equal(pending[0].action, 'libraryReconcile');
+    assert.equal((await h.service.journal.get(other)).length, 0);
 });

@@ -32,6 +32,8 @@ export class StudySync {
         this.service = service;
         /** @type {Promise<void>|null} */
         this.running = null;
+        /** @type {number} */
+        this.deliveryVersion = 0;
     }
 
     /** @returns {Promise<import('study').SyncTask[]>} */
@@ -58,8 +60,11 @@ export class StudySync {
     /**
      * @param {import('study').SyncTask} task
      * @param {string} [expectedRevision] Only replace the delivery snapshot that produced this receipt.
+     * @returns {Promise<string|undefined>} The queued revision, if the expected version was still current.
      */
     async enqueue(task, expectedRevision) {
+        /** @type {string|undefined} */
+        let revision;
         await this.service.write(OUTBOX, (value) => {
             const rows = /** @type {import('study').SyncTask[]} */ (Array.isArray(value) ? value : []);
             const previous = rows.find((r) => r.key === task.key);
@@ -67,14 +72,18 @@ export class StudySync {
             if (expectedRevision !== void 0 && previous?.revision !== expectedRevision) { return rows; }
             const old = task.action === 'libraryUpdate' && previous?.action === task.action ? previous : void 0;
             const turns = new Map([...(old?.turns ?? []), ...(task.turns ?? [])].map((t) => [t.id, t]));
+            revision = crypto.randomUUID();
             const next = [...rows.filter((r) => r.key !== task.key), {...old,
                 ...task,
-                revision: crypto.randomUUID(),
+                revision,
                 ...(task.entry && task.action === 'libraryUpdate' ? {entry: {...old?.entry, ...task.entry}} : {}),
                 ...(turns.size > 0 ? {turns: [...turns.values()]} : {})}];
             if (new TextEncoder().encode(JSON.stringify(next)).length > 2000000) { throw new Error('待同步内容较多，请先补齐；未删除旧记录。'); }
             return next;
         });
+        // Only actual incoming work wakes the worker, not its own deferred reconcile receipts.
+        if (revision && expectedRevision === void 0) { ++this.deliveryVersion; }
+        return revision;
     }
 
     /**
@@ -123,13 +132,31 @@ export class StudySync {
      */
     async flush() {
         if (this.running) { return this.running; }
-        this.running = this.deliver().finally(() => { this.running = null; });
+        const attempted = new Set();
+        const run = async () => {
+            try {
+                let version;
+                do {
+                    version = this.deliveryVersion;
+                    await this.deliver(attempted);
+                } while (version !== this.deliveryVersion);
+            } finally { this.running = null; }
+        };
+        this.running = run();
         return this.running;
     }
 
-    /** @returns {Promise<void>} */
-    async deliver() {
+    /**
+     * @param {Set<string>} [attempted] Revisions already tried in this active flush, including deferred receipts.
+     * @returns {Promise<void>}
+     */
+    async deliver(attempted = new Set()) {
         for (const task of await this.pending()) {
+            const token = `${task.key}:${task.revision}`;
+            if (attempted.has(token)) { continue; }
+            const current = (await this.pending()).find((row) => row.key === task.key);
+            if (!current || current.revision !== task.revision) { continue; }
+            attempted.add(token);
             try {
                 const {key, revision} = task;
                 const payload = Object.fromEntries(Object.entries(task).filter(([name]) => !['key', 'revision', 'error'].includes(name)));
@@ -148,12 +175,13 @@ export class StudySync {
                     row = /** @type {import('study').LibraryRecord} */ (response.library ?? row);
                 }
                 if (task.action !== 'libraryFavorite' && row && (row.conflicts?.length || ['pending', 'missing', 'error', 'paused'].includes(row.syncState ?? ''))) {
-                    await this.enqueue({key,
+                    const deferred = await this.enqueue({key,
                         action: 'libraryReconcile',
                         id: row.id,
                         language: task.language,
                         ...(task.targetId ? {targetId: task.targetId} : {}),
                         error: row.conflicts?.length ? '字段有冲突，请在我的记录或学习库选择保留哪一边。' : (row.error ?? '关联卡片待同步或已缺失，请在学习库查看。')}, revision);
+                    if (deferred) { attempted.add(`${key}:${deferred}`); }
                     continue;
                 }
                 if (row && task.action === 'libraryFavorite') {
