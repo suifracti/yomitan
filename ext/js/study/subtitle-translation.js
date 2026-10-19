@@ -62,7 +62,10 @@ export class SubtitleTranslation {
             checkCancelled();
             if (v.config?.model !== config.model || v.config?.effort !== config.effort) { throw new Error('模型设置已改变，请重新点翻译。'); }
             const language = v.language || 'en';
-            /** @param {Item} item */
+            /**
+             * @param {Item} item
+             * @returns {string}
+             */
             const keyOf = (item) => {
                 const key = sentenceKey({word: '字幕', sentence: item.text, context: item.context || '', language}, config);
                 // Other subtitle languages must not share English's sentence cache namespace.
