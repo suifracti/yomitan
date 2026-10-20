@@ -86,3 +86,19 @@ class HealthTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class PingTests(unittest.TestCase):
+    def test_ping_works_with_no_config_modules_or_providers(self):
+        import struct
+        import subprocess
+        import sys
+        import study_translator as native
+        with tempfile.TemporaryDirectory() as temporary:
+            script = pathlib.Path(temporary) / 'study_translator.py'
+            script.write_bytes(pathlib.Path(native.__file__).read_bytes())
+            payload = json.dumps({'action': 'bridgePing'}).encode()
+            result = subprocess.run([sys.executable, str(script), native.ORIGIN], input=struct.pack('=I', len(payload)) + payload, capture_output=True, check=True)
+            self.assertEqual(json.loads(result.stdout[4:]), {'ok': True, 'pong': True})
+            self.assertEqual(list(script.parent.iterdir()), [script])
+        with self.assertRaises(ValueError):
+            native.normalize_request({'action': 'bridgePing', 'path': 'private'})

@@ -65,7 +65,7 @@ def normalize_request(value):
     if isinstance(value, dict) and value.get('action') == 'senseMatch':
         from study_senses import normalize_match
         return normalize_match(value)
-    if isinstance(value, dict) and value.get('action') in ('bridgeHealth', 'ankiToday'):
+    if isinstance(value, dict) and value.get('action') in ('bridgeHealth', 'bridgePing', 'ankiToday'):
         if set(value) != {'action'}:
             raise ValueError('状态请求不接受额外参数。')
         return value
@@ -604,6 +604,9 @@ def main():
         payload = normalize_request(read_frame(sys.stdin.buffer))
         if sys.argv[1] == ASB_ORIGIN and not payload['action'].startswith('video'):
             raise ValueError('asbplayer 只允许视频字幕记录，不允许词库/Anki/任意模型动作。')
+        if payload['action'] == 'bridgePing':
+            write_frame(sys.stdout.buffer, {'ok': True, 'pong': True})
+            return 0
         if payload['action'] == 'senseMatch':
             from study_settings import YomitanLibrary
             from study_senses import match_sense
