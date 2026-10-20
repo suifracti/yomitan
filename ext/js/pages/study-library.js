@@ -627,7 +627,7 @@ async function initializePage() {
             };
             /**
              * @param {string} label
-             * @param {'unlink'|'select'|'restore'|'ignore'} choice
+             * @param {'unlink'|'recreate'|'select'|'restore'|'ignore'} choice
              * @param {number|null|undefined} [noteId]
              */
             const repair = (label, choice, noteId = record.noteId) => {
@@ -649,7 +649,7 @@ async function initializePage() {
             };
             switch (record.syncState) {
                 case 'missing':
-                    repair('重新制卡', 'unlink'); repair('只保留笔记', 'unlink');
+                    repair('重新制卡', 'recreate'); repair('只保留笔记', 'unlink');
                     break;
                 case 'ambiguous':
                     for (const candidate of record.candidates || []) { repair(`关联：${candidate.front}`, 'select', candidate.noteId); }

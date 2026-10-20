@@ -500,8 +500,18 @@ def reconcile(lib, p):
 def repair_link(lib, p):
     r, body, version = lib.read(p['id'])
     values = local_fields(r, body)
-    if p['choice'] == 'unlink':
-        r.update({'cards': [], 'noteId': None, 'ankiState': 'saved', 'syncState': 'local-only', 'syncBaseline': {}})
+    if p['choice'] in ('unlink', 'recreate'):
+        if p['choice'] == 'unlink':
+            ignored_path = pathlib.Path(lib.cache_dir) / 'anki-ignored.json'
+            ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
+            detached = [n for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n]
+            ignored_path.write_text(json.dumps(sorted(set(ignored + detached))))
+            r.update({'cards': [], 'noteId': None, 'syncBaseline': {}})
+        else:
+            r['cards'] = [c for c in r.get('cards', []) if c['id'] != r['repairCardId']]
+            if r['repairCardId'] == 'legacy': r['noteId'] = None
+        linked = bool(r.get('cards') or r.get('noteId'))
+        r.update({'ankiState': 'synced' if linked else 'saved', 'syncState': 'synced' if linked else 'local-only'})
     else:
         card_id = r.get('repairCardId')
         if not card_id: raise ValueError('这条记录不需要重新关联，请刷新列表。')

@@ -21,8 +21,12 @@ class RepairTests(unittest.TestCase):
         h.calls.clear()
         h.library.handle({'action': 'libraryRepair', 'id': ident, 'choice': 'select', 'noteId': 1000})
         self.assertNotIn('updateNoteFields', h.calls)
+        h.library.handle({'action': 'libraryCardsAdd', 'id': ident, 'cards': [{'front': 'A brick wall.', 'back': '砖墙', 'kind': 'context'}]})
+        other = next(c['noteId'] for c in h.library.locate(ident).read(ident)[0]['cards'] if c['noteId'] != 1000)
         del h.notes[1000]
         self.assertEqual(h.library.handle({'action': 'libraryReconcile', 'id': ident})['syncState'], 'missing')
+        recreated = h.library.handle({'action': 'libraryRepair', 'id': ident, 'choice': 'recreate'})
+        self.assertEqual([c['noteId'] for c in recreated['cards']], [other])
         cleared = h.library.handle({'action': 'libraryRepair', 'id': ident, 'choice': 'unlink'})
         self.assertFalse(cleared['cards'])
         lib = h.library.locate(ident)

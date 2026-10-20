@@ -266,7 +266,7 @@ def _normalize_request(p):
             card.update({'front': front, 'back': back, 'kind': kind, 'deck': deck})
         return p
     if action == 'libraryRepair' and set(p) <= {'action', 'id', 'choice', 'noteId'}:
-        if not ID_RE.fullmatch(str(p.get('id', ''))) or p.get('choice') not in ('unlink', 'select') or (p['choice'] == 'select' and (type(p.get('noteId')) is not int or p['noteId'] <= 0)):
+        if not ID_RE.fullmatch(str(p.get('id', ''))) or p.get('choice') not in ('unlink', 'recreate', 'select') or (p['choice'] == 'select' and (type(p.get('noteId')) is not int or p['noteId'] <= 0)):
             raise ValueError('请选择要处理的记录和卡片。')
         return p
     if action == 'libraryOrphan' and set(p) == {'action', 'noteId', 'choice'}:
