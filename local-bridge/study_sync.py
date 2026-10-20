@@ -6,6 +6,7 @@ import datetime
 import hashlib
 import html
 import json
+import pathlib
 import re
 
 SYNC_KEYS = ('sentence', 'meaning', 'translation', 'title', 'url')
@@ -377,14 +378,17 @@ def reconcile(lib, p):
         note_id = card.get('noteId')
         tag = 'study_' + ident if card['id'] == 'legacy' else 'studycard_' + card['id']
         found = lib.anki('findNotes', {'query':'tag:' + tag})
-        if card.get('linkedExisting') and note_id:
-            found = [note_id]
-        if not isinstance(found, list) or len(found) != 1 or (note_id and note_id not in found):
+        if (card.get('linkedExisting') or (card['id'] == 'legacy' and r.get('linkedExisting'))) and note_id:
+            found = [note_id] if any(n.get('noteId') == note_id for n in lib.anki('notesInfo', {'notes': [note_id]})) else []
+        if len(found) != 1 or (note_id and note_id not in found):
             r['ankiState'] = 'pending'
-            r['syncState'] = 'missing'
-            r['error'] = 'Anki 笔记缺失或关联不唯一；未重建。'
+            r['syncState'] = 'missing' if not found else 'ambiguous'
+            r['repairCardId'] = card['id']
+            r['candidates'] = [{'noteId': n['noteId'], 'front': _plain(n['fields'].get('Word', {}).get('value', ''))[:30]}
+                               for n in lib.anki('notesInfo', {'notes': found})] if found else []
+            r['error'] = 'Anki 里的卡已被删除' if not found else f'Anki 里有 {len(found)} 张卡对应这条记录'
             lib.write(r, body, version)
-            return {**lib.result(ident), 'conflicts':[]}
+            return {**lib.result(ident), 'conflicts': []}
         note_id = found[0]
         review_only = card.get('linkedExisting') or (card['id'] == 'legacy' and r.get('linkedExisting'))
         card['reviewOnly'] = bool(review_only)
@@ -487,13 +491,81 @@ def reconcile(lib, p):
     baseline.clear(); baseline.update(base_after)
     body = with_local_fields(body, merged)
     r['syncState'] = 'synced'
+    for key in ('repairCardId', 'candidates', 'error'): r.pop(key, None)
     if r.get('cards'): r['ankiState'] = 'synced' if all(c.get('state') == 'synced' for c in r['cards']) else 'pending'
     lib.write(r, body, version)
     return {**lib.result(ident), 'syncState':'synced', 'conflicts':[]}
 
 
+def repair_link(lib, p):
+    r, body, version = lib.read(p['id'])
+    values = local_fields(r, body)
+    if p['choice'] == 'unlink':
+        r.update({'cards': [], 'noteId': None, 'ankiState': 'saved', 'syncState': 'local-only', 'syncBaseline': {}})
+    else:
+        card_id = r.get('repairCardId')
+        if not card_id: raise ValueError('这条记录不需要重新关联，请刷新列表。')
+        card = next((c for c in r.get('cards', []) if c['id'] == card_id), None)
+        tag = 'study_' + r['id'] if card_id == 'legacy' else 'studycard_' + card_id
+        if p['noteId'] not in lib.anki('findNotes', {'query': 'tag:' + tag}):
+            raise ValueError('这张卡找不到了，请刷新列表后再选。')
+        note = lib.anki('notesInfo', {'notes': [p['noteId']]})[0]
+        front = _plain(note['fields']['Word']['value'])
+        back = parse_definition(note['fields']['Definition']['value'], {})['answer']
+        if card is None:
+            r.update({'noteId': p['noteId'], 'linkedExisting': True, 'legacyCard': {'front': front, 'back': back}})
+        else:
+            card.update({'noteId': p['noteId'], 'linkedExisting': True, 'front': front, 'back': back, 'state': 'synced'})
+        r.update({'ankiState': 'synced', 'syncState': 'synced'})
+        r.setdefault('syncBaseline', {}).update({'card.' + card_id + '.front': front, 'card.' + card_id + '.back': back})
+    for key in ('repairCardId', 'candidates', 'error'): r.pop(key, None)
+    values['cards'] = [{'id': c['id'], 'front': c['front'], 'back': c['back']} for c in r.get('cards', [])]
+    lib.write(r, with_local_fields(body, values), version)
+    return lib.result(r['id'])
+
+
+def orphan_record(note):
+    fields = {k: v.get('value', '') for k, v in note['fields'].items()}
+    source = parse_source(fields.get('Source', ''), {})
+    meaning = parse_definition(fields.get('Definition', ''), source)
+    entry = {'word': _plain(fields.get('Expression') or fields.get('Word', ''))[:128],
+             'sentence': _plain(fields.get('Sentence') or fields.get('Word', '')), 'meaning': meaning['meaning'] or meaning['answer'],
+             'translation': meaning['translation'], 'title': source['title'], 'url': _plain(fields.get('URL', ''))}
+    return {'id': 'anki-' + str(note['noteId']), 'noteId': note['noteId'], 'entry': entry,
+            'vaultSaved': False, 'syncState': 'anki-only', 'ankiState': 'linked', 'created': ''}
+
+
+def orphan_action(library, p):
+    cache = pathlib.Path(library.cache_dir)
+    state = json.loads((cache / 'auto-sync-state.json').read_text())
+    row = next((r for r in state.get('orphans', []) if r['noteId'] == p['noteId']), None)
+    if row is None: raise ValueError('这张卡已处理，请刷新列表。')
+    if p['choice'] == 'restore':
+        from study_library import normalize_entry
+        entry = normalize_entry(row['entry'])
+        saved = library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'turns': [], 'targetId': library.active_id})
+        lib = library.locate(saved['id'])
+        r, body, version = lib.read(saved['id'])
+        info = library.anki('notesInfo', {'notes': [p['noteId']]})
+        if not info: raise ValueError('Anki 里的卡已被删除，请刷新列表。')
+        front = _plain(info[0]['fields']['Word']['value'])
+        back = parse_definition(info[0]['fields']['Definition']['value'], {})['answer']
+        card_id = hashlib.sha256(('restored:' + str(p['noteId'])).encode()).hexdigest()[:32]
+        r.setdefault('cards', []).append({'id': card_id, 'front': front, 'back': back, 'noteId': p['noteId'], 'linkedExisting': True, 'state': 'synced', 'kind': 'context'})
+        r.update({'ankiState': 'synced', 'syncState': 'synced'})
+        values = local_fields(r, body)
+        values['cards'] = [{'id': c['id'], 'front': c['front'], 'back': c['back']} for c in r['cards']]
+        lib.write(r, with_local_fields(body, values), version)
+    ignored_path = cache / 'anki-ignored.json'
+    ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
+    if p['choice'] == 'ignore':
+        ignored_path.write_text(json.dumps(sorted(set(ignored + [p['noteId']]))))
+    return {'done': True}
+
+
 def handle(lib, p):
     action = p['action']
+    if action == 'libraryRepair': return repair_link(lib, p)
     if action == 'libraryFavorite': return favorite(lib, p)
     if action == 'libraryUpdate': return update(lib, p)
     if action == 'libraryCardsAdd': return add_cards(lib, p)

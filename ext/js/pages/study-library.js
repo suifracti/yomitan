@@ -58,7 +58,8 @@ export function matchesCategory(value, category) {
         case 'favorites': return record.favorite === true;
         case 'saved': return record.vaultSaved === true && record.learningState !== 'favorite-only';
         case 'linked': return noteIds(record).length > 0 || record.ankiState === 'linked';
-        case 'pending': return ['pending', 'conflict', 'error', 'failed', 'missing'].includes(syncState ?? '') || record.ankiState === 'pending';
+        case 'anki-only': return syncState === 'anki-only';
+        case 'pending': return ['pending', 'conflict', 'error', 'failed', 'missing', 'ambiguous', 'anki-only'].includes(syncState ?? '') || record.ankiState === 'pending';
         default: return true;
     }
 }
@@ -203,6 +204,10 @@ function matchesSearch(record, query) {
  * @returns {string}
  */
 function stateSummary(record) {
+    if (record.syncState === 'anki-only') { return '笔记不见了，Anki 卡还在'; }
+    if (record.syncState === 'missing') { return 'Anki 里的卡已被删除'; }
+    if (record.syncState === 'ambiguous') { return `Anki 里有 ${record.candidates?.length || 0} 张卡对应这条记录`; }
+    if (record.vaultSaved && noteIds(record).length === 0 && !record.cards?.length) { return '只存了笔记，还没有复习卡'; }
     if (record.reconcileState === 'checking') { return '正在确认最近的保存和复习状态…'; }
     const cards = noteIds(record).length;
     const labels = [];
@@ -408,6 +413,7 @@ async function initializePage() {
         let pendingSyncCount = 0;
         let listError = '';
         let total = 0;
+        let needsAttention = 0;
         let offset = 0;
         let loading = false;
         let loaded = false;
@@ -610,7 +616,54 @@ async function initializePage() {
                 void refreshOne(record.id).catch((error) => setStatus(error instanceof Error ? error.message : '同步尚未完成。')).finally(() => { refresh.disabled = false; });
             });
             actions.append(refresh);
+            if (record.syncState === 'anki-only') {
+                resume.remove(); favorite.remove();
+                refresh.remove();
+            }
             addDetailToggle(article, actions);
+            const createCard = () => {
+                const url = new URL(createResumeUrl(record, chrome.runtime.getURL('/search.html')));
+                url.searchParams.set('studyAddCard', '1'); window.open(url.href, '_blank');
+            };
+            /**
+             * @param {string} label
+             * @param {'unlink'|'select'|'restore'|'ignore'} choice
+             * @param {number|null|undefined} [noteId]
+             */
+            const repair = (label, choice, noteId = record.noteId) => {
+                const button = document.createElement('button'); button.type = 'button';
+                button.textContent = label;
+                button.onclick = () => {
+                    button.disabled = true;
+                    void studyCall(
+                        record.syncState === 'anki-only' ? 'libraryOrphan' : 'libraryRepair',
+                        record.syncState === 'anki-only' ? {noteId, choice} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
+                    )
+                        .then(async () => {
+                            if (label === '重新制卡') { createCard(); }
+                            await loadPage(true);
+                        })
+                        .catch(() => { setStatus('还没处理成功。请打开 Anki，刷新列表后再试。'); button.disabled = false; });
+                };
+                actions.append(button);
+            };
+            switch (record.syncState) {
+                case 'missing':
+                    repair('重新制卡', 'unlink'); repair('只保留笔记', 'unlink');
+                    break;
+                case 'ambiguous':
+                    for (const candidate of record.candidates || []) { repair(`关联：${candidate.front}`, 'select', candidate.noteId); }
+                    break;
+                case 'anki-only':
+                    repair('用卡片内容重建笔记', 'restore'); repair('忽略', 'ignore');
+                    break;
+                default:
+                    if (noteIds(record).length === 0 && !record.cards?.length) {
+                        const button = document.createElement('button'); button.type = 'button';
+                        button.textContent = '制卡'; button.onclick = createCard;
+                        actions.append(button);
+                    }
+            }
             article.append(actions);
             const conflicts = renderConflicts(record);
             if (conflicts) { article.append(conflicts); }
@@ -729,6 +782,8 @@ async function initializePage() {
                 for (const record of rows) { list.append(makeCard(record)); }
                 for (const saved of localRows) { list.append(makeLocalFavoriteCard(saved)); }
             }
+            const pending = document.querySelector('[data-library-category=pending]');
+            if (pending) { pending.textContent = `需处理 ${Math.max(needsAttention, [...records.values()].filter((row) => matchesCategory(row, 'pending')).length)}`; }
             more.hidden = loading || offset >= total;
             more.disabled = loading;
             const loadedLabel = `已读取 ${records.size} / ${total} 条`;
@@ -776,14 +831,15 @@ async function initializePage() {
             }
             await refreshSavedWords();
             try {
-                const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope: 'all', offset: start});
+                const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope: ['pending', 'anki-only'].includes(category) ? category : 'all', offset: start});
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
                 if (reset) { records.clear(); }
                 for (const record of page) {
                     if (record && typeof record.id === 'string') { records.set(record.id, {...record, reconcileState: 'checking'}); }
                 }
-                const result = value && typeof value === 'object' ? /** @type {{total?: unknown}} */ (value) : {};
+                const result = value && typeof value === 'object' ? /** @type {{total?: unknown, needsAttention?: number}} */ (value) : {};
                 total = typeof result.total === 'number' && Number.isFinite(result.total) ? result.total : start + page.length;
+                needsAttention = result.needsAttention ?? 0;
                 offset = start + page.length;
                 loaded = true;
                 listError = '';
@@ -791,6 +847,9 @@ async function initializePage() {
                 render();
                 for (const record of page) {
                     if (!record || typeof record.id !== 'string') { continue; }
+                    if (record.syncState === 'anki-only') {
+                        records.set(record.id, record); continue;
+                    }
                     try {
                         const latest = await studyCall('libraryReconcile', {id: record.id, language: record.entry?.language ?? 'en'});
                         const reconciled = normalizeRecord(latest, record.id);
@@ -879,7 +938,7 @@ async function initializePage() {
                 for (const tab of document.querySelectorAll('[data-library-category]')) {
                     tab.setAttribute('aria-pressed', `${tab === button}`);
                 }
-                render();
+                void loadPage(true);
             });
         }
         search.addEventListener('input', render);

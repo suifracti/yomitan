@@ -265,6 +265,14 @@ def _normalize_request(p):
             seen.add(front)
             card.update({'front': front, 'back': back, 'kind': kind, 'deck': deck})
         return p
+    if action == 'libraryRepair' and set(p) <= {'action', 'id', 'choice', 'noteId'}:
+        if not ID_RE.fullmatch(str(p.get('id', ''))) or p.get('choice') not in ('unlink', 'select') or (p['choice'] == 'select' and (type(p.get('noteId')) is not int or p['noteId'] <= 0)):
+            raise ValueError('请选择要处理的记录和卡片。')
+        return p
+    if action == 'libraryOrphan' and set(p) == {'action', 'noteId', 'choice'}:
+        if p['choice'] not in ('restore', 'ignore') or type(p['noteId']) is not int or p['noteId'] <= 0:
+            raise ValueError('请选择要处理的卡片。')
+        return p
     if action == 'libraryReconcile' and set(p) in ({'action', 'id'}, {'action', 'id', 'resolutions'}):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
@@ -346,7 +354,7 @@ def _normalize_request(p):
         return p
     if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope'}:
         scope = p.get('scope', 'source')
-        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all'):
+        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all', 'anki-only'):
             raise ValueError('学习列表范围无效。')
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300)}
     if action in ('librarySync', 'libraryRead') and set(p) == {'action', 'ids'} and isinstance(p['ids'], list) and 1 <= len(p['ids']) <= 10:
@@ -1008,7 +1016,7 @@ class StudyLibrary:
                     return {'items': items, **({'ankiEnabled': self.anki_enabled} if self.target_id else {})}
                 finally:
                     del self.memory_deadline
-            if p['action'] in ('libraryCardsAdd', 'libraryUpdate', 'libraryFavorite', 'libraryReconcile'):
+            if p['action'] in ('libraryCardsAdd', 'libraryUpdate', 'libraryFavorite', 'libraryReconcile', 'libraryRepair'):
                 import study_sync
                 return study_sync.handle(self, p)
             if p['action'] in ('libraryDraftSave', 'libraryDraftDiscard'):

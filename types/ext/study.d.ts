@@ -74,6 +74,8 @@ export type SyncConflict = {key: string; local: unknown; remote: unknown};
 export type SaveTargetSettings = {deckByKind?: Partial<Record<CardKind, string>>; ankiEnabled: boolean; targetId: string; vault: string; directory: string; deck: string; model: string};
 
 export type LibraryRecord = {
+    candidates?: {noteId: number; front: string}[];
+    repairCardId?: string;
     media?: {audio?: {name: string}};
     favorite?: boolean;
     learningState?: string;

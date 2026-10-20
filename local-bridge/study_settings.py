@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 
@@ -337,12 +338,24 @@ class YomitanLibrary:
             for card in record.get('cards', []):
                 owner['studycard_' + card['id']] = (lib.target_id, ident)
         files = current_files
-        anki_ok = any(lib.anki_enabled for lib in libraries.values())
+        anki_ok = self.anki_enabled
         paused = ''
         if anki_ok:
             try:
-                edited = self.anki('findNotes', {'query': '(tag:english_study OR tag:japanese_study) edited:1'})
+                edited = self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'})
                 info = self.anki('notesInfo', {'notes': edited}) if edited else []
+                ignored_path = pathlib.Path(self.cache_dir) / 'anki-ignored.json'
+                ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
+                linked = {c['noteId'] for _, _, r in records.values() for c in r.get('cards', []) if c.get('noteId')}
+                linked.update(r['noteId'] for _, _, r in records.values() if r.get('noteId'))
+                state['orphans'] = [study_sync.orphan_record(n) for n in info
+                                    if n['noteId'] not in linked and n['noteId'] not in ignored
+                                    and not any(t in owner for t in n.get('tags', []))
+                                    and any(re.fullmatch(r'study(?:card)?_[a-f0-9]{32}', t) for t in n.get('tags', []))]
+                live = {n['noteId'] for n in info}
+                for ident, (lib, _path, r) in records.items():
+                    if r.get('syncState') != 'missing' and any(n not in live for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n):
+                        changed.append((lib.target_id, ident))
                 for note in info if isinstance(info, list) else []:
                     nid, mod = str(note.get('noteId')), note.get('mod')
                     if notes.get(nid) != mod:
@@ -493,18 +506,30 @@ class YomitanLibrary:
             return self.auto_sync()
         if action == 'libraryWordStatus':
             return self.word_status()
+        if action == 'libraryOrphan':
+            from study_sync import orphan_action
+            return orphan_action(self, p)
         if action == 'libraryList':
-            rows = []
-            for _lib, _path, row in self.indexed()[1].values():
-                e = row['entry']
-                match = True if p.get('scope') == 'all' else (row['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title']))
-                if match:
-                    rows.append(row)
+            rows = [row for _lib, _path, row in self.indexed()[1].values()]
+            state_path = pathlib.Path(self.cache_dir or self.config_path.parent) / 'auto-sync-state.json'
+            ignored_path = state_path.with_name('anki-ignored.json')
+            ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
+            state = json.loads(state_path.read_text()) if state_path.exists() else {}
+            known = {c['noteId'] for row in rows for c in row.get('cards', []) if c.get('noteId')}
+            known.update(row['noteId'] for row in rows if row.get('noteId'))
+            orphans = [r for r in state.get('orphans', []) if r['noteId'] not in ignored and r['noteId'] not in known]
+            attention = ('pending', 'missing', 'ambiguous', 'conflict', 'error', 'failed', 'anki-only')
+            needs = sum(row.get('syncState') in attention or row.get('ankiState') == 'pending' for row in rows) + len(orphans)
+            scope = p.get('scope')
+            if scope in ('all', 'pending', 'anki-only'): rows += orphans
+            if scope == 'pending': rows = [r for r in rows if r.get('syncState') in attention or r.get('ankiState') == 'pending']
+            elif scope == 'anki-only': rows = [r for r in rows if r.get('syncState') == 'anki-only']
+            elif scope != 'all': rows = [r for r in rows if r['entry']['url'] == p['url'] and (p['url'] or r['entry']['title'] == p['title'])]
             rows.sort(key=lambda row: row['created'], reverse=True)
             offset = p.get('offset', 0)
-            return {'items': rows[offset:offset + 10], 'total': len(rows), 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
+            return {'items': rows[offset:offset + 10], 'total': len(rows), 'needsAttention': needs, 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
         ids = p.get('ids', []) or [r['id'] for r in p.get('items', [])] or ([p['id']] if p.get('id') else [])
-        if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite'):
+        if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite','libraryRepair'):
             # Split mixed destinations while preserving caller ordering and per-record versions.
             rows = []
             for ident in ids:

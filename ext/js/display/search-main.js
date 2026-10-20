@@ -129,6 +129,7 @@ await Application.main(true, async (application) => {
                     ...(Number.isFinite(videoTimeValue) && resumeParams.has('studyVideoTime') ? {videoTime: videoTimeValue} : {}),
                     savedRecordId,
                     savedRecordWord: query,
+                    studyAddCard: resumeParams.get('studyAddCard') === '1',
                     studyLanguage: resumeParams.get('studyLanguage') ?? 'en'},
                 content: {}});
         } else {

@@ -1016,6 +1016,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         select(activeTab); updateAnswer(); syncSave();
         const workspace = prepareStudyWorkspace(display, {shell, dictionary, tabs, word});
         void readMemory(false, false);
+        if (display.history?.state?.studyAddCard) {
+            delete display.history.state.studyAddCard;
+            context.querySelector('[data-study-add-card]')?.click();
+        }
         dispose = () => {
             workspace.dispose();
             observers.forEach((observer) => observer.disconnect());
