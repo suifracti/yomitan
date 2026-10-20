@@ -160,7 +160,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const dictionaryPager = make('div', 'sf-dictionary-pager');
         dictionary.append(dictionaryHeading, dictionaryScroll, dictionaryPager);
         const records = make('section', 'sf-records');
-        let allMeaningsOpen = false;
         let learningScroll;
         const panels = [learn, dictionary, records];
         const labels = ['词义与原句', '详细词典', '我的记录'];
@@ -696,7 +695,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             host.replaceChildren();
             if (!senses.length) {
                 host.append(make('p', 'sf-gloss-unavailable', '暂无中文释义'));
-                allMeaningsOpen = false;
                 return;
             }
             const appendRow = (parent, {pos, text}) => {
@@ -709,20 +707,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const preview = make('div', 'sf-gloss-preview');
             for (const sense of senses) { appendRow(preview, sense); }
             host.append(preview);
-            host.classList.toggle('sf-multiple-meanings', senses.length > 1);
-            if (senses.length === 1) { allMeaningsOpen = false; }
-            host.classList.toggle('sf-meanings-expanded', allMeaningsOpen);
-            if (senses.length > 1) {
-                const caption = make('div', 'sf-gloss-caption');
-                const toggle = button(''); toggle.classList.add('sf-gloss-toggle');
-                const paintToggle = () => {
-                    toggle.textContent = allMeaningsOpen ? '收起 ▴' : `共 ${senses.length} 项 ▾`;
-                    toggle.setAttribute('aria-expanded', String(allMeaningsOpen));
-                    host.classList.toggle('sf-meanings-expanded', allMeaningsOpen);
-                };
-                toggle.addEventListener('click', () => { allMeaningsOpen = !allMeaningsOpen; paintToggle(); });
-                paintToggle(); caption.append(toggle); host.append(caption);
-            }
         };
         const updateAnswer = () => {
             if (!current()) { return; }

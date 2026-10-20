@@ -340,7 +340,6 @@
     .study-focus-active .sf-heading .sf-gloss-preview { -webkit-line-clamp: 1; max-height: 18px; line-height: 18px; }
     .study-focus-active .sf-heading .sf-gloss-preview .sf-gloss-row { line-height: 18px; }
     .study-focus-active .study-focus-shell.sf-card-editor-open .sf-header-sense { padding-block: 0; }
-    .study-focus-active .study-focus-shell.sf-card-editor-open .sf-gloss-caption { display: none; }
 }
 @media (max-height: 350px) {
     .study-focus-active .study-toolbar { height: 30px; }
@@ -361,10 +360,7 @@
 }
 
 /* Chinese meanings expand in place in the shared header. */
-.sf-gloss-caption { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
-.sf-gloss-caption .sf-gloss-kicker { font-size: 10px; }
-.sf-gloss-caption .sf-gloss-toggle { border: 0; padding: 0; min-height: 16px; background: none; font-size: 10px; white-space: nowrap; }
-.sf-gloss-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-height: 40px; overflow: hidden; line-height: 20px; }
+.sf-gloss-preview { display: block; line-height: 20px; }
 .sf-gloss-preview .sf-gloss-row { display: block; line-height: 20px; }
 .sf-gloss-preview .sf-gloss-text { font-size: 14px; line-height: inherit; }
 .sf-gloss-preview .sf-gloss-pos { margin-right: 8px; font-size: 11px; }
@@ -391,7 +387,6 @@
     .sf-gloss-preview .sf-gloss-row { line-height: 18px; }
     .sf-header-sense .sf-gloss-preview .sf-gloss-text { font-size: 13px; line-height: 18px; }
     .sf-gloss-preview .sf-gloss-pos { font-size: 10px; }
-    .sf-gloss-caption .sf-gloss-toggle { min-height: 0; font-size: 9px; line-height: 14px; }
     .study-focus-active .sf-compose { padding-block: 3px; }
     .sf-save-bar [data-study-save='note'] { min-height: 26px; font-size: 11px; padding-block: 3px; }
     .sf-header-sense .sf-no-source-note { font-size: 9px; line-height: 1.2; }
@@ -426,7 +421,6 @@
 @media (max-height: 350px) {
     .study-focus-active .sf-heading .sf-header-sense { padding-block: 2px 0; }
     .study-focus-active .sf-heading .sf-short-gloss { display: flex; align-items: center; gap: 5px; }
-    .study-focus-active .sf-heading .sf-gloss-caption { order: 2; flex: none; margin: 0; }
     .study-focus-active .sf-heading .sf-gloss-kicker { display: none; }
     .study-focus-active .sf-heading .sf-gloss-preview { flex: 1; min-width: 0; }
     .study-focus-active .sf-heading .sf-gloss-toggle { font-size: 9px; }
@@ -484,8 +478,6 @@
     .sf-dictionary-forms { margin-bottom: 6px; padding-bottom: 6px; }
 }
 
-.sf-gloss-caption[hidden] { display: none !important; }
-.sf-gloss-caption { justify-content: flex-end; }
 .study-focus-active .sf-audio-tools .study-audio-sources { min-height: 28px; padding: 4px 9px; background: var(--sf-paper); color: var(--sf-accent); border: 1px solid var(--sf-line); border-radius: 7px; font-size: 11px; }
 .sf-dictionary-info .note-actions-container button { min-height: 27px; padding: 4px 8px; border: 1px solid var(--sf-line); border-radius: 6px; background: var(--sf-paper); color: var(--sf-muted); font: inherit; font-size: 11px; }
 @media (max-height: 350px) {
@@ -498,9 +490,8 @@
     .sf-header-sense .sf-gloss-preview .sf-gloss-row { line-height: 18px; }
 }
 
-.sf-header-sense .sf-short-gloss { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.sf-header-sense .sf-short-gloss { display: block; }
 .sf-short-gloss>.sf-gloss-preview { grid-column: 1; grid-row: 1; }
-.sf-short-gloss>.sf-gloss-caption { grid-column: 2; grid-row: 1; padding-top: 2px; }
 
 /* Explicitly constrain the single grid column: intrinsic form text must never
    widen the whole card and clip unrelated source/composer controls. */
@@ -868,10 +859,9 @@
 .study-focus-active .study-focus-shell[data-panel='0'] .sf-compose { bottom: var(--sf-save-height, 50px); }
 .study-focus-shell[data-panel='0'] .sf-save-bar { bottom: 0; }
 .study-focus-active .sf-heading .sf-gloss-preview { display: block; max-height: none; overflow: visible; -webkit-line-clamp: unset; }
-.sf-multiple-meanings:not(.sf-meanings-expanded) .sf-gloss-row:not(:first-child) { display: none; }
-.sf-multiple-meanings:not(.sf-meanings-expanded) .sf-gloss-row:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.sf-meanings-expanded .sf-gloss-caption { grid-row: 2; }
 .study-focus-active .sf-source-pane .study-source p { max-height: none; overflow: visible; -webkit-line-clamp: unset; }
 .study-focus-active .sf-source-pane .study-source-translation { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--sf-muted); font-size: 12px; }
 .study-focus-active .sf-source-pane .study-source-translation.sf-translation-expanded { display: block; overflow: visible; -webkit-line-clamp: unset; }
 .study-focus-shell .sf-translation-expand { min-height: 20px; padding: 0; border: 0; font-size: 11px; color: var(--sf-accent); }
+
+.study-focus-active .sf-heading .sf-forms-preview { display: flex; flex-wrap: wrap; white-space: normal; overflow: visible; max-height: none; }
