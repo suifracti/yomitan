@@ -697,7 +697,7 @@ export class StudyService {
      */
     async handle(action, value) {
         // Saving or making cards changes word colours on pages; refresh them shortly after.
-        if (['rememberEntry', 'libraryCardsAdd', 'removeWord'].includes(action)) {
+        if (['rememberEntry', 'libraryCardsAdd', 'removeWord', 'libraryContextMiss'].includes(action)) {
             setTimeout(() => { void this.refreshWordStatus(); }, 3000);
         }
         if (action !== 'generate') { return await this.handleRequest(action, value); }
@@ -756,7 +756,7 @@ export class StudyService {
                 const original = await this.native({action: 'libraryRead', ids: [existingId], language: entry.language ?? 'en'}).promise;
                 const originalRecord = /** @type {{items?: import('study').LearningMaterial[]}|undefined} */ (original.library)?.items?.[0]?.record;
                 if (!original.ok || !originalRecord) { throw new Error(original.error ?? '原学习记录暂不可读；未改投其他对象。'); }
-                if (originalRecord.entry.word.toLocaleLowerCase() !== entry.word.toLocaleLowerCase()) { return await this.rememberEntry(entry); }
+                if (entry.sense || originalRecord.entry.word.toLocaleLowerCase() !== entry.word.toLocaleLowerCase()) { return await this.rememberEntry(entry); }
                 const update = {...entry};
                 delete update.recordId;
                 const turns = await this.journal.get(entry);

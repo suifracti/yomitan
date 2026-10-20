@@ -120,7 +120,7 @@ def subtitle_identity(v):
 
 
 def normalize_entry(value):
-    if not isinstance(value, dict) or set(value) - (set(FIELDS) | {'videoTime', 'language', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation', 'subtitleSource'}):
+    if not isinstance(value, dict) or set(value) - (set(FIELDS) | {'videoTime', 'language', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation', 'subtitleSource', 'sense', 'kind', 'baseWord'}):
         raise ValueError('学习记录不接受额外字段或文件路径。')
     result = {k: text(value.get(k, ''), n, k in ('word', 'sentence')) for k, n in FIELDS.items()}
     lang = language(value.get('language', 'en'))
@@ -129,6 +129,18 @@ def normalize_entry(value):
     for key, limit in [('lemma', 128), ('reading', 128), ('dictionaryNotes', 4000), ('dictionaryTranslation', 4000)]:
         if key in value:
             result[key] = text(value[key], limit)
+    if 'sense' in value:
+        sense = value['sense']
+        if not isinstance(sense, dict) or set(sense) != {'key', 'gloss'}:
+            raise ValueError('义项须包含 key 和 gloss。')
+        key = text(sense['key'], 180, True)
+        if key != 'new' and not re.fullmatch(r'.+#[1-9][0-9]{0,5}', key):
+            raise ValueError('义项编号无效。')
+        result['sense'] = {'key': key, 'gloss': text(sense['gloss'], 40)}
+    if 'kind' in value or 'baseWord' in value:
+        if value.get('kind') != 'expression':
+            raise ValueError('搭配条目类型须为 expression。')
+        result.update({'kind': 'expression', 'baseWord': text(value.get('baseWord'), 128, True)})
     result['url'] = source_url(result['url'])
     t = value.get('videoTime')
     if t is not None:
@@ -209,6 +221,9 @@ def _normalize_request(p):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
         return p
+    if action in ('libraryWordSenses', 'libraryContextMiss'):
+        from study_senses import normalize_action
+        return normalize_action(p)
     if action == 'libraryWordStatus':
         if set(p) != {'action'}:
             raise ValueError('词汇状态请求无效。')
@@ -353,6 +368,8 @@ def entry_id(e):
         identity = subtitle_identity(e['subtitleSource'])
     elif e.get('language', 'en') != 'en':
         identity.insert(0, e['language'])
+    if e.get('sense'):
+        identity.extend(['sense', e['sense']['key']])
     return hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()[:32]
 
 
@@ -1067,17 +1084,24 @@ class StudyLibrary:
                         body += ('\n字幕原始时间（ms）：' + str(c['originalStartMs']) + '–' + str(c['originalEndMs']) +
                                  '；偏移（ms，仅回源加一次）：' + str(c['subtitleOffsetMs']) +
                                  '；轨道：' + safe_markdown(c['trackName']) + ' [' + str(c['trackIndex']) + ']；语言：' + c['language'] + '\n')
+                    if e.get('sense') or self.group_words:
+                        from study_senses import sense_key, gloss
+                        body += f'\n{heading} 义项\n\n' + paragraph(sense_key(e) + ' · ' + (gloss(e) or '默认义项，尚未细分')) + '\n'
+                    if e.get('kind') == 'expression':
+                        linked = getattr(self, 'base_word_link', '')
+                        label = safe_markdown(e['baseWord'])
+                        body += '\n关联原词：' + ('[' + label + '](' + linked + ')' if linked else label) + '\n'
                     if p['turns']:
                         body += f'\n{heading} 我的理解与问题\n\n'
                     else:
                         body += f'\n{heading} 学习记录\n\n> 本次未进行 AI 语境消歧（直接以词典泛义保存）。\n\n'
                     self.write(r, body)
                 old, body, version = self.read(ident)
-                changed = {k: e[k] for k in ('meaning', 'translation', 'notes', 'context', 'explanationSource', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation')
+                changed = {k: e[k] for k in ('meaning', 'translation', 'notes', 'context', 'explanationSource', 'lemma', 'reading', 'dictionaryNotes', 'dictionaryTranslation', 'sense', 'kind', 'baseWord')
                            if e.get(k) and e[k] != old['entry'].get(k) and not (k == 'reading' and not is_valid_reading(e[k], e, self.language))}
                 if changed:
                     old['entry'].update(changed)
-                    body += f'\n{heading} 后续学习补充（再次主动保存）\n\n' + paragraph('\n'.join(changed.values())) + '\n'
+                    body += f'\n{heading} 后续学习补充（再次主动保存）\n\n' + paragraph('\n'.join(json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else v for v in changed.values())) + '\n'
                 seen = old.setdefault('turnIds', [])
                 added = False
                 if e.get('url'):

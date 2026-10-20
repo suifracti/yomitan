@@ -97,7 +97,7 @@ class AutoSyncTests(unittest.TestCase):
         record = saved['items'][0] if 'items' in saved else saved
         self.library.handle({'action': 'libraryCardsAdd', 'id': record['id'], 'cards': [{'front': '用英文说', 'back': 'mortar', 'kind': 'produce'}]})
         words = self.library.handle({'action': 'libraryWordStatus'})['words']
-        self.assertEqual(words, {'brick': 'learning', 'mortar': 'known'})
+        self.assertEqual({k: v['s'] for k, v in words.items()}, {'brick': 'learning', 'mortar': 'learning'})
 
     def test_rejects_extra_fields(self):
         with self.assertRaises(ValueError):

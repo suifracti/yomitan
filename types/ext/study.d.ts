@@ -35,6 +35,9 @@ export type SubtitleSourceV1 = {
 export type CueSaveIntent = {targetId?: string; key: string; entry: LibraryEntry; turns: LearningTurn[]};
 
 export type LibraryEntry = {
+    sense?: {key: string; gloss: string};
+    kind?: 'expression';
+    baseWord?: string;
     recordId?: string;
     subtitleSource?: SubtitleSourceV1;
     language?: string;

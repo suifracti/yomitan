@@ -98,6 +98,7 @@
   - `partial`：部分义项是 familiar 或 known，另一部分是 new、learning 或 shaky。
 - `iv`、`lapses`：这个词所有卡里的最小间隔（天）和总遗忘次数；没有卡时省略。
 - `gloss`：≤ 40 字的中文短义，只给悬停释义用；不能含句子、笔记或来源。
+- 复习数据在原自动同步的一轮内批量读取并缓存；最近遗忘用 Anki 的 `rated:30:1`（Again）记录判断，不从累计 lapses 猜发生日期。断连保留上次读到的数据，未读到间隔时不把第③阶段卡直接算成已掌握。
 - 键名：小写的 word 和 lemma 都写入，同一个词的两个键共用同一个值。
 - 兼容：旧格式（`words` 的值是字符串 `"learning"`/`"known"`）前端照常处理。
 
@@ -139,6 +140,8 @@
 - 新义项：`entry.sense = {"key": "new", "gloss": "经营"}`。由桥分配真正的键（`<lemma>#<n>`）；这个义项的掌握度从 `none` 开始。
 - 搭配：`entry.kind = "expression"`、`entry.word = "run into"`、`entry.baseWord = "run"`。
 - 不带这些字段时，行为和现在完全一样。
+- 不改旧记录 ID，不批量迁移。旧语境在只读汇总中使用稳定的默认义项键；新带 `sense` 的记录 ID 纳入实际义项键，因此同句的新义项也不会继承旧卡掌握度。重复 `new` 保存按同语境和 gloss 复用已分配键，指定已有键则关联该义项。卡点事件附在已有的相关词记录上（优先当前语境/指定义项），不因点卡点而另建笔记或卡片；没有已保存词记录时提示先保存。
+- 默认 `#1` 留给未细分的旧/普通语境，显式新义项从 `#2` 分配，避免以后一次普通保存误并入已经学会的新义项。最近 Again 的时间范围采用 [Anki 官方搜索语法](https://docs.ankiweb.net/manual/searching)。
 
 #### `senseMatch`（可选，用模型，默认关）
 
@@ -218,13 +221,13 @@
 | 项 | 负责 | 状态 |
 |---|---|---|
 | B1 记录索引 | GPT | 已完成：cache_dir/.study-index.json；mtime/size 增量；2000 条安静同步约 58 ms（临时库/Anki 替身） |
-| B2 真实掌握度 | GPT | 待认领 |
+| B2 真实掌握度 | GPT | 已完成：自动同步批量读 interval/lapses/近期 Again；v2 words/phrases；旧界面兼容 |
 | B3 体检与同步脚本 | GPT | 已完成：bridgeHealth、真实模块/二进制安装清单、bridge-manifest、限定目标及上个提交校验的 sync-local.py |
 | B4 常驻连接 | GPT | 待测 |
 | B5 统一 ASB 路径 | GPT | 待认领 |
 | B6 后端测试债 | GPT | 待认领 |
 | B7 AI 批改 | GPT | 待认领 |
-| B8 义项与卡点 | GPT | 待认领 |
+| B8 义项与卡点 | GPT | 已完成：独立义项身份、搭配关联、卡点事件、30 天 recall、显式可选 senseMatch 与缓存；旧笔记不批量迁移 |
 | B9 今日回顾数据 | GPT | 待认领 |
 | F1 拆分阅读器 / F2 虚拟列表 / F8 抖动 | Claude | 进行中 |
 | F3 标色、遇见次数、悬停释义 | Claude | 待做 |

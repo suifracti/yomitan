@@ -391,8 +391,9 @@ class LibraryTests(unittest.TestCase):
         import json, shutil, struct, subprocess, sys
         runtime = self.vault / 'runtime'
         runtime.mkdir()
-        for name in ['study_translator.py', 'study_library.py', 'study_library_core.py', 'study_sync.py', 'study_note_view.py', 'study_settings.py', 'study_video.py', 'study_memory.py', 'study_media.py', 'study_japanese.py']:
-            shutil.copyfile(ROOT / 'local-bridge' / name, runtime / name)
+        from bridge_files import runtime_sources
+        for name, data in runtime_sources(ROOT / 'local-bridge').items():
+            (runtime / name).write_bytes(data)
         (runtime / 'bridge-config.json').write_text(json.dumps({'vault': str(self.vault), 'codex': '/nonexistent/do-not-start'}))
         request = json.dumps({'action': 'librarySave', 'entry': ENTRY, 'makeCard': False}).encode()
         result = subprocess.run([sys.executable, str(runtime / 'study_translator.py'), 'chrome-extension://fdibnlkfllnojcmhcghkmdlceeegmhpf/'],

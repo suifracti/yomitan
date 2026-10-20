@@ -302,22 +302,8 @@ class YomitanLibrary:
         return files, records
 
     def word_status(self):
-        """Read page-colouring metadata without rereading unchanged note bodies."""
-        import study_sync
-        words = {}
-        for lib, _path, record in self.indexed()[1].values():
-            if lib.language != 'en':
-                continue
-            known = any(study_sync.CARD_STAGES.get(c.get('kind')) == 3 for c in record.get('cards', []))
-            status = 'known' if known else 'learning'
-            entry = record['entry']
-            for key in {entry.get('word', ''), entry.get('lemma', '')}:
-                key = key.strip().lower()
-                if 1 < len(key) <= 60 and words.get(key) != 'known':
-                    words[key] = status
-            if len(words) >= 20000:
-                return words
-        return words
+        from study_senses import word_status
+        return word_status(self)
 
     def auto_sync(self, now=None):
         """One pass of automatic two-way sync, run by the extension every ~30 seconds.
@@ -407,6 +393,8 @@ class YomitanLibrary:
                 state['upgradeAt'] = now
             except Exception:
                 pass
+        from study_senses import refresh_metrics
+        state['mastery'] = refresh_metrics(self.anki, records, state.get('mastery', {}), now) if anki_ok and not paused else state.get('mastery', {})
         state.update({'files': files, 'notes': notes, 'upgrade': upgrade, 'at': now, 'synced': synced, 'conflicts': conflicts})
         state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = state_path.with_suffix('.tmp')
@@ -454,13 +442,35 @@ class YomitanLibrary:
                 return {**target, 'opened': True}
             if p['entry'].get('language', 'en') != 'en':
                 raise ValueError('此设置只用于 Yomitan 英语学习。')
-            lib = self.locate(entry_id(p['entry']))
+            entry = p['entry']
+            if entry.get('sense'):
+                from study_senses import assign_entry
+                entry = assign_entry(self, entry)
+            lib = self.locate(entry_id(entry))
             return self.settings(lib.target_id if lib else self.active_id)
+        if action in ('libraryWordSenses', 'libraryContextMiss'):
+            if p.get('language', 'en') != 'en':
+                raise ValueError('义项与卡点功能当前用于英语，不会混入其他语言记录。')
+            from study_senses import senses, add_miss
+            return senses(self, p['word']) if action == 'libraryWordSenses' else add_miss(self, p)
         lang = p.get('language', p.get('entry', {}).get('language', 'en'))
         if lang != 'en':
             return StudyLibrary(self.config['vault'], self.anki, lang, self.cache_dir).handle(p)
         if action == 'librarySave':
             lib = self.locate(entry_id(p['entry'])) or self.library_for(p.get('targetId', self.legacy_id))
+            if p['entry'].get('kind') == 'expression':
+                from study_senses import word_rows
+                parent = next((r for r in word_rows(self, p['entry']['baseWord']) if r['entry'].get('kind') != 'expression'), None)
+                lib.base_word_link = parent['openUrl'] if parent else ''
+            if p['entry'].get('sense'):
+                from study_senses import assign_entry
+                lock_path = pathlib.Path(self.cache_dir or self.config_path.parent) / '.study-senses.lock'
+                lock_path.parent.mkdir(parents=True, exist_ok=True)
+                with lock_path.open('a') as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    p = {**p, 'entry': assign_entry(self, p['entry'])}
+                    lib = self.locate(entry_id(p['entry'])) or lib
+                    return lib.handle(p)
             return lib.handle(p)
         if action == 'libraryFavorite' and p.get('entry'):
             ident = entry_id(p['entry'])
@@ -482,7 +492,7 @@ class YomitanLibrary:
         if action == 'libraryAutoSync':
             return self.auto_sync()
         if action == 'libraryWordStatus':
-            return {'words': self.word_status()}
+            return self.word_status()
         if action == 'libraryList':
             rows = []
             for _lib, _path, row in self.indexed()[1].values():

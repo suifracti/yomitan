@@ -18,7 +18,7 @@ class RecordIndexTests(AutoSyncTests):
         self.assertFalse(list(self.vault.rglob('.study-index.json')))
         fresh = YomitanLibrary(self.library.config_path, self.anki, self.library.cache_dir)
         with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('unchanged note reread')):
-            self.assertEqual(fresh.word_status(), {'brick': 'learning'})
+            self.assertEqual(fresh.word_status()['words']['brick']['s'], 'learning')
             self.assertEqual(fresh.video_words('youtube:abcdefghijk'), [])
             result = fresh.handle({'action': 'libraryList', 'scope': 'all', 'url': '', 'title': ''})
             self.assertEqual(result['total'], 1)
@@ -40,19 +40,26 @@ class RecordIndexTests(AutoSyncTests):
         self.assertEqual(reads, [path])
         self.assertEqual(result['total'], 1)
         path.unlink()
-        self.assertEqual(self.library.word_status(), {})
+        self.assertEqual(self.library.word_status()['words'], {})
 
     def test_quiet_auto_sync_with_2000_records(self):
         lib = self.library.library_for(self.library.active_id)
         lib.records.mkdir(parents=True, exist_ok=True)
         for i in range(2000):
             entry = normalize_entry({'word': f'word{i}', 'sentence': f'A word{i} here.', 'meaning': '义'})
-            record = {'id': entry_id(entry), 'entry': entry, 'created': str(i), 'ankiState': 'saved', 'noteId': None,
+            record = {'id': entry_id(entry), 'entry': entry, 'created': str(i), 'ankiState': 'synced', 'noteId': 1000 + i,
                       'targetId': lib.target_id, 'savedTarget': lib.target_details()}
             path = lib.records / (f'word{i}--w' + lib.word_id(entry) + '.md')
             path.write_text(lib.word_header(entry) + lib.context_block(record, '\n## 学习\n\n文本\n'))
+        def fast_anki(action, params):
+            if action == 'notesInfo':
+                return [{'noteId': n, 'cards': [n * 10]} for n in params['notes']]
+            if action == 'cardsInfo':
+                return [{'cardId': c, 'interval': 30, 'lapses': 0} for c in params['cards']]
+            return []
+        self.library.anki = fast_anki
         self.library.auto_sync()
-        fresh = YomitanLibrary(self.library.config_path, self.anki, self.library.cache_dir)
+        fresh = YomitanLibrary(self.library.config_path, fast_anki, self.library.cache_dir)
         start = time.perf_counter()
         with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('quiet pass read notes')):
             result = fresh.auto_sync()
