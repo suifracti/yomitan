@@ -552,12 +552,12 @@ def orphan_action(library, p):
     if row is None: raise ValueError('这张卡已处理，请刷新列表。')
     if p['choice'] == 'restore':
         from study_library import normalize_entry
-        entry = normalize_entry(row['entry'])
+        info = library.anki('notesInfo', {'notes': [p['noteId']]})
+        if not info: raise ValueError('Anki 里的卡已被删除，请刷新列表。')
+        entry = normalize_entry(orphan_record(info[0])['entry'])
         saved = library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'turns': [], 'targetId': library.active_id})
         lib = library.locate(saved['id'])
         r, body, version = lib.read(saved['id'])
-        info = library.anki('notesInfo', {'notes': [p['noteId']]})
-        if not info: raise ValueError('Anki 里的卡已被删除，请刷新列表。')
         front = _plain(info[0]['fields']['Word']['value'])
         back = parse_definition(info[0]['fields']['Definition']['value'], {})['answer']
         card_id = hashlib.sha256(('restored:' + str(p['noteId'])).encode()).hexdigest()[:32]

@@ -35,6 +35,9 @@ class RepairTests(unittest.TestCase):
         orphans = h.library.handle({'action': 'libraryList', 'scope': 'anki-only', 'url': '', 'title': ''})
         self.assertEqual([r['noteId'] for r in orphans['items']], [2000])
         h.calls.clear()
+        h.notes[2000]['fields']['Definition'] = '新的解释'
         h.library.handle({'action': 'libraryOrphan', 'noteId': 2000, 'choice': 'restore'})
-        self.assertTrue(h.library.handle({'action': 'libraryList', 'scope': 'all'})['items'][0]['vaultSaved'])
+        restored = h.library.handle({'action': 'libraryList', 'scope': 'all'})['items'][0]
+        self.assertTrue(restored['vaultSaved'])
+        self.assertEqual(restored['entry']['meaning'], '新的解释')
         self.assertFalse(any(a in h.calls for a in ('addNote', 'updateNoteFields', 'deleteNotes', 'setDueDate', 'changeDeck')))
