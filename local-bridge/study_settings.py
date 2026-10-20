@@ -270,6 +270,115 @@ class YomitanLibrary:
                 raise ValueError('语境目录必须位于当前选定的 Vault 内；原设置未改变。') from None
         return {'path': str(chosen), 'cancelled': False}
 
+    def auto_sync(self, now=None):
+        """One pass of automatic two-way sync, run by the extension every ~30 seconds.
+
+        Only records whose note file changed, or whose Anki note was edited, are
+        reconciled with the existing field rules; conflicts stay for the learner.
+        The first pass only records a baseline. Every few minutes it also lists
+        words whose recognition/understanding cards are mature enough for
+        production cards. Nothing is created or rescheduled here.
+        """
+        import time
+        import study_sync
+        now = time.time() if now is None else now
+        if not self.cache_dir:
+            raise ValueError('本机桥缓存目录缺失，无法自动同步。')
+        state_path = pathlib.Path(self.cache_dir) / 'auto-sync-state.json'
+        try:
+            state = json.loads(state_path.read_text())
+        except (OSError, ValueError):
+            state = {}
+        first = not isinstance(state.get('files'), dict)
+        files = state.get('files') if not first else {}
+        notes = state.get('notes') if isinstance(state.get('notes'), dict) else {}
+        seen_folders, libraries, owner, changed = set(), {}, {}, []
+        for target_id, target in self.targets.items():
+            folder = (target['vault'], target['directory'])
+            if folder in seen_folders or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
+                continue
+            seen_folders.add(folder)
+            lib = self.library_for(target_id)
+            if not lib.records.is_dir():
+                continue
+            libraries[target_id] = lib
+            for path, ident in lib.record_files():
+                key = str(path)
+                mtime = path.stat().st_mtime_ns
+                if files.get(key) != mtime:
+                    if not first:
+                        changed.append((target_id, ident))
+                    files[key] = mtime
+                try:
+                    record = lib.read(ident)[0]
+                except (OSError, ValueError, FileNotFoundError):
+                    continue
+                owner['study_' + ident] = (target_id, ident)
+                for card in record.get('cards', []):
+                    owner['studycard_' + card['id']] = (target_id, ident)
+        anki_ok = any(lib.anki_enabled for lib in libraries.values())
+        paused = ''
+        if anki_ok:
+            try:
+                edited = self.anki('findNotes', {'query': '(tag:english_study OR tag:japanese_study) edited:1'})
+                info = self.anki('notesInfo', {'notes': edited}) if edited else []
+                for note in info if isinstance(info, list) else []:
+                    nid, mod = str(note.get('noteId')), note.get('mod')
+                    if notes.get(nid) != mod:
+                        if not first:
+                            for tag in note.get('tags', []):
+                                if tag in owner:
+                                    changed.append(owner[tag])
+                        notes[nid] = mod
+            except Exception:
+                paused = 'Anki 未打开，只检查了笔记一侧。'
+        synced, conflicts, errors = 0, 0, []
+        done = set()
+        for target_id, ident in changed:
+            if (target_id, ident) in done:
+                continue
+            done.add((target_id, ident))
+            lib = libraries[target_id]
+            try:
+                record = lib.read(ident)[0]
+                if record['entry'].get('subtitleSource') or not (record.get('cards') or record.get('noteId')) or not lib.anki_enabled or paused:
+                    continue
+                result = study_sync.reconcile(lib, {'id': ident})
+                synced += 1
+                if result.get('conflicts'):
+                    conflicts += 1
+            except Exception as error:
+                errors.append(str(error)[:120] if isinstance(error, ValueError) else '同步未完成')
+        # Our own writes must not look like new edits on the next pass.
+        for lib in libraries.values():
+            for path, _ident in lib.record_files():
+                files[str(path)] = path.stat().st_mtime_ns
+        upgrade = state.get('upgrade', []) if isinstance(state.get('upgrade'), list) else []
+        if anki_ok and not paused and now - state.get('upgradeAt', 0) > 600:
+            try:
+                mature = self.anki('findCards', {'query': '(tag:study_stage::1 OR tag:study_stage::2) prop:ivl>=21'})
+                note_ids = self.anki('cardsToNotes', {'cards': mature}) if mature else []
+                info = self.anki('notesInfo', {'notes': note_ids}) if note_ids else []
+                ready = {}
+                for note in info if isinstance(info, list) else []:
+                    for tag in note.get('tags', []):
+                        if tag in owner:
+                            target_id, ident = owner[tag]
+                            record = libraries[target_id].read(ident)[0]
+                            if not any(study_sync.CARD_STAGES.get(c.get('kind')) == 3 for c in record.get('cards', [])):
+                                ready[ident] = record['entry']['word']
+                upgrade = [{'id': ident, 'word': word} for ident, word in sorted(ready.items())][:200]
+                state['upgradeAt'] = now
+            except Exception:
+                pass
+        state.update({'files': files, 'notes': notes, 'upgrade': upgrade, 'at': now})
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = state_path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(state))
+        temporary.replace(state_path)
+        return {'first': first, 'checked': len(files), 'synced': synced, 'conflicts': conflicts,
+                'errors': errors[:5], 'paused': paused, 'upgrade': upgrade}
+
     def video_words(self, video_id):
         """Saved words from one YouTube video, oldest position first; read-only."""
         import urllib.parse
@@ -343,6 +452,8 @@ class YomitanLibrary:
             return lib.handle(p)
         if action == 'libraryVideoWords':
             return {'items': self.video_words(p['videoId'])}
+        if action == 'libraryAutoSync':
+            return self.auto_sync()
         if action == 'libraryList':
             rows = []
             seen = set()

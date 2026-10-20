@@ -839,3 +839,5 @@
 .study-capture-options { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0; color: var(--sf-muted); font-size: 12px; }
 .study-capture-options[hidden] { display: none; }
 .study-capture-options label { display: inline-flex; align-items: center; gap: 4px; }
+.study-card-upgrade { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 8px; padding: 6px 10px; border-left: 2px solid var(--st-ok); background: var(--sf-tint); color: var(--sf-ink); font-size: 12px; }
+.study-card-upgrade[hidden] { display: none; }

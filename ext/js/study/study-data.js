@@ -20,6 +20,12 @@ export const SETTINGS_KEY = 'studySettingsV2';
 
 export const CACHE_KEY = 'studyCacheV2';
 
+/** Learner switch for automatic two-way sync: {enabled: boolean}. */
+export const AUTO_SYNC_KEY = 'studyAutoSync';
+
+/** Last automatic pass: counts, conflicts, pause reason and words ready for production cards. */
+export const AUTO_SYNC_STATE_KEY = 'studyAutoSyncState';
+
 export const SAVED_KEY = 'studySavedWordsV1';
 
 export const DETAIL_KEY = 'studyDetailSnapshotsV1';

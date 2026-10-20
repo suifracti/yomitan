@@ -53,6 +53,7 @@ class VideoMediaTests(unittest.TestCase):
         self.assertEqual(set(row['media']), {'audio', 'image', 'video'})
         body = next(self.vault.rglob('*brick*.md')).read_text()
         self.assertIn('场景媒体 · 视频片段', body)
+        self.assertIn('视频位置：[0:12](https://www.youtube.com/watch?v=abcdefghijk&t=12s)', body)
         self.assertIn('![[' + row['media']['video']['name'] + ']]', body)
         self.library.handle({'action': 'libraryCardsAdd', 'id': record['id'], 'cards': [{'front': '听原声', 'back': 'A brick wall.', 'kind': 'listening'}]})
         fields = self.notes[1]['fields']

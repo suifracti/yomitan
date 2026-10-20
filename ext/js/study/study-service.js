@@ -20,7 +20,7 @@ import {StudySync} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
 import {rememberSaved} from './study-remember.js';
-import {CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
+import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
 import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
@@ -41,6 +41,9 @@ const cueIntentFingerprint = (value) => JSON.stringify(value, (_key, /** @type {
 });
 
 export class StudyService {
+    /** @type {boolean} */
+    #autoSyncing = false;
+
     /** @type {Map<string, {entry: import('study').LibraryEntry, owner: string, sender: chrome.runtime.MessageSender}>} */
     #verifiedCues = new Map();
     /** @type {Map<number, string>} */
@@ -94,6 +97,31 @@ export class StudyService {
         this.rememberPending = new Map();
         /** @type {Map<string, Promise<import('study').LibraryRecord>>} */
         this.rememberSavePending = new Map();
+    }
+
+    /**
+     * One automatic Obsidian↔Anki pass, run by an alarm about every 30 seconds.
+     * Skips quietly when the learner turned it off or never granted the bridge.
+     * @returns {Promise<void>}
+     */
+    async autoSync() {
+        if (this.#autoSyncing) { return; }
+        const settings = /** @type {{enabled?: unknown}|undefined} */ (await this.read(AUTO_SYNC_KEY));
+        if (settings?.enabled === false) { return; }
+        if (typeof chrome === 'undefined' || !await chrome.permissions?.contains?.({permissions: ['nativeMessaging']})) { return; }
+        this.#autoSyncing = true;
+        try {
+            const response = await this.native({action: 'libraryAutoSync'}).promise;
+            const result = response.ok ? /** @type {Record<string, unknown>} */ (response.library) : {error: response.error ?? '自动同步未完成。'};
+            await this.write(AUTO_SYNC_STATE_KEY, () => ({...result, at: Date.now()}));
+        } catch (error) {
+            await this.write(AUTO_SYNC_STATE_KEY, (old) => {
+                const previous = /** @type {Record<string, unknown>|undefined} */ (old);
+                return {...previous, error: error instanceof Error ? error.message : '自动同步未完成。', at: Date.now()};
+            });
+        } finally {
+            this.#autoSyncing = false;
+        }
     }
 
     /**
@@ -1110,6 +1138,13 @@ export function prepareStudyService(lookupDictionary = null) {
     preparedRuntimes.add(chrome.runtime);
     const service = new StudyService(chrome.storage.local);
     const companionOpen = prepareStudyCompanion(service, lookupDictionary);
+    // Near-real-time Obsidian↔Anki sync while the browser runs; each pass only touches what changed.
+    if (chrome.alarms?.create) {
+        void chrome.alarms.create('study-auto-sync', {periodInMinutes: 0.5});
+        chrome.alarms.onAlarm.addListener((alarm) => {
+            if (alarm.name === 'study-auto-sync') { void service.autoSync(); }
+        });
+    }
     /**
      * @param {unknown} message
      * @param {chrome.runtime.MessageSender} sender

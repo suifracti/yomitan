@@ -23,6 +23,10 @@ import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {studyCall} from '../study/study-client.js';
 import {parseJson} from '../core/json.js';
 import {sourceKey} from '../study/study-journal.js';
+import {AUTO_SYNC_STATE_KEY} from '../study/study-data.js';
+
+/** @type {Set<string>} Records whose earlier cards are mature enough for stage-3 cards. */
+let upgradeIds = new Set();
 
 const PAGE_SIZE = 10;
 
@@ -317,6 +321,10 @@ async function initializePage() {
         const themeController = new ThemeController(document.documentElement);
         themeController.prepare();
         try {
+            const synced = /** @type {{upgrade?: {id?: unknown}[]}|undefined} */ ((await chrome.storage.local.get(AUTO_SYNC_STATE_KEY))[AUTO_SYNC_STATE_KEY]);
+            upgradeIds = new Set((Array.isArray(synced?.upgrade) ? synced.upgrade : []).map((item) => (typeof item?.id === 'string' ? item.id : '')));
+        } catch { /* The reminder is optional. */ }
+        try {
             const optionsFull = await application.api.optionsGetFull();
             const {profiles, profileCurrent} = optionsFull;
             const defaultProfile = (profileCurrent >= 0 && profileCurrent < profiles.length) ? profiles[profileCurrent] : null;
@@ -471,7 +479,7 @@ async function initializePage() {
             title.textContent = record.entry?.word || '(未命名记录)';
             const state = document.createElement('p');
             state.className = 'study-library-state';
-            state.textContent = stateSummary(record);
+            state.textContent = stateSummary(record) + (upgradeIds.has(record.id) ? ' · 之前的卡已熟，可以加“会用”卡' : '');
             top.append(title, state);
             article.append(top);
             if (record.entry?.sentence) {

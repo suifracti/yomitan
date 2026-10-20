@@ -209,6 +209,10 @@ def _normalize_request(p):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
         return p
+    if action == 'libraryAutoSync':
+        if set(p) != {'action'}:
+            raise ValueError('自动同步请求无效。')
+        return p
     if action == 'libraryVideoWords':
         if set(p) != {'action', 'videoId'} or not isinstance(p['videoId'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{11}', p['videoId']):
             raise ValueError('视频编号无效。')
@@ -349,6 +353,22 @@ def anki_call(action, params, timeout=5):
     if not isinstance(result, dict) or result.get('error') or 'result' not in result:
         raise ValueError('Anki 未接受请求；笔记已保留，可稍后补交。')
     return result['result']
+
+
+def time_link(url, seconds):
+    """A clickable moment for notes, e.g. [36:02](https://youtu.be/…&t=2162s)."""
+    whole = max(0, int(seconds))
+    hours, rest = divmod(whole, 3600)
+    label = (f'{hours}:{rest // 60:02d}:{rest % 60:02d}' if hours else f'{rest // 60}:{rest % 60:02d}')
+    try:
+        parsed = urllib.parse.urlsplit(url or '')
+    except ValueError:
+        return f'{label}（{whole} 秒）'
+    if parsed.scheme not in ('http', 'https'):
+        return f'{label}（{whole} 秒）'
+    query = [(k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if k != 't'] + [('t', f'{whole}s')]
+    link = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), ''))
+    return f'[{label}]({link.replace(")", "%29")})'
 
 
 def safe_markdown(s):
@@ -986,7 +1006,7 @@ class StudyLibrary:
                             body += f'{heading} {label}\n\n{paragraph(e[key])}\n\n'
                     body += f'{heading} 来源\n\n{paragraph(e["title"])}\n\n{paragraph(e["url"])}\n'
                     if 'videoTime' in e:
-                        body += f'\n视频位置：{e["videoTime"]} 秒\n'
+                        body += '\n视频位置：' + time_link(e['url'], e['videoTime']) + '\n'
                     if e.get('subtitleSource'):
                         c = e['subtitleSource']
                         body += ('\n字幕原始时间（ms）：' + str(c['originalStartMs']) + '–' + str(c['originalEndMs']) +

@@ -677,6 +677,12 @@
             </form>
             <div id="library-check-result" aria-live="polite">尚未检查。</div>
         </section>
+<section id="auto-sync-settings" class="study-settings-panel" aria-labelledby="auto-sync-title">
+            <h2 id="auto-sync-title">自动双向同步</h2>
+            <p>浏览器开着时约每 30 秒检查一次：Obsidian 笔记里改了，就更新对应的 Anki 卡；Anki 里改了卡片，就写回笔记对应的字段。只处理有改动的笔记和卡片；两边同一处都改了会留给你在学习库里选。</p>
+            <label class="check"><input type="checkbox" id="auto-sync-enabled">开启自动同步（需要 Anki 和本机桥）</label>
+            <small id="auto-sync-state" class="study-save-state" role="status" aria-live="polite">正在读取…</small>
+        </section>
 
 
     <!-- Notifications -->

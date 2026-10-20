@@ -87,6 +87,7 @@ media, the note format and automatic two-way sync.
     automatic sync reading intervals and lands with batch 5.
 
 - Batch 4 — video word cards and media.
+
   - Word card: a lookup from our captions shows a "视频语境" strip (clip range,
     "▶ 回听本句", "回到视频" with `t=`) and a "视频" tag by the headword.
     Replay goes through the new cross-frame call `frontendPlayStudyClip` to
@@ -108,12 +109,39 @@ media, the note format and automatic two-way sync.
     video only (the background checks the `v` of the sender URL). Each word
     shows its time, cards and stage; clicking returns to that moment.
 
-## Next
+- Batch 5 — note format and automatic two-way sync.
+  - New notes write the video moment as a clickable link
+    (`视频位置：[36:02](…&t=2162s)`, `time_link` in `study_library_core.py`).
+    The sync block shows 掌握程度 (read-only) and names each card's type and
+    stage (`#### 复习卡 2 · 挖空填词（③ 会用）`); the parser is unchanged, so
+    older notes get the new headings only when they are rewritten.
+  - Native `libraryAutoSync` (`YomitanLibrary.auto_sync`): the first pass
+    records a baseline; later passes reconcile only records whose note file
+    changed (mtime) or whose Anki note was edited (`edited:1` + `mod`), with
+    the existing field rules and conflict handling. Our own writes are
+    re-baselined so they do not echo. Every 10 minutes it lists words whose
+    stage-1/2 cards have intervals of 21+ days and no stage-3 card. State lives
+    in the bridge cache (`learning-cache/auto-sync-state.json`).
+  - Background: `chrome.alarms` every 30 seconds (`alarms` permission added
+    in `dev/data/manifest-variants.json` and the built manifest) runs
+    `StudyService.autoSync`, which skips when switched off or when the
+    native-messaging permission is missing, and stores a summary under
+    `studyAutoSyncState`.
+  - Settings: "自动双向同步" switch and last-pass summary. The card panel and
+    the library list show the "可以加会用卡" reminder from the summary.
+  - Tested with a temporary vault and an AnkiConnect stand-in: Anki → note and
+    note → Anki both flow on the next pass; quiet passes sync nothing.
 
-- Batch 5 — note format (clickable time range, mastery, cards) and automatic
-  two-way Obsidian↔Anki sync every ~30 s, plus the upgrade reminder.
+## Status
+
+All five batches are done.
 
 ## Not verified
+
+- `test_study_workspace_browser.py` has a timing-dependent check ("dictionary
+  resize does not change main preferred width") that fails about one run in
+  four, also before these batches; reruns pass.
+- `test_study_video.py` has one failure that predates these batches.
 
 - Real YouTube with the installed extension: the user reloads the extension.
   Checked here in jsdom tests, a fixture player page and the existing real

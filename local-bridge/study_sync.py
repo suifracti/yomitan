@@ -21,7 +21,7 @@ def _compact(value):
 
 def _record_cards(record):
     if record.get('cards'):
-        return [{'id': c['id'], 'front': c['front'], 'back': c['back']} for c in record['cards']]
+        return [{'id': c['id'], 'front': c['front'], 'back': c['back'], **({'kind': c['kind']} if c.get('kind') else {})} for c in record['cards']]
     if record.get('noteId'):
         legacy = record.get('legacyCard', {})
         entry = record['entry']
@@ -67,6 +67,7 @@ def _read_block(content):
 def local_fields(record, body):
     values = {k: record['entry'].get(k, '') for k in SYNC_KEYS}
     values['favorite'] = bool(record.get('favorite', False))
+    values['mastery'] = record.get('mastery', '')
     cards = _record_cards(record)
     match = BLOCK_RE.search(body)
     if body.count(BLOCK_START) != (1 if match else 0) or body.count(BLOCK_END) != (1 if match else 0):
@@ -97,8 +98,12 @@ def with_local_fields(body, values):
     for key, label in FIELD_LABELS.items():
         content += '#### ' + label + '\n\n' + paragraph(values.get(key, '')) + '\n\n'
     content += '#### 收藏\n\n> ' + ('是' if values.get('favorite') else '否') + '\n\n'
+    if values.get('mastery') in MASTERY_LABELS:
+        content += '#### 掌握程度\n\n> ' + MASTERY_LABELS[values['mastery']] + '（制卡时自评；在这里修改不会同步）\n\n'
     for index, card in enumerate(values.get('cards', []), 1):
-        content += '<!-- study-sync-card:' + card['id'] + ' -->\n#### 复习卡 ' + str(index) + '\n\n'
+        kind = card.get('kind', '')
+        label = ' · ' + KIND_LABELS[kind] + '（' + STAGE_NAMES[CARD_STAGES[kind]] + '）' if kind in KIND_LABELS and kind in CARD_STAGES else ''
+        content += '<!-- study-sync-card:' + card['id'] + ' -->\n#### 复习卡 ' + str(index) + label + '\n\n'
         for key, label in [('front','问题'),('back','答案')]:
             content += '##### ' + label + '\n\n' + paragraph(card[key]) + '\n\n'
     block = BLOCK_START + '\n' + content.rstrip() + '\n' + BLOCK_END
@@ -524,6 +529,11 @@ CARD_STAGES = {'meaning': 1, 'listen-meaning': 1, 'form-recognize': 1,
                'context': 2, 'sentence': 2, 'listening': 2, 'grammar': 2,
                'produce': 3, 'cloze': 3, 'form-produce': 3, 'make-sentence': 3, 'expression': 3, 'spelling': 3}
 AUDIO_KINDS = ('listening', 'listen-meaning', 'spelling')
+STAGE_NAMES = {1: '① 认得', 2: '② 理解', 3: '③ 会用'}
+KIND_LABELS = {'meaning': '单词→中文义', 'listen-meaning': '听原声→意思', 'form-recognize': '词形识别',
+               'context': '原句中的意思', 'sentence': '句子英→中', 'listening': '视频声音字幕', 'grammar': '语法',
+               'produce': '中→英', 'cloze': '挖空填词', 'form-produce': '词形变化', 'make-sentence': '用词造句',
+               'expression': '搭配/表达', 'spelling': '听音拼写'}
 MASTERY_LABELS = {'none': '完全不会', 'vague': '有印象/模糊', 'known': '认识但不会用'}
 
 

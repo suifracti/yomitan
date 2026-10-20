@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import {SAVE_TARGETS_KEY} from '../study/study-data.js';
+import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
 import {explainWordForm} from './study-word-forms.js';
@@ -175,7 +175,31 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         }
         choices.append(group);
     }
+    // When automatic sync finds this word's earlier cards mature, suggest stage-3 cards.
+    const upgradeHint = d.createElement('p');
+    upgradeHint.className = 'study-card-upgrade';
+    upgradeHint.hidden = true;
+    const showUpgrade = () => {
+        const id = currentSaved?.id || container.dataset.studyRecordId || '';
+        if (!id || typeof chrome === 'undefined' || !chrome.storage?.local?.get) { return; }
+        void chrome.storage.local.get(AUTO_SYNC_STATE_KEY).then((value) => {
+            const state = /** @type {{upgrade?: {id: string}[]}|undefined} */ (value[AUTO_SYNC_STATE_KEY]);
+            const ready = Array.isArray(state?.upgrade) && state.upgrade.some((item) => item?.id === id);
+            if (!isCurrent() || !ready) { return; }
+            const accept = d.createElement('button');
+            accept.type = 'button';
+            accept.className = 'scan-disable';
+            accept.textContent = '加会用卡';
+            accept.addEventListener('click', () => {
+                /** @type {HTMLButtonElement|null} */ (masteryRow.querySelector('[data-study-mastery=known]'))?.click();
+                upgradeHint.hidden = true;
+            });
+            upgradeHint.replaceChildren('这个词之前的卡已经复习得很熟（间隔超过 3 周），可以加“会用”卡了。', accept);
+            upgradeHint.hidden = false;
+        }).catch(() => {});
+    };
     const updateChoices = () => {
+        showUpgrade();
         const facts = cardFacts();
         for (const [kind, choice] of choiceButtons) {
             const info = cardKind(kind);
@@ -339,7 +363,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         audioState.hidden = state === 'none' && captureAudio.hidden;
     };
     setAudioState('none');
-    cardPanel.append(masteryRow, choices, choiceHint, audioState, captureOptions, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
+    cardPanel.append(upgradeHint, masteryRow, choices, choiceHint, audioState, captureOptions, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
     /**
      *
      */
