@@ -863,8 +863,12 @@
 
 .study-focus-active .sf-reading-gloss { position: sticky; top: 0; z-index: 8; padding: 7px 12px; border-bottom: 1px solid var(--sf-line); background: var(--sf-paper); font-size: 11px; line-height: 17px; }
 .sf-reading-gloss[hidden] { display: none !important; }
-.sf-reading-gloss strong { float: left; margin-right: 8px; }
-.sf-reading-gloss span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.study-focus-active .sf-reading-gloss:not([hidden]) { display: flex; align-items: center; gap: 8px; }
+.sf-reading-gloss>strong { flex: none; max-width: 28%; max-height: 34px; overflow: hidden; overflow-wrap: anywhere; }
+.sf-reading-gloss .sf-reading-meanings { display: grid; flex: 1; min-width: 0; grid-template-columns: repeat(var(--sf-meaning-columns), minmax(0, 1fr)); gap: 0 8px; }
+.sf-reading-meaning { display: flex; min-width: 0; gap: 3px; }
+.sf-reading-pos { flex: none; }
+.sf-reading-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sf-segmented-source>p, .sf-segmented-source>.study-source-translation-row { display: none; }
 .sf-sentence-segment { margin-block: 6px; padding: 4px 7px; }
 .sf-selected-segment { background: var(--st-accent-soft); border-radius: var(--st-radius-1); }

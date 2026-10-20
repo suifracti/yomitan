@@ -619,7 +619,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const disposeParallel = prepareParallelSentence(source, {call, isCurrent: current, language});
         const readingGloss = make('div', 'sf-reading-gloss'); readingGloss.hidden = true;
         const readingWord = make('strong', '', word);
-        const readingMeanings = make('span', '');
+        const readingMeanings = make('span', 'sf-reading-meanings');
         readingGloss.append(readingWord, readingMeanings); shell.prepend(readingGloss); owned.push(readingGloss);
         const onReadingScroll = () => {
             readingGloss.hidden = activeTab !== 0 || headerSense.getBoundingClientRect().bottom > shell.getBoundingClientRect().top;
@@ -677,7 +677,14 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const preview = make('div', 'sf-gloss-preview');
             for (const sense of senses) { appendRow(preview, sense); }
             host.append(preview);
-            readingMeanings.textContent = senses.map(({pos, text}) => `${pos?.textContent || ''} ${text}`).join('；');
+            readingMeanings.replaceChildren();
+            readingMeanings.style.setProperty('--sf-meaning-columns', String(Math.ceil(senses.length / 2)));
+            for (const {pos, text} of senses) {
+                const item = make('span', 'sf-reading-meaning');
+                item.append(make('span', 'sf-reading-pos', pos?.textContent || ''), make('span', 'sf-reading-text', text));
+                item.title = `${pos?.textContent || ''} ${text}`;
+                readingMeanings.append(item);
+            }
             readingGloss.title = `${word} ${readingMeanings.textContent}`;
         };
         const updateAnswer = () => {

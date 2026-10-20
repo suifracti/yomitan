@@ -43,7 +43,9 @@ test('long sentences keep all meanings in the reading bar and show cached, free 
     expect(call.mock.calls.filter(([action]) => action === 'subtitleTranslate')).toHaveLength(translated);
     header.getBoundingClientRect = () => ({bottom: -1});
     document.querySelector('.study-focus-shell').dispatchEvent(new Event('scroll'));
-    expect(document.querySelector('.sf-reading-gloss').textContent).toContain('能力，才干；v. 能够');
+    expect(document.querySelectorAll('.sf-reading-meaning')).toHaveLength(2);
+    expect(document.querySelector('.sf-reading-gloss').textContent).toContain('能力，才干');
+    expect(document.querySelector('.sf-reading-gloss').textContent).toContain('能够');
     const native = vi.fn();
     const translator = new SubtitleTranslation({epoch: 0, read: async () => ({engine: 'model'}), native});
     await expect(translator.handle('subtitleTranslate', {requestId: 'free-test', freeOnly: true, items: [{id: 'one', text: original}]})).rejects.toThrow('免费翻译');
