@@ -58,37 +58,30 @@ def refresh_metrics(anki, records, old, now):
     ids = sorted({n for _lib, _path, row in records.values() for n in note_ids(row)})
     if not ids:
         return {'notes': {}, 'again': [], 'at': now}
-    notes, all_cards = {}, {}
+    notes = {str(n): [] for n in ids}
+    all_cards = {}
     owned_notes = set(ids)
     try:
-        for offset in range(0, len(ids), 100):
-            info = anki('notesInfo', {'notes': ids[offset:offset + 100]})
-            if not isinstance(info, list):
-                raise ValueError('复习关联读取未完成。')
-            for row in info:
-                ident = row.get('noteId')
-                if ident in owned_notes and isinstance(row.get('cards'), list):
-                    notes[str(ident)] = []
-                    for card in row['cards']:
-                        if type(card) is int:
-                            all_cards[card] = str(ident)
-        cards = sorted(all_cards)
+        # cardsInfo already carries the owning note ID; no note body is needed.
+        cards = anki('findCards', {'query': 'nid:' + ','.join(str(n) for n in ids)})
+        seen = set()
         for offset in range(0, len(cards), 100):
             info = anki('cardsInfo', {'cards': cards[offset:offset + 100]})
             if not isinstance(info, list):
                 raise ValueError('复习阶段读取未完成。')
             for row in info:
-                ident = row.get('cardId')
+                ident, note_id = row.get('cardId'), row.get('note')
                 iv, lapses = row.get('interval'), row.get('lapses')
-                if ident in all_cards and type(iv) in (int, float) and type(lapses) is int and lapses >= 0:
-                    notes[all_cards[ident]].append({'id': ident, 'iv': max(0, iv), 'lapses': lapses})
+                if type(note_id) is int and type(iv) in (int, float) and type(lapses) is int and lapses >= 0:
+                    seen.add(ident)
+                    if note_id in owned_notes:
+                        all_cards[ident] = str(note_id)
+                        notes[str(note_id)].append({'id': ident, 'iv': max(0, iv), 'lapses': lapses})
         # Documented Anki search: Again within the last 30 days, not lifetime lapse totals.
         again = anki('findCards', {'query': '(tag:english_study OR tag:japanese_study) rated:30:1'})
         if not isinstance(again, list):
             raise ValueError('最近复习记录读取未完成。')
-        from collections import Counter
-        counts = Counter(all_cards.values())
-        incomplete = [n for n, values in notes.items() if len(values) != counts[n]]
+        incomplete = list(notes) if len(seen) != len(cards) else []
         return {'notes': notes, 'incomplete': incomplete, 'again': [c for c in again if c in all_cards], 'at': now}
     except Exception:
         return old

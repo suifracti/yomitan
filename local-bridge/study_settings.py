@@ -342,17 +342,19 @@ class YomitanLibrary:
         paused = ''
         if anki_ok:
             try:
-                edited = self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'})
-                info = self.anki('notesInfo', {'notes': edited}) if edited else []
+                edited = self.anki('findNotes', {'query': '(tag:english_study OR tag:japanese_study) edited:1'})
                 ignored_path = pathlib.Path(self.cache_dir) / 'anki-ignored.json'
                 ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
                 linked = {c['noteId'] for _, _, r in records.values() for c in r.get('cards', []) if c.get('noteId')}
                 linked.update(r['noteId'] for _, _, r in records.values() if r.get('noteId'))
+                live = set(self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'}))
+                candidates = live - linked - set(ignored)
+                requested = sorted(set(edited) | candidates)
+                info = self.anki('notesInfo', {'notes': requested}) if requested else []
                 state['orphans'] = [study_sync.orphan_record(n) for n in info
                                     if n['noteId'] not in linked and n['noteId'] not in ignored
                                     and not any(t in owner for t in n.get('tags', []))
                                     and any(re.fullmatch(r'study(?:card)?_[a-f0-9]{32}', t) for t in n.get('tags', []))]
-                live = {n['noteId'] for n in info}
                 for ident, (lib, _path, r) in records.items():
                     if r.get('syncState') != 'missing' and any(n not in live for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n):
                         changed.append((lib.target_id, ident))

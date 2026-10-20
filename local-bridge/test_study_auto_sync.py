@@ -33,6 +33,7 @@ class AutoSyncTests(unittest.TestCase):
         if action == 'findNotes':
             query = params['query']
             if 'edited:1' in query: return list(self.edited)
+            if query == '(tag:study_* OR tag:studycard_*)': return list(self.notes)
             if not query.startswith('tag:') or ' ' in query: return []
             tag = query[4:]
             return [n for n, note in self.notes.items() if tag in note['tags']]
@@ -43,11 +44,13 @@ class AutoSyncTests(unittest.TestCase):
         if action == 'notesInfo':
             return [{'noteId': n, 'tags': self.notes[n]['tags'], 'mod': self.notes[n]['mod'], 'cards': [n * 10],
                      'fields': {k: {'value': v} for k, v in self.notes[n]['fields'].items()}} for n in params['notes']]
-        if action == 'cardsInfo': return [{'cardId': c, 'deckName': '外语', 'interval': 0} for c in params['cards']]
+        if action == 'cardsInfo': return [{'cardId': c, 'note': c // 10, 'deckName': '外语', 'interval': 0, 'lapses': 0} for c in params['cards']]
         if action == 'updateNoteFields':
             self.notes[params['note']['id']]['fields'].update(params['note']['fields'])
             return None
-        if action in ('findCards',): return []
+        if action == 'findCards':
+            query = params['query']
+            return [int(n) * 10 for n in query[4:].split(',') if int(n) in self.notes] if query.startswith('nid:') else []
         return []
 
     def make_card(self):
@@ -98,6 +101,45 @@ class AutoSyncTests(unittest.TestCase):
         self.library.handle({'action': 'libraryCardsAdd', 'id': record['id'], 'cards': [{'front': '用英文说', 'back': 'mortar', 'kind': 'produce'}]})
         words = self.library.handle({'action': 'libraryWordStatus'})['words']
         self.assertEqual({k: v['s'] for k, v in words.items()}, {'brick': 'learning', 'mortar': 'learning'})
+
+    def test_2000_cards_read_content_only_for_edited_and_unlinked_candidates(self):
+        from unittest.mock import patch
+        now = 1000
+        linked = set(range(1000, 3000))
+        deleted, candidate = 2999, 9000
+        live = (linked - {deleted}) | {candidate}
+        edited = {1000, 1001, candidate}
+        lib = self.library.library_for(self.library.active_id)
+        records = {f'{n:032x}': (lib, self.vault / f'{n}.md',
+                   {'id': f'{n:032x}', 'noteId': n, 'entry': {'word': f'word{n}'}}) for n in linked}
+        files = {str(path): 1 for _, path, _ in records.values()}
+        self.library.indexed = lambda: (files, records)
+        state_path = pathlib.Path(self.library.cache_dir) / 'auto-sync-state.json'
+        state_path.write_text(json.dumps({'files': files, 'notes': {str(n): 1 for n in linked}, 'upgradeAt': now}))
+        calls = []
+        def anki(action, params):
+            calls.append((action, params))
+            if action == 'findNotes': return sorted(edited if 'edited:1' in params['query'] else live)
+            if action == 'notesInfo':
+                return [{'noteId': n, 'mod': 2, 'cards': [n * 10],
+                         'tags': ['study_' + f'{n:032x}'],
+                         'fields': {'Word': {'value': f'word{n}'}, 'Sentence': {'value': f'A word{n}.'}}} for n in params['notes']]
+            if action == 'findCards':
+                query = params['query']
+                return [int(n) * 10 for n in query[4:].split(',') if int(n) in live] if query.startswith('nid:') else []
+            if action == 'cardsInfo': return [{'cardId': c, 'note': c // 10, 'interval': 30, 'lapses': 0} for c in params['cards']]
+            self.fail(action)
+        self.library.anki = anki
+        with patch('study_sync.reconcile', return_value={'conflicts': []}) as reconcile:
+            result = self.library.auto_sync(now)
+        self.assertFalse(result['paused'])
+        self.assertEqual([p['query'] for a, p in calls if a == 'findNotes'].count('(tag:study_* OR tag:studycard_*)'), 1)
+        self.assertTrue(any(a == 'findNotes' and 'edited:1' in p['query'] for a, p in calls))
+        self.assertEqual([p['notes'] for a, p in calls if a == 'notesInfo'], [sorted(edited)])
+        self.assertEqual({int(c.args[1]['id'], 16) for c in reconcile.call_args_list}, {1000, 1001, deleted})
+        state = json.loads(state_path.read_text())
+        self.assertEqual([r['noteId'] for r in state['orphans']], [candidate])
+        self.assertEqual(state['mastery']['notes']['1000'][0]['iv'], 30)
 
     def test_rejects_extra_fields(self):
         with self.assertRaises(ValueError):
