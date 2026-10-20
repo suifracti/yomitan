@@ -20,6 +20,7 @@
 // learner picked; the background re-reads them and never trusts a page's copy.
 
 export const SUBTITLE_PREFS_KEY = 'studySubtitlePrefs';
+
 export const TRANSLATION_PREFS_KEY = 'studyTranslationPrefs';
 
 /** @typedef {'chrome'|'apple'|'google'|'microsoft'|'model'} SubtitleEngine */
@@ -99,7 +100,8 @@ export async function readSubtitlePrefs() {
         if (!stored[TRANSLATION_PREFS_KEY]) {
             await area.set({[TRANSLATION_PREFS_KEY]: {engine: old.engine, autoTranslate: old.autoTranslate}});
         }
-        return normalizeSubtitlePrefs({...old, .../** @type {object} */ (stored[TRANSLATION_PREFS_KEY])});
+        const shared = stored[TRANSLATION_PREFS_KEY] ? normalizeSubtitlePrefs(stored[TRANSLATION_PREFS_KEY]) : old;
+        return {...old, engine: shared.engine, autoTranslate: shared.autoTranslate};
     } catch {
         return {...DEFAULT_SUBTITLE_PREFS};
     }

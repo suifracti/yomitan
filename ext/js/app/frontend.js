@@ -256,6 +256,8 @@ export class SubtitleTextScanner extends TextScanner {
 export class Frontend {
     /** @type {{source: import('text-source').TextSource, query: number, snapshot: StudySubtitle}|null} */
     _studyCueCurrent = null;
+    /** @type {WeakSet<import('text-source').TextSource>} */
+    _studyCardSources = new WeakSet();
     /** @type {import('text-source').TextSource|null} */
     _studyLastLookupSource = null;
     /** @type {number} */
@@ -401,6 +403,14 @@ export class Frontend {
 
         this._textScanner.on('selectionShortcut', this._onSelectionShortcut.bind(this));
         this._textScanner.prepare();
+        if (this._pageType === 'web') {
+            youtubeStudyContext.openCard = async (range) => {
+                const source = TextSourceRange.createLazy(range);
+                this._studyCardSources.add(source);
+                this._textScanner.setCurrentTextSource(null);
+                await this._textScanner.search(source, {focus: true, restoreSelection: true}, true);
+            };
+        }
         // Only a completed valid original-text selection initiates a phrase lookup.
         let gestureRevision = '';
         window.addEventListener('mousedown', (event) => {
@@ -1223,6 +1233,7 @@ export class Frontend {
             detailsState.sentence = {...sentence, ...youtube.sentence};
             detailsState.url = youtube.url;
             detailsState.videoTime = youtube.videoTime;
+            detailsState.studyOpenCard = this._studyCardSources.has(textSource);
             detailsState.studyMediaToken = youtube.token;
             detailsState.studyMediaRange = youtube.mediaRange;
             detailsState.studySentenceTranslation = youtube.translation;

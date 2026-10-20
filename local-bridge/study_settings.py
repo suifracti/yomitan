@@ -429,12 +429,12 @@ class YomitanLibrary:
             if media_key_of(entry.get('url')) != media_key:
                 continue
             stages = [CARD_STAGES.get(card.get('kind'), 0) for card in row.get('cards', [])]
-            rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', '')[:300],
+            rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', ''),
                          'path': row.get('path', ''), 'vault': str(lib.vault),
                          'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
-                         'cards': len(row.get('cards', [])), 'stage': max(stages, default=0)})
+                         'cards': sum(1 for c in row.get('cards', []) if c.get('noteId')) or int(bool(row.get('noteId'))), 'stage': max(stages, default=0)})
         rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
-        return rows[:300]
+        return rows
 
     def handle(self, payload):
         p = normalize_request(payload)
@@ -493,10 +493,11 @@ class YomitanLibrary:
             return lib.handle(p)
         if action == 'libraryVideoWords':
             items = self.video_words(p['mediaKey'])
-            return {'items': [{k: v for k, v in r.items() if k not in ('path', 'vault')} for r in items]}
+            return {'items': [{k: v for k, v in r.items() if k not in ('path', 'vault')} for r in items[:300]],
+                    'cardContexts': [{'word': r['word'], 'sentence': r['sentence']} for r in items if r['cards']]}
         if action == 'libraryVideoSummary':
             from study_video import VideoLibrary
-            rows = self.video_words(p['mediaKey'])
+            rows = self.video_words(p['mediaKey'])[:300]
             if not rows:
                 raise ValueError('这个视频还没有记住的词，先选词「记住它」。')
             videos = VideoLibrary(self.config['vault'])

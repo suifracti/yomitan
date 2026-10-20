@@ -164,6 +164,10 @@ export class YoutubeReader extends EventTarget {
         this._learningWords = {};
         /** @type {Set<string>} */
         this._recommended = new Set();
+        /** @type {{word: string, sentence: string}[]} */
+        this._cardContexts = [];
+        /** @type {{word: string, gloss: string, term: string, cueId: string}[]} */
+        this._recommendationItems = [];
     }
 
     /** */
@@ -219,7 +223,9 @@ export class YoutubeReader extends EventTarget {
      */
     setPrefs(prefs) {
         const previous = this._prefs;
-        if (previous.engine !== prefs.engine) { this._translateRun = ''; this._queue.cancel(); }
+        if (previous.engine !== prefs.engine) {
+            this._translateRun = ''; this._queue.cancel();
+        }
         this._prefs = normalizeSubtitlePrefs(prefs);
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
@@ -525,6 +531,7 @@ export class YoutubeReader extends EventTarget {
         this._loop = null;
         this._lookup = '';
         this._session = null;
+        this._cardContexts = []; this._recommendationItems = [];
         this._rawSession = null;
         this._aiGroups = null;
         this._fileTranslations = new Map();
@@ -1092,8 +1099,9 @@ export class YoutubeReader extends EventTarget {
         star.textContent = '★';
         star.title = '本句恰好一个在学词';
         star.hidden = !this._recommended.has(cue.id);
+        time.append(star);
         tools.append(loop);
-        row.append(time, text, tools, star, translated);
+        row.append(time, text, tools, translated);
         return row;
     }
 
@@ -1119,7 +1127,8 @@ export class YoutubeReader extends EventTarget {
         return [session.cues[index - 1]?.text, session.cues[index + 1]?.text].filter(Boolean).join('\n').slice(0, 1200);
     }
 
-    /** @param {boolean} retryOnly
+    /**
+     * @param {boolean} retryOnly
      * @param {boolean} [full]
      */
     async _translate(retryOnly, full = false) {
@@ -1129,10 +1138,13 @@ export class YoutubeReader extends EventTarget {
         const active = session.active((this._video?.currentTime || 0) * 1000)[0];
         const index = active ? session.cues.indexOf(active) : 0;
         const ordered = [...session.cues.slice(index), ...session.cues.slice(0, index)];
-        const needed = ordered.filter((cue) => retryOnly ? this._failed.has(cue.id) : !session.translation(cue.id));
+        const needed = ordered.filter((cue) => (retryOnly ? this._failed.has(cue.id) : !session.translation(cue.id)));
         const selected = full || retryOnly ? needed : needed.slice(0, 8);
-        const items = selected.map((cue) => ({id: cue.id, text: cue.text.replaceAll(/\s*\n\s*/g, ' '),
-            context: this._context(session, session.cues.indexOf(cue))}));
+        const items = selected.map((cue) => ({
+            id: cue.id,
+            text: cue.text.replaceAll(/\s*\n\s*/g, ' '),
+            context: this._context(session, session.cues.indexOf(cue)),
+        }));
         if (items.length === 0) {
             this._status('这些句子已经翻译好了。');
             return;
@@ -1152,6 +1164,7 @@ export class YoutubeReader extends EventTarget {
             if (full && this._prefs.engine === 'model' && this._fullConsent !== consent) {
                 // Token estimate only; no provider pricing or billing precision is claimed.
                 const estimate = Math.ceil(items.reduce((sum, item) => sum + item.text.length + item.context.length, 0) / 3 + items.length * 80);
+                // eslint-disable-next-line no-alert -- Explicit consent before a paid full-track translation.
                 if (!window.confirm(`全文 ${session.cues.length} 句，大约消耗 ${estimate.toLocaleString()} Token（估算，实际用量由模型决定）。继续吗？`)) {
                     this._status('没有开始翻译。'); return;
                 }
@@ -1350,8 +1363,9 @@ export class YoutubeReader extends EventTarget {
     /** Updates learning marks and recommendations. */
     _refreshLearning() {
         if (!this._session || !this._view) { return; }
-        const stats = learningCaptions(this._session, this._learningWords);
+        const stats = learningCaptions(this._session, this._learningWords, this._cardContexts);
         this._recommended = stats.recommended;
+        this._recommendationItems = stats.items;
         this._view.root.querySelector('.r-difficulty').textContent = `语速 ${stats.wpm} 词/分 · 在学词 ${stats.learning}`;
         for (const [id, row] of this._rows) { /** @type {HTMLElement} */ (row.querySelector('.r-star')).hidden = !this._recommended.has(id); }
         const old = this._view.words.querySelector('.r-recommend');
@@ -1362,20 +1376,41 @@ export class YoutubeReader extends EventTarget {
     _recommendations() {
         const section = document.createElement('div');
         section.className = 'r-recommend';
-        const cues = (this._session?.cues ?? []).filter((item) => this._recommended.has(item.id)).slice(0, 10);
-        section.hidden = cues.length === 0;
-        const title = document.createElement('strong');
-        title.textContent = '推荐制卡';
+        const title = document.createElement('strong'); title.textContent = '推荐制卡';
         section.append(title);
-        for (const cue of cues) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.textContent = cue.text;
-            button.addEventListener('click', () => {
-                /** @type {HTMLButtonElement} */ (this._view.root.querySelector('[data-tab=captions]')).click();
-                this.revealRow(cue.id);
+        if (this._recommendationItems.length === 0) {
+            section.append(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '这个视频里暂时没有适合制卡的句子'}));
+        }
+        for (const item of this._recommendationItems) {
+            const info = this._rowInfo.get(item.cueId);
+            const row = document.createElement('div'); row.className = 'r-recommend-item';
+            const word = document.createElement('strong'); word.textContent = [item.word, item.gloss].filter(Boolean).join(' · ');
+            const text = document.createElement('p'); text.className = 'r-recommend-text';
+            const match = [...info.text.matchAll(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)].find((m) => m[0].toLowerCase() === item.term.toLowerCase());
+            const mark = document.createElement('mark'); mark.textContent = match[0];
+            text.append(info.text.slice(0, match.index), mark, info.text.slice(match.index + match[0].length));
+            youtubeStudyContext.register(text, info);
+            const range = () => {
+                const value = document.createRange(); value.selectNodeContents(mark);
+                return value;
+            };
+            const replay = this._button('▶ 回听', () => {
+                const source = youtubeStudyContext.read(range());
+                if (source) {
+                    try {
+                        youtubeStudyContext.play(source.token);
+                    } catch (error) { this._status(error instanceof Error ? error.message : '回听没有开始，请再试一次。'); }
+                }
             });
-            section.append(button);
+            replay.dataset.recommendReplay = '';
+            const card = this._button('制卡', () => {
+                if (!youtubeStudyContext.openCard) {
+                    this._status('划词查询还没准备好，请刷新页面后再试。'); return;
+                }
+                void youtubeStudyContext.openCard(range()).catch((error) => this._status(`词卡没有打开：${error.message}`));
+            });
+            card.dataset.recommendCard = '';
+            row.append(word, text, replay, card); section.append(row);
         }
         return section;
     }
@@ -1390,13 +1425,16 @@ export class YoutubeReader extends EventTarget {
         if (!view || !mediaKey) { return; }
         const generation = this._generation;
         const recommended = this._recommendations();
+        recommended.replaceChildren('正在挑选适合制卡的句子…');
         const saved = document.createElement('div');
         view.words.replaceChildren(recommended, saved);
         saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
-            const result = /** @type {{items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
+            const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
             if (generation !== this._generation) { return; }
             const items = result.items ?? [];
+            this._cardContexts = result.cardContexts ?? items.filter((item) => item.cards > 0);
+            this._refreshLearning();
             if (items.length === 0) {
                 saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '这个视频还没有记住的词。选词后点「记住它」就会出现在这里。'}));
                 return;
@@ -1444,6 +1482,7 @@ export class YoutubeReader extends EventTarget {
             }));
         } catch (error) {
             if (generation === this._generation) {
+                view.words.querySelector('.r-recommend').textContent = '暂时无法挑选制卡句子，请重新打开这个页签。';
                 saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: `暂时读不到：${error instanceof Error ? error.message : String(error)}`}));
             }
         }

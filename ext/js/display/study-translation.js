@@ -47,8 +47,9 @@ export function splitStudySentence(text) {
     }
     const merged = [];
     for (const part of parts) {
-        if (words(part) < 6 && merged.length > 0) { merged[merged.length - 1] += ` ${part}`; }
-        else { merged.push(part); }
+        if (words(part) < 6 && merged.length > 0) {
+            merged[merged.length - 1] += ` ${part}`;
+        } else { merged.push(part); }
     }
     return merged.length > 1 ? merged : [];
 }
@@ -81,9 +82,9 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
         const run = sequence;
         sentence = original.textContent.trim();
         const split = splitStudySentence(sentence);
-        const parts = split.length ? split : [sentence];
+        const parts = split.length > 0 ? split : [sentence];
         source.classList.toggle('sf-segmented-source', split.length > 0);
-        view.replaceChildren();
+        view.replaceChildren(); view.hidden = false;
         delete source.dataset.studySegmentTranslation;
         delete source.dataset.studySegmentSentence;
         if (!sentence) { return; }
@@ -108,7 +109,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             } else { english.textContent = text; }
             const chinese = doc.createElement('p'); chinese.className = 'sf-segment-translation';
             chinese.lang = 'zh-CN'; chinese.textContent = '翻译中…';
-            if (split.length) { row.append(english); }
+            if (split.length > 0) { row.append(english); }
             row.append(chinese); view.append(row);
             return {text, chinese};
         });
@@ -124,11 +125,12 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                 for (const row of rows) { row.chinese.textContent = '点「翻译本句」查看中文'; }
                 return;
             }
-            const config = engine === 'model' ? await call('subtitleSettings') : {};
+            const config = /** @type {Partial<import('study').StudyConfig>} */ (engine === 'model' ? await call('subtitleSettings') : {});
+            const engineKey = engine === 'model' ? JSON.stringify([engine, config.model, config.effort]) : engine;
             for (let offset = 0; offset < rows.length; offset += 8) {
                 const batch = rows.slice(offset, offset + 8);
                 for (const row of batch) {
-                    const cached = parallelTranslations.get(JSON.stringify([engine, language, row.text]));
+                    const cached = parallelTranslations.get(JSON.stringify([engineKey, language, row.text]));
                     row.chinese.textContent = cached || '翻译中…';
                     row.chinese.dataset.complete = String(Boolean(cached));
                 }
@@ -150,20 +152,23 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                     if (!translations[i]) { throw new Error('没有取得译文'); }
                     row.chinese.textContent = translations[i];
                     row.chinese.dataset.complete = 'true';
-                    parallelTranslations.set(JSON.stringify([engine, language, row.text]), translations[i]);
+                    parallelTranslations.set(JSON.stringify([engineKey, language, row.text]), translations[i]);
                 }
             }
             if (run !== sequence || !isCurrent()) { return; }
             source.dataset.studySegmentSentence = sentence;
             source.dataset.studySegmentTranslation = rows.map((row) => row.chinese.textContent).join('');
             status.textContent = ''; action.hidden = true;
+            view.hidden = false;
             source.dispatchEvent(new CustomEvent('study-sentence-translated'));
         } catch {
             if (run !== sequence || !isCurrent()) { return; }
             status.textContent = '';
             for (const row of rows.filter((item) => item.chinese.dataset.complete !== 'true')) {
-                const retry = doc.createElement('button'); retry.type = 'button';
-                retry.textContent = '重试'; retry.addEventListener('click', () => { void paint(true); });
+                const retry = doc.createElement('button');
+                retry.type = 'button';
+                retry.textContent = '重试';
+                retry.addEventListener('click', () => { void paint(true); });
                 row.chinese.replaceChildren('这段没翻译成功 · ', retry);
             }
             action.hidden = false;
@@ -181,7 +186,8 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
     void paint();
     const stopPrefs = onSubtitlePrefsChanged(() => { void paint(); });
     return () => {
-        stopPrefs(); cancel(); observer.disconnect();
+        stopPrefs();
+        cancel(); observer.disconnect();
         action.removeEventListener('click', onTranslate, true);
         source.classList.remove('sf-segmented-source'); view.remove();
     };
@@ -533,7 +539,7 @@ export function prepareStudyTranslation() {
             question.setAttribute('aria-label', '关于当前词句的追问');
             // The source line deserves its own translation, not a translated
             // dictionary paragraph. Reuse completed QA; never auto-call a model.
-            const sourceBox = d.querySelector('.study-reading-anchor .study-source') ?? container.querySelector('.study-source');
+            const sourceBox = /** @type {HTMLElement|null} */ (d.querySelector('.study-reading-anchor .study-source') ?? container.querySelector('.study-source'));
             const hasRealSentence = sourceBox?.querySelector('.study-source-label')?.textContent === '当前原句' &&
             sentence.trim() !== word.trim();
             const translateSentence = hasRealSentence ? button('翻译本句') : null;
@@ -554,7 +560,11 @@ export function prepareStudyTranslation() {
                 const answer = [...turns].reverse().find((turn) => turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
                 const text = answer?.translation?.trim() || (editor.value.trim() === sentence.trim() ? source.translation || '' : '');
                 sentenceChinese.textContent = text;
-                sentenceChinese.hidden = !text || Boolean(sourceBox?.querySelector('.sf-parallel-sentence')?.childElementCount);
+                const parallel = sourceBox?.querySelector('.sf-parallel-sentence');
+                if (text && parallel && !sourceBox.dataset.studySegmentTranslation) {
+                    parallel.hidden = true; sourceBox.classList.remove('sf-segmented-source');
+                }
+                sentenceChinese.hidden = !text || Boolean(parallel && !parallel.hidden && parallel.childElementCount);
                 translateSentence.hidden = Boolean(text);
             };
             const more = d.createElement('details');

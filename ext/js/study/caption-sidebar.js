@@ -24,6 +24,21 @@ import {wordInfo} from './word-marks.js';
 
 export const ROOT_ID = 'study-yt-reader';
 
+// Exclusion only: common function words are not a vocabulary/difficulty scale.
+const FUNCTION_WORDS = new Set(`a an the this that these those i me my mine myself we us our ours ourselves you your yours yourself yourselves
+he him his himself she her hers herself it its itself they them their theirs themselves one ones oneself who whom whose what which
+whoever whomever whatever whichever here there where when why how all any both each either enough every everybody everyone everything
+neither nobody none no nothing other others some somebody someone something such several much many more most less least few fewer little
+another own same so than too very just only also even still yet already ever never not yes nor
+am is are was were be being been have has had having do does did doing done can could may might must shall should will would ought need dare
+about above across after against along amid among around as at before behind below beneath beside besides between beyond by concerning
+despite down during except for from in inside into like near of off on onto out outside over past per round since through throughout
+thru till to toward towards under underneath unlike until unto up upon versus via with within without
+and or but because if although though while whereas unless whether once since whenever wherever lest plus
+s aint aren't can't couldn't didn't doesn't don't hadn't hasn't haven't isn't mustn't needn't shan't shouldn't wasn't weren't won't wouldn't
+i'm i've i'll i'd you're you've you'll you'd he's he'll he'd she's she'll she'd it's it'll it'd we're we've we'll we'd they're they've they'll they'd
+that's there's what's who's let's lets well oh ah uh um please okay ok indeed instead else therefore thus hence`.split(/\s+/));
+
 const EAGER_ROWS = 150;
 const CHUNK = 50;
 const ESTIMATED_ROW = 58;
@@ -39,10 +54,13 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-toolbar button.r-btn{padding:3px 6px;flex-shrink:0}
 #${ROOT_ID} .r-progress{flex:1;min-width:0;color:var(--r-muted);font-size:11px;white-space:normal}
 #${ROOT_ID} .r-difficulty{color:var(--r-muted);font-size:11px}
-#${ROOT_ID} .r-star{position:absolute;right:8px;bottom:8px;color:var(--r-muted);font-size:11px;align-self:center}
+#${ROOT_ID} .r-star{margin-left:4px;color:var(--r-muted);font-size:11px;align-self:center}
 #${ROOT_ID} .r-recommend{padding:8px 12px;border-bottom:1px solid var(--r-line)}
 #${ROOT_ID} .r-recommend strong{font-size:12px}
-#${ROOT_ID} .r-recommend button{display:block;width:100%;padding:5px 0;text-align:left;border:0;background:none;color:var(--r-fg);font:inherit;font-size:13px;cursor:pointer}
+#${ROOT_ID} .r-recommend-item{padding:8px 0;border-bottom:1px solid var(--r-line)}
+#${ROOT_ID} .r-recommend-text{margin:4px 0;font-size:13px;line-height:1.5}
+#${ROOT_ID} .r-recommend mark{background:var(--r-mark);color:inherit;border-radius:2px}
+#${ROOT_ID} .r-recommend button+button{margin-left:6px}
 #${ROOT_ID} .r-title{flex:1 1 auto;font-weight:600;font-size:13px}
 #${ROOT_ID} .r-status{min-width:0;padding:0 12px 6px;color:var(--r-muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 #${ROOT_ID} .r-status[data-mode=loop]{color:var(--r-accent)}
@@ -204,9 +222,14 @@ export class CaptionList {
  * Saved words only; no frequency table or invented difficulty levels.
  * @param {import('./subtitle-session.js').SubtitleSession} session
  * @param {Record<string, unknown>} words
- * @returns {{recommended: Set<string>, learning: number, wpm: number}}
+ * @param {{word: string, sentence: string}[]} [cardContexts]
+ * @returns {{recommended: Set<string>, items: {word: string, gloss: string, term: string, cueId: string}[], learning: number, wpm: number}}
  */
-export function learningCaptions(session, words) {
+export function learningCaptions(session, words, cardContexts = []) {
+    const normalize = (text) => text.toLowerCase().replaceAll(/\s+/g, ' ').trim();
+    const carded = new Set(cardContexts.map((row) => JSON.stringify([wordInfo(row.word, words)?.word ?? row.word.toLowerCase(), normalize(row.sentence)])));
+    /** @type {Map<string, {word: string, gloss: string, term: string, cueId: string, preferred: boolean}>} */
+    const byWord = new Map();
     const learning = new Set();
     /** @type {Set<string>} */
     const recommended = new Set();
@@ -214,16 +237,27 @@ export function learningCaptions(session, words) {
     for (const cue of session.cues) {
         const tokens = cue.text.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) ?? [];
         total += tokens.length;
-        const inLine = new Set();
+        /** @type {Map<string, {word: string, gloss: string, term: string, cueId: string}>} */
+        const inLine = new Map();
         for (const token of tokens) {
+            if (FUNCTION_WORDS.has(token.toLowerCase().replaceAll('’', "'"))) { continue; }
             const info = wordInfo(token, words);
+            if (info && FUNCTION_WORDS.has(info.word)) { continue; }
             if (info && (['new', 'learning', 'shaky', 'partial'].includes(info.s) || info.newSense)) {
-                inLine.add(info.word);
+                inLine.set(info.word, {word: info.word, gloss: info.gloss || '', term: token, cueId: cue.id});
                 learning.add(info.word);
             }
         }
-        if (tokens.length >= 5 && tokens.length <= 20 && inLine.size === 1) { recommended.add(cue.id); }
+        if (tokens.length >= 5 && tokens.length <= 20 && inLine.size === 1) {
+            const item = [...inLine.values()][0];
+            if (carded.has(JSON.stringify([item.word, normalize(cue.text)]))) { continue; }
+            recommended.add(cue.id);
+            const preferred = tokens.length >= 8 && tokens.length <= 15;
+            if (!byWord.has(item.word) || (preferred && !byWord.get(item.word).preferred)) {
+                byWord.set(item.word, {...item, preferred});
+            }
+        }
     }
     const duration = session.cues.length > 0 ? (Math.max(...session.cues.map((cue) => cue.endMs)) - session.cues[0].startMs) / 60000 : 0;
-    return {recommended, learning: learning.size, wpm: duration > 0 ? Math.round(total / duration) : 0};
+    return {recommended, items: [...byWord.values()].slice(0, 10), learning: learning.size, wpm: duration > 0 ? Math.round(total / duration) : 0};
 }

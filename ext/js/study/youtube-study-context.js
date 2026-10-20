@@ -32,6 +32,8 @@ export class YoutubeStudyContext {
         this.active = new Map();
         /** @type {(() => void)|null} Stops the replay listeners, if a replay is running. */
         this.replay = null;
+        /** @type {((range: Range) => Promise<void>)|null} Opens the existing scanner and card panel. */
+        this.openCard = null;
     }
 
     /**

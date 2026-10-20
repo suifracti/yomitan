@@ -87,6 +87,7 @@ export type HistoryState = {
     studyMediaToken?: string;
     studyMediaRange?: import('study').MediaRange;
     studySentenceTranslation?: string;
+    studyOpenCard?: boolean;
     /** What was the cause of the navigation. */
     cause?: 'queryParser';
     /** The sentence context. */

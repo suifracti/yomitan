@@ -573,7 +573,10 @@ export function syncControls(menu, reader) {
     for (const button of menu.querySelectorAll('[data-offset-step]')) { /** @type {HTMLButtonElement} */ (button).disabled = !reader.session; }
 }
 
-/** A link to the one shared sentence/caption translation setting. */
+/**
+ * A link to the one shared sentence/caption translation setting.
+ * @returns {HTMLAnchorElement}
+ */
 export function translationSettingsLink() {
     const link = document.createElement('a');
     link.className = 'r-translation-setting';
