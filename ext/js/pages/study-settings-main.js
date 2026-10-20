@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {readResponseJson} from '../core/json.js';
 import {studyCall} from '../study/study-client.js';
 import {DEFAULTS} from '../study/study-data.js';
 
@@ -427,6 +428,7 @@ async function initializeStudySettings(root) {
     }
 
     libraryControls(false);
+    prepareSystemStatus(root);
     const loadLibrarySettings = (async () => {
         try {
             if (typeof chrome.permissions.contains !== 'function' || !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
@@ -442,4 +444,64 @@ async function initializeStudySettings(root) {
         }
     })();
     await Promise.all([loadSavedSettings, loadLibrarySettings]);
+}
+
+/**
+ * One read on opening Advanced and on an explicit refresh, never a polling loop.
+ * @param {HTMLElement} root
+ * @returns {void}
+ */
+export function prepareSystemStatus(root) {
+    const section = root.querySelector('#study-system-status');
+    if (!section) { return; }
+    const refresh = /** @type {HTMLButtonElement} */ (section.querySelector('[data-health-refresh]'));
+    const copy = /** @type {HTMLButtonElement} */ (section.querySelector('[data-health-copy]'));
+    const command = /** @type {HTMLElement} */ (section.querySelector('[data-health-command]'));
+    const summary = section.querySelector('[data-health-summary]');
+    const labels = {bridge: '桥版本', anki: 'Anki', vault: 'Vault', apple: 'Apple 翻译', file: '本地文件访问'};
+    /**
+     * @param {'bridge'|'anki'|'vault'|'apple'|'file'} key
+     * @param {boolean} ok
+     */
+    const show = (key, ok) => { section.querySelector(`[data-health=${key}]`).textContent = `${ok ? '✓' : '✗'} ${labels[key]}`; };
+    const read = async () => {
+        refresh.disabled = true;
+        summary.textContent = '正在检查…';
+        const allowed = /** @type {boolean} */ (await new Promise((resolve) => { chrome.extension.isAllowedFileSchemeAccess(resolve); }));
+        show('file', allowed === true);
+        try {
+            const [health, expected] = await Promise.all([
+                studyCall('bridgeHealth'),
+                fetch(chrome.runtime.getURL('js/study/bridge-manifest.json')).then(readResponseJson),
+            ]);
+            const value = /** @type {{files: Record<string, string>, anki: {ok: boolean}, vault: {ok: boolean}, appleTranslate: boolean, errors: {action: string, message: string}[]}} */ (health);
+            const same = Object.entries(/** @type {Record<string, string>} */ (expected)).every(([name, hash]) => value.files[name] === hash);
+            show('bridge', same);
+            show('anki', value.anki.ok);
+            show('vault', value.vault.ok);
+            show('apple', value.appleTranslate);
+            command.hidden = same;
+            section.querySelector('[data-health-errors]').textContent = value.errors.map((error) => `${error.action}：${error.message}`).join('\n') || '没有最近错误';
+            summary.textContent = allowed ? '检查完成' : '请到 Chrome 扩展详情开启「允许访问文件网址」。';
+        } catch {
+            for (const key of /** @type {('bridge'|'anki'|'vault'|'apple')[]} */ (['bridge', 'anki', 'vault', 'apple'])) { show(key, false); }
+            command.hidden = false;
+            summary.textContent = '体检不可用：本机桥未连接或尚不支持此动作，请同步后刷新。';
+            section.querySelector('[data-health-errors]').textContent = '暂时无法读取';
+        } finally {
+            refresh.disabled = false;
+        }
+    };
+    copy.addEventListener('click', () => {
+        void navigator.clipboard.writeText('python3 dev/sync-local.py').then(() => { copy.textContent = '已复制'; });
+    });
+    refresh.addEventListener('click', () => { void read(); });
+    let visible = false;
+    const opened = () => {
+        const next = root.dataset.activeSettingsCategory === 'advanced';
+        if (next && !visible) { void read(); }
+        visible = next;
+    };
+    window.addEventListener('hashchange', opened);
+    opened();
 }

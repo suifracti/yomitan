@@ -2201,6 +2201,21 @@
     </section>
 
     <section class="settings-category-panel" data-settings-category-panel="advanced" hidden>
+        <section id="study-system-status" class="study-settings-panel">
+            <h2>系统状态</h2>
+            <p data-health-summary role="status">打开本节时检查一次；不会调用模型。</p>
+            <ul>
+                <li data-health="bridge">桥版本 · 尚未检查</li>
+                <li data-health="anki">Anki · 尚未检查</li>
+                <li data-health="vault">Vault · 尚未检查</li>
+                <li data-health="apple">Apple 翻译 · 尚未检查</li>
+                <li data-health="file">本地文件访问 · 尚未检查</li>
+            </ul>
+            <p data-health-command hidden><code>python3 dev/sync-local.py</code> <button type="button" data-health-copy>复制</button></p>
+            <details><summary>最近错误</summary><pre data-health-errors>尚未检查</pre></details>
+            <button type="button" data-health-refresh>刷新</button>
+        </section>
+
 <div class="heading-container">
     <div class="heading-container-icon"><span class="icon" data-icon="cog"></span></div>
     <div class="heading-container-left"><h2>高级选项与维护</h2></div>
