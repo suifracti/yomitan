@@ -160,12 +160,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const dictionaryPager = make('div', 'sf-dictionary-pager');
         dictionary.append(dictionaryHeading, dictionaryScroll, dictionaryPager);
         const records = make('section', 'sf-records');
-        const fullMeanings = make('section', 'sf-all-meanings');
-        fullMeanings.hidden = true;
-        owned.push(fullMeanings);
         let allMeaningsOpen = false;
         let learningScroll;
-        let syncGlossOverflow = () => {};
         const panels = [learn, dictionary, records];
         const labels = ['词义与原句', '详细词典', '我的记录'];
         const tabButtons = labels.map((label, index) => {
@@ -197,9 +193,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             // The original sentence belongs to the first learning page only.
             sourcePane.hidden = !hasSentence || index !== 0;
             headerSense.hidden = index === 2;
-            fullMeanings.hidden = !allMeaningsOpen || index === 2;
-            if (index < 2) { (index === 0 ? learningScroll : dictionaryScroll)?.prepend(fullMeanings); }
-            requestAnimationFrame(syncGlossOverflow);
             requestAnimationFrame(resizeFollowup);
         };
         body.append(...panels);
@@ -643,6 +636,26 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const available = Math.max(line + padding + border, context.clientHeight - parseFloat(dock.paddingTop) - parseFloat(dock.paddingBottom) - 16);
             input.style.height = `${Math.min(input.scrollHeight + border, line * 3 + padding + border, available)}px`;
         };
+        const dockSizeObserver = new ResizeObserver(() => {
+            shell.style.setProperty('--sf-save-height', `${saveBar.getBoundingClientRect().height}px`);
+            shell.style.setProperty('--sf-input-height', `${compose.getBoundingClientRect().height}px`);
+        });
+        dockSizeObserver.observe(saveBar); dockSizeObserver.observe(compose); observers.push(dockSizeObserver);
+        const sentenceTranslation = source.querySelector('.study-source-translation');
+        if (sentenceTranslation) {
+            const expand = button('展开译文'); expand.classList.add('sf-translation-expand');
+            sentenceTranslation.after(expand); owned.push(expand);
+            const syncTranslation = () => {
+                expand.hidden = sentenceTranslation.hidden || sentenceTranslation.scrollHeight <= sentenceTranslation.clientHeight + 1;
+            };
+            expand.addEventListener('click', () => { sentenceTranslation.classList.add('sf-translation-expanded'); expand.hidden = true; });
+            const textObserver = new MutationObserver(() => {
+                sentenceTranslation.classList.remove('sf-translation-expanded'); syncTranslation();
+            });
+            textObserver.observe(sentenceTranslation, {childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['hidden']});
+            const sizeObserver = new ResizeObserver(syncTranslation); sizeObserver.observe(sentenceTranslation);
+            observers.push(textObserver, sizeObserver); syncTranslation();
+        }
         const inputSizeObserver = new ResizeObserver(() => { resizeFollowup(); });
         inputSizeObserver.observe(context); observers.push(inputSizeObserver);
         input?.addEventListener('input', resizeFollowup);
@@ -680,10 +693,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const signature = JSON.stringify(senses.map(({pos, text}) => [pos?.textContent || '', text]));
             if (signature === glossSignature) { return; }
             glossSignature = signature;
-            host.replaceChildren(); fullMeanings.replaceChildren();
+            host.replaceChildren();
             if (!senses.length) {
                 host.append(make('p', 'sf-gloss-unavailable', '暂无中文释义'));
-                allMeaningsOpen = false; fullMeanings.hidden = true;
+                allMeaningsOpen = false;
                 return;
             }
             const appendRow = (parent, {pos, text}) => {
@@ -694,37 +707,23 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 row.append(make('strong', 'sf-gloss-text', text)); parent.append(row);
             };
             const preview = make('div', 'sf-gloss-preview');
-            const caption = make('div', 'sf-gloss-caption');
-            const toggle = button(`全部词义 · 共 ${senses.length} 项`);
-            toggle.classList.add('sf-gloss-toggle');
-            toggle.setAttribute('aria-expanded', String(allMeaningsOpen));
-            toggle.hidden = true; caption.hidden = true;
-            caption.append(toggle);
             for (const sense of senses) { appendRow(preview, sense); }
-            host.append(caption, preview);
-            const fullHeader = make('div', 'sf-meanings-heading');
-            fullHeader.append(make('h3', '', '全部中文词义'));
-            const collapse = button('收起全部'); fullHeader.append(collapse);
-            fullMeanings.append(fullHeader);
-            for (const sense of senses) { appendRow(fullMeanings, sense); }
-            const setExpanded = (expanded) => {
-                allMeaningsOpen = expanded;
-                fullMeanings.hidden = !expanded || activeTab === 2;
-                toggle.setAttribute('aria-expanded', String(expanded));
-                if (expanded) { (activeTab === 0 ? learningScroll : dictionaryScroll).scrollTop = 0; }
-                syncGlossOverflow();
-            };
-            toggle.addEventListener('click', () => { setExpanded(!allMeaningsOpen); });
-            collapse.addEventListener('click', () => { setExpanded(false); });
-            syncGlossOverflow = () => {
-                if (!current() || !preview.getClientRects().length) { return; }
-                toggle.hidden = !allMeaningsOpen && preview.scrollHeight <= preview.clientHeight + 1;
-                caption.hidden = toggle.hidden;
-            };
-            requestAnimationFrame(syncGlossOverflow);
+            host.append(preview);
+            host.classList.toggle('sf-multiple-meanings', senses.length > 1);
+            if (senses.length === 1) { allMeaningsOpen = false; }
+            host.classList.toggle('sf-meanings-expanded', allMeaningsOpen);
+            if (senses.length > 1) {
+                const caption = make('div', 'sf-gloss-caption');
+                const toggle = button(''); toggle.classList.add('sf-gloss-toggle');
+                const paintToggle = () => {
+                    toggle.textContent = allMeaningsOpen ? '收起 ▴' : `共 ${senses.length} 项 ▾`;
+                    toggle.setAttribute('aria-expanded', String(allMeaningsOpen));
+                    host.classList.toggle('sf-meanings-expanded', allMeaningsOpen);
+                };
+                toggle.addEventListener('click', () => { allMeaningsOpen = !allMeaningsOpen; paintToggle(); });
+                paintToggle(); caption.append(toggle); host.append(caption);
+            }
         };
-        const glossObserver = new ResizeObserver(() => { syncGlossOverflow(); });
-        glossObserver.observe(headerSense); observers.push(glossObserver);
         const updateAnswer = () => {
             if (!current()) { return; }
             const turns = [...(output?.querySelectorAll('.study-conversation-turn') || [])];
@@ -1009,7 +1008,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 strip.append(link);
             } catch { /* Without a valid URL the strip still states the clip. */ }
             strip.append(stripStatus);
-            sourcePane.prepend(strip); owned.push(strip);
+            sourceReading.after(strip); owned.push(strip);
             const tag = make('span', 'sf-video-tag scan-disable', '视频');
             tag.title = '这张词卡来自视频字幕，可回听原句、采集原声和画面';
             title.append(tag); owned.push(tag);

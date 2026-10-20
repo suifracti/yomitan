@@ -360,7 +360,7 @@
     .study-focus-active .sf-compose { padding: 4px 10px; }
 }
 
-/* The first two tabs share one Chinese hint; full text belongs to the active content scroller. */
+/* Chinese meanings expand in place in the shared header. */
 .sf-gloss-caption { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
 .sf-gloss-caption .sf-gloss-kicker { font-size: 10px; }
 .sf-gloss-caption .sf-gloss-toggle { border: 0; padding: 0; min-height: 16px; background: none; font-size: 10px; white-space: nowrap; }
@@ -368,14 +368,6 @@
 .sf-gloss-preview .sf-gloss-row { display: block; line-height: 20px; }
 .sf-gloss-preview .sf-gloss-text { font-size: 14px; line-height: inherit; }
 .sf-gloss-preview .sf-gloss-pos { margin-right: 8px; font-size: 11px; }
-.sf-all-meanings { margin: 10px 14px 14px; padding: 10px; border: 1px solid var(--sf-line); border-radius: 8px; background: var(--sf-source); }
-.sf-dictionary > .sf-all-meanings { margin-inline: 0; }
-.sf-meanings-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 7px; }
-.sf-meanings-heading h3 { font-size: 13px; margin: 0; }
-.sf-meanings-heading button { font-size: 10px; min-height: 24px; }
-.sf-all-meanings .sf-gloss-row { display: block; margin-top: 7px; line-height: 1.65; }
-.sf-all-meanings .sf-gloss-pos { margin-right: 8px; }
-.sf-all-meanings .sf-gloss-text { font-size: 14px; font-weight: 500; }
 .sf-dictionary-reference { display: none !important; }
 .sf-dictionary > .study-dictionary-details { border: 0; margin: 0; padding: 0; }
 .sf-dictionary > .study-dictionary-details > summary,
@@ -858,3 +850,28 @@
 .study-stuck-phrase { display: flex; gap: 6px; margin: 2px 0 4px; }
 .study-stuck-phrase input { flex: 1 1 auto; min-width: 0; padding: 2px 6px; border: 1px solid var(--sf-line); border-radius: 6px; font: inherit; }
 .study-stuck-phrase button { padding: 2px 9px; border: 1px solid var(--st-accent); border-radius: 6px; background: transparent; color: var(--st-accent); font: inherit; cursor: pointer; }
+
+/* One card scroller; sentence and context never create a nested scroll box. */
+.study-focus-active .study-focus-shell[data-panel='0'] {
+    display: block;
+    overflow-y: auto;
+    padding-bottom: calc(var(--sf-input-height, 50px) + var(--sf-save-height, 50px));
+    scrollbar-width: thin;
+}
+.study-focus-shell[data-panel='0'] .sf-body { position: static; }
+.study-focus-shell[data-panel='0'] .sf-body,
+.study-focus-shell[data-panel='0'] .sf-learn,
+.study-focus-shell[data-panel='0'] #study-context,
+.study-focus-shell[data-panel='0'] .sf-learning-scroll { display: block; height: auto; overflow: visible; }
+.study-focus-active .study-focus-shell[data-panel='0'] .sf-compose,
+.study-focus-shell[data-panel='0'] .sf-save-bar { position: absolute; left: 0; right: 0; z-index: 3; background: var(--sf-paper); }
+.study-focus-active .study-focus-shell[data-panel='0'] .sf-compose { bottom: var(--sf-save-height, 50px); }
+.study-focus-shell[data-panel='0'] .sf-save-bar { bottom: 0; }
+.study-focus-active .sf-heading .sf-gloss-preview { display: block; max-height: none; overflow: visible; -webkit-line-clamp: unset; }
+.sf-multiple-meanings:not(.sf-meanings-expanded) .sf-gloss-row:not(:first-child) { display: none; }
+.sf-multiple-meanings:not(.sf-meanings-expanded) .sf-gloss-row:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sf-meanings-expanded .sf-gloss-caption { grid-row: 2; }
+.study-focus-active .sf-source-pane .study-source p { max-height: none; overflow: visible; -webkit-line-clamp: unset; }
+.study-focus-active .sf-source-pane .study-source-translation { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--sf-muted); font-size: 12px; }
+.study-focus-active .sf-source-pane .study-source-translation.sf-translation-expanded { display: block; overflow: visible; -webkit-line-clamp: unset; }
+.study-focus-shell .sf-translation-expand { min-height: 20px; padding: 0; border: 0; font-size: 11px; color: var(--sf-accent); }
