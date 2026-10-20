@@ -100,13 +100,18 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-summary a{color:var(--r-accent)}
 #${ROOT_ID} .r-word-sentence{grid-column:2/-1;margin:2px 0 0;color:var(--r-muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 #${ROOT_ID} button.r-more{padding:3px 8px;letter-spacing:.1em}
-#${ROOT_ID} .r-menu{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;border-top:1px solid var(--r-line);font-size:12px;color:var(--r-fg)}
+#${ROOT_ID} .r-menu{display:grid;gap:8px;padding:8px 12px;border-top:1px solid var(--r-line);font-size:12px;color:var(--r-fg)}
+#${ROOT_ID} .r-menu-group{min-width:0;margin:0;padding:6px 8px;border:1px solid var(--r-line);border-radius:6px;display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+#${ROOT_ID} .r-menu-group legend{color:var(--r-muted);font-size:11px}
+#${ROOT_ID} .r-downloads summary{cursor:pointer;list-style:none;color:var(--r-accent)}
+#${ROOT_ID} .r-downloads summary::-webkit-details-marker{display:none}
+#${ROOT_ID} .r-downloads button{display:block;margin-top:4px}
 #${ROOT_ID} .r-menu[hidden]{display:none}
 #${ROOT_ID} .r-switch{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
 #${ROOT_ID} .r-switch input{margin:0;accent-color:var(--r-accent)}
 #${ROOT_ID} .r-engine{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
 #${ROOT_ID} .r-engine select{font:inherit;font-size:12px;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:2px 6px}
-#${ROOT_ID} .r-downloads{display:flex;flex-wrap:wrap;gap:6px;flex:1 0 100%}
+#${ROOT_ID} .r-downloads{display:block}
 #${ROOT_ID} .r-source{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
 #${ROOT_ID} .r-source[hidden]{display:none}
 #${ROOT_ID} .r-offset{display:inline-flex;align-items:center;gap:4px;flex:1 0 100%}

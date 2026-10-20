@@ -283,7 +283,7 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 
 ## 2026-10-20 字幕与句子翻译统一
 
-- `studyTranslationPrefs` 保存共用 engine / autoTranslate，首次从旧字幕设置迁移；视频显示设置仍在原处。只有「AI 与翻译」能改服务和自动开关。
+- `studyTranslationPrefs` 保存共用 engine / autoTranslate，首次从旧字幕设置迁移；视频显示设置仍在原处。自动开关只在「AI 与翻译」修改；引擎也能从字幕栏 ⋯ 修改，始终写同一份全局设置。
 - 查词卡逐段或整句翻译与字幕共用服务；译文经现有 generate(mode=translate, sentenceTranslation) 进入原 journal 和同步流程，这条路径不再发起第二次模型请求。
 - 字幕随视频自动载入；找不到时可导入，重新载入留在更多菜单。
 
@@ -300,3 +300,9 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 - `libraryWordStatus` v2 遇到手动标记，返回 `s:'known', manualKnown:true`；保留原 interval / lapses。撤销清除覆盖，恢复原有掌握度判断。手动认识即使有 newSense 也不标色、不推荐、不计入在学词。
 - 学习库 `scope:'manual-known'` 复用原分页，只列手动标为认识的记录，每条可改回在学。网页与词卡通过原后台转发，成功后刷新既有词汇状态缓存，立即通知已开页面。
 - 网页悬停、已保存词的词卡提供「✓ 认识了」，成功后用 5 秒提示提供撤销；标色设置移到查词与词典。没有新数据库、轮询或 Anki 写入。
+
+## 2026-10-20 视频控制归位
+
+- 视频「学」面板只放字幕四模式、跟读关/1/2/3 遍、同一行的字幕偏移；沿用原 overlay / bilingual / blur / shadow / shadowRepeats 值。旧 4/5 遍只显示为当前原设置，不自动降档。
+- 字幕栏 ⋯ 分翻译、字幕处理、文件三组；字幕显示、跟读次数和偏移不再重复。下载折叠成一个菜单，失败重试留在错误提示里，继续观看用原画面提示。
+- 面板在播放器内从按钮上方弹出，高度不足只滚动内部；网页播放器按钮放右下，保持同样方向。全屏时隐藏“更多设置”说明。无新增数据库、轮询或字幕配置迁移。

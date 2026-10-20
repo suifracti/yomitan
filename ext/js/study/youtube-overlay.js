@@ -62,9 +62,17 @@ const STYLE = `
 #${BUTTON_ID}{display:inline-flex;align-items:center;justify-content:center;width:48px;opacity:.9}
 #${BUTTON_ID} svg{width:24px;height:24px}
 #${BUTTON_ID}[aria-expanded=true]{opacity:1}
-#${PANEL_ID}{position:absolute;right:12px;bottom:60px;z-index:70;width:250px;max-height:calc(100% - 80px);overflow:auto;padding:6px 0;border-radius:10px;background:rgb(28 28 30 / 94%);color:#eee;font:13px/1.4 -apple-system,'PingFang SC',sans-serif;box-shadow:0 6px 20px rgb(0 0 0 / 40%)}
+#${PANEL_ID}{position:absolute;right:12px;bottom:60px;z-index:70;box-sizing:border-box;width:min(380px,calc(100% - 16px));max-height:calc(100% - 80px);overflow:auto;padding:6px 0;border-radius:10px;background:rgb(28 28 30 / 94%);color:#eee;font:13px/1.4 -apple-system,'PingFang SC',sans-serif;box-shadow:0 6px 20px rgb(0 0 0 / 40%)}
 #${PANEL_ID}[hidden]{display:none}
 #${PANEL_ID} .p-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px;padding:0 14px;cursor:pointer}
+#${PANEL_ID} .p-label{flex:0 0 56px;white-space:nowrap}
+#${PANEL_ID} .p-modes{display:flex;flex-wrap:wrap;gap:0;min-width:0}
+#${PANEL_ID} .p-modes button{font:inherit;font-size:12px;padding:3px 6px;white-space:nowrap;color:inherit;background:none;border:1px solid #777;cursor:pointer}
+#${PANEL_ID} .p-modes button[aria-pressed=true]{background:#4d5c9b;color:#fff;border-color:#a9b6ef}
+#${PANEL_ID} .p-offset-controls{display:flex;align-items:center;gap:4px;white-space:nowrap}
+#${PANEL_ID} .p-offset output{min-width:3em}
+#${PANEL_ID} .p-note{display:block}
+#${PANEL_ID} .p-note[hidden]{display:none}
 #${PANEL_ID} .p-row:hover{background:rgb(255 255 255 / 8%)}
 #${PANEL_ID} .p-row select{max-width:130px;padding:2px 4px;border:1px solid rgb(255 255 255 / 25%);border-radius:5px;background:#2a2a2e;color:#eee;font:inherit;font-size:12px}
 #${PANEL_ID} .p-row input{width:34px;height:18px;margin:0;accent-color:#a9b6ef;cursor:pointer}
@@ -116,19 +124,32 @@ export class YoutubeOverlay {
         this._shadowCountdown = 0;
         /** @type {HTMLVideoElement|null} */
         this._playVideo = null;
-        this._onPlay = () => this._clearShadow();
+        /**
+         *
+         */
+        this._onPlay = () => { this._clearShadow(); };
     }
 
     /** */
     start() {
         const reader = this._reader;
-        reader.addEventListener('session', () => { this._clearShadow(); this._onSession(); });
-        reader.addEventListener('reset', () => { this._clearShadow(); this._clear(); });
+        reader.addEventListener('session', () => {
+            this._clearShadow();
+            this._onSession();
+        });
+        reader.addEventListener('reset', () => {
+            this._clearShadow();
+            this._clear();
+        });
         reader.addEventListener('active', (event) => this._onActive(/** @type {CustomEvent<{ids: string[]}>} */ (event).detail.ids));
         reader.addEventListener('translation', (event) => this._onTranslation(/** @type {CustomEvent<{id: string}>} */ (event).detail.id));
         reader.addEventListener('lookup', () => this._paintStates());
         reader.addEventListener('loop', () => this._paintStates());
-        reader.addEventListener('prefs', () => { if (!reader.prefs.shadow) { this._clearShadow(); } this._applyPrefs(); });
+        reader.addEventListener('prefs', () => {
+            if (!reader.prefs.shadow) {
+                this._clearShadow();
+            } this._applyPrefs();
+        });
         reader.addEventListener('offset', () => this._applyPrefs());
         reader.addEventListener('resume', (event) => {
             const {ms} = /** @type {CustomEvent<{ms: number}>} */ (event).detail;
@@ -143,12 +164,22 @@ export class YoutubeOverlay {
             const target = /** @type {Node} */ (event.target);
             if (this._panel && !this._panel.hidden && !this._panel.contains(target) && !this._button?.contains(target)) { this._togglePanel(false); }
         }, true);
+        document.addEventListener('click', (event) => {
+            if (this._shadowId && event.target instanceof Element && event.target.closest('button')) { this._cancelShadowCountdown(); }
+        }, true);
+        document.addEventListener('fullscreenchange', () => this._applyPrefs());
         document.addEventListener('keydown', (event) => {
             const target = event.target instanceof Element ? event.target : document.activeElement;
             if (this._shadowId && this._site.video()?.paused && !target?.closest('input,textarea,select,[contenteditable]') &&
             !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && [' ', 'r', 'R'].includes(event.key)) {
-                event.preventDefault(); event.stopImmediatePropagation(); this._cancelShadowCountdown();
-                if (event.key === ' ') { reader.continueShadow(); } else { reader.replayShadow(); }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this._cancelShadowCountdown();
+                if (event.key === ' ') {
+                    reader.continueShadow();
+                } else {
+                    reader.replayShadow();
+                }
             }
             if (event.key === 'Escape' && this._panel && !this._panel.hidden) { this._togglePanel(false); }
         }, true);
@@ -205,7 +236,10 @@ export class YoutubeOverlay {
             this._lines.clear();
             this._shown = '';
             this._resize?.disconnect();
-            this._resize = new ResizeObserver(() => this._fit());
+            this._resize = new ResizeObserver(() => {
+                this._fit();
+                this._positionPanel();
+            });
             this._resize.observe(player);
             this._onSession();
         }
@@ -246,61 +280,37 @@ export class YoutubeOverlay {
         panel.setAttribute('aria-label', '字幕学习设置');
         panel.hidden = true;
         isolate(panel);
-        /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）']];
-        const engine = translationEngineSelect((value) => this._reader.updatePrefs({engine: value}));
-        engine.classList.add('p-row');
-        panel.append(engine);
-        for (const [key, label] of toggles) {
-            const row = document.createElement('label');
-            row.className = 'p-row';
-            const text = document.createElement('span');
-            text.textContent = label;
-            const box = document.createElement('input');
-            box.type = 'checkbox';
-            box.setAttribute('role', 'switch');
-            box.dataset.pref = key;
-            box.addEventListener('change', () => this._reader.updatePrefs({[key]: box.checked}));
-            row.append(text, box);
-            panel.append(row);
-        }
-        const repeats = repeatSelect((shadowRepeats) => this._reader.updatePrefs({shadowRepeats}));
-        repeats.classList.add('p-row');
-        const offset = offsetControl(this._reader);
-        offset.classList.add('p-row', 'p-offset');
-        panel.append(repeats, shadowContinueSelect((shadowContinueSeconds) => this._reader.updatePrefs({shadowContinueSeconds})), offset);
-        const note = document.createElement('div');
-        note.className = 'p-note';
-        note.dataset.note = '';
-        panel.append(note);
-        const actions = document.createElement('div');
-        actions.className = 'p-actions';
-        /** @type {[string, string, () => void][]} */
-        const buttons = [
-            ['load', '重新载入', () => this._reader.loadCaptions()],
-            ['import', '导入字幕文件…', () => this._reader.pickFile()],
-            ['translate', '翻译全文', () => this._reader.translateNext()],
-            ['reveal', '在侧栏查看', () => { if (this._shown) { this._reader.revealRow(this._shown); } }],
-            ['vtt', '下载原文 VTT', () => this._reader.download('vtt')],
-            ['bilingual', '下载双语 VTT', () => this._reader.download('bilingual')],
-            ['json', '下载 JSON', () => this._reader.download('json')],
-        ];
-        if (this._site.kind !== 'youtube') {
-            buttons.splice(3, 1, ['dock', '字幕栏', () => {
-                const open = this._site.toggleDock();
-                if (open && this._shown) { this._reader.revealRow(this._shown); }
-                this._applyPrefs();
-            }]);
-        }
-        for (const [name, label, action] of buttons) {
+        /**
+         * @param {string} text
+         * @param {Node} control
+         * @returns {HTMLDivElement}
+         */
+        const row = (text, control) => {
+            const line = document.createElement('div'); line.className = 'p-row';
+            const label = document.createElement('span');
+            label.className = 'p-label';
+            label.textContent = text;
+            line.append(label, control); return line;
+        };
+        const modes = document.createElement('div'); modes.className = 'p-modes';
+        for (const [mode, text] of [['original', '原文'], ['bilingual', '双语'], ['blur', '双语·译文模糊'], ['off', '关闭']]) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.dataset.action = name;
-            button.textContent = label;
-            button.addEventListener('click', action);
-            actions.append(button);
+            button.textContent = text;
+            button.dataset.subtitleMode = mode;
+            button.addEventListener('click', () => this._reader.updatePrefs(mode === 'off' ?
+{overlay: false} :
+                {overlay: true, bilingual: mode !== 'original', blur: mode === 'blur'}));
+            modes.append(button);
         }
-        panel.append(actions);
+        const shadow = document.createElement('select'); shadow.dataset.shadowMode = '';
+        for (const count of [0, 1, 2, 3]) {
+            shadow.append(Object.assign(document.createElement('option'), {value: String(count), textContent: count ? `每句 ${count} 遍` : '关'}));
+        }
+        shadow.addEventListener('change', () => this._reader.updatePrefs(shadow.value === '0' ? {shadow: false} : {shadow: true, shadowRepeats: Number(shadow.value)}));
+        panel.append(row('字幕', modes), row('跟读', shadow), offsetControl(this._reader));
+        const note = document.createElement('small'); note.className = 'p-note';
+        note.textContent = '更多设置在右侧字幕栏 ⋯'; panel.append(note);
         return panel;
     }
 
@@ -310,6 +320,24 @@ export class YoutubeOverlay {
         this._panel.hidden = !open;
         this._button?.setAttribute('aria-expanded', String(open));
         if (open) { this._applyPrefs(); }
+    }
+
+    /** Keep the panel above its button and within the player's rectangle. */
+    _positionPanel() {
+        const panel = this._panel;
+        const player = this._player();
+        if (!panel || panel.hidden || !player || !this._button) { return; }
+        const rect = player.getBoundingClientRect();
+        const button = this._button.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) { return; }
+        const width = Math.min(380, rect.width - 16);
+        const bottom = Math.max(8, rect.bottom - button.top + 8);
+        Object.assign(panel.style, {top: 'auto',
+            right: 'auto',
+            width: `${width}px`,
+            left: `${Math.max(8, Math.min(rect.width - width - 8, button.right - rect.left - width))}px`,
+            bottom: `${bottom}px`,
+            maxHeight: `${Math.max(0, rect.height - bottom - 8)}px`});
     }
 
     /** Mirrors preferences and session state into the overlay and the panel. */
@@ -323,23 +351,24 @@ export class YoutubeOverlay {
             this._overlay.classList.toggle('o-blur', prefs.blur);
         }
         if (this._panel) {
-            for (const box of this._panel.querySelectorAll('input[data-pref]')) {
-                const key = /** @type {keyof import('./subtitle-prefs.js').SubtitlePrefs} */ (/** @type {HTMLInputElement} */ (box).dataset.pref);
-                /** @type {HTMLInputElement} */ (box).checked = Boolean(prefs[key]);
+            let mode = 'off';
+            if (prefs.overlay) {
+                mode = 'original';
+                if (prefs.bilingual) { mode = prefs.blur ? 'blur' : 'bilingual'; }
             }
-            for (const select of this._panel.querySelectorAll('select[data-engine]')) { /** @type {HTMLSelectElement} */ (select).value = prefs.engine; }
+            for (const button of this._panel.querySelectorAll('[data-subtitle-mode]')) {
+                button.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (button).dataset.subtitleMode === mode));
+            }
+            const shadow = /** @type {HTMLSelectElement} */ (this._panel.querySelector('[data-shadow-mode]'));
+            shadow.querySelector('[data-legacy]')?.remove();
+            if (prefs.shadow && prefs.shadowRepeats > 3) {
+                const old = Object.assign(document.createElement('option'), {value: String(prefs.shadowRepeats), textContent: `每句 ${prefs.shadowRepeats} 遍（原设置）`, hidden: true});
+                old.dataset.legacy = ''; shadow.append(old);
+            }
+            shadow.value = prefs.shadow ? String(prefs.shadowRepeats) : '0';
             syncControls(this._panel, this._reader);
-            for (const button of this._panel.querySelectorAll('button[data-action]')) {
-                const action = /** @type {HTMLButtonElement} */ (button).dataset.action;
-                /** @type {HTMLButtonElement} */ (button).disabled = !['load', 'import', 'dock'].includes(action ?? '') && !loaded;
-                if (action === 'load') { button.textContent = '重新载入'; }
-                if (action === 'dock') {
-                    button.hidden = window.self !== window.top && innerWidth < 600;
-                    button.textContent = this._site.dockOpen() ? '收起字幕栏' : '打开字幕栏';
-                }
-            }
-            const note = this._panel.querySelector('[data-note]');
-            if (note) { note.textContent = loaded ? '' : '还没有字幕，可导入字幕文件。'; }
+            /** @type {HTMLElement} */ (this._panel.querySelector('.p-note')).hidden = Boolean(document.fullscreenElement);
+            this._positionPanel();
         }
     }
 
@@ -352,37 +381,66 @@ export class YoutubeOverlay {
     /** Dismiss pause actions once playback resumes or this video changes. */
     _clearShadow() {
         this._cancelShadowCountdown(); this._shadowId = '';
-        if (this._chip?.classList.contains('o-shadow')) { this._chip.hidden = true; this._chip.classList.remove('o-shadow'); }
+        if (this._chip?.classList.contains('o-shadow')) {
+            this._chip.hidden = true;
+            this._chip.classList.remove('o-shadow');
+        }
     }
 
     /** @param {{id: string, plays: number}} detail */
     _showShadow({id, plays}) {
-        this._clearShadow(); this._hint('已暂停跟读'); this._shadowId = id;
+        this._clearShadow();
+        this._hint('已暂停跟读');
+        this._shadowId = id;
         const chip = this._chip;
         if (!chip) { return; }
         chip.classList.add('o-shadow');
+        /**
+         * @param {string} label
+         * @param {() => void} action
+         */
         const add = (label, action) => {
-            const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-            button.addEventListener('click', () => { this._cancelShadowCountdown(); action(); }); chip.append(button);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            button.addEventListener('click', () => {
+                this._cancelShadowCountdown();
+                action();
+            });
+            chip.append(button);
         };
         add('空格 继续', () => this._reader.continueShadow());
         add('R 再听一遍', () => this._reader.replayShadow());
-        add('关闭跟读', () => { this._reader.updatePrefs({shadow: false}); this._clearShadow(); });
+        add('关闭跟读', () => {
+            this._reader.updatePrefs({shadow: false});
+            this._clearShadow();
+        });
         if (plays >= 2) {
             add('看译文', () => {
                 const line = chip.querySelector('.o-shadow-translation') || document.createElement('p');
-                line.className = 'o-shadow-translation'; line.textContent = '翻译中…'; chip.append(line);
-                void this._reader.showSentenceTranslation(id).then((value) => { if (this._shadowId === id) { line.textContent = value; } });
+                line.className = 'o-shadow-translation';
+                line.textContent = '翻译中…';
+                chip.append(line);
+                void this._reader.showSentenceTranslation(id).then((value) => {
+                    if (this._shadowId === id) {
+                        line.textContent = value;
+                    }
+                });
             });
             add('查这句', () => { void this._reader.lookupCaption(id).catch(() => {}); });
         }
         let left = this._reader.prefs.shadowContinueSeconds;
         if (left > 0) {
-            const countdown = document.createElement('span'); countdown.className = 'o-countdown'; chip.append(countdown);
+            const countdown = document.createElement('span');
+            countdown.className = 'o-countdown';
+            chip.append(countdown);
             countdown.textContent = `${left} 秒后继续`;
             this._shadowCountdown = window.setInterval(() => {
                 --left; countdown.textContent = `${left} 秒后继续`;
-                if (left <= 0) { this._cancelShadowCountdown(); this._reader.continueShadow(); }
+                if (left <= 0) {
+                    this._cancelShadowCountdown();
+                    this._reader.continueShadow();
+                }
             }, 1000);
         }
     }
@@ -595,8 +653,12 @@ export function repeatSelect(onChange) {
  */
 export function offsetControl(reader) {
     const row = document.createElement('div');
-    row.className = 'r-offset';
-    row.append('字幕偏移');
+    row.className = 'r-offset p-row p-offset';
+    const label = document.createElement('span');
+    label.className = 'p-label';
+    label.textContent = '字幕偏移';
+    const controls = document.createElement('span'); controls.className = 'p-offset-controls';
+    row.append(label, controls);
     /** @type {[string, string, () => number][]} */
     const steps = [['−0.5', '字幕提前 0.5 秒', () => reader.offsetMs - 500], ['', '', () => 0], ['+0.5', '字幕延后 0.5 秒', () => reader.offsetMs + 500], ['归零', '取消偏移', () => 0]];
     for (const [text, title, next] of steps) {
@@ -604,7 +666,7 @@ export function offsetControl(reader) {
             const output = document.createElement('output');
             output.dataset.offset = '';
             output.textContent = '0 秒';
-            row.append(output);
+            controls.append(output);
             continue;
         }
         const button = document.createElement('button');
@@ -614,7 +676,7 @@ export function offsetControl(reader) {
         button.setAttribute('aria-label', title);
         button.dataset.offsetStep = '';
         button.addEventListener('click', () => reader.setOffset(next()));
-        row.append(button);
+        controls.append(button);
     }
     return row;
 }
@@ -639,7 +701,8 @@ export function syncControls(menu, reader) {
     for (const button of menu.querySelectorAll('[data-offset-step]')) { /** @type {HTMLButtonElement} */ (button).disabled = !reader.session; }
 }
 
-/** The same global translation choice in both video menus.
+/**
+ * The same global translation choice in both video menus.
  * @param {(engine: import('./subtitle-prefs.js').SubtitleEngine) => void} onChange
  * @returns {HTMLLabelElement}
  */
@@ -654,14 +717,19 @@ export function translationEngineSelect(onChange) {
     label.append(select); return label;
 }
 
-/** @param {(seconds: number) => void} onChange
+/**
+ * @param {(seconds: number) => void} onChange
  * @returns {HTMLLabelElement}
  */
 export function shadowContinueSelect(onChange) {
-    const label = document.createElement('label'); label.className = 'p-row'; label.append('暂停后自动继续');
+    const label = document.createElement('label');
+    label.className = 'p-row';
+    label.append('暂停后自动继续');
     const select = document.createElement('select'); select.dataset.shadowContinue = '';
     for (const [value, text] of [[0, '不自动'], [3, '3 秒'], [5, '5 秒']]) {
         select.append(Object.assign(document.createElement('option'), {value: String(value), textContent: String(text)}));
     }
-    select.addEventListener('change', () => onChange(Number(select.value))); label.append(select); return label;
+    select.addEventListener('change', () => onChange(Number(select.value)));
+    label.append(select);
+    return label;
 }

@@ -28,7 +28,7 @@ import {TranslationQueue} from './translation-queue.js';
 import {WORD_STATUS_KEY} from './study-data.js';
 import {studyCall} from './study-client.js';
 import {wordForms} from './word-marks.js';
-import {YoutubeOverlay, translationEngineSelect, offsetControl, repeatSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
+import {YoutubeOverlay, translationEngineSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
@@ -494,21 +494,29 @@ export class YoutubeReader extends EventTarget {
         this.continueShadow();
     }
 
-    /** @param {string} id */
+    /**
+     * @param {string} id
+     * @returns {Promise<string>}
+     */
     async showSentenceTranslation(id) {
         if (!this._session?.translation(id)) { await this._translate(false, false, id); }
         return this._session?.translation(id) || '这句还没翻译出来，请再点一次「看译文」。';
     }
 
-    /** Open the existing lookup with this exact caption as its context.
+    /**
+     * Open the existing lookup with this exact caption as its context.
      * @param {string} id
      * @param {string} [word]
      * @param {boolean} [openPanel]
+     * @returns {Promise<boolean|undefined>}
      */
     async lookupCaption(id, word = '', openPanel = false) {
         const text = this._list.ensure(id)?.querySelector('.r-text');
         const info = this._rowInfo.get(id);
-        if (!text?.firstChild || !info || !youtubeStudyContext.openCard) { this._status('词卡还没准备好，请刷新页面后再试。'); return; }
+        if (!text?.firstChild || !info || !youtubeStudyContext.openCard) {
+            this._status('词卡还没准备好，请刷新页面后再试。');
+            return;
+        }
         const range = document.createRange();
         const match = word ? [...info.text.matchAll(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)].find((m) => wordForms(m[0]).includes(word.toLowerCase())) : null;
         if (word && !match) { return false; }
@@ -663,40 +671,53 @@ export class YoutubeReader extends EventTarget {
         const menu = document.createElement('div');
         menu.className = 'r-menu scan-disable';
         menu.hidden = true;
-        /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）'], ['resume', '记住观看进度']];
-        // Other sites may offer several subtitle files; the learner can switch between them.
+        /**
+         * @param {string} groupTitle
+         * @returns {HTMLFieldSetElement}
+         */
+        const group = (groupTitle) => {
+            const field = document.createElement('fieldset'); field.className = 'r-menu-group';
+            const legend = document.createElement('legend');
+            legend.textContent = groupTitle;
+            field.append(legend);
+            return field;
+        };
+        const translation = group('翻译'); translation.append(translationEngineSelect((engine) => this.updatePrefs({engine})));
+        const processing = group('字幕处理');
         const source = document.createElement('label');
         source.className = 'r-source';
         source.hidden = true;
         source.append('字幕来源');
-        const sourceSelect = document.createElement('select');
-        sourceSelect.dataset.source = '';
-        sourceSelect.addEventListener('change', () => { void this._load(generation, sourceSelect.value); });
+        const sourceSelect = document.createElement('select'); sourceSelect.dataset.source = '';
+        sourceSelect.addEventListener('change', () => {
+            void this._load(generation, sourceSelect.value);
+        });
         source.append(sourceSelect);
-        menu.append(load, resume, retry, source, translationEngineSelect((engine) => this.updatePrefs({engine})));
-        for (const [key, label] of toggles) {
-            const toggle = document.createElement('label');
-            toggle.className = 'r-switch';
+        processing.append(source);
+        for (const [key, label] of [['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['resume', '记住观看进度']]) {
+            const toggle = document.createElement('label'); toggle.className = 'r-switch';
             const box = document.createElement('input');
             box.type = 'checkbox';
             box.dataset.pref = key;
             box.addEventListener('change', () => this.updatePrefs({[key]: box.checked}));
-            toggle.append(box, label);
-            menu.append(toggle);
+            toggle.append(box, label); processing.append(toggle);
         }
-        menu.append(repeatSelect((shadowRepeats) => this.updatePrefs({shadowRepeats})), shadowContinueSelect((shadowContinueSeconds) => this.updatePrefs({shadowContinueSeconds})), offsetControl(this));
-        const downloads = document.createElement('div');
-        downloads.className = 'r-downloads';
+        processing.append(shadowContinueSelect((shadowContinueSeconds) => this.updatePrefs({shadowContinueSeconds})));
+        const files = group('文件');
         const importButton = this._button('导入字幕文件…', () => this.pickFile());
-        importButton.title = 'SRT、VTT、ASS、TTML、SBV 或 JSON；只在本页使用，不上传';
-        downloads.append(importButton);
-        for (const [kind, label] of /** @type {['vtt'|'bilingual'|'json', string][]} */ ([['vtt', '下载原文 VTT'], ['bilingual', '下载双语 VTT'], ['json', '下载 JSON']])) {
-            const button = this._button(label, () => this.download(kind));
-            button.dataset.download = kind;
-            downloads.append(button);
+        importButton.title = '只读取你选的字幕文件，不上传';
+        const downloads = document.createElement('details'); downloads.className = 'r-downloads';
+        const downloadLabel = document.createElement('summary');
+        downloadLabel.textContent = '下载 ▾';
+        downloads.append(downloadLabel);
+        for (const [kind, label] of /** @type {['vtt'|'bilingual'|'json', string][]} */ ([['vtt', '原文 VTT'], ['bilingual', '双语 VTT'], ['json', 'JSON']])) {
+            const button = this._button(label, () => {
+                this.download(kind);
+                downloads.open = false;
+            });
+            button.dataset.download = kind; downloads.append(button);
         }
-        menu.append(downloads);
+        files.append(load, importButton, downloads); menu.append(translation, processing, files);
         const difficulty = document.createElement('small');
         difficulty.className = 'r-difficulty';
         head.append(title, difficulty);
@@ -1052,6 +1073,8 @@ export class YoutubeReader extends EventTarget {
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._loop = null;
         this._lookup = '';
+        this._shadowRow = null; this._shadowDone = '';
+        this._shadowPause = null;
         this._session = session;
         this._rowInfo.clear();
         for (const [index, cue] of session.cues.entries()) {
@@ -1240,6 +1263,7 @@ export class YoutubeReader extends EventTarget {
                 view.load.disabled = false;
                 view.cancel.hidden = true;
                 view.retry.hidden = this._failed.size === 0;
+                if (!view.retry.hidden) { view.status.append(' ', view.retry); }
             }
         }
     }
