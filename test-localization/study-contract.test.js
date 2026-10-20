@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import {test, expect, vi} from 'vitest';
 import {execFileSync} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
+import path from 'node:path';
 import {mountStuckHint} from '../ext/js/display/study-stuck.js';
 import {wordInfo, normalizeInfo} from '../ext/js/study/word-marks.js';
 import {WORD_STATUS_KEY} from '../ext/js/study/study-data.js';
-const bridge = fileURLToPath(new URL('../local-bridge', import.meta.url));
+const bridge = path.resolve('local-bridge');
 function backend(action, data = {}) {
     return JSON.parse(execFileSync('python3', ['-B', '-c', `
 import json,sys
