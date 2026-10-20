@@ -14,6 +14,7 @@ test('popup shows the actual scan keys, enabled state and today count with the l
     expect(document.querySelector('.tooltip').textContent).toContain('Ctrl + Shift');
     expect(document.querySelector('#action-today').textContent).toBe('今天 23 张');
     expect(document.querySelector('.action-open-search')).toBeNull();
+    expect(document.querySelector('#action-popup').firstElementChild.tagName).toBe('HEADER');
     controller._updateDictionariesEnabledWarnings = async () => {};
     controller._updatePermissionsWarnings = async () => {};
     controller._themeController = {updateTheme() {}};
