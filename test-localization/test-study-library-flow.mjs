@@ -306,7 +306,7 @@ async function latestState(bridge) {
     return value.library;
 }
 
-test('translation UI saves the completed original Q&A with makeCard=false and accepts zero-card selection', async (t) => {
+test('translation UI saves the completed original Q&A without card selection or Anki writes', async (t) => {
     const h = await createHarness(t, {cards: []});
     const {dom, container, view} = mountUi();
     t.after(() => { view.cancel(); dom.window.close(); });
@@ -314,7 +314,7 @@ test('translation UI saves the completed original Q&A with makeCard=false and ac
     const save = container.querySelector('[data-study-save="note"]');
     assert.ok(save, 'the real translation view must mount the shared save control');
     save.click();
-    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('本次无需新增复习卡'), 'zero-card save receipt');
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'note-only save receipt');
 
     const saveCall = h.nativeCalls.find((call) => call.action === 'librarySave');
     assert.equal(saveCall.makeCard, false);
@@ -325,7 +325,7 @@ test('translation UI saves the completed original Q&A with makeCard=false and ac
     assert.equal(saveCall.turns.length, 1);
     assert.equal(saveCall.turns[0].question, QUESTION);
     assert.equal(h.modelCalls.filter((call) => call.action === 'explain').length, 1);
-    assert.equal(h.modelCalls.filter((call) => call.action === 'cards').length, 1);
+    assert.equal(h.modelCalls.filter((call) => call.action === 'cards').length, 0);
 
     const state = await latestState(h.bridge);
     assert.equal(state.markdownFiles.length, 1);
@@ -335,11 +335,11 @@ test('translation UI saves the completed original Q&A with makeCard=false and ac
     assert.ok(body.includes(ANSWER));
     assert.deepEqual(state.notes, {});
     assert.equal(state.calls.some((call) => call.action === 'addNote'), false);
-    assert.ok(h.nativeCalls.some((call) => call.action === 'libraryDraftSave' && call.items[0].cards.length === 0));
+    assert.equal(h.nativeCalls.some((call) => call.action === 'libraryDraftSave'), false);
     assert.equal(h.nativeCalls.some((call) => call.action === 'libraryDraftCommit'), false);
 });
 
-test('lost librarySave response can be retried and freshly links an exact existing Anki card once', async (t) => {
+test('lost librarySave response retries the note without touching an existing Anki card', async (t) => {
     const h = await createHarness(t, {cards: [{front: CARD_FRONT, back: CARD_BACK}], loseSaveReply: true});
     const meta = h.bridge.meta;
     await h.bridge.fixture('seed', {note: {deckName: meta.deck, modelName: meta.model,
@@ -352,7 +352,7 @@ test('lost librarySave response can be retried and freshly links an exact existi
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('response lost'), 'lost-save error');
     await waitFor(() => save.disabled === false, 'save retry enabled');
     save.click();
-    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('关联已有卡'), 'linked-card save receipt');
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'retried note-only receipt');
 
     const state = await latestState(h.bridge);
     assert.equal(state.markdownFiles.length, 1);
@@ -361,15 +361,13 @@ test('lost librarySave response can be retried and freshly links an exact existi
     assert.ok(body.includes(ANSWER));
     assert.equal(Object.keys(state.notes).length, 1, 'the seeded exact card remains the only Anki note');
     assert.equal(state.calls.filter((call) => call.action === 'addNote').length, 0);
-    assert.ok(state.calls.some((call) => call.action === 'findNotes' && call.params.query.includes(`Word:*${CARD_FRONT}*`)), 'the commit makes a fresh exact-word lookup');
-    assert.ok(state.calls.some((call) => call.action === 'notesInfo'), 'the candidate is read back before linking');
+    assert.equal(h.nativeCalls.some((call) => ['libraryCards', 'libraryCardsAdd', 'libraryDraftCommit'].includes(call.action)), false);
     assert.equal(h.nativeCalls.filter((call) => call.action === 'librarySave').length, 2);
-    assert.equal(h.modelCalls.filter((call) => call.action === 'cards').length, 1);
+    assert.equal(h.modelCalls.filter((call) => call.action === 'cards').length, 0);
 });
 
-test('closing during save and an Anki write with a lost reply recover from the outbox without another card', async (t) => {
+test('closing during note save preserves the write without selecting or creating a card', async (t) => {
     const h = await createHarness(t, {cards: [{front: CARD_FRONT, back: CARD_BACK}]});
-    await h.bridge.fixture('lose_add_reply');
     const gate = h.holdNextSave();
     const first = mountUi();
     t.after(() => { first.view.cancel(); first.dom.window.close(); });
@@ -379,29 +377,14 @@ test('closing during save and an Anki write with a lost reply recover from the o
     first.view.cancel();
     first.container.remove();
     gate.release.resolve();
-    await waitFor(async () => {
-        const state = await latestState(h.bridge);
-        return (await h.service.outbox()).length === 1 && state.calls.some((call) => call.action === 'addNote') && Object.keys(state.notes).length === 1;
-    }, 'Anki write and durable pending recovery item');
-
-    const stateAfterLostAdd = await latestState(h.bridge);
-    assert.equal(stateAfterLostAdd.markdownFiles.length, 1);
-    assert.equal(Object.keys(stateAfterLostAdd.notes).length, 1, 'fake Anki stored the note before losing its response');
-    assert.equal(stateAfterLostAdd.calls.filter((call) => call.action === 'addNote').length, 1);
-    assert.equal(h.modelCalls.filter((call) => call.action === 'cards').length, 1);
-
-    const reopened = mountUi();
-    t.after(() => { reopened.view.cancel(); reopened.dom.window.close(); });
-    await waitFor(() => !reopened.container.querySelector('.study-pending-recovery')?.hidden, 'recovery action visible after reopen');
-    reopened.container.querySelector('.study-pending-recovery button').click();
-    await waitFor(() => reopened.container.querySelector('.study-library-status')?.textContent.includes('已补齐'), 'recovered save receipt');
-    assert.equal((await h.service.outbox()).length, 0);
-    const finalState = await latestState(h.bridge);
-    assert.equal(finalState.markdownFiles.length, 1);
-    assert.equal(Object.keys(finalState.notes).length, 1);
-    assert.equal(finalState.calls.filter((call) => call.action === 'addNote').length, 1, 'retry finds the card created before the lost reply');
-    assert.equal(h.modelCalls.filter((call) => call.action === 'cards').length, 1, 'retry reuses the durable saved draft; it does not ask the model again');
-    const body = readFileSync(path.join(h.vault, finalState.markdownFiles[0]), 'utf8');
+    await waitFor(async () => (await h.service.saveIntents()).length === 0, 'completed note intent');
+    const state = await latestState(h.bridge);
+    assert.equal(state.markdownFiles.length, 1);
+    assert.deepEqual(state.notes, {});
+    assert.equal(state.calls.some(call => call.action === 'addNote'), false);
+    assert.equal(h.modelCalls.filter(call => call.action === 'cards').length, 0);
+    assert.equal((await h.service.handle('pendingPeek', {language: 'en'})).count, 0);
+    const body = readFileSync(path.join(h.vault, state.markdownFiles[0]), 'utf8');
     assert.equal(count(body, QUESTION), 1, body);
     assert.ok(body.includes(ANSWER));
 });
@@ -418,11 +401,11 @@ test('lost save acknowledgement retains explicit remember intent across service 
     const restarted = new StudyService(h.storage, h.native);
     assert.equal((await restarted.handle('pendingPeek', {language: 'en'})).count, 1);
     const row = await restarted.handle('retryPending', {language: 'en'});
-    assert.equal(row.ankiState, 'synced');
+    assert.equal(row.ankiState, 'saved');
     assert.equal((await restarted.handle('pendingPeek', {language: 'en'})).count, 0);
     const state = await latestState(h.bridge);
     assert.equal(state.markdownFiles.length, 1);
-    assert.equal(state.calls.filter((x) => x.action === 'addNote').length, 1);
+    assert.equal(state.calls.filter((x) => x.action === 'addNote').length, 0);
     assert.equal(count(readFileSync(path.join(h.vault, state.markdownFiles[0]), 'utf8'), QUESTION), 1);
 });
 

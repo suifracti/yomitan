@@ -996,6 +996,7 @@ export class StudyService {
             const videoTime = typeof source.videoTime === 'number' && Number.isFinite(source.videoTime) && source.videoTime >= 0 ? Math.floor(source.videoTime) : void 0;
             const sourceUrl = url;
             if (videoTime !== void 0 && url) { url = timedUrl(url, videoTime).url; }
+            /** @type {import('study').SavedWord} */
             let row = {id: crypto.randomUUID(), ...lookup, url, sourceUrl, title: String(source.title ?? '').slice(0, 300), videoTime, created: Date.now(), syncPending: true};
             const identity = sourceKey(row);
             await this.write(SAVED_KEY, (v) => {

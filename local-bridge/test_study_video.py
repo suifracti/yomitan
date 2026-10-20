@@ -89,8 +89,9 @@ class VideoBoundaryTests(unittest.TestCase):
     def test_native_origin_is_strict_and_asb_cannot_access_anki(self):
         import shutil, subprocess,struct
         native=self.root/'host';native.mkdir()
-        for name in ('study_video.py','study_translator.py','study_library.py'):
-            shutil.copyfile(pathlib.Path(__file__).parent/name,native/name)
+        from bridge_files import runtime_sources
+        for name, data in runtime_sources(pathlib.Path(__file__).parent).items():
+            (native/name).write_bytes(data)
         (native/'bridge-config.json').write_text(json.dumps({'vault':str(self.root),'codex':'/does/not/exist'}))
         def run(origin,p):
             raw=json.dumps(p).encode();out=subprocess.run([__import__('sys').executable,str(native/'study_translator.py'),origin],input=struct.pack('=I',len(raw))+raw,capture_output=True)

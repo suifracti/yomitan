@@ -55,7 +55,7 @@ class BridgeTests(unittest.TestCase):
   class Partial(io.BytesIO):
    def read(self,n=-1):return super().read(min(n,2))
   self.assertEqual(m.read_frame(Partial(raw)),{'text':'中文'})
-  with self.assertRaises(ValueError):m.read_frame(io.BytesIO(struct.pack('=I',6000001)))
+  with self.assertRaises(ValueError):m.read_frame(io.BytesIO(struct.pack('=I',16000001)))
  def test_thread_no_environment_no_tools_no_persistence(self):
   m=self.module();thread=m.thread_params('/tmp/isolated-test')
   self.assertEqual(thread['environments'],[]);self.assertEqual(thread['dynamicTools'],[])
