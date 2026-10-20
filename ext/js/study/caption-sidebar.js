@@ -35,13 +35,16 @@ export const SIDEBAR_STYLE = `
 #${ROOT_ID}{--r-fg:var(--st-ink,var(--yt-spec-text-primary,#1f2430));--r-muted:var(--st-muted,var(--yt-spec-text-secondary,#5a6172));--r-line:var(--st-line,var(--yt-spec-10-percent-layer,#e6e3dc));--r-tint:var(--st-tint,#f3f1ec);--r-accent:var(--st-accent,#3b4a8c);--r-mark:var(--st-mark,rgb(255 214 92 / 45%));
 margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var(--st-paper,transparent);color:var(--r-fg);font:14px/1.5 var(--st-sans,Roboto,Arial,sans-serif);overflow:hidden}
 #${ROOT_ID} .r-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 12px}
+#${ROOT_ID} .r-toolbar{display:flex;align-items:center;gap:6px;padding:0 10px 8px;white-space:nowrap}
+#${ROOT_ID} .r-toolbar button.r-btn{padding:3px 6px;flex-shrink:0}
+#${ROOT_ID} .r-progress{flex:1;min-width:0;color:var(--r-muted);font-size:11px;white-space:normal}
 #${ROOT_ID} .r-difficulty{color:var(--r-muted);font-size:11px}
 #${ROOT_ID} .r-star{position:absolute;right:8px;bottom:8px;color:var(--r-muted);font-size:11px;align-self:center}
 #${ROOT_ID} .r-recommend{padding:8px 12px;border-bottom:1px solid var(--r-line)}
 #${ROOT_ID} .r-recommend strong{font-size:12px}
 #${ROOT_ID} .r-recommend button{display:block;width:100%;padding:5px 0;text-align:left;border:0;background:none;color:var(--r-fg);font:inherit;font-size:13px;cursor:pointer}
 #${ROOT_ID} .r-title{flex:1 1 auto;font-weight:600;font-size:13px}
-#${ROOT_ID} .r-status{order:9;flex:1 0 100%;min-width:0;color:var(--r-muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+#${ROOT_ID} .r-status{min-width:0;padding:0 12px 6px;color:var(--r-muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 #${ROOT_ID} .r-status[data-mode=loop]{color:var(--r-accent)}
 #${ROOT_ID} button.r-btn{font:inherit;font-size:12px;color:var(--r-accent);background:transparent;border:1px solid var(--r-line);border-radius:6px;padding:3px 10px;cursor:pointer;transition:background-color 120ms,border-color 120ms}
 #${ROOT_ID} button.r-btn:hover:not(:disabled){border-color:var(--r-accent);background:var(--r-tint)}

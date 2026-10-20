@@ -260,7 +260,7 @@ export class YoutubeOverlay {
         const buttons = [
             ['load', '重新载入', () => this._reader.loadCaptions()],
             ['import', '导入字幕文件…', () => this._reader.pickFile()],
-            ['translate', '翻译接下来8句', () => this._reader.translateNext()],
+            ['translate', '翻译全文', () => this._reader.translateNext()],
             ['reveal', '在侧栏查看', () => { if (this._shown) { this._reader.revealRow(this._shown); } }],
             ['vtt', '下载原文 VTT', () => this._reader.download('vtt')],
             ['bilingual', '下载双语 VTT', () => this._reader.download('bilingual')],

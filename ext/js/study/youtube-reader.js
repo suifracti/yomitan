@@ -42,7 +42,7 @@ const WAIT_MS = 10000;
 
 
 /**
- * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, resume: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement, words: HTMLElement}} ReaderView
+ * @typedef {{root: HTMLElement, status: HTMLElement, progress: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, resume: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement, words: HTMLElement}} ReaderView
  */
 
 /**
@@ -107,6 +107,8 @@ export class YoutubeReader extends EventTarget {
         this._translateRun = '';
         /** @type {boolean} */
         this._translating = false;
+        /** @type {string} Model consent for this video and selected model. */
+        this._fullConsent = '';
         /** @type {Set<string>} */
         this._failed = new Set();
         /** @type {TranslationQueue} */
@@ -217,6 +219,7 @@ export class YoutubeReader extends EventTarget {
      */
     setPrefs(prefs) {
         const previous = this._prefs;
+        if (previous.engine !== prefs.engine) { this._translateRun = ''; this._queue.cancel(); }
         this._prefs = normalizeSubtitlePrefs(prefs);
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
@@ -433,7 +436,7 @@ export class YoutubeReader extends EventTarget {
     loadCaptions() { void this._load(this._generation); }
 
     /** Translates the next rows from the playback position, as the sidebar button does. */
-    translateNext() { void this._translate(false); }
+    translateNext() { void this._translate(false, true); }
 
     /**
      * @param {'vtt'|'bilingual'|'json'} kind
@@ -587,17 +590,19 @@ export class YoutubeReader extends EventTarget {
         status.setAttribute('role', 'status');
         status.textContent = '正在查找字幕…';
         const follow = this._button('跟随播放', () => this._resumeFollow());
-        follow.hidden = true;
+        follow.setAttribute('aria-pressed', 'true');
         const resume = this._button('继续', () => this.resume());
         resume.hidden = true;
         resume.title = '回到上次学到的句子';
         const load = this._button('重新载入', () => { void this._load(generation); });
-        const translate = this._button('翻译接下来8句', () => { void this._translate(false); });
-        translate.title = '从当前播放位置起，翻译还没有译文的 8 句';
+        const translate = this._button('翻译全文', () => { void this._translate(false, true); });
+        translate.title = '先翻当前位置后面的句子，再翻前面的；可随时取消';
+        const progress = document.createElement('small'); progress.className = 'r-progress';
+        progress.setAttribute('role', 'status');
         translate.classList.add('r-translate'); translate.hidden = true;
         const retry = this._button('重试失败', () => { void this._translate(true); });
         retry.hidden = true;
-        const cancel = this._button('取消翻译', () => {
+        const cancel = this._button('取消', () => {
             this._translateRun = '';
             this._queue.cancel();
             this._status('已取消；原文和已完成译文保留。');
@@ -625,7 +630,7 @@ export class YoutubeReader extends EventTarget {
         sourceSelect.dataset.source = '';
         sourceSelect.addEventListener('change', () => { void this._load(generation, sourceSelect.value); });
         source.append(sourceSelect);
-        menu.append(load, source, translationSettingsLink());
+        menu.append(load, resume, retry, source, translationSettingsLink());
         for (const [key, label] of toggles) {
             const toggle = document.createElement('label');
             toggle.className = 'r-switch';
@@ -650,7 +655,9 @@ export class YoutubeReader extends EventTarget {
         menu.append(downloads);
         const difficulty = document.createElement('small');
         difficulty.className = 'r-difficulty';
-        head.append(title, difficulty, status, resume, translate, retry, cancel, follow, more);
+        head.append(title, difficulty);
+        const toolbar = document.createElement('div'); toolbar.className = 'r-toolbar';
+        toolbar.append(translate, progress, cancel, follow, more);
         const list = document.createElement('div');
         list.className = 'r-list';
         list.setAttribute('role', 'list');
@@ -685,7 +692,7 @@ export class YoutubeReader extends EventTarget {
             tabButtons.push(tab);
             tabs.append(tab);
         }
-        root.append(head, menu, tabs, list, words);
+        root.append(head, toolbar, status, menu, tabs, list, words);
         root.classList.toggle('r-blur', this._prefs.blur);
         root.classList.toggle('r-mono', !this._prefs.bilingual);
         // Reveal one blurred translation on click without affecting the others.
@@ -708,7 +715,7 @@ export class YoutubeReader extends EventTarget {
             void this._importFile(file);
         });
         host.prepend(root);
-        this._view = {root, status, load, follow, resume, list, translate, cancel, retry, more, menu, words};
+        this._view = {root, status, progress, load, follow, resume, list, translate, cancel, retry, more, menu, words};
         this._place();
         if (this._site.pinFirst()) { this._keepFirst(host); }
         this._syncMenu();
@@ -1025,6 +1032,7 @@ export class YoutubeReader extends EventTarget {
         this._list.render(view.list, session.cues);
         view.load.textContent = '重新载入';
         view.translate.hidden = false;
+        view.progress.textContent = `已翻译 ${session.progress().translated}/${session.cues.length}`;
         view.retry.hidden = true;
         this._status(`${session.source.trackName ?? session.source.language} · ${session.cues.length} 句；选词用现有词卡`);
         this._active = '';
@@ -1111,24 +1119,22 @@ export class YoutubeReader extends EventTarget {
         return [session.cues[index - 1]?.text, session.cues[index + 1]?.text].filter(Boolean).join('\n').slice(0, 1200);
     }
 
-    /** @param {boolean} retryOnly */
-    async _translate(retryOnly) {
+    /** @param {boolean} retryOnly
+     * @param {boolean} [full]
+     */
+    async _translate(retryOnly, full = false) {
         const session = this._session;
         const view = this._view;
         if (!session || !view || this._translating) { return; }
         const active = session.active((this._video?.currentTime || 0) * 1000)[0];
         const index = active ? session.cues.indexOf(active) : 0;
-        const selected = (retryOnly ? session.cues.filter((c) => this._failed.has(c.id)) : session.cues.slice(index).filter((c) => !session.translation(c.id))).slice(0, 8);
-        const items = [];
-        let chars = 0;
-        for (const cue of selected) {
-            const text = cue.text.replaceAll(/\s*\n\s*/g, ' ');
-            if (chars + text.length > 6000) { break; }
-            chars += text.length;
-            items.push({id: cue.id, text, context: this._context(session, session.cues.indexOf(cue))});
-        }
+        const ordered = [...session.cues.slice(index), ...session.cues.slice(0, index)];
+        const needed = ordered.filter((cue) => retryOnly ? this._failed.has(cue.id) : !session.translation(cue.id));
+        const selected = full || retryOnly ? needed : needed.slice(0, 8);
+        const items = selected.map((cue) => ({id: cue.id, text: cue.text.replaceAll(/\s*\n\s*/g, ' '),
+            context: this._context(session, session.cues.indexOf(cue))}));
         if (items.length === 0) {
-            this._status('这段已翻译；可定位下一段再继续。');
+            this._status('这些句子已经翻译好了。');
             return;
         }
         this._translating = true;
@@ -1142,17 +1148,27 @@ export class YoutubeReader extends EventTarget {
         try {
             const config = /** @type {import('study').StudyConfig} */ (await this._call('subtitleSettings'));
             if (this._session !== session || this._translateRun !== runId) { return; }
+            const consent = JSON.stringify([session.source.mediaKey, this._prefs.engine, config.model, config.effort]);
+            if (full && this._prefs.engine === 'model' && this._fullConsent !== consent) {
+                // Token estimate only; no provider pricing or billing precision is claimed.
+                const estimate = Math.ceil(items.reduce((sum, item) => sum + item.text.length + item.context.length, 0) / 3 + items.length * 80);
+                if (!window.confirm(`全文 ${session.cues.length} 句，大约消耗 ${estimate.toLocaleString()} Token（估算，实际用量由模型决定）。继续吗？`)) {
+                    this._status('没有开始翻译。'); return;
+                }
+                this._fullConsent = consent;
+            }
             const result = await this._queue.translate(items, {...config,
                 // The service owns cache language, expiry and clearing; do not bypass it with a second memo.
                 cacheEnabled: false,
                 onItem: (row) => {
-                    if (this._session !== session) { return; }
+                    if (this._session !== session || this._translateRun !== runId) { return; }
                     const target = this._rows.get(row.id)?.querySelector('.r-translation');
                     if (row.translation) {
                         session.acceptTranslation(row.id, row.translation);
                         this._failed.delete(row.id);
                         if (target) { target.textContent = row.translation; }
                         this._emit('translation', {id: row.id});
+                        view.progress.textContent = `已翻译 ${session.progress().translated}/${session.cues.length}`;
                     } else {
                         this._failed.add(row.id);
                         if (target) { target.textContent = `翻译未完成：${row.error || '可重试'}`; }
@@ -1477,13 +1493,13 @@ export class YoutubeReader extends EventTarget {
     /** */
     _pauseFollow() {
         this._follow = false;
-        if (this._view && this._session) { this._view.follow.hidden = false; }
+        if (this._view && this._session) { this._view.follow.setAttribute('aria-pressed', 'false'); }
     }
 
     /** */
     _resumeFollow() {
         this._follow = true;
-        if (this._view) { this._view.follow.hidden = true; }
+        if (this._view) { this._view.follow.setAttribute('aria-pressed', 'true'); }
         this._active = '';
         this._onTime();
     }
