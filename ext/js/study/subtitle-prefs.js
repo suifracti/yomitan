@@ -129,3 +129,47 @@ export function onSubtitlePrefsChanged(callback) {
     chrome.storage.onChanged.addListener(listener);
     return () => chrome.storage.onChanged.removeListener(listener);
 }
+
+/** Per-video memory: where the learner was and how the captions were shifted. */
+export const VIDEO_STATE_KEY = 'studyVideoState';
+
+const VIDEO_STATE_LIMIT = 300;
+
+/** @typedef {{resumeMs?: number, offsetMs?: number, trackKey?: string, at: number}} VideoState */
+
+/**
+ * @param {string} mediaKey
+ * @returns {Promise<VideoState|null>}
+ */
+export async function readVideoState(mediaKey) {
+    const area = storageArea();
+    if (!area || !mediaKey) { return null; }
+    try {
+        const stored = /** @type {Record<string, unknown>} */ (await area.get(VIDEO_STATE_KEY));
+        const all = /** @type {Record<string, VideoState>} */ (stored[VIDEO_STATE_KEY] && typeof stored[VIDEO_STATE_KEY] === 'object' ? stored[VIDEO_STATE_KEY] : {});
+        const row = all[mediaKey];
+        return row && typeof row === 'object' ? row : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Merges a change for one video; the oldest videos are forgotten past the limit.
+ * @param {string} mediaKey
+ * @param {Partial<VideoState>} patch
+ */
+export async function writeVideoState(mediaKey, patch) {
+    const area = storageArea();
+    if (!area || !mediaKey) { return; }
+    try {
+        const stored = /** @type {Record<string, unknown>} */ (await area.get(VIDEO_STATE_KEY));
+        const all = /** @type {Record<string, VideoState>} */ ({...(stored[VIDEO_STATE_KEY] && typeof stored[VIDEO_STATE_KEY] === 'object' ? stored[VIDEO_STATE_KEY] : {})});
+        all[mediaKey] = {...all[mediaKey], ...patch, at: Date.now()};
+        const keys = Object.keys(all);
+        if (keys.length > VIDEO_STATE_LIMIT) {
+            for (const key of keys.sort((a, b) => all[a].at - all[b].at).slice(0, keys.length - VIDEO_STATE_LIMIT)) { delete all[key]; }
+        }
+        await area.set({[VIDEO_STATE_KEY]: all});
+    } catch { /* Memory is a convenience; studying continues without it. */ }
+}

@@ -23,10 +23,10 @@
  */
 import {SubtitleSession, cuesFromTimedText, groupForReading, groupsFromIds, timeLabel} from './subtitle-session.js';
 import {ENGINE_LABELS, chromeTranslate} from './free-translators.js';
-import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, writeSubtitlePrefs} from './subtitle-prefs.js';
+import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, readVideoState, writeSubtitlePrefs, writeVideoState} from './subtitle-prefs.js';
 import {TranslationQueue} from './translation-queue.js';
 import {studyCall} from './study-client.js';
-import {YoutubeOverlay, engineSelect} from './youtube-overlay.js';
+import {YoutubeOverlay, engineSelect, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 import {timedUrl} from './media-key.js';
@@ -91,6 +91,10 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-downloads{display:flex;flex-wrap:wrap;gap:6px;flex:1 0 100%}
 #${ROOT_ID} .r-source{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
 #${ROOT_ID} .r-source[hidden]{display:none}
+#${ROOT_ID} .r-offset{display:inline-flex;align-items:center;gap:4px;flex:1 0 100%}
+#${ROOT_ID} .r-offset button{font:inherit;font-size:11px;color:var(--r-accent);background:none;border:1px solid var(--r-line);border-radius:5px;padding:1px 6px;cursor:pointer}
+#${ROOT_ID} .r-offset output{min-width:4.5em;text-align:center;font-variant-numeric:tabular-nums}
+#${ROOT_ID} .r-status[data-mode=shadow]{color:var(--r-accent)}
 #${ROOT_ID} .r-source select{max-width:100%;font:inherit;font-size:12px;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:2px 6px}
 #${ROOT_ID}.is-drop{outline:2px dashed var(--r-accent);outline-offset:-4px}
 #${ROOT_ID}.r-blur .r-translation:not(.is-revealed){filter:blur(5px);cursor:pointer;transition:filter 120ms}
@@ -102,7 +106,7 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 `;
 
 /**
- * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement, words: HTMLElement}} ReaderView
+ * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, resume: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement, words: HTMLElement}} ReaderView
  */
 
 /**
@@ -131,6 +135,18 @@ export class YoutubeReader extends EventTarget {
         this._sources = [];
         /** @type {Map<string, string>} Translations that came inside a bilingual file. */
         this._fileTranslations = new Map();
+        /** @type {number} Caption shift for this video, kept across regrouping and reloads. */
+        this._offsetMs = 0;
+        /** @type {{id: string, startMs: number, endMs: number, plays: number}|null} Sentence being shadowed. */
+        this._shadowRow = null;
+        /** @type {string} The sentence we just paused after, so playing on does not pause again. */
+        this._shadowDone = '';
+        /** @type {number} */
+        this._shadowTimer = 0;
+        /** @type {number} */
+        this._savedAt = 0;
+        /** @type {number} Resume point offered for this video, or -1. */
+        this._resumeMs = -1;
         /** @type {import('./subtitle-prefs.js').SubtitlePrefs} */
         this._prefs = normalizeSubtitlePrefs({...DEFAULT_SUBTITLE_PREFS, ...prefs});
         /** @type {boolean} Tests pass fixed preferences instead of reading storage. */
@@ -255,6 +271,7 @@ export class YoutubeReader extends EventTarget {
             this._present(this._rawSession);
         }
         if (this._prefs.aiSegment && !previous.aiSegment) { void this._runSegmentation(); }
+        this._armShadow();
         if (!this._prefs.aiSegment) { ++this._segmentRun; }
         this._syncMenu();
         this._emit('prefs', {prefs: this._prefs});
@@ -298,6 +315,9 @@ export class YoutubeReader extends EventTarget {
      */
     _present(raw) {
         const session = this._readingSession(raw);
+        for (const target of new Set([raw, session])) {
+            try { target.setOffset(this._offsetMs); } catch { /* keep the previous shift */ }
+        }
         if (this._fileTranslations.size > 0) {
             for (const cue of session.cues) {
                 const text = this.members(cue.id).map((id) => this._fileTranslations.get(id) ?? '').filter(Boolean)
@@ -337,6 +357,124 @@ export class YoutubeReader extends EventTarget {
 
     /** @param {string} id */
     toggleLoop(id) { this._toggleLoop(id); }
+
+    /** @returns {number} */
+    get offsetMs() { return this._offsetMs; }
+
+    /**
+     * Shifts the captions against the video (positive = later) and remembers it for this video.
+     * @param {number} ms
+     */
+    setOffset(ms) {
+        const value = Math.max(-600000, Math.min(600000, Math.round(ms / 50) * 50));
+        this._offsetMs = value;
+        for (const target of new Set([this._rawSession, this._session])) {
+            try { target?.setOffset(value); } catch { /* bounds are checked above */ }
+        }
+        this._shadowRow = null;
+        this._active = '';
+        this._onTime();
+        this._syncMenu();
+        this._emit('offset', {ms: value});
+        if (this._mediaKey && this._rawSession) { void writeVideoState(this._mediaKey, {offsetMs: value, trackKey: this._rawSession.source.trackKey}); }
+    }
+
+    /** Jumps to the offered resume point. */
+    resume() {
+        if (this._resumeMs < 0 || !this._video) { return; }
+        this._video.currentTime = this._resumeMs / 1000;
+        this._clearResume();
+        this._resumeFollow();
+    }
+
+    /** @returns {number} */
+    get resumeMs() { return this._resumeMs; }
+
+    /** */
+    _clearResume() {
+        if (this._resumeMs < 0) { return; }
+        this._resumeMs = -1;
+        if (this._view) { this._view.resume.hidden = true; }
+        this._emit('resume', {ms: -1});
+    }
+
+    /**
+     * After a track loads: restore its caption shift and offer (never force) the last position.
+     * @param {SubtitleSession} raw
+     */
+    async _restoreVideoState(raw) {
+        const key = this._mediaKey;
+        if (!key) { return; }
+        const state = await readVideoState(key);
+        if (!state || this._rawSession !== raw) { return; }
+        if (typeof state.offsetMs === 'number' && state.offsetMs !== 0 && state.trackKey === raw.source.trackKey) { this.setOffset(state.offsetMs); }
+        const at = state.resumeMs;
+        const now = (this._video?.currentTime ?? 0) * 1000;
+        if (this._prefs.resume && typeof at === 'number' && at > 30000 && Math.abs(at - now) > 15000 && this._view) {
+            this._resumeMs = at;
+            this._view.resume.textContent = `从 ${timeLabel(at)} 继续`;
+            this._view.resume.hidden = false;
+            this._emit('resume', {ms: at});
+        }
+    }
+
+    /** Starts or stops the shadowing check with the preference. */
+    _armShadow() {
+        if (this._prefs.shadow && this._session && !this._shadowTimer) {
+            this._shadowTimer = window.setInterval(() => this._shadowTick(), 60);
+        } else if ((!this._prefs.shadow || !this._session) && this._shadowTimer) {
+            clearInterval(this._shadowTimer);
+            this._shadowTimer = 0;
+            this._shadowRow = null;
+        }
+    }
+
+    /**
+     * Shadowing: each sentence plays the chosen number of times, then the video pauses
+     * so the learner can say it. Playing on continues; a loop takes precedence.
+     */
+    _shadowTick() {
+        const session = this._session;
+        const video = this._video;
+        if (!session || !video || video.paused || this._loop || !this._prefs.shadow) { return; }
+        const offset = session.offsetMs;
+        const now = video.currentTime * 1000 - offset;
+        let row = this._shadowRow;
+        if (!row || now < row.startMs - 300 || now > row.endMs + 1500) {
+            const cue = session.cues.find((c) => c.startMs <= now && now < c.endMs);
+            if (!cue || (cue.id === this._shadowDone && now > cue.endMs - 400)) {
+                this._shadowRow = null;
+                return;
+            }
+            if (cue.id !== this._shadowDone) { this._shadowDone = ''; }
+            row = {id: cue.id, startMs: cue.startMs, endMs: cue.endMs, plays: 1};
+            this._shadowRow = row;
+        }
+        if (now < row.endMs - 40) { return; }
+        if (row.plays < this._prefs.shadowRepeats) {
+            ++row.plays;
+            video.currentTime = Math.max(0, row.startMs + offset) / 1000;
+            this._status(`跟读：第 ${row.plays}/${this._prefs.shadowRepeats} 遍`, 'shadow');
+            return;
+        }
+        video.pause();
+        this._shadowDone = row.id;
+        this._shadowRow = null;
+        this._status('跟读：跟着说完这句，再按播放继续', 'shadow');
+        this._emit('shadow', {id: row.id});
+    }
+
+    /**
+     * Remembers the sentence being watched, at most every few seconds.
+     * @param {number} playbackMs
+     */
+    _saveProgress(playbackMs) {
+        const key = this._mediaKey;
+        if (!key || !this._video || this._video.paused || Date.now() - this._savedAt < 5000) { return; }
+        this._savedAt = Date.now();
+        void writeVideoState(key, {resumeMs: Math.max(0, Math.round(playbackMs))});
+        if (this._resumeMs >= 0 && Math.abs(playbackMs - this._resumeMs) < 15000) { this._clearResume(); }
+    }
 
     /** Starts the explicit caption load, as the sidebar button does. */
     loadCaptions() { void this._load(this._generation); }
@@ -430,6 +568,14 @@ export class YoutubeReader extends EventTarget {
         this._aiGroups = null;
         this._fileTranslations = new Map();
         this._sources = [];
+        this._offsetMs = 0;
+        this._resumeMs = -1;
+        this._shadowRow = null;
+        this._shadowDone = '';
+        if (this._shadowTimer) {
+            clearInterval(this._shadowTimer);
+            this._shadowTimer = 0;
+        }
         ++this._segmentRun;
         this._rows.clear();
         this._rowInfo.clear();
@@ -484,6 +630,9 @@ export class YoutubeReader extends EventTarget {
         status.textContent = this._site.kind === 'web' ? '载入页面字幕或导入字幕文件后选词学习。' : '载入原文后选词学习；翻译需手动点击。';
         const follow = this._button('跟随播放', () => this._resumeFollow());
         follow.hidden = true;
+        const resume = this._button('继续', () => this.resume());
+        resume.hidden = true;
+        resume.title = '回到上次学到的句子';
         const load = this._button('载入字幕', () => { void this._load(generation); });
         const translate = this._button('翻译接下来8句', () => { void this._translate(false); });
         translate.title = '从当前播放位置起，翻译还没有译文的 8 句';
@@ -508,7 +657,7 @@ export class YoutubeReader extends EventTarget {
         menu.className = 'r-menu scan-disable';
         menu.hidden = true;
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）']];
+        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）'], ['resume', '记住观看进度']];
         // Other sites may offer several subtitle files; the learner can switch between them.
         const source = document.createElement('label');
         source.className = 'r-source';
@@ -529,6 +678,7 @@ export class YoutubeReader extends EventTarget {
             toggle.append(box, label);
             menu.append(toggle);
         }
+        menu.append(repeatSelect((shadowRepeats) => this.updatePrefs({shadowRepeats})), offsetControl(this));
         const downloads = document.createElement('div');
         downloads.className = 'r-downloads';
         const importButton = this._button('导入字幕文件…', () => this.pickFile());
@@ -540,7 +690,7 @@ export class YoutubeReader extends EventTarget {
             downloads.append(button);
         }
         menu.append(downloads);
-        head.append(title, status, translate, retry, cancel, follow, more, load);
+        head.append(title, status, resume, translate, retry, cancel, follow, more, load);
         const list = document.createElement('div');
         list.className = 'r-list';
         list.setAttribute('role', 'list');
@@ -598,7 +748,7 @@ export class YoutubeReader extends EventTarget {
             void this._importFile(file);
         });
         host.prepend(root);
-        this._view = {root, status, load, follow, list, translate, cancel, retry, more, menu, words};
+        this._view = {root, status, load, follow, resume, list, translate, cancel, retry, more, menu, words};
         if (this._site.pinFirst()) { this._keepFirst(host); }
         this._syncMenu();
     }
@@ -626,6 +776,7 @@ export class YoutubeReader extends EventTarget {
             /** @type {HTMLInputElement} */ (box).checked = Boolean(this._prefs[key]);
         }
         for (const select of view.menu.querySelectorAll('select[data-engine]')) { /** @type {HTMLSelectElement} */ (select).value = this._prefs.engine; }
+        syncControls(view.menu, this);
         for (const button of view.menu.querySelectorAll('button[data-download]')) {
             /** @type {HTMLButtonElement} */ (button).disabled = !this._session;
         }
@@ -707,7 +858,9 @@ export class YoutubeReader extends EventTarget {
         /** @type {Map<string, string>} */
         const translations = bilingual?.translations ?? new Map();
         this._fileTranslations = translations;
+        this._offsetMs = 0;
         this._present(session);
+        void this._restoreVideoState(session);
         if (bilingual) { this._status(`${meta.label} · ${cues.length} 句 · 已带中文译文`); }
         if (this._prefs.aiSegment) { void this._runSegmentation(); }
     }
@@ -790,7 +943,9 @@ export class YoutubeReader extends EventTarget {
             this._rawSession = session;
             this._aiGroups = null;
             this._fileTranslations = new Map();
+            this._offsetMs = 0;
             this._present(session);
+            void this._restoreVideoState(session);
             if (this._prefs.aiSegment) { void this._runSegmentation(); }
         } catch (error) {
             if (generation === this._generation) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
@@ -908,15 +1063,14 @@ export class YoutubeReader extends EventTarget {
             translated.className = 'r-translation scan-disable';
             translated.lang = 'zh-CN';
             translated.textContent = session.translation(cue.id);
-            const start = session.seekSeconds(cue.id);
-            const sourceUrl = timedUrl(session.source.url || location.href, start);
+            // Times are read when used, so a later offset change still captures the right clip.
             /** @type {RowInfo} */
             const info = {
                 text: text.textContent.trimEnd(),
                 context: this._context(session, index),
-                start,
-                end: (cue.endMs + session.offsetMs) / 1000,
-                url: sourceUrl.url,
+                get start() { return Math.max(0, cue.startMs + session.offsetMs) / 1000; },
+                get end() { return Math.max(0, cue.endMs + session.offsetMs) / 1000; },
+                get url() { return timedUrl(session.source.url || location.href, Math.max(0, cue.startMs + session.offsetMs) / 1000).url; },
                 translation: () => session.translation(cue.id),
                 video: () => {
                     this._markLookup(cue.id);
@@ -955,6 +1109,7 @@ export class YoutubeReader extends EventTarget {
             video.addEventListener('timeupdate', this._timeListener);
             this._onTime();
         }
+        this._armShadow();
     }
 
     /**
@@ -1068,6 +1223,7 @@ export class YoutubeReader extends EventTarget {
         for (const [id, row] of this._rows) { row.classList.toggle('is-current', active.includes(id)); }
         this._emit('active', {ids: active});
         this._autoTranslate(video.currentTime * 1000);
+        if (this._prefs.resume) { this._saveProgress(video.currentTime * 1000); }
         const first = active.length > 0 ? this._rows.get(active[0]) : void 0;
         if (this._follow && first) {
             const list = this._view.list;

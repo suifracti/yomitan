@@ -127,3 +127,74 @@ test('other sites: nothing found explains how to get subtitles', async () => {
     reader.loadCaptions();
     await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('导入字幕文件'));
 });
+
+test('shadowing pauses after each sentence (after the chosen repeats); offset and progress are remembered per video', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    /** @type {Record<string, unknown>} */
+    const store = {studyVideoState: {'web:course.example.org/watch?id=7': {resumeMs: 95000, at: 1}}};
+    vi.stubGlobal('chrome', {storage: {
+        local: {
+            get: async (/** @type {string} */ key) => ({[key]: store[key]}),
+            set: async (/** @type {Record<string, unknown>} */ values) => { Object.assign(store, values); },
+        },
+        onChanged: {addListener() {}, removeListener() {}},
+    }});
+    try {
+        const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+        let current = 0;
+        let paused = false;
+        Object.defineProperty(video, 'currentTime', {configurable: true, get: () => current, set: (/** @type {number} */ v) => { current = v; }});
+        Object.defineProperty(video, 'paused', {configurable: true, get: () => paused});
+        video.pause = () => { paused = true; };
+        const cues = [{id: '0', sourceIndex: 0, startMs: 0, endMs: 2000, text: 'One.'}, {id: '1', sourceIndex: 1, startMs: 2000, endMs: 4000, text: 'Two.'}];
+        const reader = new YoutubeReader({prefs: {merge: false, engine: 'model', shadow: true, shadowRepeats: 2, resume: true}, site: /** @type {never} */ (fakeSite({cues, language: 'en', label: 'English', id: 'track:0', all: []}))});
+        reader.start();
+        await vi.waitFor(() => expect(document.querySelector('#study-yt-reader')).not.toBe(null));
+        reader.loadCaptions();
+        await vi.waitFor(() => expect(document.querySelectorAll('#study-yt-reader .r-cue').length).toBe(2));
+        // A resume point is offered, never applied by itself.
+        await vi.waitFor(() => expect(reader.resumeMs).toBe(95000));
+        expect(current).toBe(0);
+        const resume = /** @type {HTMLButtonElement} */ ([...document.querySelectorAll('#study-yt-reader .r-btn')].find((button) => button.textContent?.startsWith('从 1:35')));
+        expect(resume.hidden).toBe(false);
+
+        // eslint-disable-next-line no-underscore-dangle -- drive the 60 ms shadowing check directly
+        const tick = () => reader._shadowTick();
+        current = 0.5;
+        tick();
+        current = 1.98;
+        tick();
+        // First play done: back to the start for the second.
+        expect(current).toBe(0);
+        expect(paused).toBe(false);
+        current = 1.97;
+        tick();
+        expect(paused).toBe(true);
+        expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('跟读');
+        // Playing on from the same spot does not pause again on the same sentence.
+        paused = false;
+        current = 1.99;
+        tick();
+        current = 2.5;
+        tick();
+        expect(paused).toBe(false);
+
+        reader.setOffset(1200);
+        expect(reader.session?.offsetMs).toBe(1200);
+        expect(reader.rowInfo('1')?.start).toBe(3.2);
+        expect(document.querySelector('#study-yt-reader output[data-offset]')?.textContent).toBe('+1.2 秒');
+        await vi.waitFor(() => expect(store.studyVideoState).toMatchObject({'web:course.example.org/watch?id=7': {offsetMs: 1200, trackKey: 'track:0'}}));
+
+        resume.click();
+        expect(current).toBe(95);
+        expect(resume.hidden).toBe(true);
+    } finally {
+        vi.unstubAllGlobals();
+        vi.stubGlobal('ResizeObserver', class {
+            /** */
+            observe() {}
+            /** */
+            disconnect() {}
+        });
+    }
+});

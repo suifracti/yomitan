@@ -51,6 +51,13 @@ const STYLE = `
 #${OVERLAY_ID} .o-line:hover .o-side,#${OVERLAY_ID} .o-side:focus-within{opacity:1}
 #${OVERLAY_ID} .o-side button{width:26px;height:22px;padding:0;border:0;border-radius:4px;background:rgb(8 8 10 / 72%);color:#fff;font:13px/22px -apple-system,sans-serif;cursor:pointer}
 #${OVERLAY_ID} .o-side button[aria-pressed=true]{color:#a9b6ef}
+#${OVERLAY_ID} .o-chip{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:3px 6px 3px 10px;border-radius:999px;background:rgb(8 8 10 / 72%);color:#eee;font:13px/1.4 -apple-system,'PingFang SC',sans-serif;white-space:nowrap;pointer-events:auto}
+#${OVERLAY_ID} .o-chip[hidden]{display:none}
+#${OVERLAY_ID} .o-chip button{padding:1px 8px;border:1px solid rgb(255 255 255 / 30%);border-radius:999px;background:none;color:#fff;font:inherit;font-size:12px;cursor:pointer}
+#${OVERLAY_ID} .o-chip button[hidden]{display:none}
+#${PANEL_ID} .p-offset button{padding:1px 7px;border:1px solid rgb(255 255 255 / 22%);border-radius:5px;background:none;color:#eee;font:inherit;font-size:12px;cursor:pointer}
+#${PANEL_ID} .p-offset button:disabled{opacity:.45;cursor:default}
+#${PANEL_ID} .p-offset output{min-width:4.5em;text-align:center;font-variant-numeric:tabular-nums}
 #${BUTTON_ID}{display:inline-flex;align-items:center;justify-content:center;width:48px;opacity:.9}
 #${BUTTON_ID} svg{width:24px;height:24px}
 #${BUTTON_ID}[aria-expanded=true]{opacity:1}
@@ -98,6 +105,10 @@ export class YoutubeOverlay {
         this._resize = null;
         /** @type {number} */
         this._timer = 0;
+        /** @type {HTMLElement|null} One short hint above the captions (resume, shadowing pause). */
+        this._chip = null;
+        /** @type {number} */
+        this._chipTimer = 0;
     }
 
     /** */
@@ -110,6 +121,16 @@ export class YoutubeOverlay {
         reader.addEventListener('lookup', () => this._paintStates());
         reader.addEventListener('loop', () => this._paintStates());
         reader.addEventListener('prefs', () => this._applyPrefs());
+        reader.addEventListener('offset', () => this._applyPrefs());
+        reader.addEventListener('resume', (event) => {
+            const {ms} = /** @type {CustomEvent<{ms: number}>} */ (event).detail;
+            if (ms < 0) {
+                this._hint('');
+            } else {
+                this._hint(`上次学到 ${clock(ms)}`, '继续', () => reader.resume(), 12000);
+            }
+        });
+        reader.addEventListener('shadow', () => this._hint('跟读：说完这句，再按播放继续', '', null, 4000));
         document.addEventListener('pointerdown', (event) => {
             const target = /** @type {Node} */ (event.target);
             if (this._panel && !this._panel.hidden && !this._panel.contains(target) && !this._button?.contains(target)) { this._togglePanel(false); }
@@ -156,6 +177,11 @@ export class YoutubeOverlay {
                 this._hold = false;
                 this._release();
             });
+            this._chip = document.createElement('div');
+            this._chip.className = 'o-chip scan-disable';
+            this._chip.hidden = true;
+            this._chip.setAttribute('role', 'status');
+            this._overlay.append(this._chip);
             player.append(this._overlay);
             this._lines.clear();
             this._shown = '';
@@ -202,7 +228,7 @@ export class YoutubeOverlay {
         panel.hidden = true;
         isolate(panel);
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）']];
+        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）']];
         const engine = engineSelect((value) => this._reader.updatePrefs({engine: value}));
         engine.classList.add('p-row');
         panel.append(engine);
@@ -219,6 +245,11 @@ export class YoutubeOverlay {
             row.append(text, box);
             panel.append(row);
         }
+        const repeats = repeatSelect((shadowRepeats) => this._reader.updatePrefs({shadowRepeats}));
+        repeats.classList.add('p-row');
+        const offset = offsetControl(this._reader);
+        offset.classList.add('p-row', 'p-offset');
+        panel.append(repeats, offset);
         const note = document.createElement('div');
         note.className = 'p-note';
         note.dataset.note = '';
@@ -268,7 +299,7 @@ export class YoutubeOverlay {
         const loaded = this._reader.session !== null;
         this._site.hideNative(prefs.overlay && loaded);
         if (this._overlay) {
-            this._overlay.hidden = !prefs.overlay || !loaded || !this._shown;
+            this._overlay.hidden = (!prefs.overlay || !loaded || !this._shown) && (this._chip?.hidden ?? true);
             this._overlay.classList.toggle('o-mono', !prefs.bilingual);
             this._overlay.classList.toggle('o-blur', prefs.blur);
         }
@@ -278,6 +309,7 @@ export class YoutubeOverlay {
                 /** @type {HTMLInputElement} */ (box).checked = Boolean(prefs[key]);
             }
             for (const select of this._panel.querySelectorAll('select[data-engine]')) { /** @type {HTMLSelectElement} */ (select).value = prefs.engine; }
+            syncControls(this._panel, this._reader);
             for (const button of this._panel.querySelectorAll('button[data-action]')) {
                 const action = /** @type {HTMLButtonElement} */ (button).dataset.action;
                 /** @type {HTMLButtonElement} */ (button).disabled = !['load', 'import', 'dock'].includes(action ?? '') && !loaded;
@@ -286,6 +318,39 @@ export class YoutubeOverlay {
             }
             const note = this._panel.querySelector('[data-note]');
             if (note) { note.textContent = loaded ? '' : (this._site.kind === 'youtube' ? '还没载入字幕：点「载入字幕」，或用右侧字幕栏。' : '还没载入字幕：点「载入字幕」读取页面字幕（先在播放器里打开 CC），或导入字幕文件。'); }
+        }
+    }
+
+    /**
+     * @param {string} text Empty hides the hint.
+     * @param {string} [label]
+     * @param {(() => void)|null} [action]
+     * @param {number} [ms] Hides itself after this long.
+     */
+    _hint(text, label = '', action = null, ms = 0) {
+        const chip = this._chip;
+        if (!chip) { return; }
+        clearTimeout(this._chipTimer);
+        chip.hidden = !text;
+        if (!text) { return; }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.hidden = !action;
+        if (action) {
+            button.addEventListener('click', () => {
+                action();
+                chip.hidden = true;
+            });
+        }
+        chip.replaceChildren(text, button);
+        // The overlay box is hidden between sentences; the hint must still show.
+        if (this._overlay) { this._overlay.hidden = false; }
+        if (ms > 0) {
+            this._chipTimer = window.setTimeout(() => {
+                chip.hidden = true;
+                this._applyPrefs();
+            }, ms);
         }
     }
 
@@ -422,6 +487,81 @@ function isolate(element) {
     for (const type of ISOLATED_EVENTS) {
         element.addEventListener(type, (event) => event.stopPropagation());
     }
+}
+
+/**
+ * @param {number} ms
+ * @returns {string}
+ */
+function clock(ms) {
+    const whole = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(whole / 3600);
+    const rest = `${Math.floor((whole % 3600) / 60)}:${String(whole % 60).padStart(2, '0')}`;
+    return hours ? `${hours}:${rest.padStart(5, '0')}` : rest;
+}
+
+/**
+ * How many times shadowing plays each sentence before it pauses.
+ * @param {(repeats: number) => void} onChange
+ * @returns {HTMLLabelElement}
+ */
+export function repeatSelect(onChange) {
+    const label = document.createElement('label');
+    label.className = 'r-engine';
+    label.append('跟读遍数');
+    const select = document.createElement('select');
+    select.dataset.repeats = '';
+    for (const count of [1, 2, 3, 5]) {
+        select.append(Object.assign(document.createElement('option'), {value: String(count), textContent: `每句 ${count} 遍`}));
+    }
+    select.addEventListener('change', () => onChange(Number(select.value)));
+    label.append(select);
+    return label;
+}
+
+/**
+ * Nudges captions earlier or later against the video; remembered per video.
+ * @param {import('./youtube-reader.js').YoutubeReader} reader
+ * @returns {HTMLElement}
+ */
+export function offsetControl(reader) {
+    const row = document.createElement('div');
+    row.className = 'r-offset';
+    row.append('字幕偏移');
+    /** @type {[string, string, () => number][]} */
+    const steps = [['−0.5', '字幕提前 0.5 秒', () => reader.offsetMs - 500], ['', '', () => 0], ['+0.5', '字幕延后 0.5 秒', () => reader.offsetMs + 500], ['归零', '取消偏移', () => 0]];
+    for (const [text, title, next] of steps) {
+        if (!text) {
+            const output = document.createElement('output');
+            output.dataset.offset = '';
+            output.textContent = '0 秒';
+            row.append(output);
+            continue;
+        }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text;
+        button.title = title;
+        button.setAttribute('aria-label', title);
+        button.dataset.offsetStep = '';
+        button.addEventListener('click', () => reader.setOffset(next()));
+        row.append(button);
+    }
+    return row;
+}
+
+/**
+ * Mirrors the repeat count and caption offset into a menu (sidebar or in-video panel).
+ * @param {ParentNode} menu
+ * @param {import('./youtube-reader.js').YoutubeReader} reader
+ */
+export function syncControls(menu, reader) {
+    for (const select of menu.querySelectorAll('select[data-repeats]')) { /** @type {HTMLSelectElement} */ (select).value = String(reader.prefs.shadowRepeats); }
+    for (const output of menu.querySelectorAll('output[data-offset]')) {
+        const seconds = reader.offsetMs / 1000;
+        output.textContent = `${seconds > 0 ? '+' : ''}${Number(seconds.toFixed(2))} 秒`;
+    }
+    for (const button of menu.querySelectorAll('[data-offset-step]')) { /** @type {HTMLButtonElement} */ (button).disabled = !reader.session; }
 }
 
 /**
