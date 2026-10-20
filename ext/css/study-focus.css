@@ -405,8 +405,6 @@
 .sf-dictionary-scroll > .study-dictionary-details, .sf-dictionary-scroll .study-original-dictionary { margin: 0; padding: 0; border: 0; }
 .sf-dictionary-scroll > .study-dictionary-details > summary { display: none; }
 .sf-dictionary-info > h3 { margin: 0 0 8px; }
-.sf-dictionary-info .sf-reference-open > summary { display: block; list-style: none; pointer-events: none; padding: 5px 0; font-size: 12px; font-weight: 600; color: var(--sf-ink); }
-.sf-reference-open > summary::-webkit-details-marker { display: none; }
 .sf-reference-source { color: var(--sf-muted); font-size: 10px; font-weight: 400; overflow-wrap: anywhere; }
 .sf-dictionary-info .study-metadata { display: flex; flex-wrap: wrap; gap: 4px 9px; font-size: 11px; }
 .sf-heading .sf-forms-preview { flex: 1 0 100%; width: 100%; min-width: 0; text-align: left; display: block; border: 0; padding: 0; min-height: 0; border-radius: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sf-muted); font-size: 11px; line-height: 17px; background: none; }
@@ -460,7 +458,6 @@
 .sf-form-piece strong { font-size: 11px; font-weight: 600; }
 .sf-forms-original { display: none !important; }
 .sf-dictionary-forms { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--sf-line); font-size: 12px; line-height: 1.6; }
-.sf-dictionary-forms .sf-reference-open>summary { display: block; list-style: none; padding: 0 0 4px; pointer-events: none; font-size: 11px; color: var(--sf-muted); }
 .sf-dictionary-forms p { margin: 0; }
 .sf-dictionary-scroll .definition-list,
 .sf-dictionary-scroll .gloss-list { margin: 0; padding: 0; list-style: none; }
@@ -874,3 +871,8 @@
 .study-focus-active .sf-source-pane .sf-sentence-segment .sf-segment-translation,
 .study-focus-active .sf-source-pane .sf-parallel-status { font: 12px/1.6 var(--st-sans); color: var(--sf-muted); }
 .sf-parallel-status:empty { display: none; }
+
+.sf-reference-fold>summary { cursor: pointer; padding-block: 7px; color: var(--sf-ink); font-size: 12px; font-weight: 600; }
+.sf-reference-summary { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sf-muted); font-size: 11px; font-weight: 400; }
+.sf-dictionary-forms { margin: 12px 0 0; padding: 0; border-top: 1px solid var(--sf-line); border-bottom: 0; }
+.study-focus-active .study-token-summary, .study-focus-active .study-token-count, .sf-usage-reference { display: none !important; }

@@ -17,6 +17,7 @@
  */
 
 import {studyCall} from '../study/study-client.js';
+import {studyPartOfSpeech} from './study-labels.js';
 
 /**
  * @param {HTMLElement} output
@@ -72,7 +73,16 @@ export function prepareStudyDictionary(entry, word) {
     const raw = [...entry.querySelectorAll('[data-sc-content=glosses]>li')].filter((node) => !node.parentElement?.parentElement?.closest('[data-sc-content=glosses]'));
     const phrases = [...entry.querySelectorAll('.definition-item ul>li')].filter((node) => !node.closest('[data-sc-content=glosses], [data-sc-content=extra-info], [data-sc-content=tags], details') && !node.querySelector('[data-sc-content=glosses]'));
     const candidates = raw.length > 0 ? [...raw, ...phrases] : [...entry.querySelectorAll('[data-sc-study-role=english]>div>div, [data-sc-study-role=english]>div:not(:has(div))')];
-    const senses = candidates.filter((n) => n instanceof HTMLElement).map((node, i) => ({node: /** @type {HTMLElement} */ (node), id: `${i}`, text: dictionaryText(/** @type {HTMLElement} */ (node))}));
+    const senses = candidates.filter((n) => n instanceof HTMLElement).map((node, i) => {
+        const scope = node.parentElement?.parentElement;
+        const pos = (node.querySelector('[data-sc-category=partOfSpeech]') || scope?.querySelector('[data-sc-category=partOfSpeech]') ||
+        node.closest('.definition-item')?.querySelector('[data-category=partOfSpeech]'))?.textContent?.trim() || '';
+        return {node: /** @type {HTMLElement} */ (node), id: `${i}`, text: dictionaryText(/** @type {HTMLElement} */ (node)), pos: studyPartOfSpeech(pos) || pos || '释义'};
+    });
+    for (const tag of entry.querySelectorAll('[data-sc-category], [data-sc-content=tag], .tag-label-content')) {
+        const translated = studyPartOfSpeech(tag.textContent.trim());
+        if (translated) { tag.textContent = translated; }
+    }
     if (senses.length === 0) { return () => {}; }
     for (const details of entry.querySelectorAll('[data-sc-content=details-entry-examples]')) {
         if (!(details instanceof HTMLDetailsElement)) { continue; }
@@ -94,11 +104,11 @@ export function prepareStudyDictionary(entry, word) {
             details.append(more);
         }
     }
-    /** @type {{node: HTMLElement, id: string, text: string}[][]} */
+    /** @type {{node: HTMLElement, id: string, text: string, pos: string}[][]} */
     const pages = [];
     for (const sense of senses) {
         const last = pages.at(-1);
-        if (!last || last.length >= 3 || last.reduce((n, s) => n + Math.min(s.text.length, 1800), 0) + Math.min(sense.text.length, 1800) > 4000) {
+        if (!last || last[0].pos !== sense.pos || last.length >= 3 || last.reduce((n, s) => n + Math.min(s.text.length, 1800), 0) + Math.min(sense.text.length, 1800) > 4000) {
             pages.push([sense]);
         } else {
             last.push(sense);
@@ -212,7 +222,7 @@ export function prepareStudyDictionary(entry, word) {
         }
         prev.disabled = page === 0; next.disabled = page === pages.length - 1;
         prev.hidden = next.hidden = pages.length === 1;
-        label.textContent = `第 ${page + 1}/${pages.length} 组 · ${senses.length} 条释义/短语`;
+        label.textContent = `${pages[page][0].pos} · ${page + 1}/${pages.length}`;
         status.textContent = '';
         updateScopeTitle();
         void restore();

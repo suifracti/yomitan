@@ -203,7 +203,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const dictionaryReference = make('div', 'sf-dictionary-reference');
         dictionaryReference.hidden = true;
         const dictionaryInfo = make('section', 'sf-dictionary-info');
-        dictionaryInfo.append(make('h3', 'sf-section-label', '词典资料'));
         const dictionaryForms = make('section', 'sf-dictionary-forms');
         const entryHeader = entry?.querySelector('.entry-header');
         move(entryHeader, dictionaryInfo);
@@ -231,10 +230,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         dictionaryPager.hidden = !dictionaryPager.childElementCount;
         const referenceStates = new Map();
         const seenReferences = new Set();
-        const lockReferenceOpen = (event) => {
-            const node = event.currentTarget;
-            if (current() && node instanceof HTMLDetailsElement && !node.open) { node.open = true; }
-        };
         for (const label of [...dictionaryScroll.querySelectorAll('[data-sc-content=summary-entry]')]) {
             if (!['词形与语法', '词源', 'Grammar', 'Etymology'].includes(label.textContent?.trim() || '')) { continue; }
             const details = label.closest('details');
@@ -243,44 +238,31 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const signature = dict ? `${dict}:${details.textContent?.replace(/\s+/g, ' ').trim()}` : '';
             const duplicate = Boolean(signature && seenReferences.has(signature));
             if (signature) { seenReferences.add(signature); }
-            move(details, ['词形与语法', 'Grammar'].includes(label.textContent?.trim() || '') ? dictionaryForms : dictionaryInfo);
-            for (const node of [details, ...details.querySelectorAll('details')]) {
-                const summary = node.querySelector(':scope > summary');
-                referenceStates.set(node, {open: node.open, hidden: node.hidden, summary, tabIndex: summary?.getAttribute('tabindex')});
-                node.open = true;
-                node.classList.add('sf-reference-open');
-                summary?.setAttribute('tabindex', '-1');
-                node.addEventListener('toggle', lockReferenceOpen);
+            const grammar = ['词形与语法', 'Grammar'].includes(label.textContent?.trim() || '');
+            move(details, grammar ? dictionaryForms : dictionaryInfo);
+            referenceStates.set(details, {open: details.open, hidden: details.hidden});
+            details.open = false;
+            details.classList.add('sf-reference-fold');
+            if (grammar) {
+                const preview = make('span', 'sf-reference-summary', [...details.children].filter((node) => node.tagName !== 'SUMMARY')
+                    .map((node) => node.textContent.trim()).join(' ').replace(/\s+/g, ' '));
+                label.append(preview); owned.push(preview);
             }
             details.hidden = duplicate;
             if (dict) {
                 const origin = make('span', 'sf-reference-source', ` · ${dict}`);
-                label.append(origin); owned.push(origin);
+                label.insertBefore(origin, label.querySelector('.sf-reference-summary')); owned.push(origin);
             }
         }
-        if (dictionaryForms.childElementCount) { dictionaryScroll.prepend(dictionaryForms); }
-        dictionaryScroll.append(dictionaryInfo, dictionaryReference);
+        dictionaryScroll.append(dictionaryForms, dictionaryInfo, dictionaryReference);
         const formNodes = entryHeader?.querySelectorAll('[data-study-meta-role="forms"], [data-sc-study-role="forms"]') || [];
         const formText = [...formNodes].map((node) => {
             const items = [...node.querySelectorAll('.study-form-item')];
             return (items.length ? items.map((item) => item.textContent?.trim()).join(' · ') : node.textContent?.trim()) || '';
         }).filter(Boolean).join(' · ');
-        let syncFormsPreview = () => {};
         let disposeForms = () => {};
         if (formText) {
-            const repeatedForms = [];
-            const formOrigins = [];
-            // The header already displays these exact words; keep the original node/data,
-            // but do not print an identical forms paragraph again below it.
-            const normalizeForms = (text) => (text || '').replace(/\s+/g, '');
-            for (const details of dictionaryForms.children) {
-                const bodyText = [...details.children].filter((node) => node.tagName !== 'SUMMARY').map((node) => node.textContent).join('');
-                if (!details.hidden && normalizeForms(bodyText) === normalizeForms(formText)) {
-                    repeatedForms.push(details);
-                    const origin = details.querySelector('.sf-reference-source')?.textContent?.trim();
-                    if (origin) { formOrigins.push(origin); }
-                }
-            }
+            const formOrigins = [...dictionaryForms.querySelectorAll('.sf-reference-source')].map((node) => node.textContent.trim());
             // Each form is its own control: hover or focus explains it, a click pins the note.
             const formsPreview = make('div', 'sf-forms-preview scan-disable');
             formsPreview.setAttribute('role', 'group');
@@ -502,13 +484,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             };
             for (const node of formNodes) { node.classList.add('sf-forms-original'); }
             if (formOrigins.length > 0) { formsPreview.title = formOrigins.join('\n'); }
-            syncFormsPreview = () => {
-                const fits = formsPreview.scrollWidth <= formsPreview.clientWidth + 1;
-                for (const details of repeatedForms) { details.hidden = fits; }
-                dictionaryForms.hidden = ![...dictionaryForms.children].some((node) => !node.hidden);
-            };
-            requestAnimationFrame(syncFormsPreview);
-            window.addEventListener('resize', syncFormsPreview);
             headerSense.before(formsPreview); owned.push(formsPreview);
         }
         const resetDictionaryScroll = () => { if (current()) { dictionaryScroll.scrollTop = 0; } };
@@ -1008,16 +983,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             observers.forEach((observer) => observer.disconnect());
             for (const node of formNodes) { node.classList.remove('sf-forms-original'); }
             entry?.removeEventListener('study-dictionary-pagechange', resetDictionaryScroll);
-            window.removeEventListener('resize', syncFormsPreview);
             disposeForms();
             for (const [node, state] of referenceStates) {
-                node.removeEventListener('toggle', lockReferenceOpen);
                 node.open = state.open; node.hidden = state.hidden;
-                node.classList.remove('sf-reference-open');
-                if (state.summary) {
-                    if (state.tabIndex === null) { state.summary.removeAttribute('tabindex'); }
-                    else if (typeof state.tabIndex === 'string') { state.summary.setAttribute('tabindex', state.tabIndex); }
-                }
+                node.classList.remove('sf-reference-fold');
             }
             editor?.removeEventListener('change', onSourceEdit);
             sourcePane.removeEventListener('input', resizeEditors);
