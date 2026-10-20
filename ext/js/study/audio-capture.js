@@ -18,6 +18,9 @@
 const MAX_ASSET_BYTES = 2_000_000;
 const MAX_MEDIA_SECONDS = 604800;
 const MIME_TYPES = ['audio/webm', 'audio/ogg'];
+const VIDEO_TYPES = ['video/webm;codecs=vp8,opus', 'video/webm'];
+const MAX_VIDEO_BYTES = 8_000_000;
+const FRAME_WIDTH = 960;
 const CAPTURE_STALL_MS = 3500;
 const CAPTURE_POLL_MS = 100;
 const TIME_EPSILON = 0.025;
@@ -76,13 +79,15 @@ async function blobToBase64(blob) {
 /**
  * Capture an actual, bounded audio segment from a video element. This only records
  * the element's captured audio tracks; it never captures the screen or microphone.
+ * Optionally also keeps one frame from the middle of the sentence and a low-bitrate
+ * WebM clip of the sentence itself; either may be skipped with a warning.
  * @param {HTMLVideoElement & {captureStream: () => MediaStream}} video
  * @param {number} start Start time in seconds.
  * @param {number} duration Duration in seconds.
- * @param {{signal?: AbortSignal, isCurrent?: () => boolean}} [options]
+ * @param {{signal?: AbortSignal, isCurrent?: () => boolean, withFrame?: boolean, withVideo?: boolean}} [options]
  * @returns {Promise<import('study').MediaCapture>}
  */
-export async function captureVideoAudio(video, start, duration, {signal, isCurrent} = {}) {
+export async function captureVideoAudio(video, start, duration, {signal, isCurrent, withFrame = false, withVideo = false} = {}) {
     if (typeof start !== 'number' || !Number.isFinite(start) || start < 0 ||
     typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0 || duration > 30 ||
     start + duration > MAX_MEDIA_SECONDS) {
@@ -118,6 +123,31 @@ export async function captureVideoAudio(video, start, duration, {signal, isCurre
     let settled = false;
     let lastTime = Number.NaN;
     let lastProgressAt = 0;
+    /** @type {string[]} */
+    const warnings = [];
+    /** @type {MediaRecorder|null} */
+    let videoRecorder = null;
+    /** @type {Blob[]} */
+    const videoChunks = [];
+    /** @type {Promise<void>} */
+    let videoStopped = Promise.resolve();
+    /** @type {Promise<import('study').MediaAsset|null>|null} */
+    let frame = null;
+    const grabFrame = () => {
+        frame = Promise.resolve(null);
+        try {
+            const scale = Math.min(1, FRAME_WIDTH / (video.videoWidth || FRAME_WIDTH));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round((video.videoWidth || FRAME_WIDTH) * scale));
+            canvas.height = Math.max(1, Math.round((video.videoHeight || FRAME_WIDTH * 0.5625) * scale));
+            canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+            /** @type {Promise<Blob|null>} */
+            const blob = new Promise((resolve) => { canvas.toBlob(resolve, 'image/jpeg', 0.82); });
+            frame = blob.then(async (image) => (image && image.size > 0 && image.size <= MAX_ASSET_BYTES ? {kind: 'image', mime: 'image/jpeg', data: await blobToBase64(image)} : null));
+        } catch {
+            warnings.push('画面截图失败（视频不允许读取画面），只保存了原声。');
+        }
+    };
     /** @type {(value: import('study').MediaCapture) => void} */
     let resolveDone = () => {};
     /** @type {(reason?: unknown) => void} */
@@ -193,6 +223,27 @@ export async function captureVideoAudio(video, start, duration, {signal, isCurre
         audioStream = new MediaStream(audioTracks);
         const created = createRecorder(/** @type {typeof MediaRecorder|undefined} */ (globalThis.MediaRecorder), audioStream);
         recorder = created.recorder;
+        if (withVideo) {
+            const Recorder = /** @type {typeof MediaRecorder|undefined} */ (globalThis.MediaRecorder);
+            const type = VIDEO_TYPES.find((value) => {
+                try {
+                    return Boolean(Recorder?.isTypeSupported(value));
+                } catch {
+                    return false;
+                }
+            });
+            if (Recorder && type && capturedStream.getVideoTracks().length > 0) {
+                const clipRecorder = new Recorder(capturedStream, {mimeType: type, videoBitsPerSecond: 700_000, audioBitsPerSecond: 96_000});
+                videoRecorder = clipRecorder;
+                videoStopped = new Promise((resolve) => { listen(clipRecorder, 'stop', () => resolve()); });
+                listen(clipRecorder, 'dataavailable', (event) => {
+                    const data = /** @type {Event & {data?: Blob}} */ (event).data;
+                    if (data && data.size > 0) { videoChunks.push(data); }
+                });
+            } else {
+                warnings.push('这个视频不能录制画面片段，只保存了原声。');
+            }
+        }
         /** @type {Blob[]} */
         const chunks = [];
         let totalBytes = 0;
@@ -226,7 +277,24 @@ export async function captureVideoAudio(video, start, duration, {signal, isCurre
                 if (blob.size === 0) { throw captureError('原声录制结果为空，未保存。'); }
                 if (blob.size > MAX_ASSET_BYTES) { throw captureError('原声片段超过 2MB，未保存。'); }
                 const data = await blobToBase64(blob);
-                settleSuccess({assets: [{kind: 'audio', mime: mediaType, data}], warnings: []});
+                /** @type {import('study').MediaAsset[]} */
+                const assets = [{kind: 'audio', mime: mediaType, data}];
+                if (withFrame && frame === null) { grabFrame(); }
+                const image = frame ? await frame : null;
+                if (image) { assets.push(image); }
+                if (videoRecorder) {
+                    if (videoRecorder.state === 'recording') {
+                        try { videoRecorder.stop(); } catch { /* The clip is optional. */ }
+                    }
+                    await Promise.race([videoStopped, new Promise((resolve) => { setTimeout(resolve, 3000); })]);
+                    const clip = new Blob(videoChunks, {type: 'video/webm'});
+                    if (clip.size > MAX_VIDEO_BYTES) {
+                        warnings.push('视频片段超过 8MB，只保存了原声和截图。');
+                    } else if (clip.size > 0) {
+                        assets.push({kind: 'video', mime: 'video/webm', data: await blobToBase64(clip)});
+                    }
+                }
+                settleSuccess({assets, warnings});
             })().catch(settleFailure);
         };
         listen(recorder, 'dataavailable', onData);
@@ -262,6 +330,7 @@ export async function captureVideoAudio(video, start, duration, {signal, isCurre
             }
             if (Number.isFinite(lastTime) && current > lastTime + 0.01) { lastProgressAt = Date.now(); }
             lastTime = current;
+            if (withFrame && frame === null && recordingStarted && current >= start + duration / 2) { grabFrame(); }
             if (recordingStarted && current >= end) {
                 reachedEnd = true;
                 try { video.pause(); } catch { /* Recorder stop still bounds the asset. */ }
@@ -314,6 +383,7 @@ export async function captureVideoAudio(video, start, duration, {signal, isCurre
             assertCurrent();
             lastTime = video.currentTime;
             recorder?.start(250);
+            videoRecorder?.start(250);
             recordingStarted = true;
             playbackChanged = true;
             lastProgressAt = Date.now();
@@ -333,6 +403,9 @@ export async function captureVideoAudio(video, start, duration, {signal, isCurre
         for (const remove of removeListeners.splice(0)) { remove(); }
         if (recorder?.state === 'recording') {
             try { recorder.stop(); } catch { /* Tracks are still stopped below. */ }
+        }
+        if (videoRecorder?.state === 'recording') {
+            try { videoRecorder.stop(); } catch { /* Tracks are still stopped below. */ }
         }
         const captureTracks = new Set([...(capturedStream?.getTracks?.() ?? []), ...(audioStream?.getTracks?.() ?? [])]);
         for (const track of captureTracks) {

@@ -94,10 +94,14 @@ export type ApiSurface = {
         return: void;
     };
     frontendCaptureStudyMedia: {
-        params: {token: string; start: number; duration: number};
+        params: {token: string; start: number; duration: number; withFrame?: boolean; withVideo?: boolean};
         return: import('study').MediaCapture;
     };
     frontendCancelStudyMedia: {
+        params: {token: string};
+        return: void;
+    };
+    frontendPlayStudyClip: {
         params: {token: string};
         return: void;
     };

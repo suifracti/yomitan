@@ -968,6 +968,54 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             link.target = '_blank'; link.rel = 'noopener noreferrer'; sourceFooter.append(link);
         }
         sourcePane.append(sourceFooter); owned.push(sourceFooter);
+        // A lookup from our video captions is a different learning object: say so, and
+        // offer the clip itself. Ordinary web lookups show none of this.
+        const mediaRange = /** @type {{start?: unknown, end?: unknown}|undefined} */ (display.history?.state?.studyMediaRange);
+        const mediaToken = cleanText(display.history?.state?.studyMediaToken);
+        const fromVideo = typeof videoTime === 'number' && Number.isFinite(videoTime) && videoTime >= 0 && /youtu\.?be/.test(sourceUrl);
+        if (fromVideo) {
+            /**
+             * @param {number} value
+             * @returns {string}
+             */
+            const clock = (value) => {
+                const whole = Math.max(0, Math.floor(value));
+                const hours = Math.floor(whole / 3600);
+                const rest = `${Math.floor((whole % 3600) / 60)}:${String(whole % 60).padStart(2, '0')}`;
+                return hours ? `${hours}:${rest.padStart(5, '0')}` : rest;
+            };
+            const start = typeof mediaRange?.start === 'number' ? mediaRange.start : /** @type {number} */ (videoTime);
+            const end = typeof mediaRange?.end === 'number' ? mediaRange.end : null;
+            const strip = make('div', 'sf-video-strip scan-disable');
+            strip.append(make('span', 'sf-video-badge', '视频语境'), make('span', 'sf-video-range', end === null ? clock(start) : `${clock(start)}–${clock(end)}`));
+            const stripStatus = make('span', 'sf-video-status');
+            stripStatus.setAttribute('role', 'status');
+            if (mediaToken && end !== null) {
+                const replay = button('▶ 回听本句', '在视频里回放这一句');
+                replay.addEventListener('click', () => {
+                    if (!current()) { return; }
+                    stripStatus.textContent = '';
+                    void Promise.resolve(display.invokeContentOrigin('frontendPlayStudyClip', {token: mediaToken})).catch((error) => {
+                        if (current()) { stripStatus.textContent = error instanceof Error ? error.message : '视频已改变，请回到视频里重新选词。'; }
+                    });
+                });
+                strip.append(replay);
+            }
+            try {
+                const back = new URL(sourceUrl);
+                back.searchParams.set('t', `${Math.floor(start)}s`);
+                const link = make('a', 'sf-link', '回到视频 ↗');
+                link.href = back.href;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                strip.append(link);
+            } catch { /* Without a valid URL the strip still states the clip. */ }
+            strip.append(stripStatus);
+            sourcePane.prepend(strip); owned.push(strip);
+            const tag = make('span', 'sf-video-tag scan-disable', '视频');
+            tag.title = '这张词卡来自视频字幕，可回听原句、采集原声和画面';
+            title.append(tag); owned.push(tag);
+        }
         select(activeTab); updateAnswer(); syncSave();
         const workspace = prepareStudyWorkspace(display, {shell, dictionary, tabs, word});
         void readMemory(false, false);

@@ -209,6 +209,10 @@ def _normalize_request(p):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
         return p
+    if action == 'libraryVideoWords':
+        if set(p) != {'action', 'videoId'} or not isinstance(p['videoId'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{11}', p['videoId']):
+            raise ValueError('视频编号无效。')
+        return p
     if action == 'libraryCardsAdd' and set(p) in ({'action', 'id', 'cards'}, {'action', 'id', 'cards', 'mastery'}):
         if 'mastery' in p and p['mastery'] not in ('none', 'vague', 'known'):
             raise ValueError('掌握程度无效。')

@@ -67,6 +67,7 @@ media, the note format and automatic two-way sync.
     before this batch (direct syncs); a full reinstall will need it refreshed.
 
 - Batch 3 — card types by stage and mastery.
+
   - `ext/js/display/study-card-kinds.js`: 12 kinds in three stages (① 认得:
     meaning, listen-meaning, form-recognize; ② 理解: context, sentence,
     listening; ③ 会用: produce, cloze, form-produce, make-sentence,
@@ -85,10 +86,32 @@ media, the note format and automatic two-way sync.
   - The upgrade reminder (stage ①/② cards with long intervals) depends on the
     automatic sync reading intervals and lands with batch 5.
 
+- Batch 4 — video word cards and media.
+  - Word card: a lookup from our captions shows a "视频语境" strip (clip range,
+    "▶ 回听本句", "回到视频" with `t=`) and a "视频" tag by the headword.
+    Replay goes through the new cross-frame call `frontendPlayStudyClip` to
+    `youtubeStudyContext.play(token)`, which plays only that sentence and
+    pauses at its end (a jump elsewhere just ends the replay).
+  - Capture (`audio-capture.js`): optional frame from the middle of the
+    sentence (JPEG, max 960 px wide) and optional WebM clip of the sentence
+    (`video/webm`, ~700 kbps, up to 8 MB). Card panel switches: 同时保存画面截图
+    (on), 附带原句视频片段（较大） (off). Checked in real Chrome: audio, frame and
+    clip all recorded from a generated video.
+  - Bridge (`study_media.py`): `video/webm` accepted (8 MB; audio and images
+    keep 2 MB), up to three assets per capture, note embeds 视频片段. In Anki
+    the clip goes into the Audio field as `[sound:…webm]` (it carries the
+    audio); the frame goes into Image. Native frame limit raised to 16 MB.
+  - Cards and notes keep only original times (cue start/end of the reading
+    row), so later regrouping never changes an existing clip.
+  - 本视频生词: sidebar tab backed by the read-only `libraryVideoWords`
+    action (`study_settings.video_words`), allowed for the watch page's own
+    video only (the background checks the `v` of the sender URL). Each word
+    shows its time, cards and stage; clicking returns to that moment.
+
 ## Next
 
-- Batch 4 — video card linkage (video context strip, replay clip), media
-  (screenshot, optional sentence video clip), this video's words.
+- Batch 5 — note format (clickable time range, mastery, cards) and automatic
+  two-way Obsidian↔Anki sync every ~30 s, plus the upgrade reminder.
 
 ## Not verified
 

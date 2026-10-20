@@ -270,6 +270,44 @@ class YomitanLibrary:
                 raise ValueError('语境目录必须位于当前选定的 Vault 内；原设置未改变。') from None
         return {'path': str(chosen), 'cancelled': False}
 
+    def video_words(self, video_id):
+        """Saved words from one YouTube video, oldest position first; read-only."""
+        import urllib.parse
+        from study_sync import CARD_STAGES
+
+        def video_of(url):
+            try:
+                parsed = urllib.parse.urlparse(url or '')
+            except ValueError:
+                return ''
+            if parsed.hostname == 'youtu.be':
+                return parsed.path.strip('/')[:11]
+            if parsed.hostname in ('youtube.com', 'www.youtube.com', 'm.youtube.com'):
+                if parsed.path.startswith('/shorts/'):
+                    return parsed.path.split('/')[2][:11]
+                return urllib.parse.parse_qs(parsed.query).get('v', [''])[0][:11]
+            return ''
+        rows, seen = [], set()
+        for target_id, target in self.targets.items():
+            folder = (target['vault'], target['directory'])
+            if folder in seen or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
+                continue
+            seen.add(folder)
+            lib = self.library_for(target_id)
+            if not lib.records.is_dir():
+                continue
+            for _file, ident in lib.record_files():
+                row = self.locate(ident).result(ident)
+                entry = row['entry']
+                if video_of(entry.get('url')) != video_id:
+                    continue
+                stages = [CARD_STAGES.get(card.get('kind'), 0) for card in row.get('cards', [])]
+                rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', '')[:300],
+                             'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
+                             'cards': len(row.get('cards', [])), 'stage': max(stages, default=0)})
+        rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
+        return rows[:300]
+
     def handle(self, payload):
         p = normalize_request(payload)
         self.reload()
@@ -303,6 +341,8 @@ class YomitanLibrary:
             ident = entry_id(p['entry'])
             lib = self.locate(ident) or self.library_for(p.get('targetId', self.active_id))
             return lib.handle(p)
+        if action == 'libraryVideoWords':
+            return {'items': self.video_words(p['videoId'])}
         if action == 'libraryList':
             rows = []
             seen = set()

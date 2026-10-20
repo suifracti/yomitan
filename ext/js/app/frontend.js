@@ -439,8 +439,9 @@ export class Frontend {
         /* eslint-disable @stylistic/no-multi-spaces */
         this._application.crossFrame.registerHandlers([
             ['frontendClosePopup',       this._onApiClosePopup.bind(this)],
-            ['frontendCaptureStudyMedia', (/** @type {{token: string, start: number, duration: number}} */ {token, start, duration}) => youtubeStudyContext.capture(token, start, duration)],
+            ['frontendCaptureStudyMedia', (/** @type {{token: string, start: number, duration: number, withFrame?: boolean, withVideo?: boolean}} */ {token, start, duration, withFrame, withVideo}) => youtubeStudyContext.capture(token, start, duration, {withFrame: withFrame === true, withVideo: withVideo === true})],
             ['frontendCancelStudyMedia', (/** @type {{token: string}} */ {token}) => { youtubeStudyContext.cancel(token); }],
+            ['frontendPlayStudyClip',    (/** @type {{token: string}} */ {token}) => { youtubeStudyContext.play(token); }],
             ['frontendStudyShortcut',    this._onApiStudyShortcut.bind(this)],
             ['frontendCopySelection',    this._onApiCopySelection.bind(this)],
             ['frontendGetPopupSelectionText', this._onApiGetPopupSelectionText.bind(this)],

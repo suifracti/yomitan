@@ -123,3 +123,20 @@ test('one controller drives merged rows, in-video captions and the pinned sideba
     expect(document.querySelectorAll('#study-yt-reader .r-cue').length).toBe(3);
     vi.unstubAllGlobals();
 });
+
+test('the words tab lists only this video and returns to each moment', async () => {
+    /** @type {[string, unknown][]} */
+    const calls = [];
+    const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'},
+        call: async (action, data) => {
+            calls.push([action, data]);
+            return {items: [{id: 'a'.repeat(32), word: 'brick', sentence: 'A brick wall.', videoTime: 12, stage: 1, cards: 2}]};
+        }});
+    reader.start();
+    await vi.waitFor(() => expect(document.querySelectorAll('#study-yt-reader').length).toBe(1));
+    /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-tab[data-tab=words]')).click();
+    await vi.waitFor(() => expect(document.querySelectorAll('#study-yt-reader .r-word')).toHaveLength(1));
+    expect(calls).toEqual([['libraryVideoWords', {videoId: 'abcdefghijk'}]]);
+    expect(document.querySelector('#study-yt-reader .r-list')?.hasAttribute('hidden')).toBe(true);
+    expect(document.querySelector('#study-yt-reader .r-word-meta')?.textContent).toBe('2 张卡 · 到第 1 阶段');
+});

@@ -289,6 +289,27 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     captureAudio.textContent = '采集并保存本句原声';
     captureAudio.title = '会定位并播放这句字幕，采集真实音轨；保存到笔记，不自动制卡。';
     captureAudio.hidden = !media.capture || !media.range;
+    // What to keep with the audio: a frame by default, the sentence clip on request.
+    const captureOptions = d.createElement('div');
+    captureOptions.className = 'study-capture-options';
+    captureOptions.hidden = captureAudio.hidden;
+    /**
+     * @param {string} label
+     * @param {boolean} checked
+     * @returns {HTMLInputElement}
+     */
+    const captureOption = (label, checked) => {
+        const wrap = d.createElement('label');
+        const box = d.createElement('input');
+        box.type = 'checkbox';
+        box.className = 'scan-disable';
+        box.checked = checked;
+        wrap.append(box, label);
+        captureOptions.append(wrap);
+        return box;
+    };
+    const keepFrame = captureOption('同时保存画面截图', true);
+    const keepVideo = captureOption('附带原句视频片段（较大）', false);
     const cancelCapture = d.createElement('button');
     cancelCapture.type = 'button'; cancelCapture.className = 'scan-disable';
     cancelCapture.dataset.studyCaptureCancel = '';
@@ -318,7 +339,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         audioState.hidden = state === 'none' && captureAudio.hidden;
     };
     setAudioState('none');
-    cardPanel.append(masteryRow, choices, choiceHint, audioState, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
+    cardPanel.append(masteryRow, choices, choiceHint, audioState, captureOptions, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
     /**
      *
      */
@@ -484,7 +505,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 if (!live()) { return; }
                 if (saved.cards?.some((card) => !card.noteId)) { throw new Error('请先完成已有卡片的补交，再采集下一句原声。'); }
                 addStatus.textContent = '正在定位并采集本句原声…';
-                const recorded = await capture(range.start, range.end - range.start);
+                const recorded = await capture(range.start, range.end - range.start, {withFrame: keepFrame.checked, withVideo: keepVideo.checked});
                 if (!live()) { return; }
                 if (!recorded.assets.some((asset) => asset.kind === 'audio' && asset.data)) { throw new Error('没有取得真实音轨，未附加媒体。'); }
                 const read = /** @type {{items: {record: import('study').LibraryRecord}[]}} */ (await studyCall('libraryRead', {ids: [saved.id], language}));
@@ -500,7 +521,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 if (!live()) { return; }
                 showAnkiStatus(row);
                 setAudioState('ready');
-                addStatus.textContent = '真实原声已保存；现在可选择“视频声音字幕”制卡。';
+                const extras = recorded.assets.filter((asset) => asset.kind !== 'audio').map((asset) => (asset.kind === 'image' ? '截图' : '视频片段'));
+                addStatus.textContent = [`真实原声${extras.length > 0 ? `和${extras.join('、')}` : ''}已保存；现在可选择“视频声音字幕”制卡。`, ...recorded.warnings].join(' ');
                 if (d.defaultView) { container.dispatchEvent(new d.defaultView.Event('study-saved')); }
             } finally {
                 if (isCurrent() && !disposed) {

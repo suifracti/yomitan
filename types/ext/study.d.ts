@@ -202,7 +202,7 @@ export type MediaCapture = {
     warnings: string[];
 };
 
-export type CaptureMedia = (start: number, duration: number) => Promise<MediaCapture>;
+export type CaptureMedia = (start: number, duration: number, options?: {withFrame?: boolean, withVideo?: boolean}) => Promise<MediaCapture>;
 
 export type MediaRange = {
     start: number;

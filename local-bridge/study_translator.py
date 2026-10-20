@@ -267,7 +267,7 @@ def read_exact(stream, length):
 
 def read_frame(stream):
     length = struct.unpack('=I', read_exact(stream, 4))[0]
-    if length > 6_000_000:
+    if length > 16_000_000:
         raise ValueError('请求超过本机桥的大小限制。')
     value = json.loads(read_exact(stream, length))
     if length > 256000 and (not isinstance(value, dict) or value.get('action') not in ('libraryMedia', 'videoSave')):

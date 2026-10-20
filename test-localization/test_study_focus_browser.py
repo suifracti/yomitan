@@ -376,6 +376,18 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
             const r=button.getBoundingClientRect(),sr=scroller.getBoundingClientRect(),save=document.querySelector('[data-study-save=note]').getBoundingClientRect();
             return panel.parentElement===scroller&&r.height>0&&r.top>=sr.top&&r.bottom<=sr.bottom+1&&save.top>=0&&save.bottom<=innerHeight+1&&document.querySelectorAll('.study-card-add').length===1;
         }''')
+    # A lookup from our video captions shows its clip and a replay control; web lookups do not.
+    page.set_viewport_size({'width':420,'height':600});load_fixture()
+    check('a web lookup shows no video context', '()=>!document.querySelector(".sf-video-strip")&&!document.querySelector(".sf-video-tag")')
+    page.evaluate('''()=>{Object.assign(window.display.history.state,{url:'https://www.youtube.com/watch?v=abcdefghijk',videoTime:2162,studyMediaRange:{start:2162,end:2169.4},studyMediaToken:'token-1'});
+        window.display.invokeContentOrigin=async(action,data)=>{window.contentCalls=[action,data];};
+        window.fire('contentUpdateStart');window.fire('contentUpdateComplete');}''')
+    page.wait_for_timeout(60)
+    check('a video lookup states its clip, offers replay and links back with the time', '''()=>{const s=document.querySelector(".sf-video-strip");const link=s?.querySelector("a");
+        return Boolean(s&&s.textContent.includes("视频语境")&&s.textContent.includes("36:02–36:09")&&link?.href.includes("t=2162s")&&document.querySelector(".sf-word .sf-video-tag")?.textContent==="视频");}''')
+    page.get_by_role('button',name='在视频里回放这一句').click()
+    check('replay asks the page to play only the selected clip', '()=>JSON.stringify(window.contentCalls)===JSON.stringify(["frontendPlayStudyClip",{token:"token-1"}])')
+    page.screenshot(path=str(OUTPUT/'previews'/'video-context-420.png'))
     # Restore normal component state for distributable screenshots.
     page.set_viewport_size({'width':420,'height':600});load_fixture()
     page.get_by_role('tab',name='详细词典',exact=True).click();page.screenshot(path=str(OUTPUT/'previews'/'dictionary-420.png'))

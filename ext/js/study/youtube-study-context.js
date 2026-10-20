@@ -18,7 +18,7 @@
 // Private content-script row identity. DOM attributes never grant a capture or save permission.
 /** @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} Row */
 /** @typedef {{element: Element, row: Row, video: HTMLVideoElement|null, src: string, media: string, srcObject: HTMLVideoElement['srcObject']}} Bound */
-/** @typedef {(video: HTMLVideoElement, start: number, duration: number, options: {signal: AbortSignal, isCurrent: () => boolean}) => Promise<import('study').MediaCapture>} Capture */
+/** @typedef {(video: HTMLVideoElement, start: number, duration: number, options: {signal: AbortSignal, isCurrent: () => boolean, withFrame?: boolean, withVideo?: boolean}) => Promise<import('study').MediaCapture>} Capture */
 export class YoutubeStudyContext {
     /** @param {Capture} [capture] */
     constructor(capture = async (video, start, duration, options) => (await import('./audio-capture.js')).captureVideoAudio(/** @type {HTMLVideoElement & {captureStream: () => MediaStream}} */ (video), start, duration, options)) {
@@ -30,6 +30,8 @@ export class YoutubeStudyContext {
         this.tokens = new Map();
         /** @type {Map<string, AbortController>} */
         this.active = new Map();
+        /** @type {(() => void)|null} Stops the replay listeners, if a replay is running. */
+        this.replay = null;
     }
 
     /**
@@ -78,13 +80,49 @@ export class YoutubeStudyContext {
 
     /** @param {string} token */
     cancel(token) { this.active.get(token)?.abort(); }
+
+    /**
+     * Replays exactly the looked-up sentence in the page's video and pauses at its end.
+     * Moving the playhead elsewhere ends the replay without pausing.
+     * @param {string} token
+     * @throws {Error}
+     */
+    play(token) {
+        const bound = this.tokens.get(token);
+        const video = bound?.row.video() ?? null;
+        if (!bound || !video || !bound.element.isConnected || !bound.row.isCurrent() || video !== bound.video) { throw new Error('视频或字幕已改变，请回到视频里重新选词。'); }
+        if (this.active.size > 0) { throw new Error('正在采集原声，请稍后再回听。'); }
+        const {start, end} = bound.row;
+        this.replay?.();
+        const stop = () => {
+            video.removeEventListener('timeupdate', onTime);
+            video.removeEventListener('seeking', onSeek);
+            this.replay = null;
+        };
+        const onTime = () => {
+            if (video.currentTime >= end) {
+                video.pause();
+                stop();
+            }
+        };
+        const onSeek = () => {
+            if (video.currentTime < start - 0.5 || video.currentTime > end + 0.5) { stop(); }
+        };
+        this.replay = stop;
+        video.currentTime = start;
+        video.addEventListener('timeupdate', onTime);
+        video.addEventListener('seeking', onSeek);
+        void video.play()?.catch?.(() => stop());
+    }
+
     /**
      * @param {string} token
      * @param {number} start
      * @param {number} duration
+     * @param {{withFrame?: boolean, withVideo?: boolean}} [options] Also keep a frame or the sentence clip.
      * @returns {Promise<import('study').MediaCapture>}
      */
-    async capture(token, start, duration) {
+    async capture(token, start, duration, {withFrame = false, withVideo = false} = {}) {
         const bound = this.tokens.get(token);
         if (!bound || !bound.element.isConnected || !bound.row.isCurrent() || this.active.size > 0) { throw new Error('字幕或视频已改变，或已有采集；请重新选词。'); }
         const {row} = bound;
@@ -95,7 +133,7 @@ export class YoutubeStudyContext {
         if (!video || !mediaCurrent()) { throw new Error('视频来源已改变，请重新选词后采集。'); }
         const controller = new AbortController(); this.active.set(token, controller);
         try {
-            return await this.captureAudio(video, start, duration, {signal: controller.signal, isCurrent: () => bound.element.isConnected && row.isCurrent() && mediaCurrent()});
+            return await this.captureAudio(video, start, duration, {signal: controller.signal, isCurrent: () => bound.element.isConnected && row.isCurrent() && mediaCurrent(), withFrame, withVideo});
         } finally { this.active.delete(token); }
     }
 }

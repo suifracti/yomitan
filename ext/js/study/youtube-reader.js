@@ -67,6 +67,16 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-loop{font:inherit;font-size:11px;line-height:20px;color:var(--r-muted);background:none;border:1px solid transparent;border-radius:6px;padding:1px 6px;cursor:pointer}
 #${ROOT_ID} .r-loop:hover{color:var(--r-accent);border-color:var(--r-line)}
 #${ROOT_ID} .r-loop[aria-pressed=true]{color:var(--r-accent);border-color:var(--r-accent)}
+#${ROOT_ID} .r-tabs{display:flex;gap:14px;padding:0 12px;border-top:1px solid var(--r-line)}
+#${ROOT_ID} .r-tab{padding:6px 0 5px;border:0;border-bottom:2px solid transparent;background:none;color:var(--r-muted);font:inherit;font-size:12px;cursor:pointer}
+#${ROOT_ID} .r-tab[aria-selected=true]{color:var(--r-fg);border-bottom-color:var(--r-accent);font-weight:600}
+#${ROOT_ID} .r-list[hidden],#${ROOT_ID} .r-words[hidden]{display:none}
+#${ROOT_ID} .r-words{max-height:min(60vh,520px);overflow:auto;border-top:1px solid var(--r-line)}
+#${ROOT_ID} .r-words-note{margin:0;padding:12px;color:var(--r-muted);font-size:12px}
+#${ROOT_ID} .r-word{display:grid;grid-template-columns:46px auto minmax(0,1fr);column-gap:6px;align-items:baseline;padding:7px 8px 7px 0;border-bottom:1px solid var(--r-line)}
+#${ROOT_ID} .r-word-text{font-family:var(--st-serif,Georgia,serif);font-size:15px}
+#${ROOT_ID} .r-word-meta{color:var(--r-muted);font-size:11px;text-align:right}
+#${ROOT_ID} .r-word-sentence{grid-column:2/-1;margin:2px 0 0;color:var(--r-muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 #${ROOT_ID} button.r-more{padding:3px 8px;letter-spacing:.1em}
 #${ROOT_ID} .r-menu{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;border-top:1px solid var(--r-line);font-size:12px;color:var(--r-fg)}
 #${ROOT_ID} .r-menu[hidden]{display:none}
@@ -84,7 +94,7 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 `;
 
 /**
- * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement}} ReaderView
+ * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement, words: HTMLElement}} ReaderView
  */
 
 /**
@@ -475,7 +485,33 @@ export class YoutubeReader extends EventTarget {
         list.addEventListener('touchmove', pause, {passive: true});
         // Selecting text must not be pulled away by follow scrolling.
         list.addEventListener('selectstart', pause);
-        root.append(head, menu, list);
+        // Two views over this video: the caption list and the words already saved from it.
+        const tabs = document.createElement('div');
+        tabs.className = 'r-tabs scan-disable';
+        tabs.setAttribute('role', 'tablist');
+        const words = document.createElement('div');
+        words.className = 'r-words';
+        words.hidden = true;
+        /** @type {HTMLButtonElement[]} */
+        const tabButtons = [];
+        for (const [name, label] of [['captions', '字幕'], ['words', '本视频生词']]) {
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = 'r-tab';
+            tab.setAttribute('role', 'tab');
+            tab.dataset.tab = name;
+            tab.setAttribute('aria-selected', String(name === 'captions'));
+            tab.textContent = label;
+            tab.addEventListener('click', () => {
+                for (const other of tabButtons) { other.setAttribute('aria-selected', String(other === tab)); }
+                list.hidden = name !== 'captions';
+                words.hidden = name !== 'words';
+                if (name === 'words') { void this._loadWords(); }
+            });
+            tabButtons.push(tab);
+            tabs.append(tab);
+        }
+        root.append(head, menu, tabs, list, words);
         root.classList.toggle('r-blur', this._prefs.blur);
         root.classList.toggle('r-mono', !this._prefs.bilingual);
         // Reveal one blurred translation on click without affecting the others.
@@ -484,7 +520,7 @@ export class YoutubeReader extends EventTarget {
             if (target && root.classList.contains('r-blur')) { target.classList.toggle('is-revealed'); }
         });
         host.prepend(root);
-        this._view = {root, status, load, follow, list, translate, cancel, retry, more, menu};
+        this._view = {root, status, load, follow, list, translate, cancel, retry, more, menu, words};
         this._keepFirst(host);
         this._syncMenu();
     }
@@ -948,6 +984,55 @@ export class YoutubeReader extends EventTarget {
             this._status(`AI 断句完成 · ${groups.length} 句`);
         } catch (error) {
             if (live()) { this._status(`AI 断句未完成：${error instanceof Error ? error.message : String(error)}；已保留规则断句。`); }
+        }
+    }
+
+    /** Lists the words already saved from this video; clicking one returns to its moment. */
+    async _loadWords() {
+        const view = this._view;
+        const videoId = this._videoId;
+        if (!view || !videoId) { return; }
+        const generation = this._generation;
+        view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
+        try {
+            const result = /** @type {{items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number}[]}} */ (await this._call('libraryVideoWords', {videoId}));
+            if (generation !== this._generation) { return; }
+            const items = result.items ?? [];
+            if (items.length === 0) {
+                view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '这个视频还没有记住的词。选词后点「记住它」就会出现在这里。'}));
+                return;
+            }
+            view.words.replaceChildren(...items.map((item) => {
+                const row = document.createElement('div');
+                row.className = 'r-word';
+                const time = document.createElement('button');
+                time.type = 'button';
+                time.className = 'r-time';
+                const seconds = typeof item.videoTime === 'number' ? item.videoTime : null;
+                time.dataset.time = seconds === null ? '—' : timeLabel(seconds * 1000);
+                time.setAttribute('aria-label', seconds === null ? `${item.word}（无时间）` : `回到 ${item.word} 的原句`);
+                time.disabled = seconds === null;
+                time.addEventListener('click', () => {
+                    if (seconds === null || !this._video) { return; }
+                    this._video.currentTime = seconds;
+                    this._resumeFollow();
+                });
+                const word = document.createElement('strong');
+                word.className = 'r-word-text';
+                word.textContent = item.word;
+                const meta = document.createElement('span');
+                meta.className = 'r-word-meta';
+                meta.textContent = item.cards > 0 ? `${item.cards} 张卡${item.stage ? ` · 到第 ${item.stage} 阶段` : ''}` : '只记了笔记';
+                const sentence = document.createElement('p');
+                sentence.className = 'r-word-sentence';
+                sentence.textContent = item.sentence;
+                row.append(time, word, meta, sentence);
+                return row;
+            }));
+        } catch (error) {
+            if (generation === this._generation) {
+                view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: `暂时读不到：${error instanceof Error ? error.message : String(error)}`}));
+            }
         }
     }
 
