@@ -460,12 +460,15 @@ export function prepareSystemStatus(root) {
     const copy = /** @type {HTMLButtonElement} */ (section.querySelector('[data-health-copy]'));
     const command = /** @type {HTMLElement} */ (section.querySelector('[data-health-command]'));
     const summary = section.querySelector('[data-health-summary]');
-    const labels = {bridge: '桥版本', anki: 'Anki', vault: 'Vault', apple: 'Apple 翻译', file: '本地文件访问'};
+    const reasons = {bridge: '版本不一致', anki: '未连接', vault: '目录不可用', apple: '未安装', file: '未授权'};
     /**
      * @param {'bridge'|'anki'|'vault'|'apple'|'file'} key
      * @param {boolean} ok
+     * @param {string} [reason]
      */
-    const show = (key, ok) => { section.querySelector(`[data-health=${key}]`).textContent = `${ok ? '✓' : '✗'} ${labels[key]}`; };
+    const show = (key, ok, reason = reasons[key]) => {
+        section.querySelector(`[data-health=${key}] [data-health-status]`).textContent = ok ? '✓ 正常' : `✗ ${reason}`;
+    };
     const read = async () => {
         refresh.disabled = true;
         summary.textContent = '正在检查…';
@@ -492,7 +495,7 @@ export function prepareSystemStatus(root) {
                 .map(([text, count]) => `${text}${count > 1 ? ` ×${count}` : ''}`).join('\n') || '没有最近错误';
             summary.textContent = allowed ? '检查完成' : '请到 Chrome 扩展详情开启「允许访问文件网址」。';
         } catch {
-            for (const key of /** @type {('bridge'|'anki'|'vault'|'apple')[]} */ (['bridge', 'anki', 'vault', 'apple'])) { show(key, false); }
+            for (const key of /** @type {('bridge'|'anki'|'vault'|'apple')[]} */ (['bridge', 'anki', 'vault', 'apple'])) { show(key, false, '本机桥未连接'); }
             command.hidden = false;
             summary.textContent = '体检不可用：本机桥未连接或尚不支持此动作，请同步后刷新。';
             section.querySelector('[data-health-errors]').textContent = '暂时无法读取';

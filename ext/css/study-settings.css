@@ -390,3 +390,52 @@ body.preview-sidebar-visible .preview-frame-container .preview-close {
     font-family: ui-monospace, monospace;
     font-size: 12px;
 }
+
+/* Reuse Material's controls and layout with the study palette in both themes. */
+:root,
+:root[data-theme=dark] {
+    --text-color: var(--st-ink);
+    --text-color-light1: var(--st-muted);
+    --text-color-light2: var(--st-muted);
+    --text-color-light3: var(--st-faint);
+    --text-color-light4: var(--st-faint);
+    --background-color: var(--st-paper);
+    --background-color-light: var(--st-sheet);
+    --background-color-dark1: var(--st-tint);
+    --accent-color: var(--st-accent);
+    --accent-color-light: var(--st-accent-strong);
+    --accent-color-lighter: var(--st-accent-soft);
+    --accent-color-lightest: var(--st-accent-soft);
+    --accent-color-dark: var(--st-accent-strong);
+    --accent-color-transparent0: transparent;
+    --accent-color-transparent5: color-mix(in srgb, var(--st-accent) 5%, transparent);
+    --accent-color-transparent25: color-mix(in srgb, var(--st-accent) 25%, transparent);
+    --input-background-color: var(--st-sheet);
+    --input-background-color-dark: var(--st-tint);
+    --input-background-color-darker: var(--st-line);
+    --input-outline-color: var(--st-accent);
+    --input-border-radius: var(--st-radius-1);
+    --button-border-radius: var(--st-radius-1);
+    --button-default-text-color: var(--st-accent-ink);
+    --button-default-border-color: var(--st-line);
+    --button-default-icon-color: var(--st-ink);
+    --button-default-icon-color-light: var(--st-muted);
+    --checkbox-unchecked-color: var(--st-muted);
+    --toggle-track-color: var(--st-line);
+    --toggle-knob-color: var(--st-sheet);
+    --separator-color1: var(--st-line);
+    --separator-color2: var(--st-line);
+    --outline-item-background-color-hover: var(--st-tint);
+    --menu-item-hover-color: var(--st-tint);
+    --menu-item-active-color: var(--st-line);
+    --settings-group-border-radius: var(--st-radius-2);
+    --shadow-vertical: var(--st-shadow-1);
+}
+body { font-family: var(--st-sans); }
+.study-settings-panel h2,
+.settings-category-panel .heading-container h2 { font-family: var(--st-serif); font-size: 1.35em; font-weight: 600; }
+.study-settings-panel label.toggle { display: inline-block; }
+.study-settings-panel button.primary { color: var(--st-accent-ink); }
+#study-system-status .settings-item-right { max-height: none; flex-wrap: wrap; gap: 6px 12px; color: var(--st-muted); }
+#study-system-status [data-health-command] { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+#study-system-status [data-health-command][hidden] { display: none; }

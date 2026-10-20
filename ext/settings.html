@@ -572,7 +572,10 @@
                 <button type="button" id="load-models">读取 / 刷新可用模型</button><small>查词建议低强度，响应更快。</small>
             </section>
             <section><h2>词典 AI 辅助</h2><label class="check"><input type="checkbox" id="autoDictionaryTranslate">查词时自动通过 AI 翻译词典英英首义</label><p>关闭时仅在点击翻译后调用 AI。</p>
-                <label class="check"><input type="checkbox" id="practiceEnabled">启用造句批改（消耗额度）</label><small>只在你点『批改』时调用模型</small>
+                <div class="settings-group"><div class="settings-item"><div class="settings-item-inner">
+                    <div class="settings-item-left"><div class="settings-item-label">启用造句批改（消耗额度）</div><div class="settings-item-description">只在你点『批改』时调用模型</div></div>
+                    <div class="settings-item-right"><label class="toggle"><input type="checkbox" id="practiceEnabled" aria-label="启用造句批改（消耗额度）"><span class="toggle-body"><span class="toggle-track"></span><span class="toggle-knob"></span></span></label></div>
+                </div></div></div>
             </section>
             <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>再次查看时复用已有译文。关闭后会清空缓存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
             <div class="save-bar"><small id="settings-save-state" class="study-save-state" role="status" aria-live="polite">正在读取本地设置…</small><button type="submit" class="primary">保存设置</button></div>
@@ -2206,18 +2209,34 @@
         <section id="study-system-status" class="study-settings-panel">
             <h2>系统状态</h2>
             <p data-health-summary role="status">打开本节时检查一次；不会调用模型。</p>
-            <ul>
-                <li data-health="bridge">桥版本 · 尚未检查</li>
-                <li data-health="anki">Anki · 尚未检查</li>
-                <li data-health="vault">Vault · 尚未检查</li>
-                <li data-health="apple">Apple 翻译 · 尚未检查</li>
-                <li data-health="file">本地文件访问 · 尚未检查</li>
-            </ul>
-            <p data-health-command hidden><code>python3 dev/sync-local.py</code> <button type="button" data-health-copy>复制</button></p>
+            <div class="settings-group">
+                <div class="settings-item" data-health="bridge"><div class="settings-item-inner settings-item-inner-wrappable">
+                    <div class="settings-item-left"><div class="settings-item-label">桥版本</div></div>
+                    <div class="settings-item-right"><span data-health-status>尚未检查</span><span data-health-command hidden><code>python3 dev/sync-local.py</code> <button type="button" data-health-copy>复制</button></span></div>
+                </div></div>
+                <div class="settings-item" data-health="anki"><div class="settings-item-inner settings-item-inner-wrappable">
+                    <div class="settings-item-left"><div class="settings-item-label">Anki</div></div>
+                    <div class="settings-item-right"><span data-health-status>尚未检查</span></div>
+                </div></div>
+                <div class="settings-item" data-health="vault"><div class="settings-item-inner settings-item-inner-wrappable">
+                    <div class="settings-item-left"><div class="settings-item-label">Vault</div></div>
+                    <div class="settings-item-right"><span data-health-status>尚未检查</span></div>
+                </div></div>
+                <div class="settings-item" data-health="apple"><div class="settings-item-inner settings-item-inner-wrappable">
+                    <div class="settings-item-left"><div class="settings-item-label">Apple 翻译</div></div>
+                    <div class="settings-item-right"><span data-health-status>尚未检查</span></div>
+                </div></div>
+                <div class="settings-item" data-health="file"><div class="settings-item-inner settings-item-inner-wrappable">
+                    <div class="settings-item-left"><div class="settings-item-label">本地文件访问</div></div>
+                    <div class="settings-item-right"><span data-health-status>尚未检查</span></div>
+                </div></div>
+            </div>
             <details><summary>最近错误</summary><pre data-health-errors>尚未检查</pre></details>
             <button type="button" data-health-refresh>刷新</button>
         </section>
 
+<section class="study-settings-panel"><h2>日语预备（当前不启用）</h2><p>英语继续照常使用。将来开始日语时，在 Yomitan 原设置里复制一个独立配置，查词语言选日语，选择有使用权限的日语词典；不要导入整套配置覆盖英语。日语笔记与问答独立保存。</p><button type="button" id="prepare-japanese">准备日语空牌组与模板</button><p id="japanese-status" role="status" aria-live="polite"></p><p>只在点击时连接 Anki：不创建卡片、不切换浏览器配置、不修改已有模板或排程。浏览器仍未开始日语学习。</p></section>
+<footer class="study-settings-panel">翻译缓存与收藏保存在扩展本地，卸载扩展会清除，重要收藏请先导出。保存目标设置保存在本机桥；学习记录留在所选 Vault，卡片留在 Anki，不会因卸载扩展而删除。这些个人数据不随源码或安装包上传。</footer>
 <div class="heading-container">
     <div class="heading-container-icon"><span class="icon" data-icon="cog"></span></div>
     <div class="heading-container-left"><h2>高级选项与维护</h2></div>
@@ -2252,8 +2271,7 @@
         <div class="settings-item-right open-panel-button-container"><span class="icon-button"><span class="icon-button-inner"><span class="icon" data-icon="material-right-arrow"></span></span></span></div>
     </div></a>
 </div>
-<section class="study-settings-panel"><h2>日语预备（当前不启用）</h2><p>英语继续照常使用。将来开始日语时，在 Yomitan 原设置里复制一个独立配置，查词语言选日语，选择有使用权限的日语词典；不要导入整套配置覆盖英语。日语笔记与问答独立保存。</p><button type="button" id="prepare-japanese">准备日语空牌组与模板</button><p id="japanese-status" role="status" aria-live="polite"></p><p>只在点击时连接 Anki：不创建卡片、不切换浏览器配置、不修改已有模板或排程。浏览器仍未开始日语学习。</p></section>
-<footer class="study-settings-panel">翻译缓存与收藏保存在扩展本地，卸载扩展会清除，重要收藏请先导出。保存目标设置保存在本机桥；学习记录留在所选 Vault，卡片留在 Anki，不会因卸载扩展而删除。这些个人数据不随源码或安装包上传。</footer><div class="heading-container">
+<div class="heading-container">
         <div class="heading-container-icon"><span class="icon" data-icon="profile"></span></div>
         <div class="heading-container-left"><h2 id="profile"><a href="#profile">Profile</a></h2></div>
     </div>

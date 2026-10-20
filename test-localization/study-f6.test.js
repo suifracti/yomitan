@@ -15,11 +15,14 @@ function setup(response) {
 test('system status renders five rows, version copy and manual refresh without polling', async () => {
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, 'clipboard', {value: {writeText}, configurable: true});
-    const send = setup({ok: true, value: {files: {'bridge.py': 'old'}, anki: {ok: true}, vault: {ok: true}, appleTranslate: true, errors: [{action: 'librarySync', message: 'offline'}]}});
-    await vi.waitFor(() => expect(document.querySelector('[data-health=bridge]').textContent).toBe('✗ 桥版本'));
-    expect(document.querySelector('[data-health=anki]').textContent).toBe('✓ Anki');
-    expect(document.querySelector('[data-health=file]').textContent).toBe('✗ 本地文件访问');
-    expect(document.querySelector('[data-health-errors]').textContent).toContain('offline');
+    const send = setup({ok: true, value: {files: {'bridge.py': 'old'}, anki: {ok: true}, vault: {ok: true}, appleTranslate: true, errors: Array.from({length: 20}, () => ({action: 'ankiToday', message: 'offline'}))}});
+    await vi.waitFor(() => expect(document.querySelector('[data-health=bridge]').textContent).toContain('✗ 版本不一致'));
+    expect(document.querySelector('[data-health=anki]').textContent).toContain('✓ 正常');
+    expect(document.querySelector('[data-health=file]').textContent).toContain('✗ 未授权');
+    expect(document.querySelector('[data-health-errors]').textContent).toBe('ankiToday：offline ×20');
+    expect(document.querySelector('#study-system-status ul')).toBeNull();
+    expect(document.querySelector('#practiceEnabled').closest('label').classList.contains('toggle')).toBe(true);
+    expect(document.querySelector('#practiceEnabled').closest('section').querySelector('h2').textContent).toBe('词典 AI 辅助');
     document.querySelector('[data-health-copy]').click();
     expect(writeText).toHaveBeenCalledWith('python3 dev/sync-local.py');
     document.querySelector('[data-health-refresh]').click();
