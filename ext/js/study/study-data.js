@@ -57,6 +57,7 @@ export function studyConfig(value) {
         model,
         effort: effort ?? DEFAULTS.effort,
         autoDictionaryTranslate: v.autoDictionaryTranslate === true,
+        practiceEnabled: v.practiceEnabled === true,
         cacheEnabled: v.cacheEnabled !== false,
     };
 }

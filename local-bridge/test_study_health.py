@@ -83,10 +83,6 @@ class HealthTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     install_bridge.install(home, codex, sys.executable)
 
-
-if __name__ == '__main__':
-    unittest.main()
-
 class PingTests(unittest.TestCase):
     def test_ping_works_with_no_config_modules_or_providers(self):
         import struct
@@ -102,3 +98,7 @@ class PingTests(unittest.TestCase):
             self.assertEqual(list(script.parent.iterdir()), [script])
         with self.assertRaises(ValueError):
             native.normalize_request({'action': 'bridgePing', 'path': 'private'})
+
+
+if __name__ == '__main__':
+    unittest.main()
