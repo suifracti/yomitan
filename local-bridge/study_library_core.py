@@ -224,6 +224,11 @@ def _normalize_request(p):
         if set(p) != {'action', 'mediaKey'} or not isinstance(p['mediaKey'], str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400})', p['mediaKey']):
             raise ValueError('视频编号无效。')
         return p
+    if action == 'libraryVideoSummary':
+        if set(p) != {'action', 'mediaKey', 'url', 'title'} or not all(isinstance(p[k], str) for k in ('mediaKey', 'url', 'title')) \
+                or len(p['url']) > 2000 or len(p['title']) > 300 or not p['mediaKey'] or media_key_of(p['url']) != p['mediaKey']:
+            raise ValueError('视频小结请求无效。')
+        return p
     if action == 'libraryCardsAdd' and set(p) in ({'action', 'id', 'cards'}, {'action', 'id', 'cards', 'mastery'}):
         if 'mastery' in p and p['mastery'] not in ('none', 'vague', 'known'):
             raise ValueError('掌握程度无效。')

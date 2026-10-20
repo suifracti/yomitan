@@ -433,6 +433,7 @@ class YomitanLibrary:
                     continue
                 stages = [CARD_STAGES.get(card.get('kind'), 0) for card in row.get('cards', [])]
                 rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', '')[:300],
+                             'path': row.get('path', ''), 'vault': str(lib.vault),
                              'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
                              'cards': len(row.get('cards', [])), 'stage': max(stages, default=0)})
         rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
@@ -472,7 +473,18 @@ class YomitanLibrary:
             lib = self.locate(ident) or self.library_for(p.get('targetId', self.active_id))
             return lib.handle(p)
         if action == 'libraryVideoWords':
-            return {'items': self.video_words(p['mediaKey'])}
+            items = self.video_words(p['mediaKey'])
+            return {'items': [{k: v for k, v in r.items() if k not in ('path', 'vault')} for r in items]}
+        if action == 'libraryVideoSummary':
+            from study_video import VideoLibrary
+            rows = self.video_words(p['mediaKey'])
+            if not rows:
+                raise ValueError('这个视频还没有记住的词，先选词「记住它」。')
+            videos = VideoLibrary(self.config['vault'])
+            # Link a word's note only when it lives in the same vault as the video note.
+            links = {r['id']: r['path'][:-3] if r['path'].endswith('.md') else r['path'] for r in rows
+                     if r.get('path') and pathlib.Path(r['vault']) == videos.vault}
+            return videos.write_summary(p['url'], p['title'], rows, links)
         if action == 'libraryAutoSync':
             return self.auto_sync()
         if action == 'libraryWordStatus':

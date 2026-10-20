@@ -80,6 +80,8 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-word{display:grid;grid-template-columns:46px auto minmax(0,1fr);column-gap:6px;align-items:baseline;padding:7px 8px 7px 0;border-bottom:1px solid var(--r-line)}
 #${ROOT_ID} .r-word-text{font-family:var(--st-serif,Georgia,serif);font-size:15px}
 #${ROOT_ID} .r-word-meta{color:var(--r-muted);font-size:11px;text-align:right}
+#${ROOT_ID} .r-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;color:var(--r-muted);font-size:12px}
+#${ROOT_ID} .r-summary a{color:var(--r-accent)}
 #${ROOT_ID} .r-word-sentence{grid-column:2/-1;margin:2px 0 0;color:var(--r-muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 #${ROOT_ID} button.r-more{padding:3px 8px;letter-spacing:.1em}
 #${ROOT_ID} .r-menu{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;border-top:1px solid var(--r-line);font-size:12px;color:var(--r-fg)}
@@ -867,7 +869,7 @@ export class YoutubeReader extends EventTarget {
 
     /**
      * @param {string} text
-     * @param {() => void} onClick
+     * @param {(event?: MouseEvent) => void} onClick
      * @returns {HTMLButtonElement}
      */
     _button(text, onClick) {
@@ -1356,7 +1358,19 @@ export class YoutubeReader extends EventTarget {
                 view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '这个视频还没有记住的词。选词后点「记住它」就会出现在这里。'}));
                 return;
             }
-            view.words.replaceChildren(...items.map((item) => {
+            // One explicit button writes a short study summary into this video's Obsidian note.
+            const summary = document.createElement('div');
+            summary.className = 'r-summary scan-disable';
+            const write = this._button('写入视频笔记', (event) => {
+                // Only a real click by the learner; page scripts cannot press it for them.
+                if (event?.isTrusted === false) { return; }
+                void this.writeSummary();
+            });
+            write.title = '在 Obsidian 的视频记录里写入（或更新）本视频的学习小结；只改小结那一段';
+            const summaryState = document.createElement('span');
+            summaryState.setAttribute('role', 'status');
+            summary.append(write, summaryState);
+            view.words.replaceChildren(summary, ...items.map((item) => {
                 const row = document.createElement('div');
                 row.className = 'r-word';
                 const time = document.createElement('button');
@@ -1387,6 +1401,34 @@ export class YoutubeReader extends EventTarget {
             if (generation === this._generation) {
                 view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: `暂时读不到：${error instanceof Error ? error.message : String(error)}`}));
             }
+        }
+    }
+
+    /**
+     * Writes or refreshes the study summary in this video's note (explicit action only).
+     * @returns {Promise<void>}
+     */
+    async writeSummary() {
+        const view = this._view;
+        const mediaKey = this._mediaKey;
+        const box = view?.words.querySelector('.r-summary');
+        if (!view || !mediaKey || !box) { return; }
+        const button = /** @type {HTMLButtonElement} */ (box.querySelector('button'));
+        const state = /** @type {HTMLElement} */ (box.querySelector('[role=status]'));
+        const generation = this._generation;
+        button.disabled = true;
+        state.textContent = '正在写入…';
+        try {
+            const result = /** @type {{path: string, words: number, cards: number, openUrl: string}} */ (await this._call('libraryVideoSummary', {mediaKey, title: document.title.slice(0, 300)}));
+            if (generation !== this._generation) { return; }
+            const open = document.createElement('a');
+            open.href = result.openUrl;
+            open.textContent = '在 Obsidian 打开';
+            state.replaceChildren(`已写入 ${result.words} 个词、${result.cards} 张卡的小结 · `, open);
+        } catch (error) {
+            if (generation === this._generation) { state.textContent = `没有写入：${error instanceof Error ? error.message : String(error)}`; }
+        } finally {
+            button.disabled = false;
         }
     }
 

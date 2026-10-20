@@ -198,3 +198,26 @@ test('shadowing pauses after each sentence (after the chosen repeats); offset an
         });
     }
 });
+
+test('the words tab writes a study summary only on a real click', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    /** @type {unknown[][]} */
+    const calls = [];
+    const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'},
+        site: /** @type {never} */ (fakeSite(null)),
+        call: async (action, data) => {
+            calls.push([action, data]);
+            if (action === 'libraryVideoWords') { return {items: [{id: 'a', word: 'brick', sentence: 'A brick.', videoTime: 12, stage: 0, cards: 0}]}; }
+            return {path: '视频记录/Lesson--x.md', words: 1, cards: 0, openUrl: 'obsidian://open?file=x'};
+        }});
+    reader.start();
+    await vi.waitFor(() => expect(document.querySelector('#study-yt-reader')).not.toBe(null));
+    /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-tab[data-tab=words]')).click();
+    await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-summary button')).not.toBe(null));
+    // A script-made click (isTrusted false) is ignored.
+    /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-summary button')).click();
+    expect(calls.some(([action]) => action === 'libraryVideoSummary')).toBe(false);
+    await reader.writeSummary();
+    expect(calls).toContainEqual(['libraryVideoSummary', {mediaKey: 'web:course.example.org/watch?id=7', title: document.title}]);
+    expect(document.querySelector('#study-yt-reader .r-summary [role=status]')?.textContent).toContain('已写入 1 个词');
+});

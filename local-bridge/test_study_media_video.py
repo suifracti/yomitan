@@ -84,6 +84,42 @@ class VideoMediaTests(unittest.TestCase):
         self.assertEqual(time_link('https://www.bilibili.com/video/BV1xx411c7mD?p=2', 72), '[1:12](https://www.bilibili.com/video/BV1xx411c7mD?p=2&t=72)')
         self.assertEqual(time_link('https://course.example.org/watch?id=7#frag', 72), '[1:12](https://course.example.org/watch?id=7)')
 
+    def test_study_summary_goes_into_one_marked_block_of_the_video_note(self):
+        url = 'https://www.youtube.com/watch?v=abcdefghijk'
+        with self.assertRaises(ValueError):
+            self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:abcdefghijk', 'url': url, 'title': 'Bricks'})
+        for word, t in [('wall', 40), ('brick', 12)]:
+            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} | here.', 'meaning': '义', 'url': url, 'videoTime': t}, 'makeCard': False})
+        # The page cannot ask for another video's summary.
+        with self.assertRaises(ValueError):
+            self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:zzzzzzzzzzz', 'url': url, 'title': 'Bricks'})
+        first = self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:abcdefghijk', 'url': url + '&t=5s', 'title': 'Bricks: a / story'})
+        note = self.vault / first['path']
+        self.assertTrue(first['path'].startswith('02-个人与生活/阅读与观影/观影/视频记录/Bricks- a - story--'))
+        body = note.read_text()
+        self.assertIn('来源：[打开视频](https://www.youtube.com/watch?v=abcdefghijk)', body)
+        self.assertIn('记住了 2 个词', body)
+        self.assertLess(body.index('**brick**'), body.index('**wall**'))
+        self.assertIn('[0:12](https://www.youtube.com/watch?v=abcdefghijk&t=12s) **brick** · 只记了笔记 · [[', body)
+        # The learner's own writing around the block survives a refresh.
+        note.write_text(body.replace('来源：', '我的看法：好视频。\n\n来源：') + '\n## 我的笔记\n\n自己写的。\n')
+        self.library.handle({'action': 'librarySave', 'entry': {'word': 'mortar', 'sentence': 'Mortar.', 'meaning': '灰浆', 'url': url, 'videoTime': 50}, 'makeCard': False})
+        again = self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:abcdefghijk', 'url': url, 'title': 'Other title'})
+        self.assertEqual(again['path'], first['path'])
+        body = note.read_text()
+        self.assertEqual(body.count('<!-- study-video-summary:start -->'), 1)
+        self.assertIn('记住了 3 个词', body)
+        self.assertIn('我的看法：好视频。', body)
+        self.assertIn('自己写的。', body)
+        # A broken marker stops the write instead of guessing.
+        note.write_text(body.replace('<!-- study-video-summary:end -->', ''))
+        with self.assertRaises(ValueError):
+            self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:abcdefghijk', 'url': url, 'title': 'Bricks'})
+        # Saving a word now links the video note that the summary created.
+        record = self.library.handle({'action': 'librarySave', 'entry': {'word': 'lintel', 'sentence': 'A lintel.', 'meaning': '过梁', 'url': url, 'videoTime': 60}, 'makeCard': False})
+        record = record['items'][0] if 'items' in record else record
+        self.assertIn('视频材料与完整字幕', (self.vault / record['path']).read_text())
+
     def test_video_over_eight_megabytes_is_refused(self):
         entry = {'word': 'wall', 'sentence': 'A wall.', 'meaning': '墙', 'url': 'https://www.youtube.com/watch?v=abcdefghijk', 'videoTime': 1}
         saved = self.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})

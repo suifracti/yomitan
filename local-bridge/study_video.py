@@ -18,6 +18,8 @@ PROMPT_VERSION = 1
 ID = re.compile(r'[a-f0-9]{32}')
 BEGIN = '<!-- study-video-generated:start -->'
 END = '<!-- study-video-generated:end -->'
+SUMMARY_BEGIN = '<!-- study-video-summary:start -->'
+SUMMARY_END = '<!-- study-video-summary:end -->'
 
 
 def digest(value):
@@ -240,6 +242,53 @@ class VideoLibrary:
                 elif p['action']=='videoEvent':self.event(r,p)
                 elif p['action']!='videoRead':raise ValueError('该动作需要翻译执行器。')
             return self.result(r)
+
+    def write_summary(self, url, title, rows, links=None, now=None):
+        """Writes (or refreshes) one marked study-summary block in the video note.
+        Only the block between the markers is ours; everything else in the note is kept."""
+        from study_library_core import time_link
+        from study_sync import MASTERY_LABELS, STAGE_NAMES
+        url = canonical_url(url)
+        title = text(title or '视频', 300, True)
+        video = digest(url)
+        links = links or {}
+        when = (now or datetime.datetime.now().astimezone()).strftime('%Y-%m-%d %H:%M')
+        cards = sum(r.get('cards', 0) for r in rows)
+        lines = [SUMMARY_BEGIN, f'## 学习小结（{when} 更新）', '',
+                 f'在这个视频里记住了 {len(rows)} 个词，做了 {cards} 张卡。点时间回到原句。', '']
+        for r in rows:
+            moment = time_link(url, r['videoTime']) if isinstance(r.get('videoTime'), (int, float)) else '—'
+            facts = [MASTERY_LABELS.get(r.get('mastery', ''), '')]
+            facts.append(f"{r['cards']} 张卡" + (f"（到{STAGE_NAMES.get(r.get('stage'), '')}）" if r.get('stage') in STAGE_NAMES else '') if r.get('cards') else '只记了笔记')
+            note = f" · [[{links[r['id']]}|笔记]]" if r.get('id') in links else ''
+            lines.append(f"- {moment} **{safe_markdown(r['word'])}** · {' · '.join(x for x in facts if x)}{note}")
+            if r.get('sentence'):
+                lines.append('  > ' + safe_markdown(' '.join(r['sentence'].split()))[:300])
+        lines.append(SUMMARY_END)
+        block = '\n'.join(lines)
+        with self.lock():
+            existing = list(self.base.glob('*--' + video + '.md'))
+            if len(existing) > 1:
+                raise ValueError('视频主记录重复，请先核对。')
+            if existing:
+                path = existing[0]
+            else:
+                name = re.sub(r'[\\/:*?"<>|\[\]#^\x00-\x1f]', '-', title).strip(' .')[:65] or '视频'
+                path = self.base / (name + '--' + video + '.md')
+            self.check(path)
+            old = path.read_text() if path.exists() else None
+            if old is None:
+                content = f"# {safe_markdown(title)}\n\n来源：[打开视频]({url})\n\n{block}\n"
+            elif old.count(SUMMARY_BEGIN) == 0 and old.count(SUMMARY_END) == 0:
+                content = old.rstrip('\n') + '\n\n' + block + '\n'
+            elif old.count(SUMMARY_BEGIN) == 1 and old.count(SUMMARY_END) == 1 and old.index(SUMMARY_BEGIN) < old.index(SUMMARY_END):
+                content = old[:old.index(SUMMARY_BEGIN)] + block + old[old.index(SUMMARY_END) + len(SUMMARY_END):]
+            else:
+                raise ValueError('学习小结的标记被改动，停止覆盖；请检查视频笔记。')
+            self.write(path, content, old)
+        relative = str(path.relative_to(self.vault))
+        return {'path': relative, 'words': len(rows), 'cards': cards,
+                'openUrl': 'obsidian://open?' + urllib.parse.urlencode({'vault': self.vault.name, 'file': relative})}
 
     def translate_next(self,ident,model):
         with self.lock():

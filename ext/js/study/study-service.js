@@ -826,7 +826,7 @@ export class StudyService {
             }
             return response.library;
         }
-        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords'].includes(action)) {
+        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary'].includes(action)) {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
             if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
@@ -1181,9 +1181,10 @@ export function prepareStudyService(lookupDictionary = null) {
         if (typeof studyAction !== 'string') {
             return false;
         }
-        // Content scripts get only the explicit reader's read/translate/cancel path, never library writes.
+        // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
+        // the video study summary, built from the learner's own saved words for the sender's video.
         // The reader runs in the top frame of any web page with a video.
-        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords'].includes(studyAction) && sender.id === chrome.runtime.id && sender.frameId === 0 &&
+        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary'].includes(studyAction) && sender.id === chrome.runtime.id && sender.frameId === 0 &&
         /^https?:\/\//.test(sender.url || '')) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
@@ -1194,12 +1195,21 @@ export function prepareStudyService(lookupDictionary = null) {
                     const asked = /** @type {{mediaKey?: unknown}} */ (data ?? {}).mediaKey;
                     if (!own || asked !== own || Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
                 }
+                // The summary's video URL comes from the sender, never from the page's message.
+                /** @type {Record<string, unknown>} */
+                let forwarded = scoped;
+                if (studyAction === 'libraryVideoSummary') {
+                    const own = mediaKeyOf(/** @type {string} */ (sender.url));
+                    const {mediaKey, title} = /** @type {{mediaKey?: unknown, title?: unknown}} */ (data ?? {});
+                    if (!own || mediaKey !== own || typeof title !== 'string' || Object.keys(/** @type {object} */ (data ?? {})).length !== 2) { throw new Error('只能为当前视频写小结。'); }
+                    forwarded = {mediaKey: own, url: /** @type {string} */ (sender.url).slice(0, 2000), title: title.slice(0, 300)};
+                }
                 // Only the model and Apple translation go through the local bridge.
                 const {engine} = normalizeSubtitlePrefs(await service.read(SUBTITLE_PREFS_KEY));
-                if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(engine)) || studyAction === 'subtitleSegment' || studyAction === 'libraryVideoWords') && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
+                if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(engine)) || studyAction === 'subtitleSegment' || studyAction.startsWith('library')) && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
                     throw new Error('请先在学习设置中授权本机翻译，再点翻译字幕。');
                 }
-                return await service.handle(studyAction, scoped);
+                return await service.handle(studyAction, forwarded);
             })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '字幕翻译未完成。'}));
             return true;
         }
