@@ -136,7 +136,7 @@ media, the note format and automatic two-way sync.
 
 All five batches are done.
 
-## Follow-up round (2026-10-20, in progress)
+## Follow-up round (2026-10-20)
 
 - Page word colouring on every site (`ext/js/study/word-marks.js`, started for
   top frames in `content-script-main.js`). Uses the CSS Custom Highlight API,
@@ -152,6 +152,45 @@ All five batches are done.
   - Checked in real Chrome on a fixture page (DOM unchanged, late content
     marked).
 
+- Subtitle files (`ext/js/study/subtitle-formats.js`): SRT, WebVTT, SBV,
+  ASS/SSA, TTML/DFXP, YouTube json3/XML, Bilibili JSON and simple JSON arrays.
+  Bilingual files (an English and a Chinese line per cue) arrive with their
+  translations. "导入字幕文件…" in the sidebar menu and in-video panel, or drag a
+  file onto the caption list; works on YouTube too.
+- Any video site (`web-video-site.js`, `youtube-site.js`, `media-key.js`). The
+  same reader runs outside YouTube through a site adapter:
+  - Finds the largest visible `<video>`; loads only after a video appears and
+    when "其他视频网站也可用" (`otherSites`) is on.
+  - Sources, best first in the learning language: the video's text tracks
+    (read quietly, restored afterwards), subtitle files the page already
+    fetched (resource timing + `SUBTITLE_URL`), or a local file. Several
+    sources appear in a "字幕来源" picker.
+  - UI: a "学" launcher on the video that shows only on hover, the same
+    in-video captions and panel on a layer that follows the video (also in
+    fullscreen), and a floating caption list that is closed until opened.
+    Common players' caption layers (Bilibili, video.js, JW, Plyr, Shaka,
+    DPlayer, ArtPlayer, xgplayer) and native text tracks are hidden only while
+    ours show.
+  - Identity: `mediaKeyOf` (`youtube:<id>` or `web:<host><path>?<video keys>`),
+    mirrored by `study_library_core.media_key_of`; `libraryVideoWords` now takes
+    `mediaKey` (old `videoId` still accepted). Time links add `t=` only for
+    YouTube and Bilibili.
+  - Background: subtitle actions accepted from any http(s) top frame; a page
+    reads only its own video's words.
+  - Checked in real Chrome on a fixture page: track found, layer aligned and
+    following scroll, launcher hidden at rest, page text untouched.
+- Shadowing (`shadow`, `shadowRepeats` 1/2/3/5): each sentence plays N times,
+  then the video pauses with a hint. Real Chrome: paused at 2002 ms and
+  3996 ms for sentences ending at 2000/4000 ms.
+- Caption offset: ±0.5 s in both menus, remembered per video and track
+  (`studyVideoState`); captured clips follow the offset.
+- Viewing progress (`resume`): saved at most every 5 s; on return the reader
+  offers "从 mm:ss 继续" and never jumps on its own.
+- Video study summary: "写入视频笔记" in the "本视频生词" tab writes one marked
+  block (`study-video-summary`) into the video note under 视频记录 (created
+  with the existing naming if missing). Trusted clicks only; the background
+  takes the URL from the sender. Tested on a temporary vault only.
+
 ## Not verified
 
 - `test_study_workspace_browser.py` has a timing-dependent check ("dictionary
@@ -159,6 +198,10 @@ All five batches are done.
   four, also before these batches; reruns pass.
 - `test_study_video.py` has one failure that predates these batches.
 
+- Real YouTube, Bilibili and other sites with the installed extension: the
+  user reloads the extension. Sites that draw captions on a canvas, put the
+  player in a cross-origin iframe, or encrypt subtitle files are not covered;
+  importing a file still works there (top frame only).
 - Real YouTube with the installed extension: the user reloads the extension.
   Checked here in jsdom tests, a fixture player page and the existing real
   MediaRecorder wiring test.
