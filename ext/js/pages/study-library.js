@@ -24,7 +24,8 @@ import {studyCall} from '../study/study-client.js';
 import {parseJson} from '../core/json.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl} from '../study/media-key.js';
-import {AUTO_SYNC_STATE_KEY} from '../study/study-data.js';
+import {markWordKnown, wordInfo} from '../study/word-marks.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY} from '../study/study-data.js';
 
 /** @type {Set<string>} Records whose earlier cards are mature enough for stage-3 cards. */
 let upgradeIds = new Set();
@@ -52,9 +53,10 @@ function noteIds(value) {
  */
 export function matchesCategory(value, category) {
     if (!value || typeof value !== 'object') { return false; }
-    const record = /** @type {{favorite?: boolean, learningState?: string, vaultSaved?: boolean, ankiState?: string, syncState?: string | {status?: string}, cards?: unknown}} */ (value);
+    const record = /** @type {{favorite?: boolean, manualKnown?: boolean, learningState?: string, vaultSaved?: boolean, ankiState?: string, syncState?: string | {status?: string}, cards?: unknown}} */ (value);
     const syncState = typeof record.syncState === 'string' ? record.syncState : '';
     switch (category) {
+        case 'manual-known': return record.manualKnown === true;
         case 'favorites': return record.favorite === true;
         case 'saved': return record.vaultSaved === true && record.learningState !== 'favorite-only';
         case 'linked': return noteIds(record).length > 0 || record.ankiState === 'linked';
@@ -568,6 +570,24 @@ async function initializePage() {
             resume.rel = 'noopener noreferrer';
             resume.textContent = '继续学习 ↗';
             actions.append(resume);
+            if (record.manualKnown) {
+                const reset = document.createElement('button'); reset.type = 'button';
+                reset.textContent = '改回在学';
+                reset.onclick = () => {
+                    reset.disabled = true;
+                    void markWordKnown(record.entry.word, false).then(() => {
+                        for (const row of records.values()) {
+                            if ((row.entry.lemma || row.entry.word).toLowerCase() === (record.entry.lemma || record.entry.word).toLowerCase()) { row.manualKnown = false; }
+                        }
+                        if (category === 'manual-known') {
+                            void loadPage(true);
+                        } else { render(); }
+                    }).catch((error) => {
+                        setStatus(error instanceof Error ? error.message : '标记没有保存，请重试。'); reset.disabled = false;
+                    });
+                };
+                actions.append(reset);
+            }
             if (record.openUrl) {
                 const note = document.createElement('a');
                 note.href = record.openUrl;
@@ -817,25 +837,27 @@ async function initializePage() {
         async function loadPage(reset) {
             if (loading) { return; }
             loading = true;
-            if (reset) { void refreshToday(); }
+            if (reset && category !== 'manual-known') { void refreshToday(); }
             more.disabled = true;
             setStatus(reset ? '正在读取学习库…' : '正在读取下一页…');
             render();
             const start = reset ? 0 : offset;
             syncPendingError = '';
-            try {
-                const pending = await studyCall('syncPending');
-                pendingSyncCount = Array.isArray(pending) ? pending.length : 0;
-            } catch (error) {
-                syncPendingError = error instanceof Error ? error.message : '待同步队列检查失败。';
+            if (category !== 'manual-known') {
+                try {
+                    const pending = await studyCall('syncPending');
+                    pendingSyncCount = Array.isArray(pending) ? pending.length : 0;
+                } catch (error) {
+                    syncPendingError = error instanceof Error ? error.message : '待同步队列检查失败。';
+                }
             }
             await refreshSavedWords();
             try {
-                const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope: ['pending', 'anki-only'].includes(category) ? category : 'all', offset: start});
+                const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope: ['pending', 'anki-only', 'manual-known'].includes(category) ? category : 'all', offset: start});
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
                 if (reset) { records.clear(); }
                 for (const record of page) {
-                    if (record && typeof record.id === 'string') { records.set(record.id, {...record, reconcileState: 'checking'}); }
+                    if (record && typeof record.id === 'string') { records.set(record.id, {...record, reconcileState: category === 'manual-known' ? void 0 : 'checking'}); }
                 }
                 const result = value && typeof value === 'object' ? /** @type {{total?: unknown, needsAttention?: number}} */ (value) : {};
                 total = typeof result.total === 'number' && Number.isFinite(result.total) ? result.total : start + page.length;
@@ -847,14 +869,14 @@ async function initializePage() {
                 render();
                 for (const record of page) {
                     if (!record || typeof record.id !== 'string') { continue; }
-                    if (record.syncState === 'anki-only') {
+                    if (record.syncState === 'anki-only' || category === 'manual-known') {
                         records.set(record.id, record); continue;
                     }
                     try {
                         const latest = await studyCall('libraryReconcile', {id: record.id, language: record.entry?.language ?? 'en'});
                         const reconciled = normalizeRecord(latest, record.id);
                         if (!reconciled) { throw new Error('刷新没有返回这条记录。'); }
-                        records.set(record.id, {...reconciled, reconcileState: 'verified'});
+                        records.set(record.id, {...reconciled, manualKnown: record.manualKnown, reconcileState: 'verified'});
                     } catch (error) {
                         records.set(record.id, {...record, reconcileState: 'failed', reconcileError: error instanceof Error ? error.message : '刷新失败。'});
                     }
@@ -945,6 +967,14 @@ async function initializePage() {
         more.addEventListener('click', () => { void loadPage(false); });
         document.getElementById('study-library-refresh')?.addEventListener('click', () => { void loadPage(true); });
         chrome.storage?.onChanged?.addListener((changes, area) => {
+            if (area === 'local' && changes[WORD_STATUS_KEY]) {
+                const state = /** @type {{words?: Record<string, unknown>}|undefined} */ (changes[WORD_STATUS_KEY].newValue);
+                const words = state?.words || {};
+                for (const row of records.values()) { row.manualKnown = wordInfo(row.entry?.word || '', words)?.manualKnown === true; }
+                if (category === 'manual-known') {
+                    void loadPage(true);
+                } else { render(); }
+            }
             if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, 'studySavedWordsV1')) {
                 void refreshSavedWords();
             }

@@ -215,6 +215,8 @@ def _normalize_request(p):
         if 'fresh' in p and type(p['fresh']) is not bool:
             raise ValueError('历史核对刷新标志无效。')
         return {**p, 'word': text(p['word'], 128, True), **({'lemma': text(p['lemma'], 128, True)} if 'lemma' in p else {})}
+    if action == 'libraryMarkKnown' and set(p) == {'action', 'word', 'known'} and type(p['known']) is bool:
+        return {**p, 'word': text(p['word'], 128, True)}
     if action == 'libraryFavorite':
         if type(p.get('favorite')) is not bool or set(p) not in ({'action', 'entry', 'favorite'}, {'action', 'id', 'favorite'}):
             raise ValueError('收藏请求无效。')
@@ -354,7 +356,7 @@ def _normalize_request(p):
         return p
     if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope'}:
         scope = p.get('scope', 'source')
-        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all', 'anki-only'):
+        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all', 'anki-only', 'manual-known'):
             raise ValueError('学习列表范围无效。')
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300)}
     if action in ('librarySync', 'libraryRead') and set(p) == {'action', 'ids'} and isinstance(p['ids'], list) and 1 <= len(p['ids']) <= 10:
@@ -634,10 +636,17 @@ class StudyLibrary:
             raise ValueError('记录元数据已修改，停止自动覆盖。')
         return record, content[len(header):], hashlib.sha256(content.encode()).hexdigest()
 
-    def write(self, record, body, expected=None):
+    def write(self, record, body, expected=None, word_known=None):
         p = self.path(record['id'], record['entry'])
         value = self.header(record) + body
-        if re.search(r'--w[a-f0-9]{32}\.md$', p.name):
+        if word_known is not None:
+            content = self.file_content(p)
+            root = re.search(r'^<!-- english-study-word-v1:(.+) -->$', content, re.M)
+            metadata = json.loads(root[1])
+            metadata['manualKnown'] = word_known
+            value = content[:root.start(1)] + self.metadata(metadata) + content[root.end(1):]
+            expected = hashlib.sha256(content.encode()).hexdigest()
+        elif re.search(r'--w[a-f0-9]{32}\.md$', p.name):
             block = self.context_block(record, body)
             if p.exists():
                 content = self.file_content(p)

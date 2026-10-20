@@ -81,9 +81,12 @@ class RecordIndex:
         else:
             ids = lib.file_ids(path)
             contexts = [(ident, *lib.read_file(path, ident, content)) for ident in ids]
+        root = re.search(r'^<!-- english-study-word-v1:(.+) -->$', content, re.M)
+        root_metadata = json.loads(root[1]) if root else {}
         rows = []
         for ident, record, body, version in contexts:
             result = lib.result_from(record, body, version, path)
+            result['manualKnown'] = root_metadata.get('manualKnown', record.get('manualKnown', False)) is True
             entry = result['entry']
             rows.append({'id': ident, 'targetId': record.get('targetId'), 'word': entry['word'],
                          'lemma': entry.get('lemma', ''), 'media_key': media_key_of(entry.get('url')),

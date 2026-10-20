@@ -827,11 +827,12 @@ export class StudyService {
         if (action === 'practiceCheck' && !studyConfig(await this.read(SETTINGS_KEY)).practiceEnabled) {
             throw new Error('练习批改未开启；请先在 AI 设置中明确开启。');
         }
-        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryRepair', 'libraryOrphan', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'senseMatch', 'ankiToday', 'ankiOpen', 'bridgeHealth', 'practiceCheck'].includes(action)) {
+        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryRepair', 'libraryOrphan', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'libraryMarkKnown', 'senseMatch', 'ankiToday', 'ankiOpen', 'bridgeHealth', 'practiceCheck'].includes(action)) {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
             if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
+            if (action === 'libraryMarkKnown') { await this.refreshWordStatus(); }
             if (action === 'libraryList' || action === 'libraryMemory') {
                 const items = /** @type {{items?: import('study').LibraryRecord[]}} */ (response.library).items;
                 if (Array.isArray(items)) { await this.sync.favoritesFrom(items.filter((r) => r.entry && r.vaultSaved !== false)); }
@@ -1191,8 +1192,7 @@ export function prepareStudyService(lookupDictionary = null) {
         if (studyAction === 'openStudySettings' && sender.id === chrome.runtime.id &&
         (/^(?:https?|file):/.test(sender.url || '') || sender.url?.startsWith(chrome.runtime.getURL('')))) {
             const section = /** @type {{section?: string}} */ (data || {}).section === 'save' ? 'save' : 'ai';
-            void chrome.tabs.create({url: chrome.runtime.getURL(`settings.html#${section}`)}).then(
-                () => reply({ok: true, value: true}), () => reply({ok: false, error: '设置没有打开，请从扩展图标里打开设置。'}));
+            void chrome.tabs.create({url: chrome.runtime.getURL(`settings.html#${section}`)}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '设置没有打开，请从扩展图标里打开设置。'}));
             return true;
         }
         if (studyAction === 'openStudyRecord' && sender.id === chrome.runtime.id && /^(?:https?|file):/.test(sender.url || '')) {
@@ -1200,16 +1200,18 @@ export function prepareStudyService(lookupDictionary = null) {
             if (!/^[a-f0-9]{32}$/.test(row.id || '') || !row.word || row.word.length > 128 || !row.sentence || row.sentence.length > 2400) {
                 reply({ok: false, error: '这条记录没有读完整，请重新打开这个页签。'}); return false;
             }
-            const params = new URLSearchParams({query: row.word, full: row.sentence, studyRecordId: row.id,
-                studyResume: '1', studyAddCard: '1'});
-            void chrome.tabs.create({url: chrome.runtime.getURL('search.html') + '?' + params.toString()}).then(
-                () => reply({ok: true, value: true}), () => reply({ok: false, error: '词卡没有打开，请从学习库里点「制卡」。'}));
+            const params = new URLSearchParams({query: row.word,
+                full: row.sentence,
+                studyRecordId: row.id,
+                studyResume: '1',
+                studyAddCard: '1'});
+            void chrome.tabs.create({url: chrome.runtime.getURL('search.html') + '?' + params.toString()}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '词卡没有打开，请从学习库里点「制卡」。'}));
             return true;
         }
         // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
         // the video study summary, built from the learner's own saved words for the sender's video.
         // Readers run inside their own web frame, or a top-level local file page.
-        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary'].includes(studyAction) && sender.id === chrome.runtime.id &&
+        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown'].includes(studyAction) && sender.id === chrome.runtime.id &&
         (/^https?:\/\//.test(sender.url || '') || (sender.frameId === 0 && /^file:\/\//.test(sender.url || '')))) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};

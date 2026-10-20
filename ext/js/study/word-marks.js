@@ -26,6 +26,8 @@
  * count of how often learning words are met in the wild (no URLs or sentences kept).
  * Inputs, editors, code and our own learning UI are skipped.
  */
+import {studyCall} from './study-client.js';
+import {youtubeStudyContext} from './youtube-study-context.js';
 import {safePerformance} from '../core/safe-performance.js';
 import {WORD_MARKS_KEY, WORD_STATUS_KEY} from './study-data.js';
 
@@ -38,7 +40,8 @@ const STYLE = `
 ::highlight(study-shaky){text-decoration:underline dotted 1.5px rgb(214 92 72 / 75%);text-underline-offset:3px}
 ::highlight(study-familiar){text-decoration:underline solid 1px rgb(63 140 90 / 28%);text-underline-offset:3px}
 ::highlight(study-partial){text-decoration:underline dotted 1px rgb(120 120 120 / 45%);text-underline-offset:3px}
-#${TIP_ID}{position:fixed;z-index:2147483000;max-width:280px;padding:3px 8px;border-radius:6px;background:rgb(28 28 30 / 92%);color:#f4f1ea;font:13px/1.4 -apple-system,'PingFang SC',sans-serif;pointer-events:none;box-shadow:0 2px 8px rgb(0 0 0 / 25%)}
+#${TIP_ID}{position:fixed;z-index:2147483000;max-width:280px;padding:3px 8px;border-radius:6px;background:rgb(28 28 30 / 92%);color:#f4f1ea;font:13px/1.4 -apple-system,'PingFang SC',sans-serif;pointer-events:auto;box-shadow:0 2px 8px rgb(0 0 0 / 25%)}
+#${TIP_ID} button{font:inherit;color:inherit;background:none;border:1px solid #777;border-radius:4px;margin-left:6px;padding:2px 5px;cursor:pointer}
 #${TIP_ID}[hidden]{display:none}
 `;
 const MAX_RANGES = 6000;
@@ -49,7 +52,7 @@ const TIER_OF = {new: 'learning', learning: 'learning', shaky: 'shaky', familiar
 /** Statuses that count as "still learning" for encounters. */
 const COUNTED = new Set(['new', 'learning', 'shaky', 'partial']);
 
-/** @typedef {{s: string, gloss?: string, iv?: number, lapses?: number, senses?: number, newSense?: boolean}} WordInfo */
+/** @typedef {{s: string, gloss?: string, iv?: number, lapses?: number, senses?: number, newSense?: boolean, manualKnown?: boolean}} WordInfo */
 /** @typedef {{learning: boolean, shaky: boolean, familiar: boolean, partial: boolean}} Tiers */
 
 /**
@@ -415,7 +418,7 @@ export class WordMarks {
             range.setStart(node, start);
             range.setEnd(node, end);
             highlight.add(range);
-            if (info.gloss) { this._rangeInfo.set(range, {word, gloss: info.gloss}); }
+            this._rangeInfo.set(range, {word, gloss: info.gloss || ''});
             ranges.push(range);
             ++this._count;
         };
@@ -505,6 +508,10 @@ export class WordMarks {
         let y = 0;
         document.addEventListener('pointermove', (event) => {
             if (!this._hover || !this._enabled) { return; }
+            if (this._tip && !this._tip.hidden) {
+                const box = this._tip.getBoundingClientRect();
+                if (event.clientX >= box.left - 12 && event.clientX <= box.right + 12 && event.clientY >= box.top - 12 && event.clientY <= box.bottom + 12) { return; }
+            }
             if (Math.abs(event.clientX - x) + Math.abs(event.clientY - y) > 6) { this._hideTip(); }
             x = event.clientX;
             y = event.clientY;
@@ -512,7 +519,8 @@ export class WordMarks {
             this._tipTimer = window.setTimeout(() => this._showTipAt(x, y), 600);
         }, {passive: true});
         for (const type of ['pointerdown', 'keydown', 'scroll', 'blur']) {
-            window.addEventListener(type, () => {
+            window.addEventListener(type, (event) => {
+                if (event.target instanceof Node && this._tip?.contains(event.target) && ['pointerdown', 'keydown'].includes(type)) { return; }
                 clearTimeout(this._tipTimer);
                 this._hideTip();
             }, {capture: true, passive: true});
@@ -536,12 +544,25 @@ export class WordMarks {
             this._tip = document.createElement('div');
             this._tip.id = TIP_ID;
             this._tip.className = 'scan-disable';
-            this._tip.setAttribute('aria-hidden', 'true');
+            this._tip.setAttribute('role', 'dialog'); this._tip.setAttribute('aria-label', '已保存的词');
             document.documentElement.append(this._tip);
         }
-        this._tip.textContent = `${info.word} · ${info.gloss}`;
+        const known = document.createElement('button'); known.type = 'button';
+        known.textContent = '✓ 认识了';
+        known.onclick = () => {
+            known.disabled = true;
+            void markWordKnown(info.word).catch(() => { known.disabled = false; });
+        };
+        const lookup = document.createElement('button'); lookup.type = 'button';
+        lookup.textContent = '查词';
+        lookup.onclick = () => {
+            this._hideTip();
+            void youtubeStudyContext.openCard?.(range.cloneRange(), false).catch(() => {});
+        };
+        this._tip.replaceChildren([info.word, info.gloss].filter(Boolean).join(' · '), known, lookup);
         this._tip.hidden = false;
-        const top = box.bottom + 6 + 28 > innerHeight ? box.top - 30 : box.bottom + 6;
+        const height = this._tip.getBoundingClientRect().height;
+        const top = box.bottom + 6 + height > innerHeight ? Math.max(4, box.top - height - 6) : box.bottom + 6;
         Object.assign(this._tip.style, {left: `${Math.max(4, Math.min(innerWidth - 284, box.left))}px`, top: `${top}px`});
     }
 
@@ -559,4 +580,34 @@ export function startWordMarks() {
     const marks = new WordMarks();
     void marks.start();
     return marks;
+}
+
+let knownNoticeTimer = 0;
+
+/**
+ * Mark only the learner's saved word; Anki cards and scheduling are untouched.
+ * @param {string} word
+ * @param {boolean} [known]
+ */
+export async function markWordKnown(word, known = true) {
+    const notice = document.getElementById('study-known-notice') || document.createElement('div');
+    notice.id = 'study-known-notice'; notice.className = 'scan-disable';
+    notice.setAttribute('role', 'status');
+    notice.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:2147483646;max-width:90%;padding:8px 12px;border-radius:8px;background:var(--st-ink,#243047);color:var(--st-paper,#fff);font:13px/1.5 sans-serif;box-shadow:0 2px 12px #0003';
+    document.documentElement.append(notice); clearTimeout(knownNoticeTimer);
+    notice.textContent = '正在保存标记…';
+    try {
+        await studyCall('libraryMarkKnown', {word, known});
+        const undo = document.createElement('button'); undo.type = 'button';
+        undo.textContent = '撤销';
+        undo.style.cssText = 'margin-left:6px;color:inherit;background:none;border:1px solid currentColor;border-radius:4px;font:inherit;cursor:pointer';
+        undo.onclick = () => {
+            undo.disabled = true;
+            void markWordKnown(word, !known).catch(() => {});
+        };
+        notice.replaceChildren(known ? '已标为认识 · ' : '已改回在学 · ', undo);
+    } catch (error) {
+        notice.textContent = `标记没有保存：${error instanceof Error ? error.message : '请再试一次。'}`;
+        throw error;
+    } finally { knownNoticeTimer = window.setTimeout(() => notice.remove(), 5000); }
 }

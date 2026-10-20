@@ -507,6 +507,9 @@ class YomitanLibrary:
             return videos.write_summary(p['url'], p['title'], rows, links)
         if action == 'libraryAutoSync':
             return self.auto_sync()
+        if action == 'libraryMarkKnown':
+            from study_senses import mark_known
+            return mark_known(self, p['word'], p['known'])
         if action == 'libraryWordStatus':
             return self.word_status()
         if action == 'libraryOrphan':
@@ -527,6 +530,7 @@ class YomitanLibrary:
             if scope in ('all', 'pending', 'anki-only'): rows += orphans
             if scope == 'pending': rows = [r for r in rows if r.get('syncState') in attention or r.get('ankiState') == 'pending']
             elif scope == 'anki-only': rows = [r for r in rows if r.get('syncState') == 'anki-only']
+            elif scope == 'manual-known': rows = [r for r in rows if r.get('manualKnown') is True]
             elif scope != 'all': rows = [r for r in rows if r['entry']['url'] == p['url'] and (p['url'] or r['entry']['title'] == p['title'])]
             rows.sort(key=lambda row: row['created'], reverse=True)
             offset = p.get('offset', 0)

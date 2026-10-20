@@ -150,6 +150,27 @@ def senses(library, word, now=None):
             'misses': {kind: sum(e.get('kind') == kind for r in rows for e in r.get('contextMiss', [])) for kind in MISS_KINDS}}
 
 
+def mark_known(library, word, known):
+    records = list(library.indexed()[1].values())
+    wanted = word.strip().casefold()
+    keys = {canonical(r['entry']) for _lib, _path, r in records
+            if wanted in (r['entry']['word'].casefold(), canonical(r['entry']))}
+    updated = set()
+    for lib, path, row in records:
+        if canonical(row['entry']) not in keys or path in updated:
+            continue
+        record, body, version = lib.read(row['id'])
+        if re.search(r'--w[a-f0-9]{32}\.md$', path.name):
+            lib.write(record, body, expected=version, word_known=known)
+        else:
+            record['manualKnown'] = known
+            lib.write(record, body, expected=version)
+        updated.add(path)
+    if not updated:
+        raise ValueError('这个词还没有保存过，请先点「记住它」。')
+    return {'word': word, 'manualKnown': known, 'updated': len(updated)}
+
+
 def word_status(library, now=None):
     now = time.time() if now is None else now
     snapshot, by_word, phrases = metrics(library), {}, {}
@@ -165,7 +186,8 @@ def word_status(library, now=None):
         state = 'partial' if any(s in MATURE for s in states) and any(s not in MATURE for s in states) else (
             'known' if 'known' in states and all(s in MATURE for s in states) else 'shaky' if 'shaky' in states else
             'new' if all(s == 'new' for s in states) else 'familiar' if all(s in MATURE for s in states) else 'learning')
-        value = {'s': state, **status_for(rows, snapshot, now)[1], 'senses': len(groups(rows)),
+        manual = any(r.get('manualKnown') is True for r in rows)
+        value = {'s': 'known' if manual else state, 'manualKnown': manual, **status_for(rows, snapshot, now)[1], 'senses': len(groups(rows)),
                  'gloss': '；'.join(dict.fromkeys(gloss(r['entry']) for r in rows if gloss(r['entry'])))[:40]}
         if any(e.get('kind') == 'newSense' for r in rows for e in r.get('contextMiss', [])):
             value['newSense'] = True
@@ -173,7 +195,8 @@ def word_status(library, now=None):
             for alias in {row['entry']['word'].casefold(), canonical(row['entry'])}:
                 words[alias] = value
     for word, rows in phrases.items():
-        phrase_values[word] = {'s': status_for(rows, snapshot, now)[0], 'gloss': gloss(rows[0]['entry'])}
+        phrase_values[word] = {'s': 'known' if any(r.get('manualKnown') for r in rows) else status_for(rows, snapshot, now)[0],
+                               'manualKnown': any(r.get('manualKnown') for r in rows), 'gloss': gloss(rows[0]['entry'])}
     return {'version': 2, 'words': words, 'phrases': phrase_values}
 
 

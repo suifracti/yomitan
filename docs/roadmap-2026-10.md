@@ -292,3 +292,11 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 - 全文按钮从当前行向后再回到前面，显示已完成数，可取消；免费服务直接运行，模型第一次全文操作确认估算 Token。同一视频和模型不重复确认，自动提前翻译仍只做一小批。
 - 推荐只按已保存的在学词计算，排除常用功能词；每词一句、优先 8–15 词，最多十词。回听与制卡都复用原字幕来源，制卡只展开原面板，不代替用户确认。
 - `libraryVideoWords` 的 `items` 仍最多 300 条；另带只含 word / sentence 的 `cardContexts`，覆盖本视频已制卡原句，用来排除重复推荐。无新增数据库、轮询或学习数据格式。
+
+## 2026-10-20 手动标为认识（先定约定，再实现）
+
+- 新动作 `libraryMarkKnown({word, known: true|false})`：只更新已存在的同词学习记录，不创建词、不改卡片、不动 Anki 排程。返回 `{word, manualKnown, updated}`。同词按现有 word / lemma 归属查找。
+- grouped 词笔记把 `manualKnown` 放在原有词级 metadata；旧独立语境笔记在原 record metadata 保存同字段，只在本人点击时改，不后台迁移。索引与列表透出该字段。
+- `libraryWordStatus` v2 遇到手动标记，返回 `s:'known', manualKnown:true`；保留原 interval / lapses。撤销清除覆盖，恢复原有掌握度判断。手动认识即使有 newSense 也不标色、不推荐、不计入在学词。
+- 学习库 `scope:'manual-known'` 复用原分页，只列手动标为认识的记录，每条可改回在学。网页与词卡通过原后台转发，成功后刷新既有词汇状态缓存，立即通知已开页面。
+- 网页悬停、已保存词的词卡提供「✓ 认识了」，成功后用 5 秒提示提供撤销；标色设置移到查词与词典。没有新数据库、轮询或 Anki 写入。

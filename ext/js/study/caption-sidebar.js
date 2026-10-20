@@ -244,7 +244,7 @@ export function learningCaptions(session, words, cardContexts = []) {
             if (FUNCTION_WORDS.has(token.toLowerCase().replaceAll('’', "'"))) { continue; }
             const info = wordInfo(token, words);
             if (info && FUNCTION_WORDS.has(info.word)) { continue; }
-            if (info && (['new', 'learning', 'shaky', 'partial'].includes(info.s) || info.newSense)) {
+            if (info && !info.manualKnown && (['new', 'learning', 'shaky', 'partial'].includes(info.s) || info.newSense)) {
                 inLine.set(info.word, {word: info.word, gloss: info.gloss || '', term: token, cueId: cue.id});
                 learning.add(info.word);
             }

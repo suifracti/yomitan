@@ -57,6 +57,23 @@
     </div>
 
     <section class="settings-category-panel" data-settings-category-panel="lookup" hidden>
+<section id="word-mark-settings" class="study-settings-panel" aria-labelledby="word-mark-title">
+            <h2 id="word-mark-title">网页生词标色</h2>
+            <p>标色只针对你保存过的词；悬停在词上可以点『认识了』取消标色。</p>
+            <p>在所有网页上，给你记住过的英文词和搭配加一条很淡的下划线。不改网页文字和排版，输入框、代码和编辑器里不标。所有义项都已会的词不标。</p>
+            <label class="check"><input type="checkbox" id="word-marks-enabled">开启网页生词标色</label>
+            <fieldset class="word-mark-tiers">
+                <legend>标哪些</legend>
+                <label class="check"><input type="checkbox" data-word-tier="learning"><span class="word-mark-sample word-mark-learning">黄色点线</span>学习中</label>
+                <label class="check"><input type="checkbox" data-word-tier="shaky"><span class="word-mark-sample word-mark-shaky">红色点线</span>最近忘过或卡住过</label>
+                <label class="check"><input type="checkbox" data-word-tier="partial"><span class="word-mark-sample word-mark-partial">灰色细点线</span>部分意思会了，还有义项在学</label>
+                <label class="check"><input type="checkbox" data-word-tier="familiar"><span class="word-mark-sample word-mark-familiar">极淡细线</span>已熟悉（复习间隔超过 3 周）</label>
+            </fieldset>
+            <label class="check"><input type="checkbox" id="word-marks-hover">鼠标停在标色词上约半秒，显示一行中文义</label>
+            <label class="check"><input type="checkbox" id="word-marks-encounters">记录“遇见次数”：只在本机统计学习中的词又出现了几次、在几个网站；不存网址和句子</label>
+            <label>不标色的网站（每行一个，例如 mail.google.com）<textarea id="word-marks-excluded" rows="3" spellcheck="false"></textarea></label>
+            <small id="word-marks-state" class="study-save-state" role="status" aria-live="polite">正在读取…</small>
+        </section>
 
 
 
@@ -599,22 +616,7 @@
             <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>再次查看时复用已有译文。关闭后会清空缓存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
             <div class="save-bar"><small id="settings-save-state" class="study-save-state" role="status" aria-live="polite">正在读取本地设置…</small><button type="submit" class="primary">保存设置</button></div>
         </form>
-<section id="word-mark-settings" class="study-settings-panel" aria-labelledby="word-mark-title">
-            <h2 id="word-mark-title">网页生词标色</h2>
-            <p>在所有网页上，给你记住过的英文词和搭配加一条很淡的下划线。不改网页文字和排版，输入框、代码和编辑器里不标。所有义项都已会的词不标。</p>
-            <label class="check"><input type="checkbox" id="word-marks-enabled">开启网页生词标色</label>
-            <fieldset class="word-mark-tiers">
-                <legend>标哪些</legend>
-                <label class="check"><input type="checkbox" data-word-tier="learning"><span class="word-mark-sample word-mark-learning">黄色点线</span>学习中</label>
-                <label class="check"><input type="checkbox" data-word-tier="shaky"><span class="word-mark-sample word-mark-shaky">红色点线</span>最近忘过或卡住过</label>
-                <label class="check"><input type="checkbox" data-word-tier="partial"><span class="word-mark-sample word-mark-partial">灰色细点线</span>部分意思会了，还有义项在学</label>
-                <label class="check"><input type="checkbox" data-word-tier="familiar"><span class="word-mark-sample word-mark-familiar">极淡细线</span>已熟悉（复习间隔超过 3 周）</label>
-            </fieldset>
-            <label class="check"><input type="checkbox" id="word-marks-hover">鼠标停在标色词上约半秒，显示一行中文义</label>
-            <label class="check"><input type="checkbox" id="word-marks-encounters">记录“遇见次数”：只在本机统计学习中的词又出现了几次、在几个网站；不存网址和句子</label>
-            <label>不标色的网站（每行一个，例如 mail.google.com）<textarea id="word-marks-excluded" rows="3" spellcheck="false"></textarea></label>
-            <small id="word-marks-state" class="study-save-state" role="status" aria-live="polite">正在读取…</small>
-        </section><div class="advanced-only">
+<div class="advanced-only">
         <div class="heading-container">
             <div class="heading-container-icon"><span class="icon" data-icon="translation"></span></div>
             <div class="heading-container-left"><h2 id="translation"><a href="#translation">Translation</a></h2></div>

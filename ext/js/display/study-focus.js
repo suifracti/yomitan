@@ -6,6 +6,8 @@ import {updateStudySourcePreview, prepareParallelSentence} from './study-transla
 import {explainWordForm, findFormExample} from './study-word-forms.js';
 import {chromeTranslate} from '../study/free-translators.js';
 import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
+import {WORD_STATUS_KEY} from '../study/study-data.js';
+import {markWordKnown, wordInfo} from '../study/word-marks.js';
 
 const cleanText = (value) => typeof value === 'string' ? value : '';
 const asArray = (value) => Array.isArray(value) ? value : [];
@@ -94,6 +96,24 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const wordNode = make('strong', '', word);
         const ipa = make('span', 'sf-ipa', anchor.querySelector('.study-reading-phonetic')?.textContent || '');
         title.append(wordNode, ipa);
+        const known = button('✓ 认识了', '只标记这个词，不改 Anki 复习'); known.hidden = true;
+        title.append(known);
+        /** @param {{words?: Record<string, unknown>}|undefined} stored */
+        const paintKnown = (stored) => {
+            if (!current()) { return; }
+            const info = wordInfo(owner.lemma || word, stored?.words || {}) || wordInfo(word, stored?.words || {});
+            known.hidden = !info; known.disabled = info?.manualKnown === true;
+            known.textContent = info?.manualKnown ? '✓ 已认识' : '✓ 认识了';
+        };
+        void chrome.storage.local.get(WORD_STATUS_KEY).then((stored) => paintKnown(stored[WORD_STATUS_KEY]));
+        const knownChanged = (changes, area) => {
+            if (area === 'local' && changes[WORD_STATUS_KEY]) { paintKnown(changes[WORD_STATUS_KEY].newValue); }
+        };
+        chrome.storage.onChanged.addListener(knownChanged);
+        known.onclick = () => {
+            known.disabled = true;
+            void markWordKnown(owner.lemma || word).catch(() => { if (current()) { known.disabled = false; } });
+        };
         const sound = button('发音', '播放当前词的发音');
         const play = entry?.querySelector('[data-action="play-audio"]');
         sound.disabled = !play;
@@ -984,6 +1004,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             context.querySelector('[data-study-add-card]')?.click();
         }
         dispose = () => {
+            chrome.storage.onChanged.removeListener(knownChanged);
             disposeParallel();
             shell.removeEventListener('scroll', onReadingScroll);
             workspace.dispose();

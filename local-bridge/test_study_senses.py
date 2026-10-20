@@ -7,6 +7,30 @@ from test_study_auto_sync import AutoSyncTests
 
 
 class SenseTests(AutoSyncTests):
+    def test_manual_known_is_word_wide_undoable_and_never_changes_anki(self):
+        first = self.save_word('run', 'I run daily.')
+        self.save_word('run', 'We run together.')
+        self.save_word('improve', 'I improve daily.')
+        path = self.library.locate(first['id']).path(first['id'], first['entry'])
+        before = path.read_text()
+        self.calls.clear()
+        result = self.library.handle({'action': 'libraryMarkKnown', 'word': 'run', 'known': True})
+        self.assertEqual(result['updated'], 1)
+        state = self.library.handle({'action': 'libraryWordStatus'})['words']['run']
+        self.assertEqual((state['s'], state['manualKnown']), ('known', True))
+        self.save_word('run', 'They run every morning.')
+        page = self.library.handle({'action': 'libraryList', 'scope': 'manual-known', 'url': '', 'title': ''})
+        self.assertEqual(page['total'], 3)
+        self.assertTrue(all(row['manualKnown'] for row in page['items']))
+        self.assertIn('I run daily.', path.read_text())
+        self.assertIn('We run together.', path.read_text())
+        old_body = before.split('<!-- english-study-word-v1:')[1].split(' -->', 1)[1]
+        self.assertTrue(path.read_text().split('<!-- english-study-word-v1:')[1].split(' -->', 1)[1].startswith(old_body))
+        self.library.handle({'action': 'libraryMarkKnown', 'word': 'run', 'known': False})
+        self.assertEqual(self.library.handle({'action': 'libraryWordStatus'})['words']['run']['s'], 'new')
+        self.assertEqual(self.library.handle({'action': 'libraryList', 'scope': 'manual-known', 'url': '', 'title': ''})['total'], 0)
+        self.assertEqual(self.calls, [])
+
     def save_word(self, word='run', sentence='I run daily.', **extra):
         return self.library.handle({'action': 'librarySave', 'makeCard': False,
             'entry': {'word': word, 'sentence': sentence, 'meaning': '跑', 'url': 'https://example.test/learn', **extra}})
