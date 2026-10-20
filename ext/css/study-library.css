@@ -121,3 +121,6 @@ button:hover:not(:disabled) { filter: none; border-color: var(--lib-accent); bac
     .study-library-technical-details,
     .study-library-conflicts { grid-column: 1 / -1; }
 }
+
+.study-library-today { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.study-library-today p { margin: 8px 0; color: var(--lib-muted); }

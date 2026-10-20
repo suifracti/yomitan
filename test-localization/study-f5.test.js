@@ -21,3 +21,22 @@ test('local imported captions remain usable when an old bridge lacks video actio
     reader._reset();
     vi.unstubAllGlobals();
 });
+
+test('resizing an iframe keeps a user-collapsed caption dock closed', () => {
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    const child = frame.contentWindow;
+    vi.stubGlobal('window', child);
+    vi.stubGlobal('innerWidth', 720);
+    let open = true;
+    const site = {watch() {}, pinFirst: () => false, toggleDock: value => {open = value;}};
+    const reader = new YoutubeReader({site, prefs: {}});
+    reader._view = {root: document.createElement('section')};
+    vi.spyOn(reader, '_sync').mockImplementation(() => {});
+    reader.start();
+    site.toggleDock(false);
+    child.dispatchEvent(new child.Event('resize'));
+    expect(open).toBe(false);
+    frame.remove();
+    vi.unstubAllGlobals();
+});

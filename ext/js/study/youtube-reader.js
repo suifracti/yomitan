@@ -461,7 +461,7 @@ export class YoutubeReader extends EventTarget {
         const root = this._view?.root;
         if (root && window.self !== window.top) {
             root.hidden = innerWidth < 600;
-            this._site.toggleDock(innerWidth >= 600);
+            if (innerWidth < 600) { this._site.toggleDock(false); }
         }
         const host = root && this._site.pinFirst() ? this._host() : null;
         if (root && host && root.parentElement !== host) {
@@ -1327,7 +1327,7 @@ export class YoutubeReader extends EventTarget {
         }
     }
 
-    /** Lists the words already saved from this video; clicking one returns to its moment. */
+    /** Updates learning marks and recommendations. */
     _refreshLearning() {
         if (!this._session || !this._view) { return; }
         const stats = learningCaptions(this._session, this._learningWords);
@@ -1342,10 +1342,12 @@ export class YoutubeReader extends EventTarget {
     _recommendations() {
         const section = document.createElement('div');
         section.className = 'r-recommend';
+        const cues = (this._session?.cues ?? []).filter((item) => this._recommended.has(item.id)).slice(0, 10);
+        section.hidden = cues.length === 0;
         const title = document.createElement('strong');
         title.textContent = '推荐制卡';
         section.append(title);
-        for (const cue of (this._session?.cues ?? []).filter((item) => this._recommended.has(item.id)).slice(0, 10)) {
+        for (const cue of cues) {
             const button = document.createElement('button');
             button.type = 'button';
             button.textContent = cue.text;
@@ -1358,7 +1360,10 @@ export class YoutubeReader extends EventTarget {
         return section;
     }
 
-    /** @returns {Promise<void>} */
+    /**
+     * Lists the words already saved from this video; clicking one returns to its moment.
+     * @returns {Promise<void>}
+     */
     async _loadWords() {
         const view = this._view;
         const mediaKey = this._mediaKey;
