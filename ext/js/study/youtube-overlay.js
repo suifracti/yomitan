@@ -228,8 +228,8 @@ export class YoutubeOverlay {
         panel.hidden = true;
         isolate(panel);
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）']];
-        const engine = engineSelect((value) => this._reader.updatePrefs({engine: value}));
+        const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）']];
+        const engine = translationSettingsLink();
         engine.classList.add('p-row');
         panel.append(engine);
         for (const [key, label] of toggles) {
@@ -258,7 +258,7 @@ export class YoutubeOverlay {
         actions.className = 'p-actions';
         /** @type {[string, string, () => void][]} */
         const buttons = [
-            ['load', '载入字幕', () => this._reader.loadCaptions()],
+            ['load', '重新载入', () => this._reader.loadCaptions()],
             ['import', '导入字幕文件…', () => this._reader.pickFile()],
             ['translate', '翻译接下来8句', () => this._reader.translateNext()],
             ['reveal', '在侧栏查看', () => { if (this._shown) { this._reader.revealRow(this._shown); } }],
@@ -313,14 +313,14 @@ export class YoutubeOverlay {
             for (const button of this._panel.querySelectorAll('button[data-action]')) {
                 const action = /** @type {HTMLButtonElement} */ (button).dataset.action;
                 /** @type {HTMLButtonElement} */ (button).disabled = !['load', 'import', 'dock'].includes(action ?? '') && !loaded;
-                if (action === 'load') { button.textContent = loaded ? '重新载入字幕' : '载入字幕'; }
+                if (action === 'load') { button.textContent = '重新载入'; }
                 if (action === 'dock') {
                     button.hidden = window.self !== window.top && innerWidth < 600;
                     button.textContent = this._site.dockOpen() ? '收起字幕栏' : '打开字幕栏';
                 }
             }
             const note = this._panel.querySelector('[data-note]');
-            if (note) { note.textContent = loaded ? '' : (this._site.kind === 'youtube' ? '还没载入字幕：点「载入字幕」，或用右侧字幕栏。' : '还没载入字幕：点「载入字幕」读取页面字幕（先在播放器里打开 CC），或导入字幕文件。'); }
+            if (note) { note.textContent = loaded ? '' : '还没有字幕，可导入字幕文件。'; }
         }
     }
 
@@ -561,6 +561,10 @@ export function offsetControl(reader) {
  * @param {import('./youtube-reader.js').YoutubeReader} reader
  */
 export function syncControls(menu, reader) {
+    for (const link of menu.querySelectorAll('.r-translation-setting')) {
+        link.textContent = reader.prefs.engine === 'model' ? '翻译：你的模型 ↗' : '翻译：免费引擎 ↗';
+        link.setAttribute('title', ENGINE_LABELS[reader.prefs.engine]);
+    }
     for (const select of menu.querySelectorAll('select[data-repeats]')) { /** @type {HTMLSelectElement} */ (select).value = String(reader.prefs.shadowRepeats); }
     for (const output of menu.querySelectorAll('output[data-offset]')) {
         const seconds = reader.offsetMs / 1000;
@@ -569,24 +573,12 @@ export function syncControls(menu, reader) {
     for (const button of menu.querySelectorAll('[data-offset-step]')) { /** @type {HTMLButtonElement} */ (button).disabled = !reader.session; }
 }
 
-/**
- * A labelled service picker shared by the sidebar menu and the in-video panel.
- * @param {(engine: import('./subtitle-prefs.js').SubtitleEngine) => void} onChange
- * @returns {HTMLLabelElement}
- */
-export function engineSelect(onChange) {
-    const label = document.createElement('label');
-    label.className = 'r-engine';
-    label.append('翻译服务');
-    const select = document.createElement('select');
-    select.dataset.engine = '';
-    for (const [value, text] of Object.entries(ENGINE_LABELS)) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = text;
-        select.append(option);
-    }
-    select.addEventListener('change', () => onChange(/** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (select.value)));
-    label.append(select);
-    return label;
+/** A link to the one shared sentence/caption translation setting. */
+export function translationSettingsLink() {
+    const link = document.createElement('a');
+    link.className = 'r-translation-setting';
+    link.style.cssText = 'font-size:12px;color:inherit;text-decoration:none';
+    link.href = chrome.runtime.getURL('settings.html#ai'); link.target = '_blank';
+    link.textContent = '翻译：免费引擎 ↗';
+    return link;
 }

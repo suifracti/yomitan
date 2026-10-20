@@ -280,3 +280,9 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 - B7 UI：AI 区唯一新增 practiceEnabled 勾选；开启时只有用词造句 / 中→英卡型显示输入与批改结果三行；关闭完全隐藏。
 - 每项只写正常与旧后端退回两个测试，不做矩阵。真实 Chrome 只验 F4 星标与 F5 本地视频，其余 Vitest。单项约 300 行以上先审视必要性并在提交说明解释，不加额外抽象或配置。
 - 0 联调：临时 Python YomitanLibrary/Anki 替身的 v2 words/phrases、义项和卡点返回与现有前端一致；旧桥仍能本地选择新意思。无需改原接口。
+
+## 2026-10-20 字幕与句子翻译统一
+
+- `studyTranslationPrefs` 保存共用 engine / autoTranslate，首次从旧字幕设置迁移；视频显示设置仍在原处。只有「AI 与翻译」能改服务和自动开关。
+- 查词卡逐段或整句翻译与字幕共用服务；译文经现有 generate(mode=translate, sentenceTranslation) 进入原 journal 和同步流程，这条路径不再发起第二次模型请求。
+- 字幕随视频自动载入；找不到时可导入，重新载入留在更多菜单。

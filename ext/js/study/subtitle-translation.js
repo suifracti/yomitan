@@ -19,7 +19,7 @@
 // no learning writes. The service choice is re-read from storage, never from the page.
 import {googleTranslate, microsoftTranslate} from './free-translators.js';
 import {CACHE_KEY, CACHE_LIMIT, sentenceKey, SETTINGS_KEY, studyConfig, TTL} from './study-data.js';
-import {normalizeSubtitlePrefs, SUBTITLE_PREFS_KEY} from './subtitle-prefs.js';
+import {normalizeSubtitlePrefs, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY} from './subtitle-prefs.js';
 
 /** @typedef {{id: string, text: string, context?: string}} Item */
 export class SubtitleTranslation {
@@ -63,7 +63,7 @@ export class SubtitleTranslation {
             if (cancelled) { throw new Error('已取消字幕翻译；晚到结果未写入。'); }
         };
         const promise = (async () => {
-            const {engine} = normalizeSubtitlePrefs(await this.service.read(SUBTITLE_PREFS_KEY));
+            const {engine} = normalizeSubtitlePrefs({...await this.service.read(SUBTITLE_PREFS_KEY), ...await this.service.read(TRANSLATION_PREFS_KEY)});
             const config = studyConfig(await this.service.read(SETTINGS_KEY));
             checkCancelled();
             if (v.freeOnly && engine === 'model') { throw new Error('请在设置里选一种免费翻译，再点重试。'); }

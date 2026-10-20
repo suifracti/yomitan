@@ -580,8 +580,8 @@
             <div class="save-bar"><small id="settings-save-state" class="study-save-state" role="status" aria-live="polite">正在读取本地设置…</small><button type="submit" class="primary">保存设置</button></div>
         </form>
 <section id="subtitle-settings" class="study-settings-panel" aria-labelledby="subtitle-settings-title">
-            <h2 id="subtitle-settings-title">视频字幕</h2>
-            <p>视频内字幕、右侧字幕栏和播放器里的面板共用这些设置，改动立即生效。</p>
+            <h2 id="subtitle-settings-title">字幕和句子翻译</h2>
+            <p>字幕、查词卡的「翻译本句」和长句逐段翻译都使用下面的服务，改动立即保存。</p>
             <fieldset class="subtitle-engines">
                 <legend>翻译服务</legend>
                 <label class="check"><input type="radio" name="subtitle-engine" value="chrome"><span><strong>Chrome 内置翻译</strong> · 免费，在本机运行，不联网发送字幕。第一次使用要下载语言模型：在视频里点一次翻译。</span></label>
@@ -593,7 +593,7 @@
             <div class="library-actions"><button type="button" id="subtitle-engine-test">测试所选服务</button><span id="subtitle-engine-result" role="status" aria-live="polite"></span></div>
             <fieldset class="subtitle-options">
                 <legend>显示与自动化</legend>
-                <label class="check"><input type="checkbox" data-subtitle-pref="autoTranslate">自动翻译：跟着播放位置提前翻好</label>
+                <label class="check"><input type="checkbox" data-subtitle-pref="autoTranslate">自动翻译字幕和句子</label>
                 <label>提前量（秒）<input type="number" id="subtitle-ahead" min="20" max="300" step="10"></label>
                 <label class="check"><input type="checkbox" data-subtitle-pref="overlay">视频内字幕（替换 YouTube 自带字幕，可直接划词）</label>
                 <label class="check"><input type="checkbox" data-subtitle-pref="bilingual">双语显示</label>

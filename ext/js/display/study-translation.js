@@ -17,7 +17,7 @@
  */
 import {studyCall} from '../study/study-client.js';
 import {mountStudyLibrary} from './study-library.js';
-import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
+import {onSubtitlePrefsChanged, readSubtitlePrefs} from '../study/subtitle-prefs.js';
 import {chromeTranslate} from '../study/free-translators.js';
 
 /** @type {WeakMap<HTMLElement, {term: string, text: string, offset: number}>} */
@@ -76,16 +76,17 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             void call('subtitleCancel', {requestId: request}).catch(() => {}); request = '';
         }
     };
-    const paint = async () => {
+    const paint = async (explicit = false) => {
         cancel();
         const run = sequence;
         sentence = original.textContent.trim();
-        const parts = splitStudySentence(sentence);
-        source.classList.toggle('sf-segmented-source', parts.length > 0);
+        const split = splitStudySentence(sentence);
+        const parts = split.length ? split : [sentence];
+        source.classList.toggle('sf-segmented-source', split.length > 0);
         view.replaceChildren();
         delete source.dataset.studySegmentTranslation;
         delete source.dataset.studySegmentSentence;
-        if (parts.length === 0) { return; }
+        if (!sentence) { return; }
         const mark = original.querySelector('mark');
         let selected = -1;
         if (mark) {
@@ -107,17 +108,23 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             } else { english.textContent = text; }
             const chinese = doc.createElement('p'); chinese.className = 'sf-segment-translation';
             chinese.lang = 'zh-CN'; chinese.textContent = '翻译中…';
-            row.append(english, chinese); view.append(row);
+            if (split.length) { row.append(english); }
+            row.append(chinese); view.append(row);
             return {text, chinese};
         });
         const status = doc.createElement('p'); status.className = 'sf-parallel-status';
         status.setAttribute('role', 'status');
-        status.textContent = '正在逐段翻译…'; view.append(status);
+        view.append(status);
         action.hidden = false;
         try {
             const prefs = await readSubtitlePrefs();
-            const engine = prefs.engine === 'model' ? 'chrome' : prefs.engine;
+            const engine = prefs.engine;
             if (run !== sequence || !isCurrent()) { return; }
+            if (!explicit && !prefs.autoTranslate) {
+                for (const row of rows) { row.chinese.textContent = '点「翻译本句」查看中文'; }
+                return;
+            }
+            const config = engine === 'model' ? await call('subtitleSettings') : {};
             for (let offset = 0; offset < rows.length; offset += 8) {
                 const batch = rows.slice(offset, offset + 8);
                 for (const row of batch) {
@@ -133,7 +140,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                 } else {
                     request = `parallel-${crypto.randomUUID()}`;
                     const value = /** @type {{items: {id: string, translation: string}[]}} */ (await call('subtitleTranslate', {
-                        requestId: request, freeOnly: true, language, items: missing.map((row, i) => ({id: `part-${i}`, text: row.text})),
+                        requestId: request, config, language, items: missing.map((row, i) => ({id: `part-${i}`, text: row.text})),
                     }));
                     translations = missing.map((_, i) => value.items.find((item) => item.id === `part-${i}`)?.translation || '');
                     request = '';
@@ -150,21 +157,21 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             source.dataset.studySegmentSentence = sentence;
             source.dataset.studySegmentTranslation = rows.map((row) => row.chinese.textContent).join('');
             status.textContent = ''; action.hidden = true;
+            source.dispatchEvent(new CustomEvent('study-sentence-translated'));
         } catch {
             if (run !== sequence || !isCurrent()) { return; }
             status.textContent = '';
             for (const row of rows.filter((item) => item.chinese.dataset.complete !== 'true')) {
                 const retry = doc.createElement('button'); retry.type = 'button';
-                retry.textContent = '重试'; retry.addEventListener('click', () => { void paint(); });
+                retry.textContent = '重试'; retry.addEventListener('click', () => { void paint(true); });
                 row.chinese.replaceChildren('这段没翻译成功 · ', retry);
             }
             action.hidden = false;
         }
     };
     const onTranslate = (event) => {
-        if (splitStudySentence(original.textContent).length === 0) { return; }
         event.preventDefault(); event.stopImmediatePropagation();
-        void paint();
+        void paint(true);
     };
     action.addEventListener('click', onTranslate, true);
     const observer = new MutationObserver(() => {
@@ -172,8 +179,9 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
     });
     observer.observe(original, {childList: true, subtree: true, characterData: true});
     void paint();
+    const stopPrefs = onSubtitlePrefsChanged(() => { void paint(); });
     return () => {
-        cancel(); observer.disconnect();
+        stopPrefs(); cancel(); observer.disconnect();
         action.removeEventListener('click', onTranslate, true);
         source.classList.remove('sf-segmented-source'); view.remove();
     };
@@ -546,7 +554,7 @@ export function prepareStudyTranslation() {
                 const answer = [...turns].reverse().find((turn) => turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
                 const text = answer?.translation?.trim() || (editor.value.trim() === sentence.trim() ? source.translation || '' : '');
                 sentenceChinese.textContent = text;
-                sentenceChinese.hidden = !text;
+                sentenceChinese.hidden = !text || Boolean(sourceBox?.querySelector('.sf-parallel-sentence')?.childElementCount);
                 translateSentence.hidden = Boolean(text);
             };
             const more = d.createElement('details');
@@ -778,8 +786,9 @@ export function prepareStudyTranslation() {
             };
             /**
              * @param {'explain'|'translate'} mode
+             * @param {string} [sentenceTranslation]
              */
-            const runGeneration = (mode) => {
+            const runGeneration = (mode, sentenceTranslation) => {
                 if (busy) { return; }
                 const payload = mode === 'translate' ? {...lookup(), question: ''} : lookup();
                 const conversation = identity();
@@ -795,12 +804,12 @@ export function prepareStudyTranslation() {
                 activePayload = payload;
                 lock(true);
                 status.textContent = mode === 'translate' ? '正在翻译当前原句…' : '正在连接本机 AI…已有回答保留在下方。';
-                void chrome.permissions.request({permissions: ['nativeMessaging']}).then(async (allowed) => {
+                void (sentenceTranslation !== void 0 ? Promise.resolve(true) : chrome.permissions.request({permissions: ['nativeMessaging']})).then(async (allowed) => {
                     // Drop a dictionary translation that is holding the single native lock.
                     await studyCall('cancel', payload);
                     if (!isCurrent() || id !== requestId) { return; }
                     if (!allowed) { throw new Error('未授予本机通信权限；普通查词仍可用。'); }
-                    await studyCall('generate', {...payload, mode});
+                    await studyCall('generate', {...payload, mode, ...(sentenceTranslation !== void 0 ? {sentenceTranslation} : {})});
                     if (!isCurrent() || id !== requestId) { return; }
                     if (conversation === identity()) {
                         if (mode === 'explain' && question.value.trim() === payload.question) {
@@ -829,6 +838,11 @@ export function prepareStudyTranslation() {
             };
             ask.addEventListener('click', () => runGeneration('explain'));
             translateSentence?.addEventListener('click', () => runGeneration('translate'));
+            const onSentenceTranslated = () => {
+                const text = sourceBox?.dataset.studySegmentTranslation;
+                if (text) { runGeneration('translate', text); }
+            };
+            sourceBox?.addEventListener('study-sentence-translated', onSentenceTranslated);
             stop.addEventListener('click', () => {
                 ++requestId;
                 if (poll !== null) {
@@ -889,7 +903,7 @@ export function prepareStudyTranslation() {
             };
             globalButton.addEventListener('click', () => {
                 globalButton.disabled = true;
-                void chrome.permissions.request({permissions: ['nativeMessaging']}).then(async (allowed) => {
+                void (sentenceTranslation !== void 0 ? Promise.resolve(true) : chrome.permissions.request({permissions: ['nativeMessaging']})).then(async (allowed) => {
                     if (!allowed) {
                         throw new Error('需要本机通信权限才能读取用量。');
                     }
@@ -923,6 +937,7 @@ export function prepareStudyTranslation() {
                 isSourceCurrent: () => editor.value.trim() === sentence.trim()});
             const previousCleanup = cleanup;
             cleanup = () => {
+                sourceBox?.removeEventListener('study-sentence-translated', onSentenceTranslated);
                 previousCleanup?.();
                 disposeLibrary();
             };

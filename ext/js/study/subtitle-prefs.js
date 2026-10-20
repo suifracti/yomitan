@@ -20,6 +20,7 @@
 // learner picked; the background re-reads them and never trusts a page's copy.
 
 export const SUBTITLE_PREFS_KEY = 'studySubtitlePrefs';
+export const TRANSLATION_PREFS_KEY = 'studyTranslationPrefs';
 
 /** @typedef {'chrome'|'apple'|'google'|'microsoft'|'model'} SubtitleEngine */
 
@@ -93,8 +94,12 @@ export async function readSubtitlePrefs() {
     const area = storageArea();
     if (!area) { return {...DEFAULT_SUBTITLE_PREFS}; }
     try {
-        const stored = /** @type {Record<string, unknown>} */ (await area.get(SUBTITLE_PREFS_KEY));
-        return normalizeSubtitlePrefs(stored[SUBTITLE_PREFS_KEY]);
+        const stored = /** @type {Record<string, unknown>} */ (await area.get([SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY]));
+        const old = normalizeSubtitlePrefs(stored[SUBTITLE_PREFS_KEY]);
+        if (!stored[TRANSLATION_PREFS_KEY]) {
+            await area.set({[TRANSLATION_PREFS_KEY]: {engine: old.engine, autoTranslate: old.autoTranslate}});
+        }
+        return normalizeSubtitlePrefs({...old, .../** @type {object} */ (stored[TRANSLATION_PREFS_KEY])});
     } catch {
         return {...DEFAULT_SUBTITLE_PREFS};
     }
@@ -108,7 +113,10 @@ export async function readSubtitlePrefs() {
 export async function writeSubtitlePrefs(patch) {
     const next = normalizeSubtitlePrefs({...await readSubtitlePrefs(), ...patch});
     const area = storageArea();
-    if (area) { await area.set({[SUBTITLE_PREFS_KEY]: next}); }
+    if (area) {
+        const {engine, autoTranslate, ...video} = next;
+        await area.set({[SUBTITLE_PREFS_KEY]: video, [TRANSLATION_PREFS_KEY]: {engine, autoTranslate}});
+    }
     return next;
 }
 
@@ -124,7 +132,7 @@ export function onSubtitlePrefsChanged(callback) {
      * @param {string} area
      */
     const listener = (changes, area) => {
-        if (area === 'local' && changes[SUBTITLE_PREFS_KEY]) { callback(normalizeSubtitlePrefs(changes[SUBTITLE_PREFS_KEY].newValue)); }
+        if (area === 'local' && (changes[SUBTITLE_PREFS_KEY] || changes[TRANSLATION_PREFS_KEY])) { void readSubtitlePrefs().then(callback); }
     };
     chrome.storage.onChanged.addListener(listener);
     return () => chrome.storage.onChanged.removeListener(listener);

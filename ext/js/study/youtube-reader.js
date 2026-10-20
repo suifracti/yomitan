@@ -16,7 +16,7 @@
  */
 
 /*
- * Read-only YouTube caption list beside the video. Nothing loads until the user clicks.
+ * Read-only YouTube caption list beside the video. Captions load automatically when the video is ready.
  * Captions are ordinary page text here: the existing Yomitan scanner opens the word card,
  * and nothing pretends to be the protected ASB cue (no data-asb-study-cue).
  * Explicit translation uses the existing Native path; row metadata feeds the original word card.
@@ -27,7 +27,7 @@ import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, 
 import {TranslationQueue} from './translation-queue.js';
 import {WORD_STATUS_KEY} from './study-data.js';
 import {studyCall} from './study-client.js';
-import {YoutubeOverlay, engineSelect, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
+import {YoutubeOverlay, translationSettingsLink, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
@@ -481,6 +481,7 @@ export class YoutubeReader extends EventTarget {
         if (!name.includes('/api/timedtext')) { return; }
         this._seen.push(name);
         if (this._seen.length > 50) { this._seen.shift(); }
+        if (this._view && !this._session && !this._loadController) { void this._load(this._generation); }
     }
 
     /** */
@@ -584,13 +585,13 @@ export class YoutubeReader extends EventTarget {
         const status = document.createElement('span');
         status.className = 'r-status';
         status.setAttribute('role', 'status');
-        status.textContent = this._site.kind === 'web' ? '载入页面字幕或导入字幕文件后选词学习。' : '载入原文后选词学习；翻译需手动点击。';
+        status.textContent = '正在查找字幕…';
         const follow = this._button('跟随播放', () => this._resumeFollow());
         follow.hidden = true;
         const resume = this._button('继续', () => this.resume());
         resume.hidden = true;
         resume.title = '回到上次学到的句子';
-        const load = this._button('载入字幕', () => { void this._load(generation); });
+        const load = this._button('重新载入', () => { void this._load(generation); });
         const translate = this._button('翻译接下来8句', () => { void this._translate(false); });
         translate.title = '从当前播放位置起，翻译还没有译文的 8 句';
         translate.classList.add('r-translate'); translate.hidden = true;
@@ -614,7 +615,7 @@ export class YoutubeReader extends EventTarget {
         menu.className = 'r-menu scan-disable';
         menu.hidden = true;
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）'], ['resume', '记住观看进度']];
+        const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）'], ['resume', '记住观看进度']];
         // Other sites may offer several subtitle files; the learner can switch between them.
         const source = document.createElement('label');
         source.className = 'r-source';
@@ -624,7 +625,7 @@ export class YoutubeReader extends EventTarget {
         sourceSelect.dataset.source = '';
         sourceSelect.addEventListener('change', () => { void this._load(generation, sourceSelect.value); });
         source.append(sourceSelect);
-        menu.append(source, engineSelect((engine) => this.updatePrefs({engine})));
+        menu.append(load, source, translationSettingsLink());
         for (const [key, label] of toggles) {
             const toggle = document.createElement('label');
             toggle.className = 'r-switch';
@@ -649,7 +650,7 @@ export class YoutubeReader extends EventTarget {
         menu.append(downloads);
         const difficulty = document.createElement('small');
         difficulty.className = 'r-difficulty';
-        head.append(title, difficulty, status, resume, translate, retry, cancel, follow, more, load);
+        head.append(title, difficulty, status, resume, translate, retry, cancel, follow, more);
         const list = document.createElement('div');
         list.className = 'r-list';
         list.setAttribute('role', 'list');
@@ -711,6 +712,7 @@ export class YoutubeReader extends EventTarget {
         this._place();
         if (this._site.pinFirst()) { this._keepFirst(host); }
         this._syncMenu();
+        void this._load(generation);
     }
 
     /**
@@ -871,7 +873,8 @@ export class YoutubeReader extends EventTarget {
             const url = await this._findCaptionUrl(videoId, generation);
             if (generation !== this._generation) { return; }
             if (!url) {
-                this._status('没拿到播放器字幕：请在播放器里打开 CC 字幕后再点载入。');
+                this._status('没有找到字幕，可导入字幕文件。');
+                view.status.append(this._button('导入字幕', () => this.pickFile()));
                 return;
             }
             // Original language only: a player auto-translation (tlang) is not the source text.
@@ -935,7 +938,8 @@ export class YoutubeReader extends EventTarget {
             if (generation !== this._generation) { return; }
             this._sources = found?.all ?? site.sources('en').map(({id, label}) => ({id, label}));
             if (!found) {
-                this._status(controller.signal.aborted ? '字幕读取超时，请重试。' : '没找到这个视频的字幕：先在播放器里打开字幕（CC）再点载入，或在「⋯」里导入字幕文件。');
+                this._status(controller.signal.aborted ? '字幕读取超时，可在「⋯」里重新载入，或导入字幕。' : '没有找到字幕，可导入字幕文件。');
+                view.status.append(this._button('导入字幕', () => this.pickFile()));
                 this._syncMenu();
                 return;
             }

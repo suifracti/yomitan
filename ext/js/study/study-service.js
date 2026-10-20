@@ -25,7 +25,7 @@ import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
-import {normalizeSubtitlePrefs, SUBTITLE_PREFS_KEY} from './subtitle-prefs.js';
+import {normalizeSubtitlePrefs, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY} from './subtitle-prefs.js';
 
 /** @type {WeakSet<object>} */
 const preparedRuntimes = new WeakSet();
@@ -1030,6 +1030,13 @@ export class StudyService {
             throw new Error('未知的学习操作。');
         }
         await this.journal.checkRoom();
+        const translated = /** @type {{sentenceTranslation?: string}} */ (value).sentenceTranslation;
+        if (lookup.mode === 'translate' && translated !== void 0) {
+            const result = {translation: translated, meaning: '', notes: ''};
+            if (!isStudyResult(result)) { throw new Error('这句没有翻译成功，请重试。'); }
+            await this.journal.append(value, result, 'unconfirmed');
+            return {result, cached: false};
+        }
         let learningMemory = '';
         if (lookup.mode !== 'translate') {
             const response = await this.native({action: 'libraryMemory', word: lookup.word, language: lookup.language ?? 'en', ...(/** @type {import('study').LibraryEntry} */ (value).lemma ? {lemma: /** @type {import('study').LibraryEntry} */ (value).lemma} : {})}).promise;
@@ -1208,7 +1215,7 @@ export function prepareStudyService(lookupDictionary = null) {
                     forwarded = {mediaKey: own, url: url.slice(0, 2000), title: title.slice(0, 300)};
                 }
                 // Only the model and Apple translation go through the local bridge.
-                const {engine} = normalizeSubtitlePrefs(await service.read(SUBTITLE_PREFS_KEY));
+                const {engine} = normalizeSubtitlePrefs({...await service.read(SUBTITLE_PREFS_KEY), ...await service.read(TRANSLATION_PREFS_KEY)});
                 if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(engine)) || studyAction === 'subtitleSegment' || studyAction.startsWith('library')) && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
                     throw new Error('请先在学习设置中授权本机翻译，再点翻译字幕。');
                 }
