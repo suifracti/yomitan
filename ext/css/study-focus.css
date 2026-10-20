@@ -841,3 +841,20 @@
 .study-capture-options label { display: inline-flex; align-items: center; gap: 4px; }
 .study-card-upgrade { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 8px; padding: 6px 10px; border-left: 2px solid var(--st-ok); background: var(--sf-tint); color: var(--sf-ink); font-size: 12px; }
 .study-card-upgrade[hidden] { display: none; }
+/* "I know this word, but not here": a quiet question above the save actions. */
+.study-stuck { margin: 0 0 8px; color: var(--sf-ink); font-size: 12px; }
+.study-stuck[hidden], .study-stuck [hidden] { display: none; }
+.study-stuck-met { margin: 0 0 4px; color: var(--sf-muted); font-size: 11px; }
+.study-stuck-panel { padding: 6px 10px; border-left: 2px solid var(--st-accent); background: var(--sf-tint); }
+.study-stuck-question, .study-stuck-senses, .study-stuck-result { margin: 0 0 4px; }
+.study-stuck-senses, .study-stuck-result { color: var(--sf-muted); }
+.study-stuck-result:empty { display: none; }
+.study-stuck-choices { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 2px 0 4px; }
+.study-stuck-choices button { padding: 2px 9px; border: 1px solid var(--sf-line); border-radius: 999px; background: transparent; color: var(--sf-ink); font: inherit; cursor: pointer; }
+.study-stuck-choices button:hover { border-color: var(--st-accent); }
+.study-stuck-choices button[aria-pressed=true] { border-color: var(--st-accent); color: var(--st-accent); font-weight: 600; }
+.study-stuck-choices button.is-suggested { box-shadow: 0 0 0 2px var(--st-mark); }
+.study-stuck-choices .study-stuck-ai { margin-left: auto; color: var(--sf-muted); border-style: dashed; }
+.study-stuck-phrase { display: flex; gap: 6px; margin: 2px 0 4px; }
+.study-stuck-phrase input { flex: 1 1 auto; min-width: 0; padding: 2px 6px; border: 1px solid var(--sf-line); border-radius: 6px; font: inherit; }
+.study-stuck-phrase button { padding: 2px 9px; border: 1px solid var(--st-accent); border-radius: 6px; background: transparent; color: var(--st-accent); font: inherit; cursor: pointer; }

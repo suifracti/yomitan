@@ -368,8 +368,23 @@ body.preview-sidebar-visible .preview-frame-container .preview-close {
 .word-mark-learning {
     text-decoration: underline dotted 1.5px rgb(217 169 28 / 85%);
 }
-.word-mark-known {
-    text-decoration: underline solid 1px rgb(63 140 90 / 45%);
+.word-mark-shaky {
+    text-decoration: underline dotted 1.5px rgb(214 92 72 / 75%);
+}
+.word-mark-partial {
+    text-decoration: underline dotted 1px rgb(120 120 120 / 45%);
+}
+.word-mark-familiar {
+    text-decoration: underline solid 1px rgb(63 140 90 / 28%);
+}
+.word-mark-tiers {
+    margin: 4px 0;
+    padding: 6px 10px;
+    border: 1px solid var(--study-line, #e6e3dc);
+    border-radius: 8px;
+}
+.word-mark-tiers .word-mark-sample {
+    margin-right: 6px;
 }
 #word-mark-settings textarea {
     font-family: ui-monospace, monospace;

@@ -20,6 +20,7 @@ import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
 import {explainWordForm} from './study-word-forms.js';
+import {mountStuckHint} from './study-stuck.js';
 
 /**
  * @param {unknown} value
@@ -37,6 +38,10 @@ const validLibraryId = (value) => typeof value === 'string' && /^[a-f0-9]{32}$/.
  */
 export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const d = container.ownerDocument;
+    /** @type {Partial<import('study').LibraryEntry> & Record<string, unknown>} Set by the "stuck" hint: a new sense or a phrase. */
+    let entryExtras = {};
+    /** @returns {import('study').LibraryEntry} */
+    const entryOf = () => /** @type {import('study').LibraryEntry} */ ({...getEntry(), ...entryExtras});
     let mediaOperation = 0;
     let disposed = false;
     const actions = d.createElement('div');
@@ -49,8 +54,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     save.title = '保存本次学习到 Obsidian；不会自动制卡。制卡请另点“选择制卡”。';
     const destination = d.createElement('p');
     destination.className = 'study-save-destination';
-    destination.textContent = `Obsidian · ${getEntry().language === 'ja' ? '日语 + Anki' : '英语笔记'}`;
-    if (getEntry().language !== 'ja' && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+    destination.textContent = `Obsidian · ${entryOf().language === 'ja' ? '日语 + Anki' : '英语笔记'}`;
+    if (entryOf().language !== 'ja' && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
         void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
             const settings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
             if (isCurrent() && settings?.ankiEnabled === false) { destination.textContent = 'Obsidian · 英语 · Anki 未启用'; }
@@ -63,7 +68,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const status = d.createElement('p');
     status.className = 'study-library-status';
     status.setAttribute('role', 'status');
-    const initialRecordId = getEntry()?.recordId;
+    const initialRecordId = entryOf()?.recordId;
     if (validLibraryId(initialRecordId)) { container.dataset.studyRecordId = initialRecordId; }
     const addCard = d.createElement('button');
     addCard.type = 'button';
@@ -95,7 +100,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     }
     /** @returns {import('./study-card-kinds.js').CardFacts} */
     const cardFacts = () => {
-        const entry = getEntry();
+        const entry = entryOf();
         const word = entry.word.trim();
         const rawSentence = entry.sentence?.trim() || '';
         const sentence = rawSentence.toLocaleLowerCase() === word.toLocaleLowerCase() ? '' : rawSentence;
@@ -459,7 +464,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     retry.className = 'scan-disable';
     retry.textContent = '继续补齐';
     recovery.append(pendingLabel, retry);
-    const language = getEntry().language ?? 'en';
+    const language = entryOf().language ?? 'en';
     const refreshPending = async () => {
         const pending = /** @type {{count?: number}} */ (await studyCall('pendingPeek', {language}));
         if (!isCurrent()) { return; }
@@ -498,7 +503,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             });
     };
     const ensureNote = async () => {
-        const entry = getEntry();
+        const entry = entryOf();
         const unchanged = currentSaved && ['word', 'sentence', 'context', 'meaning', 'translation', 'notes', 'url', 'title'].every((key) => currentSaved?.entry?.[/** @type {keyof import('study').LibraryEntry} */ (key)] === entry[/** @type {keyof import('study').LibraryEntry} */ (key)]);
         if (unchanged && currentSaved) { return currentSaved; }
         const recordId = currentSaved?.id || container.dataset.studyRecordId || entry.recordId;
@@ -535,7 +540,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 const read = /** @type {{items: {record: import('study').LibraryRecord}[]}} */ (await studyCall('libraryRead', {ids: [saved.id], language}));
                 if (!live()) { return; }
                 const fresh = read.items?.[0]?.record;
-                if (!fresh || fresh.id !== saved.id || fresh.entry.sentence !== getEntry().sentence) { throw new Error('记录语境已改变，请重新确认保存后采集。'); }
+                if (!fresh || fresh.id !== saved.id || fresh.entry.sentence !== entryOf().sentence) { throw new Error('记录语境已改变，请重新确认保存后采集。'); }
                 const row = /** @type {import('study').LibraryRecord} */ (await studyCall('libraryMedia', {id: saved.id,
                     version: fresh.version,
                     assets: recorded.assets,
@@ -586,6 +591,24 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 '本条复习已确认；Obsidian 笔记未重复保存。';
         });
     });
+    // "I know this word, but not here": prepare the card panel for where the learner is stuck.
+    /** @type {(kind: import('./study-stuck.js').MissKind, detail: {supported: boolean, phrase: string, gloss: string}) => void} */
+    const prepareStuck = (kind, detail) => {
+        entryExtras = {};
+        if (kind === 'recall') { return; }
+        if (kind === 'newSense' && detail.supported) { entryExtras = {sense: {key: 'new', gloss: detail.gloss}}; }
+        if (kind === 'collocation' && detail.supported) { entryExtras = {word: detail.phrase, kind: 'expression', baseWord: getEntry().word}; }
+        if (cardPanel.hidden) { addCard.click(); }
+        if (kind === 'newSense') {
+            /** @type {HTMLButtonElement|null} */ (masteryRow.querySelector('[data-study-mastery=none]'))?.click();
+        } else if (kind === 'collocation') {
+            if (!draftedKinds.has('expression')) { draftKind('expression'); }
+            if (cardFacts().sentence && !draftedKinds.has('cloze')) { draftKind('cloze'); }
+        } else if (!draftedKinds.has('sentence')) {
+            draftKind('sentence');
+        }
+    };
+    const stuck = mountStuckHint({doc: d, getEntry, call: studyCall, isCurrent, onChoice: prepareStuck});
     addCard.addEventListener('click', () => {
         if (busy || currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false) { return; }
         cardPanel.hidden = !cardPanel.hidden;
@@ -629,7 +652,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             const saved = await ensureNote();
             if (!isCurrent() || disposed) { return; }
             if (saved.ankiEnabled === false) { throw new Error('笔记已保存；Anki 制卡尚未启用。'); }
-            const currentLanguage = saved.entry?.language ?? getEntry().language ?? 'en';
+            const currentLanguage = saved.entry?.language ?? entryOf().language ?? 'en';
             addStatus.textContent = '正在添加已选卡片…';
             const result = /** @type {import('study').LibraryRecord} */ (await studyCall('libraryCardsAdd', {
                 id: saved.id,
@@ -652,7 +675,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         });
     });
     save.addEventListener('click', () => {
-        const entry = getEntry();
+        const entry = entryOf();
         run(async () => {
             status.textContent = '正在保存本次学习…';
             // One background operation owns durable save intent; it outlives this document.
@@ -699,7 +722,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         primary.append(actions);
         primary.after(destination, openNote, status, ankiRow, recovery, addCard, cardPanel);
     } else {
-        container.append(actions, destination, openNote, status, ankiRow, recovery, addCard, cardPanel);
+        container.append(stuck, actions, destination, openNote, status, ankiRow, recovery, addCard, cardPanel);
     }
     void refreshPending().catch(() => {});
     return () => {

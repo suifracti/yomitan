@@ -36,3 +36,32 @@ test('excluded sites cover their subdomains only', () => {
     expect(siteExcluded('notexample.com', ['example.com'])).toBe(false);
     expect(siteExcluded('example.com', [' '])).toBe(false);
 });
+
+test('v2 status objects, old strings, encounter counts and site tags', async () => {
+    const {addEncounters, normalizeInfo, recentEncounters, siteTag, wordInfo} = await import('../ext/js/study/word-marks.js');
+    expect(normalizeInfo('learning')).toEqual({s: 'learning'});
+    expect(normalizeInfo({s: 'partial', gloss: '跑；经营'.repeat(10)})?.gloss).toHaveLength(40);
+    expect(normalizeInfo({gloss: 'x'})).toBe(null);
+    const v2 = {run: {s: 'partial', gloss: '跑'}, brick: 'learning'};
+    expect(wordInfo('running', v2)).toMatchObject({s: 'partial', gloss: '跑', word: 'run'});
+    expect(statusFor('Bricks', v2)).toBe('learning');
+
+    const monday = new Date(2026, 9, 19, 10);
+    let all = addEncounters({}, ['brick', 'run'], siteTag('a.example'), monday);
+    all = addEncounters(all, ['brick'], siteTag('b.example'), monday);
+    all = addEncounters(all, ['brick'], siteTag('a.example'), new Date(2026, 9, 20, 9));
+    expect(recentEncounters(all, 'Brick', 7, new Date(2026, 9, 20, 12))).toEqual({times: 3, sites: 2});
+    // Older than 30 days is dropped on the next write; outside 7 days is not counted.
+    all = addEncounters(all, ['run'], siteTag('a.example'), new Date(2026, 10, 25));
+    expect(all.brick).toBeUndefined();
+    expect(recentEncounters(all, 'run', 7, new Date(2026, 10, 25))).toEqual({times: 1, sites: 1});
+    expect(siteTag('a.example')).toMatch(/^[0-9a-z]+$/);
+    expect(JSON.stringify(all)).not.toContain('example');
+});
+
+test('a phrase guess takes the word and the one after it', async () => {
+    const {guessPhrase} = await import('../ext/js/display/study-stuck.js');
+    expect(guessPhrase('I ran into an old friend.', 'ran')).toBe('ran into');
+    expect(guessPhrase('Just run.', 'run')).toBe('run');
+    expect(guessPhrase('Nothing here.', 'run')).toBe('run');
+});

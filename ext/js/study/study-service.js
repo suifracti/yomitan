@@ -109,8 +109,11 @@ export class StudyService {
         if (typeof chrome === 'undefined' || !await chrome.permissions?.contains?.({permissions: ['nativeMessaging']})) { return; }
         try {
             const response = await this.native({action: 'libraryWordStatus'}).promise;
-            const words = /** @type {{words?: unknown}|undefined} */ (response.library)?.words;
-            if (response.ok && words && typeof words === 'object') { await this.write(WORD_STATUS_KEY, () => ({at: Date.now(), words})); }
+            // v1: {words: {word: status}}; v2 adds per-word details and saved phrases (docs/roadmap-2026-10.md).
+            const library = /** @type {{words?: unknown, phrases?: unknown, version?: unknown}|undefined} */ (response.library);
+            const words = library?.words;
+            const phrases = library?.phrases && typeof library.phrases === 'object' ? library.phrases : {};
+            if (response.ok && words && typeof words === 'object') { await this.write(WORD_STATUS_KEY, () => ({at: Date.now(), version: library?.version === 2 ? 2 : 1, words, phrases})); }
         } catch { /* Keep the last list; colouring is optional. */ }
     }
 
@@ -826,7 +829,7 @@ export class StudyService {
             }
             return response.library;
         }
-        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary'].includes(action)) {
+        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'senseMatch', 'ankiToday', 'bridgeHealth', 'practiceCheck'].includes(action)) {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
             if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;

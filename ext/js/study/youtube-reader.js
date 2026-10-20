@@ -1306,7 +1306,7 @@ export class YoutubeReader extends EventTarget {
         const generation = this._generation;
         view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
-            const result = /** @type {{items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
+            const result = /** @type {{items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
             if (generation !== this._generation) { return; }
             const items = result.items ?? [];
             if (items.length === 0) {
@@ -1345,7 +1345,9 @@ export class YoutubeReader extends EventTarget {
                 word.textContent = item.word;
                 const meta = document.createElement('span');
                 meta.className = 'r-word-meta';
-                meta.textContent = item.cards > 0 ? `${item.cards} 张卡${item.stage ? ` · 到第 ${item.stage} 阶段` : ''}` : '只记了笔记';
+                // With sense-level records (roadmap B8) each sense is its own row.
+                const sense = typeof item.sense?.gloss === 'string' && item.sense.gloss ? `义项「${item.sense.gloss.slice(0, 20)}」 · ` : '';
+                meta.textContent = sense + (item.cards > 0 ? `${item.cards} 张卡${item.stage ? ` · 到第 ${item.stage} 阶段` : ''}` : '只记了笔记');
                 const sentence = document.createElement('p');
                 sentence.className = 'r-word-sentence';
                 sentence.textContent = item.sentence;
