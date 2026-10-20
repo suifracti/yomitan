@@ -31,8 +31,26 @@ const parallelTranslations = new Map();
  * @returns {string[]}
  */
 export function splitStudySentence(text) {
-    if ((text.match(/\b[\w'-]+\b/g) || []).length <= 25) { return []; }
-    return text.split(/(?<=[,;.!?])\s+|\s+(?=(?:and|but|or|so|yet|although|because|while)\b)/i).map((part) => part.trim()).filter(Boolean);
+    const words = (value) => (value.match(/\b[\w'-]+\b/g) || []).length;
+    if (words(text) <= 25) { return []; }
+    const parts = [];
+    for (const sentence of text.match(/[^.!?;]+[.!?;]*|[.!?;]+/g) || []) {
+        let start = 0;
+        for (const match of sentence.matchAll(/,/g)) {
+            const end = match.index + 1;
+            if (words(sentence.slice(start, end)) >= 6 && words(sentence.slice(end)) >= 6) {
+                parts.push(sentence.slice(start, end).trim()); start = end;
+            }
+        }
+        const tail = sentence.slice(start).trim();
+        if (tail) { parts.push(tail); }
+    }
+    const merged = [];
+    for (const part of parts) {
+        if (words(part) < 6 && merged.length > 0) { merged[merged.length - 1] += ` ${part}`; }
+        else { merged.push(part); }
+    }
+    return merged.length > 1 ? merged : [];
 }
 
 /**
@@ -88,7 +106,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                 english.append(text.slice(0, selected - start), mark.cloneNode(true), text.slice(selected - start + mark.textContent.length));
             } else { english.textContent = text; }
             const chinese = doc.createElement('p'); chinese.className = 'sf-segment-translation';
-            chinese.lang = 'zh-CN';
+            chinese.lang = 'zh-CN'; chinese.textContent = '翻译中…';
             row.append(english, chinese); view.append(row);
             return {text, chinese};
         });
@@ -102,8 +120,12 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             if (run !== sequence || !isCurrent()) { return; }
             for (let offset = 0; offset < rows.length; offset += 8) {
                 const batch = rows.slice(offset, offset + 8);
-                for (const row of batch) { row.chinese.textContent = parallelTranslations.get(JSON.stringify([engine, language, row.text])) || ''; }
-                const missing = batch.filter((row) => !row.chinese.textContent);
+                for (const row of batch) {
+                    const cached = parallelTranslations.get(JSON.stringify([engine, language, row.text]));
+                    row.chinese.textContent = cached || '翻译中…';
+                    row.chinese.dataset.complete = String(Boolean(cached));
+                }
+                const missing = batch.filter((row) => row.chinese.dataset.complete !== 'true');
                 if (missing.length === 0) { continue; }
                 let translations;
                 if (engine === 'chrome') {
@@ -120,6 +142,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                 for (const [i, row] of missing.entries()) {
                     if (!translations[i]) { throw new Error('没有取得译文'); }
                     row.chinese.textContent = translations[i];
+                    row.chinese.dataset.complete = 'true';
                     parallelTranslations.set(JSON.stringify([engine, language, row.text]), translations[i]);
                 }
             }
@@ -129,7 +152,12 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             status.textContent = ''; action.hidden = true;
         } catch {
             if (run !== sequence || !isCurrent()) { return; }
-            status.textContent = '还没翻译出来。请点「翻译本句」再试，或在设置里换一种免费翻译。';
+            status.textContent = '';
+            for (const row of rows.filter((item) => item.chinese.dataset.complete !== 'true')) {
+                const retry = doc.createElement('button'); retry.type = 'button';
+                retry.textContent = '重试'; retry.addEventListener('click', () => { void paint(); });
+                row.chinese.replaceChildren('这段没翻译成功 · ', retry);
+            }
             action.hidden = false;
         }
     };
