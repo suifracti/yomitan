@@ -407,7 +407,7 @@ class YomitanLibrary:
                 state['upgradeAt'] = now
             except Exception:
                 pass
-        state.update({'files': files, 'notes': notes, 'upgrade': upgrade, 'at': now})
+        state.update({'files': files, 'notes': notes, 'upgrade': upgrade, 'at': now, 'synced': synced, 'conflicts': conflicts})
         state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = state_path.with_suffix('.tmp')
         temporary.write_text(json.dumps(state))

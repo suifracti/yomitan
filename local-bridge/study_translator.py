@@ -59,6 +59,10 @@ ORGANIZE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': 
 
 
 def normalize_request(value):
+    if isinstance(value, dict) and value.get('action') == 'bridgeHealth':
+        if set(value) != {'action'}:
+            raise ValueError('体检请求不接受额外参数。')
+        return value
     if isinstance(value, dict) and value.get('action') == 'subtitles':
         return _normalize_subtitle_request(value)
     if isinstance(value, dict) and value.get('action') == 'segment':
@@ -567,6 +571,10 @@ def main():
         payload = normalize_request(read_frame(sys.stdin.buffer))
         if sys.argv[1] == ASB_ORIGIN and not payload['action'].startswith('video'):
             raise ValueError('asbplayer 只允许视频字幕记录，不允许词库/Anki/任意模型动作。')
+        if payload['action'] == 'bridgeHealth':
+            from study_health import health
+            write_frame(sys.stdout.buffer, {'ok': True, 'library': health(pathlib.Path(__file__).parent)})
+            return 0
         if payload['action'] == 'niratanCapture':
             from niratan_capture import capture
             config = json.loads((pathlib.Path(__file__).parent / 'bridge-config.json').read_text())
@@ -671,6 +679,11 @@ def main():
                     server.close()
         write_frame(sys.stdout.buffer, {'ok': True, 'result': result, 'usage': server.usage()})
     except Exception as error:
+        try:
+            from study_health import record_error
+            record_error(pathlib.Path(__file__).parent, locals().get('payload', {}).get('action', 'request'), error)
+        except Exception:
+            pass  # An incomplete install must still return its original error frame.
         allowed = (ValueError, TimeoutError)
         message = str(error) if isinstance(error, allowed) else '本机翻译未完成；请检查本机桥安装、CLI 登录和网络。'
         try:

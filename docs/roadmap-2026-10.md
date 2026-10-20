@@ -175,6 +175,8 @@
 
 - `errors` 最多 20 条，只含动作名和错误文案，不含学习内容。
 - F6 拿 `files` 和扩展内的 `js/study/bridge-manifest.json` 比对；不一致时，提示运行 `python3 dev/sync-local.py`。
+- `bridge-manifest.json` 列出受版本控制且实际安装的 Python 桥模块；`bridgeHealth.files` 计算运行目录的实际字节（可另外含已编译的 `apple-translate`）。安装器的清单同时记录该可选二进制。体检不读取笔记正文；错误摘要只存动作和不含学习原文的固定错误文案。
+- `sync-local.py` 先核对运行桥的全部模块与上一个提交一致；扩展只同步本批 Git 变更的源码文件，不覆盖无关的本机 UI 改动，也不删除文件或读取 Chrome 存储。
 
 ### `ankiToday`（B9 → F7）
 
@@ -217,7 +219,7 @@
 |---|---|---|
 | B1 记录索引 | GPT | 已完成：cache_dir/.study-index.json；mtime/size 增量；2000 条安静同步约 58 ms（临时库/Anki 替身） |
 | B2 真实掌握度 | GPT | 待认领 |
-| B3 体检与同步脚本 | GPT | 待认领 |
+| B3 体检与同步脚本 | GPT | 已完成：bridgeHealth、真实模块/二进制安装清单、bridge-manifest、限定目标及上个提交校验的 sync-local.py |
 | B4 常驻连接 | GPT | 待测 |
 | B5 统一 ASB 路径 | GPT | 待认领 |
 | B6 后端测试债 | GPT | 待认领 |

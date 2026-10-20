@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 from study_translator import ASB_ORIGIN, HOST_NAME, ORIGIN
+from bridge_files import runtime_sources
 
 
 def digest(path):
@@ -58,29 +59,20 @@ def install(home, codex, python, vault=None):
         if not vault.is_absolute() or not vault.is_dir() or vault.is_symlink():
             raise ValueError('--vault 必须是已存在的真实 Vault 绝对路径。')
         config['vault'] = str(vault)
-    content = {
-        runtime / 'study_translator.py': (pathlib.Path(__file__).parent / 'study_translator.py').read_bytes(),
-        runtime / 'study_settings.py': (pathlib.Path(__file__).parent / 'study_settings.py').read_bytes(),
-        runtime / 'study_index.py': (pathlib.Path(__file__).parent / 'study_index.py').read_bytes(),
-        runtime / 'study_library.py': (pathlib.Path(__file__).parent / 'study_library.py').read_bytes(),
-        runtime / 'study_library_core.py': (pathlib.Path(__file__).parent / 'study_library_core.py').read_bytes(),
-        runtime / 'study_sync.py': (pathlib.Path(__file__).parent / 'study_sync.py').read_bytes(),
-        runtime / 'study_note_view.py': (pathlib.Path(__file__).parent / 'study_note_view.py').read_bytes(),
-        runtime / 'study_japanese.py': (pathlib.Path(__file__).parent / 'study_japanese.py').read_bytes(),
-        runtime / 'study_video.py': (pathlib.Path(__file__).parent / 'study_video.py').read_bytes(),
-        runtime / 'study_memory.py': (pathlib.Path(__file__).parent / 'study_memory.py').read_bytes(),
-        runtime / 'study_usage.py': (pathlib.Path(__file__).parent / 'study_usage.py').read_bytes(),
-        runtime / 'study_media.py': (pathlib.Path(__file__).parent / 'study_media.py').read_bytes(),
-        runtime / 'study_apple_translate.py': (pathlib.Path(__file__).parent / 'study_apple_translate.py').read_bytes(),
+    content = {runtime / name: data for name, data in runtime_sources(pathlib.Path(__file__).parent).items()}
+    content.update({
         runtime / 'bridge-config.json': (json.dumps(config, indent=2) + '\n').encode(),
         runtime / 'launch-host': ('#!/bin/sh\nexec ' + shlex.quote(str(python)) + ' ' + shlex.quote(str(runtime / 'study_translator.py')) + ' "$@"\n').encode(),
         registry: (json.dumps({'name': HOST_NAME, 'description': '点击式英语翻译（本机 Codex）',
                               'path': str(runtime / 'launch-host'), 'type': 'stdio',
                               'allowed_origins': [ORIGIN, ASB_ORIGIN]}, ensure_ascii=False, indent=2) + '\n').encode(),
-    }
+    })
     for path in content:
         if path != config_path and path.exists() and previous.get('files', {}).get(str(path)) != digest(path):
             raise ValueError('存在未知或已手动修改的本机桥文件，停止覆盖：' + str(path))
+    binary = runtime / 'apple-translate'
+    if binary.exists() and previous.get('files', {}).get(str(binary)) != digest(binary):
+        raise ValueError('Apple 翻译程序有未记录的改动，停止覆盖。')
     codex_home = runtime / 'codex-home'
     auth = codex_home / 'auth.json'
     source_home = pathlib.Path(os.environ.get('CODEX_HOME', home / '.codex'))
@@ -107,7 +99,10 @@ def install(home, codex, python, vault=None):
         temporary.chmod(0o700 if path.name == 'launch-host' else 0o600)
         temporary.replace(path)
     compile_apple_translate(runtime)
-    marker.write_text(json.dumps({'files': {str(p): digest(p) for p in content}}, indent=2) + '\n')
+    installed = {str(p): digest(p) for p in content}
+    if (runtime / 'apple-translate').is_file():
+        installed[str(runtime / 'apple-translate')] = digest(runtime / 'apple-translate')
+    marker.write_text(json.dumps({'files': installed}, indent=2) + '\n')
     marker.chmod(0o600)
     return runtime, auth.exists()
 
