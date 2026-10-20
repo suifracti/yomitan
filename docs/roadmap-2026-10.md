@@ -227,7 +227,7 @@
 | B1 记录索引 | GPT | 已完成：cache_dir/.study-index.json；mtime/size 增量；2000 条安静同步约 58 ms（临时库/Anki 替身） |
 | B2 真实掌握度 | GPT | 已完成：自动同步批量读 interval/lapses/近期 Again；v2 words/phrases；旧界面兼容 |
 | B3 体检与同步脚本 | GPT | 已完成：bridgeHealth、真实模块/二进制安装清单、bridge-manifest、限定目标及上个提交校验的 sync-local.py |
-| B4 常驻连接 | GPT | 待测 |
+| B4 常驻连接 | GPT | 已实测：隔离 Chrome for Testing 149、实际安装桥、20 次新 connectNative；中位 49.2 ms、p95 68.8 ms、最大 71.2 ms；低于 150 ms，保留短连接，不引入常驻 port |
 | B5 统一 ASB 路径 | GPT | 已完成：保留私有来源证明；已保存字幕可多卡、收藏、后续问答及双向/自动同步；记住只存笔记；36 项 Python、49 项 Node 定向检查通过 |
 | B6 后端测试债 | GPT | 已完成：原生来源测试 15 项、桥协议 16 项、保存流程 7 项通过；旧自动择卡断言改为只存笔记；指定两模块及 study-service 类型错误为 0（全仓仍有前端错误） |
 | B7 AI 批改 | GPT | 待认领 |

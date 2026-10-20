@@ -17,8 +17,16 @@ with tempfile.TemporaryDirectory(prefix='study-native-bench-') as temporary:
         'permissions': ['nativeMessaging'], 'background': {'service_worker': 'worker.js'}}))
     (extension / 'worker.js').write_text('// Ping fixture only.\n')
     (extension / 'ping.html').write_text('<!doctype html><title>Isolated bridge ping</title>')
+    # Chromium resolves user NativeMessagingHosts beneath --user-data-dir.
+    # Register only this temporary profile, not the user's browser registry.
+    hosts = root / 'profile/NativeMessagingHosts'
+    hosts.mkdir(parents=True)
+    (hosts / 'com.suifracti.study_translator.json').write_text(json.dumps({
+        'name': 'com.suifracti.study_translator', 'description': 'Isolated ping measurement', 'type': 'stdio',
+        'path': str(pathlib.Path.home() / 'Library/Application Support/EnglishStudyTranslator/launch-host'),
+        'allowed_origins': [f'chrome-extension://{ID}/']}))
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(str(root / 'profile'), executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        context = p.chromium.launch_persistent_context(str(root / 'profile'), executable_path=p.chromium.executable_path,
             headless=True, args=[f'--disable-extensions-except={extension}', f'--load-extension={extension}', '--no-first-run'])
         try:
             page = context.new_page()
