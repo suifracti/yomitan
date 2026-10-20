@@ -91,6 +91,7 @@ async function initializeStudySettings(root) {
         refreshEffort(config.effort);
         check('cacheEnabled').checked = config.cacheEnabled;
         check('autoDictionaryTranslate').checked = config.autoDictionaryTranslate === true;
+        check('practiceEnabled').checked = config.practiceEnabled === true;
         if (settingsSaveState) { settingsSaveState.textContent = '已保存'; }
     }
     /** @returns {import('study').StudyConfig} */
@@ -99,6 +100,7 @@ async function initializeStudySettings(root) {
             model: model.value,
             effort: effort.value,
             autoDictionaryTranslate: check('autoDictionaryTranslate').checked,
+            practiceEnabled: check('practiceEnabled').checked,
             cacheEnabled: check('cacheEnabled').checked,
         };
     }

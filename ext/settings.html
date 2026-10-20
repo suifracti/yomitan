@@ -572,6 +572,7 @@
                 <button type="button" id="load-models">读取 / 刷新可用模型</button><small>查词建议低强度，响应更快。</small>
             </section>
             <section><h2>词典 AI 辅助</h2><label class="check"><input type="checkbox" id="autoDictionaryTranslate">查词时自动通过 AI 翻译词典英英首义</label><p>关闭时仅在点击翻译后调用 AI。</p></section>
+            <label class="check"><input type="checkbox" id="practiceEnabled">启用造句批改（消耗额度）</label>
             <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>再次查看时复用已有译文。关闭后会清空缓存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
             <div class="save-bar"><small id="settings-save-state" class="study-save-state" role="status" aria-live="polite">正在读取本地设置…</small><button type="submit" class="primary">保存设置</button></div>
         </form>

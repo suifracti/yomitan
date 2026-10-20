@@ -44,6 +44,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const entryOf = () => /** @type {import('study').LibraryEntry} */ ({...getEntry(), ...entryExtras});
     let mediaOperation = 0;
     let disposed = false;
+    const practiceReady = studyCall('settings').then((value) => /** @type {import('study').StudyConfig} */ (value)).catch(() => null);
     const actions = d.createElement('div');
     actions.className = 'study-learning-actions study-save-actions';
     const save = d.createElement('button');
@@ -283,6 +284,60 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         backLabel.append(back);
         row.append(selectedLabel, kindLabel, frontLabel, backLabel, deckLabel, remove);
         manualCards.append(row); manualRows.push(row);
+        void practiceReady.then((config) => {
+            if (!config?.practiceEnabled || disposed || !isCurrent()) { return; }
+            const practice = d.createElement('div');
+            practice.className = 'study-practice scan-disable';
+            const answer = d.createElement('textarea');
+            answer.rows = 2;
+            answer.maxLength = 2400;
+            answer.placeholder = '写下你的英文回答';
+            answer.setAttribute('aria-label', '练习回答');
+            answer.dataset.studyPracticeAnswer = '';
+            const grade = d.createElement('button');
+            grade.type = 'button';
+            grade.textContent = '批改';
+            grade.disabled = true;
+            grade.dataset.studyPracticeCheck = '';
+            const result = d.createElement('div');
+            result.setAttribute('role', 'status');
+            result.hidden = true;
+            const lines = [d.createElement('p'), d.createElement('p'), d.createElement('p')];
+            result.append(...lines);
+            practice.append(answer, grade, result);
+            const place = () => {
+                if (['make-sentence', 'produce'].includes(kind.value)) { row.append(practice); } else {
+                    practice.remove();
+                }
+            };
+            kind.addEventListener('change', place);
+            place();
+            answer.addEventListener('input', () => { grade.disabled = !answer.value.trim(); });
+            grade.addEventListener('click', () => {
+                const id = currentSaved?.id || container.dataset.studyRecordId;
+                result.hidden = false;
+                if (!validLibraryId(id)) {
+                    lines[0].textContent = '请先点「记住它」保存这条记录，再批改。';
+                    return;
+                }
+                grade.disabled = true;
+                lines[0].textContent = '正在批改…';
+                lines[1].textContent = lines[2].textContent = '';
+                void studyCall('practiceCheck', {id, kind: kind.value, prompt: front.value, answer: answer.value.trim(), config: {model: config.model, effort: config.effort}}).then((value) => {
+                    if (!isCurrent()) { return; }
+                    const feedback = /** @type {{verdict: 'good'|'almost'|'wrong', corrected: string, reason: string, saved?: boolean, error?: string}} */ (value);
+                    lines[0].textContent = `是否地道：${{good: '合适', almost: '需要调整', wrong: '不合适'}[feedback.verdict]}`;
+                    lines[1].textContent = `改法：${feedback.corrected || '无需修改'}`;
+                    lines[2].textContent = `理由：${feedback.reason}${feedback.saved === false ? `（${feedback.error}）` : ''}`;
+                }).catch((error) => {
+                    lines[0].textContent = '批改未完成';
+                    lines[1].textContent = '改法：—';
+                    lines[2].textContent = `理由：${error instanceof Error ? error.message : '本机桥暂不支持批改，请同步后再试。'}`;
+                })
+                    .finally(() => { grade.disabled = !answer.value.trim(); });
+            });
+        });
+
         /** @param {HTMLTextAreaElement} field */
         const grow = (field) => {
             field.style.height = 'auto';
