@@ -209,6 +209,10 @@ def _normalize_request(p):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
         return p
+    if action == 'libraryWordStatus':
+        if set(p) != {'action'}:
+            raise ValueError('词汇状态请求无效。')
+        return p
     if action == 'libraryAutoSync':
         if set(p) != {'action'}:
             raise ValueError('自动同步请求无效。')

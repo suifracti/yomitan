@@ -90,6 +90,15 @@ class AutoSyncTests(unittest.TestCase):
         self.assertIn('updateNoteFields', self.calls)
         self.assertIn('砖头（Obsidian 里改的）', next(iter(self.notes.values()))['fields']['Definition'])
 
+    def test_word_status_marks_words_with_use_cards_as_known(self):
+        self.make_card()
+        entry = {'word': 'Mortar', 'sentence': 'Brick and mortar.', 'meaning': '灰浆', 'url': 'https://example.com/b'}
+        saved = self.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})
+        record = saved['items'][0] if 'items' in saved else saved
+        self.library.handle({'action': 'libraryCardsAdd', 'id': record['id'], 'cards': [{'front': '用英文说', 'back': 'mortar', 'kind': 'produce'}]})
+        words = self.library.handle({'action': 'libraryWordStatus'})['words']
+        self.assertEqual(words, {'brick': 'learning', 'mortar': 'known'})
+
     def test_rejects_extra_fields(self):
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryAutoSync', 'all': True})

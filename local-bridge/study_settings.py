@@ -270,6 +270,39 @@ class YomitanLibrary:
                 raise ValueError('语境目录必须位于当前选定的 Vault 内；原设置未改变。') from None
         return {'path': str(chosen), 'cancelled': False}
 
+    def word_status(self):
+        """Learning status of every saved English word, for colouring pages.
+
+        'known' once the learner has a stage-3 (use) card for it, otherwise
+        'learning'. Only the word, its dictionary form and the status leave
+        the bridge; no sentences, notes or sources.
+        """
+        import study_sync
+        words, seen = {}, set()
+        for target_id, target in self.targets.items():
+            folder = (target['vault'], target['directory'])
+            if folder in seen or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
+                continue
+            seen.add(folder)
+            lib = self.library_for(target_id)
+            if not lib.records.is_dir() or getattr(lib, 'language', 'en') != 'en':
+                continue
+            for _path, ident in lib.record_files():
+                try:
+                    record = lib.read(ident)[0]
+                except (OSError, ValueError, FileNotFoundError):
+                    continue
+                known = any(study_sync.CARD_STAGES.get(c.get('kind')) == 3 for c in record.get('cards', []))
+                status = 'known' if known else 'learning'
+                entry = record['entry']
+                for key in {entry.get('word', ''), entry.get('lemma', '')}:
+                    key = key.strip().lower()
+                    if 1 < len(key) <= 60 and words.get(key) != 'known':
+                        words[key] = status
+                if len(words) >= 20000:
+                    return words
+        return words
+
     def auto_sync(self, now=None):
         """One pass of automatic two-way sync, run by the extension every ~30 seconds.
 
@@ -454,6 +487,8 @@ class YomitanLibrary:
             return {'items': self.video_words(p['videoId'])}
         if action == 'libraryAutoSync':
             return self.auto_sync()
+        if action == 'libraryWordStatus':
+            return {'words': self.word_status()}
         if action == 'libraryList':
             rows = []
             seen = set()

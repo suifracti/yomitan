@@ -361,3 +361,17 @@ body.preview-sidebar-visible .preview-frame-container .preview-close {
     color: var(--study-muted);
     overflow-wrap: anywhere;
 }
+
+.word-mark-sample {
+    text-underline-offset: 3px;
+}
+.word-mark-learning {
+    text-decoration: underline dotted 1.5px rgb(217 169 28 / 85%);
+}
+.word-mark-known {
+    text-decoration: underline solid 1px rgb(63 140 90 / 45%);
+}
+#word-mark-settings textarea {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+}

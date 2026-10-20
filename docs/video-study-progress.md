@@ -136,6 +136,22 @@ media, the note format and automatic two-way sync.
 
 All five batches are done.
 
+## Follow-up round (2026-10-20, in progress)
+
+- Page word colouring on every site (`ext/js/study/word-marks.js`, started for
+  top frames in `content-script-main.js`). Uses the CSS Custom Highlight API,
+  so page text, layout and selection are untouched: learning words get a thin
+  dotted amber underline, words with a stage-3 card a faint green one. Skips
+  inputs, editors, code and our panels; works in idle slices, follows dynamic
+  content, caps at 6000 marks per page. Simple inflections (bricks, running,
+  studied) map to the saved word.
+  - Data: native `libraryWordStatus` returns only word/lemma → status; the
+    background refreshes it every 5 minutes and shortly after saves or card
+    changes into `studyWordStatus`.
+  - Settings: "网页生词标色" switch and excluded sites (`studyWordMarks`).
+  - Checked in real Chrome on a fixture page (DOM unchanged, late content
+    marked).
+
 ## Not verified
 
 - `test_study_workspace_browser.py` has a timing-dependent check ("dictionary

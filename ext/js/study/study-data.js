@@ -20,6 +20,12 @@ export const SETTINGS_KEY = 'studySettingsV2';
 
 export const CACHE_KEY = 'studyCacheV2';
 
+/** Saved English words and their learning status, for colouring pages: {at, words: {word: 'learning'|'known'}}. */
+export const WORD_STATUS_KEY = 'studyWordStatus';
+
+/** Page colouring switch and excluded sites: {enabled: boolean, excluded: string[]}. */
+export const WORD_MARKS_KEY = 'studyWordMarks';
+
 /** Learner switch for automatic two-way sync: {enabled: boolean}. */
 export const AUTO_SYNC_KEY = 'studyAutoSync';
 

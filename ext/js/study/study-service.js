@@ -20,7 +20,7 @@ import {StudySync} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
 import {rememberSaved} from './study-remember.js';
-import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
+import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
 import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
@@ -97,6 +97,20 @@ export class StudyService {
         this.rememberPending = new Map();
         /** @type {Map<string, Promise<import('study').LibraryRecord>>} */
         this.rememberSavePending = new Map();
+    }
+
+    /**
+     * Reads the saved words and their status from the bridge for page colouring.
+     * Only words and statuses are stored; nothing else from the notes.
+     * @returns {Promise<void>}
+     */
+    async refreshWordStatus() {
+        if (typeof chrome === 'undefined' || !await chrome.permissions?.contains?.({permissions: ['nativeMessaging']})) { return; }
+        try {
+            const response = await this.native({action: 'libraryWordStatus'}).promise;
+            const words = /** @type {{words?: unknown}|undefined} */ (response.library)?.words;
+            if (response.ok && words && typeof words === 'object') { await this.write(WORD_STATUS_KEY, () => ({at: Date.now(), words})); }
+        } catch { /* Keep the last list; colouring is optional. */ }
     }
 
     /**
@@ -678,6 +692,10 @@ export class StudyService {
      * @returns {Promise<unknown>}
      */
     async handle(action, value) {
+        // Saving or making cards changes word colours on pages; refresh them shortly after.
+        if (['rememberEntry', 'libraryCardsAdd', 'removeWord'].includes(action)) {
+            setTimeout(() => { void this.refreshWordStatus(); }, 3000);
+        }
         if (action !== 'generate') { return await this.handleRequest(action, value); }
         const scopeKey = this.cancelScopeKey(value);
         let scope = this.cancelScopes.get(scopeKey);
@@ -1143,7 +1161,9 @@ export function prepareStudyService(lookupDictionary = null) {
         void chrome.alarms.create('study-auto-sync', {periodInMinutes: 0.5});
         chrome.alarms.onAlarm.addListener((alarm) => {
             if (alarm.name === 'study-auto-sync') { void service.autoSync(); }
+            if (alarm.name === 'study-word-status') { void service.refreshWordStatus(); }
         });
+        void chrome.alarms.create('study-word-status', {periodInMinutes: 5, delayInMinutes: 0.1});
     }
     /**
      * @param {unknown} message
