@@ -2,7 +2,7 @@
 import {timedUrl} from '../study/media-key.js';
 import {studyCall} from '../study/study-client.js';
 import {prepareStudyWorkspace} from './study-workspace.js';
-import {updateStudySourcePreview} from './study-translation.js';
+import {updateStudySourcePreview, prepareParallelSentence} from './study-translation.js';
 import {explainWordForm, findFormExample} from './study-word-forms.js';
 import {chromeTranslate} from '../study/free-translators.js';
 import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
@@ -192,6 +192,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             // The original sentence belongs to the first learning page only.
             sourcePane.hidden = !hasSentence || index !== 0;
             headerSense.hidden = index === 2;
+            if (index !== 0) { readingGloss.hidden = true; }
             requestAnimationFrame(resizeFollowup);
         };
         body.append(...panels);
@@ -640,21 +641,15 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             shell.style.setProperty('--sf-input-height', `${compose.getBoundingClientRect().height}px`);
         });
         dockSizeObserver.observe(saveBar); dockSizeObserver.observe(compose); observers.push(dockSizeObserver);
-        const sentenceTranslation = source.querySelector('.study-source-translation');
-        if (sentenceTranslation) {
-            const expand = button('展开译文'); expand.classList.add('sf-translation-expand');
-            sentenceTranslation.after(expand); owned.push(expand);
-            const syncTranslation = () => {
-                expand.hidden = sentenceTranslation.hidden || sentenceTranslation.scrollHeight <= sentenceTranslation.clientHeight + 1;
-            };
-            expand.addEventListener('click', () => { sentenceTranslation.classList.add('sf-translation-expanded'); expand.hidden = true; });
-            const textObserver = new MutationObserver(() => {
-                sentenceTranslation.classList.remove('sf-translation-expanded'); syncTranslation();
-            });
-            textObserver.observe(sentenceTranslation, {childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['hidden']});
-            const sizeObserver = new ResizeObserver(syncTranslation); sizeObserver.observe(sentenceTranslation);
-            observers.push(textObserver, sizeObserver); syncTranslation();
-        }
+        const disposeParallel = prepareParallelSentence(source, {call, isCurrent: current, language});
+        const readingGloss = make('div', 'sf-reading-gloss'); readingGloss.hidden = true;
+        const readingWord = make('strong', '', word);
+        const readingMeanings = make('span', '');
+        readingGloss.append(readingWord, readingMeanings); shell.prepend(readingGloss); owned.push(readingGloss);
+        const onReadingScroll = () => {
+            readingGloss.hidden = activeTab !== 0 || headerSense.getBoundingClientRect().bottom > shell.getBoundingClientRect().top;
+        };
+        shell.addEventListener('scroll', onReadingScroll);
         const inputSizeObserver = new ResizeObserver(() => { resizeFollowup(); });
         inputSizeObserver.observe(context); observers.push(inputSizeObserver);
         input?.addEventListener('input', resizeFollowup);
@@ -707,6 +702,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const preview = make('div', 'sf-gloss-preview');
             for (const sense of senses) { appendRow(preview, sense); }
             host.append(preview);
+            readingMeanings.textContent = senses.map(({pos, text}) => `${pos?.textContent || ''} ${text}`).join('；');
+            readingGloss.title = `${word} ${readingMeanings.textContent}`;
         };
         const updateAnswer = () => {
             if (!current()) { return; }
@@ -1005,6 +1002,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             context.querySelector('[data-study-add-card]')?.click();
         }
         dispose = () => {
+            disposeParallel();
+            shell.removeEventListener('scroll', onReadingScroll);
             workspace.dispose();
             observers.forEach((observer) => observer.disconnect());
             for (const node of formNodes) { node.classList.remove('sf-forms-original'); }

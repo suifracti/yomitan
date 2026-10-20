@@ -38,7 +38,7 @@ export class SubtitleTranslation {
      */
     async handle(action, value) {
         if (action === 'subtitleSettings') { return studyConfig(await this.service.read(SETTINGS_KEY)); }
-        const v = /** @type {{requestId?: string, items?: Item[], language?: string, title?: string, config?: {model?: string, effort?: string}}} */ (value ?? {});
+        const v = /** @type {{requestId?: string, items?: Item[], language?: string, title?: string, freeOnly?: boolean, config?: {model?: string, effort?: string}}} */ (value ?? {});
         const id = v.requestId;
         if (typeof id !== 'string' || !/^[\w:.-]{1,200}$/.test(id)) { throw new Error('字幕请求编号无效。'); }
         if (action === 'subtitleCancel') {
@@ -46,7 +46,7 @@ export class SubtitleTranslation {
             return true;
         }
         if (action === 'subtitleSegment') { return await this.segment(id, value); }
-        if (Object.keys(v).some((k) => !['requestId', 'items', 'language', 'title', 'config'].includes(k))) { throw new Error('字幕翻译参数无效。'); }
+        if (Object.keys(v).some((k) => !['requestId', 'items', 'language', 'title', 'config', 'freeOnly'].includes(k))) { throw new Error('字幕翻译参数无效。'); }
         const items = v.items;
         if (!Array.isArray(items) || items.length === 0 || items.length > 8 || new Set(items.map((r) => r.id)).size !== items.length ||
         items.some((r) => !r || typeof r.id !== 'string' || !/^[\w-]{1,128}$/.test(r.id) || typeof r.text !== 'string' || !r.text.trim() || r.text.length > 2400 ||
@@ -66,6 +66,7 @@ export class SubtitleTranslation {
             const {engine} = normalizeSubtitlePrefs(await this.service.read(SUBTITLE_PREFS_KEY));
             const config = studyConfig(await this.service.read(SETTINGS_KEY));
             checkCancelled();
+            if (v.freeOnly && engine === 'model') { throw new Error('请在设置里选一种免费翻译，再点重试。'); }
             if (engine === 'chrome') { throw new Error('Chrome 内置翻译在页面里运行；请刷新页面后再点翻译。'); }
             if (engine === 'model' && (v.config?.model !== config.model || v.config?.effort !== config.effort)) { throw new Error('模型设置已改变，请重新点翻译。'); }
             const language = v.language || 'en';

@@ -2,23 +2,27 @@
 import {readFileSync} from 'node:fs';
 import {test, expect, vi} from 'vitest';
 vi.mock('../ext/js/display/study-workspace.js', () => ({prepareStudyWorkspace: () => ({dispose() {}})}));
+vi.mock('../ext/js/study/subtitle-prefs.js', async (original) => ({...await original(), readSubtitlePrefs: async () => ({engine: 'google'})}));
+import {SubtitleTranslation} from '../ext/js/study/subtitle-translation.js';
 import {prepareStudyFocus} from '../ext/js/display/study-focus.js';
 
-test('all meanings and forms are visible without a meaning toggle; sentence and video stay intact', async () => {
+test('long sentences keep all meanings in the reading bar and show cached, free paragraph translations', async () => {
     document.documentElement.removeAttribute('data-study-focus-ready');
     document.body.innerHTML = readFileSync(`${import.meta.dirname}/fixtures/study-focus.html`, 'utf8').split('<script type="module">')[0];
     globalThis.ResizeObserver = class {observe() {} disconnect() {}};
     const handlers = new Map();
     const source = document.querySelector('.study-source');
+    source.querySelector('p').innerHTML = 'When people read a very long sentence with several different ideas, they sometimes lose the <mark>ability</mark> to follow every detail, but a short explanation below each part makes the whole sentence much easier to understand.';
     const original = source.querySelector('p').textContent;
-    source.insertAdjacentHTML('beforeend', '<div class="study-source-translation-row"><span class="study-source-translation">很长的译文</span></div>');
+    source.insertAdjacentHTML('beforeend', '<button data-study-translate-sentence>翻译本句</button><div class="study-source-translation-row"><span class="study-source-translation">很长的译文</span></div>');
     const translation = source.querySelector('.study-source-translation');
     Object.defineProperties(translation, {scrollHeight: {value: 100}, clientHeight: {value: 60}});
     document.querySelector('[data-study-meta-role=forms]').textContent = '过去式：improved · 进行时：improving · 三单：improves';
     const meanings = document.querySelector('.study-reading-meaning');
     meanings.innerHTML = '<div class="study-reading-sense"><span class="study-pos">n.</span><span class="study-meaning-text">能力，才干</span></div><div class="study-reading-sense"><span class="study-pos">v.</span><span class="study-meaning-text">能够</span></div>';
     const display = {query: 'ability', history: {state: {sentence: {text: original}, url: 'https://www.youtube.com/watch?v=fixture', videoTime: 5}}, on: (name, fn) => handlers.set(name, fn)};
-    prepareStudyFocus(display, {call: async () => ({items: [], anki: {items: []}})});
+    const call = vi.fn(async (action, data) => action === 'subtitleTranslate' ? {items: data.items.map((row) => ({id: row.id, translation: '译文：' + row.text}))} : {items: [], anki: {items: []}});
+    prepareStudyFocus(display, {call});
     handlers.get('contentUpdateComplete')();
     const header = document.querySelector('.sf-header-sense');
     expect(header.querySelector('.sf-gloss-toggle')).toBeNull();
@@ -27,9 +31,22 @@ test('all meanings and forms are visible without a meaning toggle; sentence and 
     expect(document.querySelector('.sf-all-meanings')).toBeNull();
     expect(source.querySelector('p').textContent).toBe(original);
     expect(document.querySelector('.sf-source-reading').nextElementSibling.classList.contains('sf-video-strip')).toBe(true);
-    const expand = document.querySelector('.sf-translation-expand');
-    expect(expand.hidden).toBe(false);
-    expand.click();
-    expect(translation.classList.contains('sf-translation-expanded')).toBe(true);
+    await vi.waitFor(() => expect(source.dataset.studySegmentTranslation).toContain('译文：'));
+    expect(document.querySelector('.sf-translation-expand')).toBeNull();
+    expect(document.querySelectorAll('.sf-sentence-segment').length).toBeGreaterThan(1);
+    expect(document.querySelector('.sf-selected-segment mark').textContent).toBe('ability');
+    expect([...document.querySelectorAll('.sf-sentence-segment')].every((row) => row.children[0].lang === 'en' && row.children[1].lang === 'zh-CN')).toBe(true);
+    expect(call.mock.calls.find(([action]) => action === 'subtitleTranslate')[1].freeOnly).toBe(true);
+    const translated = call.mock.calls.filter(([action]) => action === 'subtitleTranslate').length;
+    document.querySelector('[data-study-translate-sentence]').click();
+    await vi.waitFor(() => expect(document.querySelector('.sf-parallel-status').textContent).toBe(''));
+    expect(call.mock.calls.filter(([action]) => action === 'subtitleTranslate')).toHaveLength(translated);
+    header.getBoundingClientRect = () => ({bottom: -1});
+    document.querySelector('.study-focus-shell').dispatchEvent(new Event('scroll'));
+    expect(document.querySelector('.sf-reading-gloss').textContent).toContain('能力，才干；v. 能够');
+    const native = vi.fn();
+    const translator = new SubtitleTranslation({epoch: 0, read: async () => ({engine: 'model'}), native});
+    await expect(translator.handle('subtitleTranslate', {requestId: 'free-test', freeOnly: true, items: [{id: 'one', text: original}]})).rejects.toThrow('免费翻译');
+    expect(native).not.toHaveBeenCalled();
     handlers.get('contentClear')();
 });

@@ -17,9 +17,139 @@
  */
 import {studyCall} from '../study/study-client.js';
 import {mountStudyLibrary} from './study-library.js';
+import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
+import {chromeTranslate} from '../study/free-translators.js';
 
 /** @type {WeakMap<HTMLElement, {term: string, text: string, offset: number}>} */
 const sourceHighlightSelections = new WeakMap();
+
+/** @type {Map<string, string>} */
+const parallelTranslations = new Map();
+
+/**
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function splitStudySentence(text) {
+    if ((text.match(/\b[\w'-]+\b/g) || []).length <= 25) { return []; }
+    return text.split(/(?<=[,;.!?])\s+|\s+(?=(?:and|but|or|so|yet|although|because|while)\b)/i).map((part) => part.trim()).filter(Boolean);
+}
+
+/**
+ * @param {HTMLElement} source
+ * @param {{call: typeof studyCall, isCurrent: () => boolean, language: string}} options
+ * @returns {() => void}
+ */
+export function prepareParallelSentence(source, {call, isCurrent, language}) {
+    const original = source.querySelector('p');
+    const action = source.querySelector('[data-study-translate-sentence]');
+    if (!original || !action) { return () => {}; }
+    const doc = source.ownerDocument;
+    const view = doc.createElement('div'); view.className = 'sf-parallel-sentence';
+    original.after(view);
+    let sequence = 0;
+    let abort = new AbortController();
+    let request = '';
+    let sentence = '';
+    const cancel = () => {
+        ++sequence; abort.abort();
+        abort = new AbortController();
+        if (request) {
+            void call('subtitleCancel', {requestId: request}).catch(() => {}); request = '';
+        }
+    };
+    const paint = async () => {
+        cancel();
+        const run = sequence;
+        sentence = original.textContent.trim();
+        const parts = splitStudySentence(sentence);
+        source.classList.toggle('sf-segmented-source', parts.length > 0);
+        view.replaceChildren();
+        delete source.dataset.studySegmentTranslation;
+        delete source.dataset.studySegmentSentence;
+        if (parts.length === 0) { return; }
+        const mark = original.querySelector('mark');
+        let selected = -1;
+        if (mark) {
+            selected = 0;
+            for (const node of original.childNodes) {
+                if (node === mark) { break; }
+                selected += node.textContent.length;
+            }
+            selected -= original.textContent.length - original.textContent.trimStart().length;
+        }
+        let cursor = 0;
+        const rows = parts.map((text) => {
+            const row = doc.createElement('div'); row.className = 'sf-sentence-segment';
+            const english = doc.createElement('p'); english.lang = language;
+            const start = sentence.indexOf(text, cursor); cursor = start + text.length;
+            if (selected >= start && selected < cursor && mark) {
+                row.classList.add('sf-selected-segment');
+                english.append(text.slice(0, selected - start), mark.cloneNode(true), text.slice(selected - start + mark.textContent.length));
+            } else { english.textContent = text; }
+            const chinese = doc.createElement('p'); chinese.className = 'sf-segment-translation';
+            chinese.lang = 'zh-CN';
+            row.append(english, chinese); view.append(row);
+            return {text, chinese};
+        });
+        const status = doc.createElement('p'); status.className = 'sf-parallel-status';
+        status.setAttribute('role', 'status');
+        status.textContent = '正在逐段翻译…'; view.append(status);
+        action.hidden = false;
+        try {
+            const prefs = await readSubtitlePrefs();
+            const engine = prefs.engine === 'model' ? 'chrome' : prefs.engine;
+            if (run !== sequence || !isCurrent()) { return; }
+            for (let offset = 0; offset < rows.length; offset += 8) {
+                const batch = rows.slice(offset, offset + 8);
+                for (const row of batch) { row.chinese.textContent = parallelTranslations.get(JSON.stringify([engine, language, row.text])) || ''; }
+                const missing = batch.filter((row) => !row.chinese.textContent);
+                if (missing.length === 0) { continue; }
+                let translations;
+                if (engine === 'chrome') {
+                    translations = await chromeTranslate(missing.map((row) => row.text), {source: language, signal: abort.signal});
+                } else {
+                    request = `parallel-${crypto.randomUUID()}`;
+                    const value = /** @type {{items: {id: string, translation: string}[]}} */ (await call('subtitleTranslate', {
+                        requestId: request, freeOnly: true, language, items: missing.map((row, i) => ({id: `part-${i}`, text: row.text})),
+                    }));
+                    translations = missing.map((_, i) => value.items.find((item) => item.id === `part-${i}`)?.translation || '');
+                    request = '';
+                }
+                if (run !== sequence || !isCurrent()) { return; }
+                for (const [i, row] of missing.entries()) {
+                    if (!translations[i]) { throw new Error('没有取得译文'); }
+                    row.chinese.textContent = translations[i];
+                    parallelTranslations.set(JSON.stringify([engine, language, row.text]), translations[i]);
+                }
+            }
+            if (run !== sequence || !isCurrent()) { return; }
+            source.dataset.studySegmentSentence = sentence;
+            source.dataset.studySegmentTranslation = rows.map((row) => row.chinese.textContent).join('');
+            status.textContent = ''; action.hidden = true;
+        } catch {
+            if (run !== sequence || !isCurrent()) { return; }
+            status.textContent = '还没翻译出来。请点「翻译本句」再试，或在设置里换一种免费翻译。';
+            action.hidden = false;
+        }
+    };
+    const onTranslate = (event) => {
+        if (splitStudySentence(original.textContent).length === 0) { return; }
+        event.preventDefault(); event.stopImmediatePropagation();
+        void paint();
+    };
+    action.addEventListener('click', onTranslate, true);
+    const observer = new MutationObserver(() => {
+        if (original.textContent.trim() !== sentence) { void paint(); }
+    });
+    observer.observe(original, {childList: true, subtree: true, characterData: true});
+    void paint();
+    return () => {
+        cancel(); observer.disconnect();
+        action.removeEventListener('click', onTranslate, true);
+        source.classList.remove('sf-segmented-source'); view.remove();
+    };
+}
 
 /**
  * @param {HTMLElement} output
@@ -758,7 +888,7 @@ export function prepareStudyTranslation() {
                 const translated = english?.querySelector('[data-study-translated=true]')?.textContent;
                 const dictionaryTranslation = translated ? `词典英文：${english?.querySelector('.study-english-original')?.textContent ?? ''}\nAI 辅助中文：${translated}` : '';
 
-                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
+                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: (sourceBox?.dataset.studySegmentSentence === editor.value.trim() ? sourceBox.dataset.studySegmentTranslation : '') || current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
             }, isCurrent, {capture: source.capture,
                 cancelCapture: source.cancelCapture,
                 range: source.mediaRange,
