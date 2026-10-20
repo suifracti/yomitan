@@ -459,6 +459,10 @@ export class YoutubeReader extends EventTarget {
     /** */
     _place() {
         const root = this._view?.root;
+        if (root && window.self !== window.top) {
+            root.hidden = innerWidth < 600;
+            this._site.toggleDock(innerWidth >= 600);
+        }
         const host = root && this._site.pinFirst() ? this._host() : null;
         if (root && host && root.parentElement !== host) {
             host.prepend(root);
@@ -704,6 +708,7 @@ export class YoutubeReader extends EventTarget {
         });
         host.prepend(root);
         this._view = {root, status, load, follow, resume, list, translate, cancel, retry, more, menu, words};
+        this._place();
         if (this._site.pinFirst()) { this._keepFirst(host); }
         this._syncMenu();
     }
@@ -1434,7 +1439,7 @@ export class YoutubeReader extends EventTarget {
         button.disabled = true;
         state.textContent = '正在写入…';
         try {
-            const result = /** @type {{path: string, words: number, cards: number, openUrl: string}} */ (await this._call('libraryVideoSummary', {mediaKey, title: document.title.slice(0, 300)}));
+            const result = /** @type {{path: string, words: number, cards: number, openUrl: string}} */ (await this._call('libraryVideoSummary', {mediaKey, title: document.title.slice(0, 300), ...(location.protocol === 'file:' ? {url: this._site.pageUrl()} : {})}));
             if (generation !== this._generation) { return; }
             const open = document.createElement('a');
             open.href = result.openUrl;

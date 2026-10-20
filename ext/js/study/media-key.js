@@ -30,7 +30,7 @@ const VIDEO_QUERY_KEYS = ['v', 'p', 'id', 'vid', 'ep', 'episode', 'video', 'list
 function parse(url) {
     try {
         const parsed = new URL(url);
-        return ['http:', 'https:'].includes(parsed.protocol) ? parsed : null;
+        return ['http:', 'https:', 'file:'].includes(parsed.protocol) ? parsed : null;
     } catch {
         return null;
     }
@@ -43,9 +43,13 @@ function parse(url) {
 export function mediaKeyOf(url) {
     const parsed = parse(url);
     if (!parsed) { return ''; }
+    if (parsed.protocol === 'file:') {
+        const duration = new URLSearchParams(parsed.hash.slice(1)).get('study-duration');
+        return duration !== null ? `file:${decodeURIComponent(parsed.pathname.split('/').pop())}|${Math.round(Number(duration))}` : '';
+    }
     const host = parsed.hostname.toLowerCase();
     if (YOUTUBE_HOSTS.has(host)) {
-        const id = host === 'youtu.be' ? parsed.pathname.slice(1, 12) : (parsed.pathname.startsWith('/shorts/') ? parsed.pathname.split('/')[2] : parsed.searchParams.get('v'));
+        const id = host === 'youtu.be' ? parsed.pathname.slice(1, 12) : (/^\/(shorts|embed)\//.test(parsed.pathname) ? parsed.pathname.split('/')[2] : parsed.searchParams.get('v'));
         return id && /^[\w-]{11}$/.test(id) ? `youtube:${id}` : '';
     }
     const query = VIDEO_QUERY_KEYS.filter((key) => parsed.searchParams.has(key)).map((key) => `${key}=${parsed.searchParams.get(key)}`).join('&');

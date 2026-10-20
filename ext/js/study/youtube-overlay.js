@@ -314,7 +314,10 @@ export class YoutubeOverlay {
                 const action = /** @type {HTMLButtonElement} */ (button).dataset.action;
                 /** @type {HTMLButtonElement} */ (button).disabled = !['load', 'import', 'dock'].includes(action ?? '') && !loaded;
                 if (action === 'load') { button.textContent = loaded ? '重新载入字幕' : '载入字幕'; }
-                if (action === 'dock') { button.textContent = this._site.dockOpen() ? '收起字幕栏' : '打开字幕栏'; }
+                if (action === 'dock') {
+                    button.hidden = window.self !== window.top && innerWidth < 600;
+                    button.textContent = this._site.dockOpen() ? '收起字幕栏' : '打开字幕栏';
+                }
             }
             const note = this._panel.querySelector('[data-note]');
             if (note) { note.textContent = loaded ? '' : (this._site.kind === 'youtube' ? '还没载入字幕：点「载入字幕」，或用右侧字幕栏。' : '还没载入字幕：点「载入字幕」读取页面字幕（先在播放器里打开 CC），或导入字幕文件。'); }
@@ -361,6 +364,7 @@ export class YoutubeOverlay {
         this._shown = '';
         this._pending = '';
         this._fit();
+        this._hint(!this._reader.session && location.protocol === 'file:' ? '没有字幕' : '', '导入字幕', () => this._reader.pickFile());
         this._applyPrefs();
     }
 
@@ -434,6 +438,7 @@ export class YoutubeOverlay {
         const side = document.createElement('div');
         side.className = 'o-side scan-disable';
         const reveal = sideButton('≡', '在侧栏查看这句', () => this._reader.revealRow(id));
+        reveal.hidden = window.self !== window.top && innerWidth < 600;
         const loop = sideButton('↻', '循环本句', () => this._reader.toggleLoop(id));
         loop.dataset.loop = '';
         side.append(reveal, loop);

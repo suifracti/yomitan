@@ -51,8 +51,10 @@ def source_url(value):
     value = text(value, 2000)
     if value:
         parsed = urllib.parse.urlsplit(value)
+        if parsed.scheme == 'file' and parsed.path.startswith('/') and not parsed.netloc:
+            return value
         if parsed.scheme not in ('https', 'http') or not parsed.netloc or parsed.username or parsed.password:
-            raise ValueError('来源只允许无凭据的 http/https 地址。')
+            raise ValueError('来源只允许无凭据的网页地址或本地 file 地址。')
     return value
 
 
@@ -236,7 +238,7 @@ def _normalize_request(p):
         # Older readers send a YouTube videoId; newer ones send the shared media key.
         if set(p) == {'action', 'videoId'} and isinstance(p['videoId'], str) and re.fullmatch(r'[A-Za-z0-9_-]{11}', p['videoId']):
             return {'action': action, 'mediaKey': 'youtube:' + p['videoId']}
-        if set(p) != {'action', 'mediaKey'} or not isinstance(p['mediaKey'], str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400})', p['mediaKey']):
+        if set(p) != {'action', 'mediaKey'} or not isinstance(p['mediaKey'], str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400}|file:[^\r\n]{1,350}\|[0-9]+)', p['mediaKey']):
             raise ValueError('视频编号无效。')
         return p
     if action == 'libraryVideoSummary':
@@ -394,6 +396,9 @@ def media_key_of(url):
         parsed = urllib.parse.urlsplit(url or '')
     except ValueError:
         return ''
+    if parsed.scheme == 'file':
+        duration = urllib.parse.parse_qs(parsed.fragment).get('study-duration', [''])[0]
+        return 'file:' + urllib.parse.unquote(parsed.path.rsplit('/', 1)[-1]) + '|' + duration if duration.isdigit() else ''
     if parsed.scheme not in ('http', 'https') or not parsed.hostname:
         return ''
     host = parsed.hostname.lower()
@@ -401,7 +406,7 @@ def media_key_of(url):
     if host in YOUTUBE_HOSTS:
         if host == 'youtu.be':
             video = parsed.path[1:12]
-        elif parsed.path.startswith('/shorts/'):
+        elif parsed.path.startswith(('/shorts/', '/embed/')):
             video = (parsed.path.split('/') + [''])[2]
         else:
             video = query.get('v', [''])[0]

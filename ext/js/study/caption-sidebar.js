@@ -205,6 +205,7 @@ export class CaptionList {
  */
 export function learningCaptions(session, words) {
     const learning = new Set();
+    /** @type {Set<string>} */
     const recommended = new Set();
     let total = 0;
     for (const cue of session.cues) {

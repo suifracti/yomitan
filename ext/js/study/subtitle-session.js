@@ -184,7 +184,7 @@ export class SubtitleSession {
         required(source.revision, '来源版本');
         required(source.language, '源语言', 32);
         if (!['provider', 'import', 'fixture'].includes(source.acquisition)) { throw new TypeError('来源获取方式未标明'); }
-        if (source.url && !/^https?:\/\//.test(source.url)) { throw new TypeError('不接受可执行来源链接'); }
+        if (source.url && !/^(https?|file):\/\//.test(source.url)) { throw new TypeError('不接受可执行来源链接'); }
         /** @type {Readonly<SubtitleSource>} */
         this.source = freeze({...source});
         /** @type {SubtitleCue[]} */

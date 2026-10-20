@@ -158,14 +158,20 @@ export class WebVideoSite {
 
     /** @returns {string|null} */
     mediaKey() {
-        return mainVideo() ? (mediaKeyOf(location.href) || null) : null;
+        return mainVideo() ? (mediaKeyOf(this.pageUrl()) || null) : null;
     }
 
     /** @returns {HTMLVideoElement|null} */
     video() { return mainVideo(); }
 
     /** @returns {string} The page itself; other sites have no shared time parameter. */
-    pageUrl() { return location.href.split('#')[0]; }
+    pageUrl() {
+        const video = this.video();
+        if (location.protocol !== 'file:' || !video) { return location.href.split('#')[0]; }
+        const url = new URL(video.currentSrc || video.src || location.href);
+        url.hash = `study-duration=${Math.round(Number.isFinite(video.duration) ? video.duration : 0)}`;
+        return url.href;
+    }
 
     /** @param {string} name */
     remember(name) {
@@ -178,7 +184,7 @@ export class WebVideoSite {
     watch(onChange) {
         let last = '';
         const check = () => {
-            const key = `${location.href}|${mainVideo() ? 1 : 0}`;
+            const key = `${location.href}|${this.mediaKey() ?? ''}`;
             if (key !== last) {
                 last = key;
                 onChange();
@@ -286,6 +292,10 @@ export class WebVideoSite {
      * @returns {boolean} Whether the panel is now open.
      */
     toggleDock(open) {
+        if (window.self !== window.top && innerWidth < 600) {
+            if (this._dock) { this._dock.hidden = true; }
+            return false;
+        }
         if (!this._dock) { this.host(); }
         const dock = /** @type {HTMLElement} */ (this._dock);
         dock.hidden = !(open ?? dock.hidden);

@@ -1171,26 +1171,29 @@ export function prepareStudyService(lookupDictionary = null) {
         }
         // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
         // the video study summary, built from the learner's own saved words for the sender's video.
-        // The reader runs in the top frame of any web page with a video.
-        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary'].includes(studyAction) && sender.id === chrome.runtime.id && sender.frameId === 0 &&
-        /^https?:\/\//.test(sender.url || '')) {
+        // Readers run inside their own web frame, or a top-level local file page.
+        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary'].includes(studyAction) && sender.id === chrome.runtime.id &&
+        (/^https?:\/\//.test(sender.url || '') || (sender.frameId === 0 && /^file:\/\//.test(sender.url || '')))) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
             void (async () => {
                 // A page may read back only the words saved from its own video.
                 if (studyAction === 'libraryVideoWords') {
-                    const own = mediaKeyOf(/** @type {string} */ (sender.url));
                     const asked = /** @type {{mediaKey?: unknown}} */ (data ?? {}).mediaKey;
+                    const own = sender.url?.startsWith('file:') && typeof asked === 'string' && /^file:.+\|[0-9]+$/.test(asked) ? asked : mediaKeyOf(/** @type {string} */ (sender.url));
                     if (!own || asked !== own || Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
                 }
                 // The summary's video URL comes from the sender, never from the page's message.
                 /** @type {Record<string, unknown>} */
                 let forwarded = scoped;
                 if (studyAction === 'libraryVideoSummary') {
-                    const own = mediaKeyOf(/** @type {string} */ (sender.url));
+                    const local = sender.url?.startsWith('file:');
+                    const localUrl = /** @type {{url?: string}} */ (data).url;
+                    const url = local && typeof localUrl === 'string' && localUrl.startsWith('file:') ? localUrl : /** @type {string} */ (sender.url);
+                    const own = mediaKeyOf(url);
                     const {mediaKey, title} = /** @type {{mediaKey?: unknown, title?: unknown}} */ (data ?? {});
-                    if (!own || mediaKey !== own || typeof title !== 'string' || Object.keys(/** @type {object} */ (data ?? {})).length !== 2) { throw new Error('只能为当前视频写小结。'); }
-                    forwarded = {mediaKey: own, url: /** @type {string} */ (sender.url).slice(0, 2000), title: title.slice(0, 300)};
+                    if (!own || mediaKey !== own || typeof title !== 'string' || Object.keys(/** @type {object} */ (data ?? {})).length !== (local ? 3 : 2)) { throw new Error('只能为当前视频写小结。'); }
+                    forwarded = {mediaKey: own, url: url.slice(0, 2000), title: title.slice(0, 300)};
                 }
                 // Only the model and Apple translation go through the local bridge.
                 const {engine} = normalizeSubtitlePrefs(await service.read(SUBTITLE_PREFS_KEY));
