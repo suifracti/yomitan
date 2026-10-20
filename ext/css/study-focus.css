@@ -755,3 +755,55 @@
     .study-card-editor select { padding: 3px 6px; font-size: 12px; line-height: 1.35; }
     .sf-learning-scroll>.study-card-add { padding: 4px 6px; }
 }
+
+/* Word forms: every form is its own chip; hover or focus explains it, a click pins it. */
+.study-focus-active .sf-heading { position: relative; z-index: 3; }
+.sf-heading .sf-forms-preview { position: relative; display: flex; flex-wrap: wrap; gap: 5px; overflow: visible; white-space: normal; line-height: 23px; }
+.sf-heading .sf-forms-preview .sf-form-piece {
+    appearance: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: var(--sf-tint);
+    color: var(--sf-ink);
+    font: inherit;
+    line-height: 21px;
+    cursor: pointer;
+    transition: border-color var(--st-fast), background-color var(--st-fast);
+}
+.sf-heading .sf-forms-preview .sf-form-piece:hover,
+.sf-heading .sf-forms-preview .sf-form-piece[aria-expanded='true'] { border-color: var(--sf-accent); background: var(--st-accent-soft); }
+.sf-form-explain {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 30;
+    box-sizing: border-box;
+    width: min(320px, 100%);
+    padding: 10px 12px;
+    border: 1px solid var(--sf-line);
+    border-radius: var(--st-radius-2);
+    background: var(--st-sheet);
+    box-shadow: var(--st-shadow-2);
+    color: var(--sf-ink);
+    font-size: var(--st-size-1);
+    line-height: 1.6;
+    white-space: normal;
+    text-align: left;
+}
+.sf-form-explain[hidden] { display: none; }
+.sf-form-explain p { margin: 4px 0 0; }
+.sf-form-explain-title strong { font-family: var(--st-serif); font-size: var(--st-size-3); }
+.sf-form-explain-title span { color: var(--sf-muted); }
+.sf-form-explain-sense .sf-gloss-pos { margin-right: 4px; }
+.sf-form-explain-note { color: var(--sf-muted); }
+.sf-form-explain-example { font-family: var(--st-serif); font-size: var(--st-size-2); color: var(--sf-muted); }
+.sf-form-explain-example mark { padding: 0 1px; border-radius: 2px; background: var(--st-mark); color: var(--sf-ink); }
+.study-focus-shell .sf-form-explain .sf-form-explain-more { min-height: 22px; margin-top: 6px; padding: 1px 7px; font-size: 11px; }
+@media (max-height: 350px) {
+    .sf-heading .sf-forms-preview { gap: 4px; line-height: 16px; }
+    .sf-heading .sf-forms-preview .sf-form-piece { line-height: 15px; }
+    .sf-form-explain { padding: 6px 9px; line-height: 1.45; }
+}

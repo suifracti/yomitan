@@ -2,6 +2,7 @@
 import {studyCall} from '../study/study-client.js';
 import {prepareStudyWorkspace} from './study-workspace.js';
 import {updateStudySourcePreview} from './study-translation.js';
+import {explainWordForm, findFormExample} from './study-word-forms.js';
 
 const cleanText = (value) => typeof value === 'string' ? value : '';
 const asArray = (value) => Array.isArray(value) ? value : [];
@@ -269,6 +270,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             return (items.length ? items.map((item) => item.textContent?.trim()).join(' · ') : node.textContent?.trim()) || '';
         }).filter(Boolean).join(' · ');
         let syncFormsPreview = () => {};
+        let disposeForms = () => {};
         if (formText) {
             const repeatedForms = [];
             const formOrigins = [];
@@ -283,22 +285,162 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     if (origin) { formOrigins.push(origin); }
                 }
             }
-            const formsPreview = button('', '在详细词典查看完整词形');
+            // Each form is its own control: hover or focus explains it, a click pins the note.
+            const formsPreview = make('div', 'sf-forms-preview scan-disable');
+            formsPreview.setAttribute('role', 'group');
+            formsPreview.setAttribute('aria-label', '常见词形');
+            const explain = make('div', 'sf-form-explain scan-disable');
+            explain.id = `sf-form-explain-${revision}`;
+            explain.setAttribute('role', 'tooltip');
+            explain.hidden = true;
+            /** @type {?HTMLButtonElement} */
+            let shownPiece = null;
+            let pinned = false;
+            let hideTimer = 0;
+            const senses = () => {
+                const seen = new Set();
+                const list = [];
+                for (const row of shell.querySelectorAll('.sf-gloss-row')) {
+                    const pos = row.querySelector('.sf-gloss-pos')?.textContent?.trim() || '';
+                    const text = row.querySelector('.sf-gloss-text')?.textContent?.trim() || '';
+                    if (text && !seen.has(pos + text)) {
+                        seen.add(pos + text);
+                        list.push({pos, text});
+                    }
+                }
+                return list;
+            };
+            const exampleTexts = function *exampleTexts() {
+                for (const node of dictionaryScroll.querySelectorAll('li, p, div, span')) {
+                    if (node.closest('.sf-dictionary-forms, .sf-dictionary-info') || node.querySelector('li, p, div')) { continue; }
+                    yield node.textContent || '';
+                }
+            };
+            const hideExplain = () => {
+                clearTimeout(hideTimer);
+                explain.hidden = true;
+                pinned = false;
+                shownPiece?.setAttribute('aria-expanded', 'false');
+                shownPiece?.removeAttribute('aria-describedby');
+                shownPiece = null;
+            };
+            /**
+             * @param {HTMLButtonElement} piece
+             * @param {boolean} pin
+             */
+            const showExplain = (piece, pin) => {
+                if (!current()) { return; }
+                clearTimeout(hideTimer);
+                if (shownPiece && shownPiece !== piece) {
+                    shownPiece.setAttribute('aria-expanded', 'false');
+                    shownPiece.removeAttribute('aria-describedby');
+                }
+                shownPiece = piece;
+                pinned = pin || (pinned && explain.dataset.form === piece.dataset.form);
+                piece.setAttribute('aria-expanded', String(pinned));
+                piece.setAttribute('aria-describedby', explain.id);
+                const form = piece.dataset.form || '';
+                const info = explainWordForm(piece.dataset.label || '', word, senses());
+                const head = make('div', 'sf-form-explain-title');
+                head.append(make('strong', '', form), make('span', '', ` · ${word} 的${info.kind}`));
+                const parts = [head];
+                for (const line of info.usage) { parts.push(make('p', 'sf-form-explain-usage', line)); }
+                if (info.sense) {
+                    const sense = make('p', 'sf-form-explain-sense');
+                    sense.append(make('span', 'sf-gloss-pos', info.sense.pos), ` ${info.sense.text}`);
+                    parts.push(sense);
+                } else if (info.missing) {
+                    parts.push(make('p', 'sf-form-explain-note', info.missing));
+                }
+                const example = findFormExample(exampleTexts(), form);
+                if (example) {
+                    const line = make('p', 'sf-form-explain-example');
+                    const at = example.toLocaleLowerCase().indexOf(form.toLocaleLowerCase());
+                    if (at >= 0) {
+                        line.append(example.slice(0, at), make('mark', '', example.slice(at, at + form.length)), example.slice(at + form.length));
+                    } else { line.textContent = example; }
+                    parts.push(line);
+                }
+                const more = button('完整词形 ↗', '在详细词典查看完整词形');
+                more.classList.add('sf-form-explain-more');
+                more.addEventListener('click', () => {
+                    if (!current()) { return; }
+                    hideExplain();
+                    select(1);
+                    dictionaryScroll.scrollTop = 0;
+                });
+                parts.push(more);
+                explain.replaceChildren(...parts);
+                explain.dataset.form = form;
+                explain.hidden = false;
+                const box = formsPreview.getBoundingClientRect();
+                const at = piece.getBoundingClientRect();
+                explain.style.left = `${Math.max(0, Math.min(at.left - box.left, box.width - explain.offsetWidth))}px`;
+            };
+            const scheduleHide = () => {
+                if (pinned) { return; }
+                clearTimeout(hideTimer);
+                hideTimer = window.setTimeout(hideExplain, 160);
+            };
             for (const part of formText.split(' · ')) {
                 const split = part.indexOf('：');
-                const piece = make('span', 'sf-form-piece');
+                const piece = /** @type {HTMLButtonElement} */ (make('button', 'sf-form-piece scan-disable'));
+                piece.type = 'button';
+                piece.setAttribute('aria-expanded', 'false');
                 if (split > 0) {
-                    let label = part.slice(0, split);
+                    const rawLabel = part.slice(0, split);
+                    let label = rawLabel;
                     if (/\p{Script=Han}/u.test(label)) {
                         label = label.replace(/\b(?:pl\.|3sg\.|past\.|p\.p\.|V-ing|comp\.|superl\.)\s*/gi, '').replace(/过去式/g, '过去').replace(/过去分词/g, '分词').replace(/现在分词/g, '进行').replace(/第三人称/g, '三单').replace(/\s*\/\s*/g, '/').trim();
                     }
-                    piece.append(make('span', 'sf-form-name', label), make('strong', '', part.slice(split + 1).trim()));
-                } else { piece.textContent = part; }
+                    const form = part.slice(split + 1).trim();
+                    piece.dataset.label = rawLabel;
+                    piece.dataset.form = form;
+                    piece.setAttribute('aria-label', `${label} ${form}，查看这个词形的用法`);
+                    piece.append(make('span', 'sf-form-name', label), make('strong', '', form));
+                } else {
+                    piece.textContent = part;
+                    piece.dataset.label = '';
+                    piece.dataset.form = part.trim();
+                }
+                piece.addEventListener('mouseenter', () => showExplain(piece, false));
+                piece.addEventListener('mouseleave', scheduleHide);
+                piece.addEventListener('focus', () => showExplain(piece, false));
+                piece.addEventListener('blur', () => {
+                    if (!explain.contains(d.activeElement)) { scheduleHide(); }
+                });
+                piece.addEventListener('click', () => {
+                    if (pinned && shownPiece === piece) {
+                        hideExplain();
+                        return;
+                    }
+                    showExplain(piece, true);
+                });
                 formsPreview.append(piece);
             }
+            explain.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+            explain.addEventListener('mouseleave', scheduleHide);
+            formsPreview.append(explain);
+            /** @param {KeyboardEvent} e */
+            const onFormsKey = (e) => {
+                if (e.key !== 'Escape' || explain.hidden) { return; }
+                const piece = shownPiece;
+                hideExplain();
+                piece?.focus();
+            };
+            /** @param {PointerEvent} e */
+            const onFormsPointer = (e) => {
+                if (!explain.hidden && !formsPreview.contains(/** @type {Node} */ (e.target))) { hideExplain(); }
+            };
+            d.addEventListener('keydown', onFormsKey);
+            d.addEventListener('pointerdown', onFormsPointer);
+            disposeForms = () => {
+                clearTimeout(hideTimer);
+                d.removeEventListener('keydown', onFormsKey);
+                d.removeEventListener('pointerdown', onFormsPointer);
+            };
             for (const node of formNodes) { node.classList.add('sf-forms-original'); }
-            formsPreview.classList.add('sf-forms-preview');
-            formsPreview.title = [formText, ...formOrigins].join('\n');
+            if (formOrigins.length > 0) { formsPreview.title = formOrigins.join('\n'); }
             syncFormsPreview = () => {
                 const fits = formsPreview.scrollWidth <= formsPreview.clientWidth + 1;
                 for (const details of repeatedForms) { details.hidden = fits; }
@@ -307,11 +449,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             requestAnimationFrame(syncFormsPreview);
             window.addEventListener('resize', syncFormsPreview);
             headerSense.before(formsPreview); owned.push(formsPreview);
-            formsPreview.addEventListener('click', () => {
-                if (!current()) { return; }
-                select(1);
-                dictionaryScroll.scrollTop = 0;
-            });
         }
         const resetDictionaryScroll = () => { if (current()) { dictionaryScroll.scrollTop = 0; } };
         entry?.addEventListener('study-dictionary-pagechange', resetDictionaryScroll);
@@ -773,6 +910,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             for (const node of formNodes) { node.classList.remove('sf-forms-original'); }
             entry?.removeEventListener('study-dictionary-pagechange', resetDictionaryScroll);
             window.removeEventListener('resize', syncFormsPreview);
+            disposeForms();
             for (const [node, state] of referenceStates) {
                 node.removeEventListener('toggle', lockReferenceOpen);
                 node.open = state.open; node.hidden = state.hidden;

@@ -54,6 +54,15 @@ settings.
   shadow so its saved/unsaved state stays readable, and the top nav matches
   the library. Apply-then-save and "创建缺少的牌组" behavior is unchanged.
 
+- Follow-up — word forms on the word card are separate chips. Hovering or
+  focusing a chip explains that form (e.g. "bricks · brick 的复数"): what the
+  form is used for, the matching Chinese sense from the card (or a plain note
+  that the card lists no sense for that part of speech), and a dictionary
+  example that uses the exact form when one exists. A click pins the note;
+  Escape or a click elsewhere closes it; "完整词形 ↗" opens the full
+  dictionary as the old forms button did. Rules live in
+  `ext/js/display/study-word-forms.js`; nothing is generated or fetched.
+
 ## Status
 
 All three batches are done. Scheduled resume runs should only verify (fetch,
