@@ -566,34 +566,18 @@
     <section class="settings-category-panel" data-settings-category-panel="ai" hidden>
 <form id="settings-form" class="study-settings-panel">
             <p id="status" role="status" aria-live="polite">正在读取本地设置…</p>
-            <section><h2>模型与速度</h2><p>选择翻译和追问使用的模型。</p>
+<section id="subtitle-settings" class="study-settings-panel" aria-labelledby="subtitle-settings-title">
+            <h2 id="subtitle-settings-title">翻译</h2>
+            <p>字幕、查词卡的「翻译本句」和长句逐段翻译都使用下面的服务，改动立即保存。</p>
+            <label>引擎<select name="subtitle-engine"><option value="chrome">免费引擎</option><option value="apple">Apple</option><option value="model">AI 模型</option></select></label>
+            <label class="check"><input type="checkbox" data-subtitle-pref="autoTranslate">自动翻译字幕和句子</label>
+            <div data-translation-model hidden>
                 <div class="fields"><label>模型<select id="model" name="model"></select></label><label>推理强度<select id="effort" name="effort"></select></label></div>
                 <button type="button" id="load-models">读取 / 刷新可用模型</button><small>查词建议低强度，响应更快。</small>
-            </section>
-            <section><h2>词典 AI 辅助</h2><label class="check"><input type="checkbox" id="autoDictionaryTranslate">查词时自动通过 AI 翻译词典英英首义</label><p>关闭时仅在点击翻译后调用 AI。</p>
-                <div class="settings-group"><div class="settings-item"><div class="settings-item-inner">
-                    <div class="settings-item-left"><div class="settings-item-label">启用造句批改（消耗额度）</div><div class="settings-item-description">只在你点『批改』时调用模型</div></div>
-                    <div class="settings-item-right"><label class="toggle"><input type="checkbox" id="practiceEnabled" aria-label="启用造句批改（消耗额度）"><span class="toggle-body"><span class="toggle-track"></span><span class="toggle-knob"></span></span></label></div>
-                </div></div></div>
-            </section>
-            <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>再次查看时复用已有译文。关闭后会清空缓存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
-            <div class="save-bar"><small id="settings-save-state" class="study-save-state" role="status" aria-live="polite">正在读取本地设置…</small><button type="submit" class="primary">保存设置</button></div>
-        </form>
-<section id="subtitle-settings" class="study-settings-panel" aria-labelledby="subtitle-settings-title">
-            <h2 id="subtitle-settings-title">字幕和句子翻译</h2>
-            <p>字幕、查词卡的「翻译本句」和长句逐段翻译都使用下面的服务，改动立即保存。</p>
-            <fieldset class="subtitle-engines">
-                <legend>翻译服务</legend>
-                <label class="check"><input type="radio" name="subtitle-engine" value="chrome"><span><strong>Chrome 内置翻译</strong> · 免费，在本机运行，不联网发送字幕。第一次使用要下载语言模型：在视频里点一次翻译。</span></label>
-                <label class="check"><input type="radio" name="subtitle-engine" value="apple"><span><strong>Apple 翻译</strong> · 免费，在本机运行。需要本机桥，并在“系统设置 &gt; 通用 &gt; 语言与地区 &gt; 翻译语言”下载英文与简体中文。</span></label>
-                <label class="check"><input type="radio" name="subtitle-engine" value="google"><span><strong>Google 翻译</strong> · 免费网页翻译接口。字幕文字会发送给 Google；偶尔会限流。</span></label>
-                <label class="check"><input type="radio" name="subtitle-engine" value="microsoft"><span><strong>微软翻译</strong> · 免费 Edge 接口。字幕文字会发送给微软；有些网络下不可用。</span></label>
-                <label class="check"><input type="radio" name="subtitle-engine" value="model"><span><strong>你的模型</strong> · 使用上面的模型设置，消耗订阅额度；质量最好，速度最慢。</span></label>
-            </fieldset>
+            </div>
             <div class="library-actions"><button type="button" id="subtitle-engine-test">测试所选服务</button><span id="subtitle-engine-result" role="status" aria-live="polite"></span></div>
             <fieldset class="subtitle-options">
                 <legend>显示与自动化</legend>
-                <label class="check"><input type="checkbox" data-subtitle-pref="autoTranslate">自动翻译字幕和句子</label>
                 <label>提前量（秒）<input type="number" id="subtitle-ahead" min="20" max="300" step="10"></label>
                 <label class="check"><input type="checkbox" data-subtitle-pref="overlay">视频内字幕（替换 YouTube 自带字幕，可直接划词）</label>
                 <label class="check"><input type="checkbox" data-subtitle-pref="bilingual">双语显示</label>
@@ -606,6 +590,15 @@
             </fieldset>
             <small id="subtitle-settings-state" class="study-save-state" role="status" aria-live="polite">正在读取…</small>
         </section>
+            <section><h2>词典 AI 辅助</h2><label class="check"><input type="checkbox" id="autoDictionaryTranslate">查词时自动通过 AI 翻译词典英英首义</label><p>关闭时仅在点击翻译后调用 AI。</p>
+                <div class="settings-group"><div class="settings-item"><div class="settings-item-inner">
+                    <div class="settings-item-left"><div class="settings-item-label">启用造句批改（消耗额度）</div><div class="settings-item-description">只在你点『批改』时调用模型</div></div>
+                    <div class="settings-item-right"><label class="toggle"><input type="checkbox" id="practiceEnabled" aria-label="启用造句批改（消耗额度）"><span class="toggle-body"><span class="toggle-track"></span><span class="toggle-knob"></span></span></label></div>
+                </div></div></div>
+            </section>
+            <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>再次查看时复用已有译文。关闭后会清空缓存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
+            <div class="save-bar"><small id="settings-save-state" class="study-save-state" role="status" aria-live="polite">正在读取本地设置…</small><button type="submit" class="primary">保存设置</button></div>
+        </form>
 <section id="word-mark-settings" class="study-settings-panel" aria-labelledby="word-mark-title">
             <h2 id="word-mark-title">网页生词标色</h2>
             <p>在所有网页上，给你记住过的英文词和搭配加一条很淡的下划线。不改网页文字和排版，输入框、代码和编辑器里不标。所有义项都已会的词不标。</p>

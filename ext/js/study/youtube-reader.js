@@ -27,7 +27,7 @@ import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, 
 import {TranslationQueue} from './translation-queue.js';
 import {WORD_STATUS_KEY} from './study-data.js';
 import {studyCall} from './study-client.js';
-import {YoutubeOverlay, translationSettingsLink, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
+import {YoutubeOverlay, translationEngineSelect, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
@@ -637,7 +637,7 @@ export class YoutubeReader extends EventTarget {
         sourceSelect.dataset.source = '';
         sourceSelect.addEventListener('change', () => { void this._load(generation, sourceSelect.value); });
         source.append(sourceSelect);
-        menu.append(load, resume, retry, source, translationSettingsLink());
+        menu.append(load, resume, retry, source, translationEngineSelect((engine) => this.updatePrefs({engine})));
         for (const [key, label] of toggles) {
             const toggle = document.createElement('label');
             toggle.className = 'r-switch';

@@ -1188,6 +1188,13 @@ export function prepareStudyService(lookupDictionary = null) {
         if (typeof studyAction !== 'string') {
             return false;
         }
+        if (studyAction === 'openStudySettings' && sender.id === chrome.runtime.id &&
+        (/^(?:https?|file):/.test(sender.url || '') || sender.url?.startsWith(chrome.runtime.getURL('')))) {
+            const section = /** @type {{section?: string}} */ (data || {}).section === 'save' ? 'save' : 'ai';
+            void chrome.tabs.create({url: chrome.runtime.getURL(`settings.html#${section}`)}).then(
+                () => reply({ok: true, value: true}), () => reply({ok: false, error: '设置没有打开，请从扩展图标里打开设置。'}));
+            return true;
+        }
         // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
         // the video study summary, built from the learner's own saved words for the sender's video.
         // Readers run inside their own web frame, or a top-level local file page.

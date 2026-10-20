@@ -22,7 +22,6 @@
  * always agree. The English line is ordinary page text registered with the same
  * study context as the sidebar row, so selecting a word opens the existing card.
  */
-import {ENGINE_LABELS} from './free-translators.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {youtubeSite} from './youtube-site.js';
 
@@ -229,7 +228,7 @@ export class YoutubeOverlay {
         isolate(panel);
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
         const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['shadow', '跟读（每句后暂停）']];
-        const engine = translationSettingsLink();
+        const engine = translationEngineSelect((value) => this._reader.updatePrefs({engine: value}));
         engine.classList.add('p-row');
         panel.append(engine);
         for (const [key, label] of toggles) {
@@ -561,9 +560,10 @@ export function offsetControl(reader) {
  * @param {import('./youtube-reader.js').YoutubeReader} reader
  */
 export function syncControls(menu, reader) {
-    for (const link of menu.querySelectorAll('.r-translation-setting')) {
-        link.textContent = reader.prefs.engine === 'model' ? '翻译：你的模型 ↗' : '翻译：免费引擎 ↗';
-        link.setAttribute('title', ENGINE_LABELS[reader.prefs.engine]);
+    for (const select of menu.querySelectorAll('select[data-engine]')) {
+        const picker = /** @type {HTMLSelectElement} */ (select);
+        if (!['apple', 'model'].includes(reader.prefs.engine)) { picker.options[0].value = reader.prefs.engine; }
+        picker.value = reader.prefs.engine;
     }
     for (const select of menu.querySelectorAll('select[data-repeats]')) { /** @type {HTMLSelectElement} */ (select).value = String(reader.prefs.shadowRepeats); }
     for (const output of menu.querySelectorAll('output[data-offset]')) {
@@ -573,15 +573,17 @@ export function syncControls(menu, reader) {
     for (const button of menu.querySelectorAll('[data-offset-step]')) { /** @type {HTMLButtonElement} */ (button).disabled = !reader.session; }
 }
 
-/**
- * A link to the one shared sentence/caption translation setting.
- * @returns {HTMLAnchorElement}
+/** The same global translation choice in both video menus.
+ * @param {(engine: import('./subtitle-prefs.js').SubtitleEngine) => void} onChange
+ * @returns {HTMLLabelElement}
  */
-export function translationSettingsLink() {
-    const link = document.createElement('a');
-    link.className = 'r-translation-setting';
-    link.style.cssText = 'font-size:12px;color:inherit;text-decoration:none';
-    link.href = chrome.runtime.getURL('settings.html#ai'); link.target = '_blank';
-    link.textContent = '翻译：免费引擎 ↗';
-    return link;
+export function translationEngineSelect(onChange) {
+    const label = document.createElement('label'); label.className = 'r-engine';
+    label.append('翻译：');
+    const select = document.createElement('select'); select.dataset.engine = '';
+    for (const [value, text] of [['chrome', '免费引擎'], ['apple', 'Apple'], ['model', 'AI 模型']]) {
+        select.append(Object.assign(document.createElement('option'), {value, textContent: text}));
+    }
+    select.addEventListener('change', () => onChange(/** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (select.value)));
+    label.append(select); return label;
 }

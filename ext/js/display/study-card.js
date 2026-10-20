@@ -785,9 +785,13 @@ export function prepareStudyCard(display, detail = false) {
             if (toolbarTitle) {
                 toolbarTitle.textContent = display.getOptions?.()?.general?.language === 'ja' ? '日语查词' : '英语查词';
             }
-            const settings = toolbar?.querySelector('.study-settings');
+            const settings = /** @type {HTMLAnchorElement|null} */ (toolbar?.querySelector('.study-settings'));
             if (settings) {
-                settings.href = '/settings.html#learning';
+                settings.href = '#';
+                settings.onclick = (event) => {
+                    event.preventDefault();
+                    void studyCall('openStudySettings', {section: 'save'}).catch(() => {});
+                };
                 settings.textContent = '学习设置 ↗';
                 settings.title = '打开学习与保存设置';
             }

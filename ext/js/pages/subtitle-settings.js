@@ -35,9 +35,11 @@ export async function prepareSubtitleSettings(root, {call = studyCall} = {}) {
     const test = /** @type {HTMLButtonElement} */ (section.querySelector('#subtitle-engine-test'));
     /** @param {import('../study/subtitle-prefs.js').SubtitlePrefs} prefs */
     const paint = (prefs) => {
-        for (const radio of section.querySelectorAll('input[name="subtitle-engine"]')) {
-            /** @type {HTMLInputElement} */ (radio).checked = /** @type {HTMLInputElement} */ (radio).value === prefs.engine;
-        }
+        const engine = /** @type {HTMLSelectElement} */ (section.querySelector('select[name="subtitle-engine"]'));
+        if (!['apple', 'model'].includes(prefs.engine)) { engine.options[0].value = prefs.engine; }
+        engine.value = prefs.engine;
+        const model = /** @type {HTMLElement} */ (section.querySelector('[data-translation-model]'));
+        model.hidden = prefs.engine !== 'model';
         for (const box of section.querySelectorAll('input[data-subtitle-pref]')) {
             const key = /** @type {keyof import('../study/subtitle-prefs.js').SubtitlePrefs} */ (/** @type {HTMLInputElement} */ (box).dataset.subtitlePref);
             /** @type {HTMLInputElement} */ (box).checked = Boolean(prefs[key]);

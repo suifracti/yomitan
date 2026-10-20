@@ -40,7 +40,7 @@ test('migrates the old engine once and shares manual sentence translation with a
         reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
         reader.start();
         await vi.waitFor(() => expect(reader.session?.cues.length).toBe(1));
-        expect(document.querySelector('#study-yt-reader select[data-engine]')).toBeNull();
+        expect(document.querySelector('#study-yt-reader select[data-engine]').value).toBe('microsoft');
         const source = document.createElement('div');
         source.innerHTML = '<p>A sentence for learning.</p><button data-study-translate-sentence>翻译本句</button>';
         document.body.append(source);
