@@ -27,6 +27,7 @@ import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, 
 import {TranslationQueue} from './translation-queue.js';
 import {studyCall} from './study-client.js';
 import {YoutubeOverlay, engineSelect, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
+import {CaptionList, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 import {timedUrl} from './media-key.js';
@@ -34,78 +35,10 @@ import {guessLanguage, parseSubtitles, splitBilingual} from './subtitle-formats.
 import {WebVideoSite} from './web-video-site.js';
 import {youtubeSite} from './youtube-site.js';
 
-const ROOT_ID = 'study-yt-reader';
 const STYLE_ID = 'study-yt-reader-style';
 const TOKENS_ID = 'study-yt-reader-tokens';
 const WAIT_MS = 10000;
 
-// Colors come from js/study/study-tokens.css (linked on mount); the fallbacks keep
-// the panel readable if the token sheet has not loaded yet. Everything stays
-// under the panel root so the YouTube page itself is untouched.
-const STYLE = `
-#${ROOT_ID}{--r-fg:var(--st-ink,var(--yt-spec-text-primary,#1f2430));--r-muted:var(--st-muted,var(--yt-spec-text-secondary,#5a6172));--r-line:var(--st-line,var(--yt-spec-10-percent-layer,#e6e3dc));--r-tint:var(--st-tint,#f3f1ec);--r-accent:var(--st-accent,#3b4a8c);--r-mark:var(--st-mark,rgb(255 214 92 / 45%));
-margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var(--st-paper,transparent);color:var(--r-fg);font:14px/1.5 var(--st-sans,Roboto,Arial,sans-serif);overflow:hidden}
-#${ROOT_ID} .r-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 12px}
-#${ROOT_ID} .r-title{flex:1 1 auto;font-weight:600;font-size:13px}
-#${ROOT_ID} .r-status{order:9;flex:1 0 100%;min-width:0;color:var(--r-muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
-#${ROOT_ID} .r-status[data-mode=loop]{color:var(--r-accent)}
-#${ROOT_ID} button.r-btn{font:inherit;font-size:12px;color:var(--r-accent);background:transparent;border:1px solid var(--r-line);border-radius:6px;padding:3px 10px;cursor:pointer;transition:background-color 120ms,border-color 120ms}
-#${ROOT_ID} button.r-btn:hover:not(:disabled){border-color:var(--r-accent);background:var(--r-tint)}
-#${ROOT_ID} button.r-btn:disabled{opacity:.5;cursor:default}
-#${ROOT_ID} button[hidden]{display:none}
-#${ROOT_ID} button:focus-visible{outline:2px solid var(--r-accent);outline-offset:1px}
-#${ROOT_ID} .r-list{position:relative;max-height:min(60vh,520px);overflow:auto;overscroll-behavior:contain;border-top:1px solid var(--r-line)}
-#${ROOT_ID} .r-list:empty{display:none}
-#${ROOT_ID} .r-cue{display:grid;grid-template-columns:46px minmax(0,1fr) auto;column-gap:6px;padding:7px 8px 7px 0;border-left:3px solid transparent}
-#${ROOT_ID} .r-cue.is-current{background:var(--r-tint);border-left-color:var(--r-accent)}
-#${ROOT_ID} .r-cue.is-lookup .r-text{text-decoration:underline 2px var(--r-mark);text-underline-offset:4px}
-#${ROOT_ID} .r-cue.is-looping{border-left-color:var(--r-accent);background:var(--r-tint)}
-#${ROOT_ID} .r-time{grid-column:1;border:0;background:none;padding:0 4px;color:var(--r-muted);font:12px/24px var(--st-sans,Roboto,Arial,sans-serif);font-variant-numeric:tabular-nums;cursor:pointer;text-align:right;align-self:start}
-#${ROOT_ID} .r-time::before{content:attr(data-time)}
-#${ROOT_ID} .r-time:hover{color:var(--r-accent)}
-#${ROOT_ID} .r-text{grid-column:2;margin:0;font-family:var(--st-serif,Georgia,serif);font-size:15px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere;user-select:text}
-#${ROOT_ID} .r-translation{grid-column:2;margin:2px 0 0;color:var(--r-fg);font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
-#${ROOT_ID} .r-translation:empty{display:none}
-#${ROOT_ID} .r-tools{grid-column:3;grid-row:1;align-self:start;display:flex;gap:4px;opacity:0;transition:opacity 120ms}
-#${ROOT_ID} .r-cue:hover .r-tools,#${ROOT_ID} .r-cue.is-current .r-tools,#${ROOT_ID} .r-cue.is-looping .r-tools,#${ROOT_ID} .r-tools:focus-within{opacity:1}
-#${ROOT_ID} .r-loop{font:inherit;font-size:11px;line-height:20px;color:var(--r-muted);background:none;border:1px solid transparent;border-radius:6px;padding:1px 6px;cursor:pointer}
-#${ROOT_ID} .r-loop:hover{color:var(--r-accent);border-color:var(--r-line)}
-#${ROOT_ID} .r-loop[aria-pressed=true]{color:var(--r-accent);border-color:var(--r-accent)}
-#${ROOT_ID} .r-tabs{display:flex;gap:14px;padding:0 12px;border-top:1px solid var(--r-line)}
-#${ROOT_ID} .r-tab{padding:6px 0 5px;border:0;border-bottom:2px solid transparent;background:none;color:var(--r-muted);font:inherit;font-size:12px;cursor:pointer}
-#${ROOT_ID} .r-tab[aria-selected=true]{color:var(--r-fg);border-bottom-color:var(--r-accent);font-weight:600}
-#${ROOT_ID} .r-list[hidden],#${ROOT_ID} .r-words[hidden]{display:none}
-#${ROOT_ID} .r-words{max-height:min(60vh,520px);overflow:auto;border-top:1px solid var(--r-line)}
-#${ROOT_ID} .r-words-note{margin:0;padding:12px;color:var(--r-muted);font-size:12px}
-#${ROOT_ID} .r-word{display:grid;grid-template-columns:46px auto minmax(0,1fr);column-gap:6px;align-items:baseline;padding:7px 8px 7px 0;border-bottom:1px solid var(--r-line)}
-#${ROOT_ID} .r-word-text{font-family:var(--st-serif,Georgia,serif);font-size:15px}
-#${ROOT_ID} .r-word-meta{color:var(--r-muted);font-size:11px;text-align:right}
-#${ROOT_ID} .r-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;color:var(--r-muted);font-size:12px}
-#${ROOT_ID} .r-summary a{color:var(--r-accent)}
-#${ROOT_ID} .r-word-sentence{grid-column:2/-1;margin:2px 0 0;color:var(--r-muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
-#${ROOT_ID} button.r-more{padding:3px 8px;letter-spacing:.1em}
-#${ROOT_ID} .r-menu{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;border-top:1px solid var(--r-line);font-size:12px;color:var(--r-fg)}
-#${ROOT_ID} .r-menu[hidden]{display:none}
-#${ROOT_ID} .r-switch{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
-#${ROOT_ID} .r-switch input{margin:0;accent-color:var(--r-accent)}
-#${ROOT_ID} .r-engine{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
-#${ROOT_ID} .r-engine select{font:inherit;font-size:12px;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:2px 6px}
-#${ROOT_ID} .r-downloads{display:flex;flex-wrap:wrap;gap:6px;flex:1 0 100%}
-#${ROOT_ID} .r-source{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
-#${ROOT_ID} .r-source[hidden]{display:none}
-#${ROOT_ID} .r-offset{display:inline-flex;align-items:center;gap:4px;flex:1 0 100%}
-#${ROOT_ID} .r-offset button{font:inherit;font-size:11px;color:var(--r-accent);background:none;border:1px solid var(--r-line);border-radius:5px;padding:1px 6px;cursor:pointer}
-#${ROOT_ID} .r-offset output{min-width:4.5em;text-align:center;font-variant-numeric:tabular-nums}
-#${ROOT_ID} .r-status[data-mode=shadow]{color:var(--r-accent)}
-#${ROOT_ID} .r-source select{max-width:100%;font:inherit;font-size:12px;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:2px 6px}
-#${ROOT_ID}.is-drop{outline:2px dashed var(--r-accent);outline-offset:-4px}
-#${ROOT_ID}.r-blur .r-translation:not(.is-revealed){filter:blur(5px);cursor:pointer;transition:filter 120ms}
-#${ROOT_ID}.r-blur .r-cue:hover .r-translation{filter:none}
-#${ROOT_ID}.r-mono .r-translation{display:none}
-#${ROOT_ID} .r-cue.is-flash{animation:r-flash 1.2s ease-out}
-@keyframes r-flash{from{background:var(--r-mark)}to{background:transparent}}
-@media (prefers-reduced-motion:reduce){#${ROOT_ID} *{transition:none;animation:none}}
-`;
 
 /**
  * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, resume: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement, words: HTMLElement}} ReaderView
@@ -202,8 +135,10 @@ export class YoutubeReader extends EventTarget {
         this._view = null;
         /** @type {SubtitleSession|null} */
         this._session = null;
-        /** @type {Map<string, HTMLElement>} */
-        this._rows = new Map();
+        /** @type {CaptionList<import('./subtitle-session.js').SubtitleCue>} */
+        this._list = new CaptionList((cue, index) => this._makeRow(cue, index), (id, row) => this._paintRow(id, row));
+        /** @type {Map<string, HTMLElement>} Rows built so far (long tracks build them as needed). */
+        this._rows = this._list.rows;
         /** @type {string} */
         this._active = '';
         /** @type {boolean} */
@@ -342,7 +277,7 @@ export class YoutubeReader extends EventTarget {
      * @param {string} id
      */
     revealRow(id) {
-        const row = this._rows.get(id);
+        const row = this._list.ensure(id);
         const list = this._view?.list;
         if (!row || !list) { return; }
         // On other sites the list sits in a floating panel that may be closed.
@@ -1040,35 +975,12 @@ export class YoutubeReader extends EventTarget {
         this._loop = null;
         this._lookup = '';
         this._session = session;
-        this._rows.clear();
         this._rowInfo.clear();
-        /** @type {HTMLElement[]} */
-        const rows = [];
         for (const [index, cue] of session.cues.entries()) {
-            const row = document.createElement('div');
-            row.className = 'r-cue';
-            row.setAttribute('role', 'listitem');
-            const time = document.createElement('button');
-            time.type = 'button';
-            time.className = 'r-time';
-            // Pseudo-element text keeps timestamps out of the scanned sentence.
-            time.dataset.time = timeLabel(cue.startMs);
-            time.setAttribute('aria-label', `回听 ${timeLabel(cue.startMs)}`);
-            time.addEventListener('click', () => this._seek(cue.id));
-            const text = document.createElement('p');
-            text.className = 'r-text';
-            text.lang = session.source.language;
-            // The newline (pre-line) ends Yomitan's sentence at this caption instead of running into the next row.
-            // Line breaks inside one caption are display wrapping, not sentence ends.
-            text.textContent = `${cue.text.replaceAll(/\s*\n\s*/g, ' ')}\n`;
-            const translated = document.createElement('p');
-            translated.className = 'r-translation scan-disable';
-            translated.lang = 'zh-CN';
-            translated.textContent = session.translation(cue.id);
             // Times are read when used, so a later offset change still captures the right clip.
             /** @type {RowInfo} */
             const info = {
-                text: text.textContent.trimEnd(),
+                text: cue.text.replaceAll(/\s*\n\s*/g, ' ').trimEnd(),
                 context: this._context(session, index),
                 get start() { return Math.max(0, cue.startMs + session.offsetMs) / 1000; },
                 get end() { return Math.max(0, cue.endMs + session.offsetMs) / 1000; },
@@ -1080,24 +992,9 @@ export class YoutubeReader extends EventTarget {
                 },
                 isCurrent: () => this._session === session && this._mediaKey !== null && this._mediaKey === this._site.mediaKey(),
             };
-            youtubeStudyContext.register(text, info);
             this._rowInfo.set(cue.id, info);
-            // Row tools sit outside the sentence node so a lookup never reads their labels.
-            const tools = document.createElement('span');
-            tools.className = 'r-tools scan-disable';
-            const loop = document.createElement('button');
-            loop.type = 'button';
-            loop.className = 'r-loop';
-            loop.textContent = '循环';
-            loop.setAttribute('aria-pressed', 'false');
-            loop.setAttribute('aria-label', `循环本句 ${timeLabel(cue.startMs)}`);
-            loop.addEventListener('click', () => this._toggleLoop(cue.id));
-            tools.append(loop);
-            row.append(time, text, tools, translated);
-            rows.push(row);
-            this._rows.set(cue.id, row);
         }
-        view.list.replaceChildren(...rows);
+        this._list.render(view.list, session.cues);
         view.load.textContent = '重新载入';
         view.translate.hidden = false;
         view.retry.hidden = true;
@@ -1112,6 +1009,64 @@ export class YoutubeReader extends EventTarget {
             this._onTime();
         }
         this._armShadow();
+    }
+
+    /**
+     * Builds one sidebar row; long tracks call this only when the row is needed.
+     * @param {import('./subtitle-session.js').SubtitleCue} cue
+     * @param {number} _index
+     * @returns {HTMLElement}
+     */
+    _makeRow(cue, _index) {
+        const session = /** @type {SubtitleSession} */ (this._session);
+        const info = /** @type {RowInfo} */ (this._rowInfo.get(cue.id));
+        const row = document.createElement('div');
+        row.className = 'r-cue';
+        row.setAttribute('role', 'listitem');
+        const time = document.createElement('button');
+        time.type = 'button';
+        time.className = 'r-time';
+        // Pseudo-element text keeps timestamps out of the scanned sentence.
+        time.dataset.time = timeLabel(cue.startMs);
+        time.setAttribute('aria-label', `回听 ${timeLabel(cue.startMs)}`);
+        time.addEventListener('click', () => this._seek(cue.id));
+        const text = document.createElement('p');
+        text.className = 'r-text';
+        text.lang = session.source.language;
+        // The newline (pre-line) ends Yomitan's sentence at this caption instead of running into the next row.
+        // Line breaks inside one caption are display wrapping, not sentence ends.
+        text.textContent = `${info.text}\n`;
+        youtubeStudyContext.register(text, info);
+        const translated = document.createElement('p');
+        translated.className = 'r-translation scan-disable';
+        translated.lang = 'zh-CN';
+        translated.textContent = session.translation(cue.id) || (this._failed.has(cue.id) ? '翻译未完成：可重试' : '');
+        // Row tools sit outside the sentence node so a lookup never reads their labels.
+        const tools = document.createElement('span');
+        tools.className = 'r-tools scan-disable';
+        const loop = document.createElement('button');
+        loop.type = 'button';
+        loop.className = 'r-loop';
+        loop.textContent = '循环';
+        loop.setAttribute('aria-pressed', 'false');
+        loop.setAttribute('aria-label', `循环本句 ${timeLabel(cue.startMs)}`);
+        loop.addEventListener('click', () => this._toggleLoop(cue.id));
+        tools.append(loop);
+        row.append(time, text, tools, translated);
+        return row;
+    }
+
+    /**
+     * Gives a newly built row the states the controller already holds.
+     * @param {string} id
+     * @param {HTMLElement} row
+     */
+    _paintRow(id, row) {
+        row.classList.toggle('is-current', this._active.split('|').includes(id));
+        row.classList.toggle('is-lookup', this._lookup === id);
+        const looping = this._loop?.id === id;
+        row.classList.toggle('is-looping', looping);
+        row.querySelector('.r-loop')?.setAttribute('aria-pressed', String(looping));
     }
 
     /**
@@ -1226,7 +1181,7 @@ export class YoutubeReader extends EventTarget {
         this._emit('active', {ids: active});
         this._autoTranslate(video.currentTime * 1000);
         if (this._prefs.resume) { this._saveProgress(video.currentTime * 1000); }
-        const first = active.length > 0 ? this._rows.get(active[0]) : void 0;
+        const first = active.length > 0 && this._follow ? this._list.ensure(active[0]) : void 0;
         if (this._follow && first) {
             const list = this._view.list;
             list.scrollTop = Math.max(0, first.offsetTop - list.clientHeight / 3);

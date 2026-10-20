@@ -45,9 +45,17 @@ prepareStudyFocus(window.display,{call:window.mockCall});""")
         await page.wait_for_function('window.ready===true')
         checks=[]
         async def check(name, expression):
-            result=await page.evaluate(expression)
+            # Layout settles over a few frames after drags and resizes; poll instead of one fixed wait.
+            for _ in range(20):
+                result=await page.evaluate(expression)
+                if result:
+                    break
+                await page.wait_for_timeout(100)
             assert result, (name,result)
             checks.append(name)
+        async def settled(selector):
+            # Expanding animates the card; measure handles only once its box stops moving.
+            await page.wait_for_function('''(selector)=>{const r=document.querySelector(selector)?.getBoundingClientRect();if(!r)return false;const key=[r.x,r.y,r.width,r.height].join();const same=window.__settleKey===key;window.__settleKey=key;return same;}''', arg=selector, polling=120, timeout=3000)
         await check('companion is a layout-only wrapper over the original card', '()=>!!document.querySelector(".sf-workspace .sf-main-card .study-focus-shell")')
         await page.wait_for_timeout(100)
         await check('default 250px popup can grow to its content before manual resizing', '()=>innerHeight>300')
@@ -92,10 +100,12 @@ prepareStudyFocus(window.display,{call:window.mockCall});""")
         await page.keyboard.press('Escape')
         await check('Escape collapses only companion, not main learning object', '()=>document.querySelector(".sf-dictionary-card").classList.contains("sf-pane-collapsed")&&document.querySelector(".study-focus-shell").isConnected&&document.querySelector(".study-followup").value==="Keep this unsent draft"')
         await page.get_by_role('button',name='展开词典卡',exact=True).click()
+        await settled('.sf-dictionary-card')
         handle=page.get_by_role('button',name='调整词典卡大小',exact=True)
         box=await handle.bounding_box(); await page.mouse.move(box['x']+5,box['y']+5); await page.mouse.down(); await page.mouse.move(box['x']+75,box['y']+35,steps=5); await page.mouse.up()
         await page.wait_for_timeout(100)
         await check('dictionary resize does not change main preferred width', '()=>{const m=document.querySelector(".sf-main-card").getBoundingClientRect(),d=document.querySelector(".sf-dictionary-card").getBoundingClientRect();return d.width>m.width+30;}')
+        await settled('.sf-main-card')
         main_handle=page.get_by_role('button',name='调整主卡大小',exact=True)
         box=await main_handle.bounding_box(); await page.mouse.move(box['x']+5,box['y']+5); await page.mouse.down(); await page.mouse.move(box['x']+50,box['y']+25,steps=5); await page.mouse.up()
         await page.wait_for_timeout(100)
