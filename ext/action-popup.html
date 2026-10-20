@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Yomitan Action Popup</title>
+    <title>英语学习</title>
     <link rel="icon" type="image/png" href="/images/icon16.png" sizes="16x16">
     <link rel="icon" type="image/png" href="/images/icon19.png" sizes="19x19">
     <link rel="icon" type="image/png" href="/images/icon32.png" sizes="32x32">
@@ -12,63 +12,36 @@
     <link rel="icon" type="image/png" href="/images/icon64.png" sizes="64x64">
     <link rel="icon" type="image/png" href="/images/icon128.png" sizes="128x128">
     <link rel="stylesheet" type="text/css" href="/css/material.css">
+    <link rel="stylesheet" type="text/css" href="/js/study/study-tokens.css">
     <link rel="stylesheet" type="text/css" href="/css/action-popup.css">
     <script src="/js/pages/action-popup-main.js" type="module"></script>
     <script src="/js/pages/common/zh-cn-ui.js" type="module"></script>
 </head>
 <body>
     <div id="loading">
-        Loading...
+        正在打开…
     </div>
     <div id="action-popup">
         <div class="action-container action-select-profile" hidden>
             <div class="action-item-left">
-                <h2 class="action-title">Profile</h2>
+                <h2 class="action-title">配置</h2>
             </div>
             <div class="action-item-right">
                 <select tabindex="0"  class="profile-select" id="profile-select">
                 </select>
             </div>
         </div>
-        <div class="action-container">
-            <div class="action-item-center">
-                <label class="toggle">
-                    <input tabindex="0" type="checkbox" class="enable-search">
-                    <div class="toggle-group">
-                        <span class="toggle-on">On</span>
-                        <span class="toggle-off">Off</span>
-                        <span class="toggle-handle"></span>
-                    </div>
-                </label>
-                <p class="tooltip">Hover over text to scan</p>
-            </div>
+        <header class="action-heading">
+            <h1>英语学习</h1>
+            <label class="toggle"><input type="checkbox" class="enable-search" aria-label="划词查询"><span class="toggle-body"><span class="toggle-track"></span><span class="toggle-knob"></span></span></label>
+        </header>
+        <p class="scan-state" role="status">正在读取设置…</p>
+        <p class="tooltip">按住 Ctrl，鼠标移到单词上即可查询</p>
+        <div class="action-buttons">
+            <a class="action-open-study-library" href="/study-library.html" target="_blank"><strong>学习库</strong><span id="action-today" hidden></span></a>
+            <a class="action-open-settings" href="/settings.html">设置</a>
         </div>
-        <div class="action-container action-buttons">
-            <button tabindex="0" type="button" class="low-emphasis action-open-search" title="查词 / Search&#010;Shift+click to open here" aria-label="查词" data-hotkey='["global:openSearchPage","title","Search ({0})\nShift+click to open here"]'>
-                <div class="action-icon">
-                    <span class="icon" data-icon="magnifying-glass"></span>
-                </div>
-                <span class="action-label">查词</span>
-            </button>
-            <button tabindex="0" type="button" class="low-emphasis action-open-study-library" title="学习库" aria-label="打开学习库">
-                <div class="action-icon">
-                    <span class="icon" data-icon="note-card"></span>
-                </div>
-                <span class="action-label">学习库</span>
-            </button>
-            <button tabindex="0" type="button" class="low-emphasis action-open-settings" title="设置" aria-label="设置" data-hotkey='["global:openSettingsPage","title","Settings ({0})"]'>
-                <div class="action-icon">
-                    <span class="icon" data-icon="cog"></span>
-                </div>
-                <span class="action-label">设置</span>
-            </button>
-            <button tabindex="0" type="button" class="low-emphasis action-open-info" title="Information" aria-label="帮助" data-hotkey='["global:openInfoPage","title","Information ({0})"]'>
-                <div class="action-icon">
-                    <span class="icon" data-icon="question-mark-circle"></span>
-                </div>
-                <span class="action-label">帮助</span>
-            </button>
-        </div>
+        <footer><a class="action-open-info" href="/info.html">帮助 ↗</a></footer>
     </div>
 </body>
 </html>

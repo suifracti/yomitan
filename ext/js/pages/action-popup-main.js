@@ -21,8 +21,9 @@ import {Application} from '../application.js';
 import {getAllPermissions, hasRequiredPermissionsForOptions} from '../data/permissions-util.js';
 import {HotkeyHelpController} from '../input/hotkey-help-controller.js';
 import {HotkeyUtil} from '../input/hotkey-util.js';
+import {studyCall} from '../study/study-client.js';
 
-class DisplayController {
+export class DisplayController {
     /**
      * @param {import('../comm/api.js').API} api
      */
@@ -48,10 +49,8 @@ class DisplayController {
 
         this._showExtensionInfo(manifest);
         void this._setupEnvironment();
-        this._setupButtonEvents('.action-open-search', 'openSearchPage', chrome.runtime.getURL('/search.html'), this._onSearchClick.bind(this));
-        document.querySelector('.action-open-study-library')?.addEventListener('click', () => {
-            window.open(chrome.runtime.getURL('/study-library.html'), '_blank');
-        });
+
+        void this._updateToday();
         this._setupButtonEvents('.action-open-info', 'openInfoPage', chrome.runtime.getURL('/info.html'));
 
         const optionsFull = await this._api.optionsGetFull();
@@ -104,24 +103,21 @@ class DisplayController {
             modifierKeys[value] = name;
         }
 
-        for (let i = 0; i < modifierKeyHint.length; i++) {
-            modifierKeyHint[i].textContent = currentModifierKey ? 'Hold ' : 'Hover over text to scan';
-            if (currentModifierKey) {
-                const em = document.createElement('em');
-                em.textContent = modifierKeys[currentModifierKey];
-                modifierKeyHint[i].appendChild(em);
-                modifierKeyHint[i].appendChild(document.createTextNode(' to scan'));
-            }
+        const keys = currentModifierKey.split(/[,\s]+/).filter(Boolean).map((key) => modifierKeys[key] || key)
+            .join(' + ');
+        for (const hint of modifierKeyHint) {
+            hint.textContent = keys ? `按住 ${keys}，鼠标移到单词上即可查询` : '鼠标移到单词上即可查询';
         }
     }
 
-    /**
-     * @param {MouseEvent} e
-     */
-    _onSearchClick(e) {
-        if (!e.shiftKey) { return; }
-        e.preventDefault();
-        location.href = '/search.html?action-popup=true';
+    /** */
+    async _updateToday() {
+        const node = document.querySelector('#action-today');
+        try {
+            const today = /** @type {{due: number, paused?: boolean}} */ (await studyCall('ankiToday'));
+            node.hidden = today.paused === true;
+            node.textContent = today.paused ? '' : `今天 ${today.due} 张`;
+        } catch { node.hidden = true; }
     }
 
     /**
@@ -234,12 +230,16 @@ class DisplayController {
      */
     _setupOptions({options}) {
         const extensionEnabled = options.general.enable;
-        const onToggleChanged = () => this._api.commandExec('toggleTextScanning');
+        const showState = (enabled) => { document.querySelector('.scan-state').textContent = enabled ? '划词查询已开启' : '已暂停'; };
+        showState(extensionEnabled);
         for (const toggle of /** @type {NodeListOf<HTMLInputElement>} */ (document.querySelectorAll('.enable-search,.enable-search2'))) {
             if (toggle.checked !== extensionEnabled) {
                 toggle.checked = extensionEnabled;
             }
-            toggle.addEventListener('change', onToggleChanged, false);
+            toggle.onchange = () => {
+                showState(toggle.checked);
+                void this._api.commandExec('toggleTextScanning');
+            };
         }
         void this._updateDisplayModifierKey();
         void this._updateDictionariesEnabledWarnings(options);
@@ -346,8 +346,9 @@ class DisplayController {
 
         if (enabledCount === 0) {
             for (let i = 0; i < tooltip.length; i++) {
-                tooltip[i].innerHTML = 'No dictionary enabled';
+                tooltip[i].innerHTML = '<a class="action-open-dictionaries">还没有启用词典，点这里去设置</a>';
                 tooltip[i].classList.add('enable-dictionary-tooltip');
+                this._setupButtonEvents('.action-open-dictionaries', null, chrome.runtime.getURL('/settings.html#dictionaries'));
             }
         }
     }
@@ -361,7 +362,7 @@ class DisplayController {
 
         const tooltip = document.querySelectorAll('.tooltip');
         for (let i = 0; i < tooltip.length; i++) {
-            tooltip[i].innerHTML = '<a class="action-open-permissions">Please enable permissions</a>';
+            tooltip[i].innerHTML = '<a class="action-open-permissions">还需要查询权限，点这里开启</a>';
         }
         this._setupButtonEvents('.action-open-permissions', null, chrome.runtime.getURL('/permissions.html'));
     }
