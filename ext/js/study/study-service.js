@@ -1195,6 +1195,17 @@ export function prepareStudyService(lookupDictionary = null) {
                 () => reply({ok: true, value: true}), () => reply({ok: false, error: '设置没有打开，请从扩展图标里打开设置。'}));
             return true;
         }
+        if (studyAction === 'openStudyRecord' && sender.id === chrome.runtime.id && /^(?:https?|file):/.test(sender.url || '')) {
+            const row = /** @type {{id?: string, word?: string, sentence?: string}} */ (data || {});
+            if (!/^[a-f0-9]{32}$/.test(row.id || '') || !row.word || row.word.length > 128 || !row.sentence || row.sentence.length > 2400) {
+                reply({ok: false, error: '这条记录没有读完整，请重新打开这个页签。'}); return false;
+            }
+            const params = new URLSearchParams({query: row.word, full: row.sentence, studyRecordId: row.id,
+                studyResume: '1', studyAddCard: '1'});
+            void chrome.tabs.create({url: chrome.runtime.getURL('search.html') + '?' + params.toString()}).then(
+                () => reply({ok: true, value: true}), () => reply({ok: false, error: '词卡没有打开，请从学习库里点「制卡」。'}));
+            return true;
+        }
         // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
         // the video study summary, built from the learner's own saved words for the sender's video.
         // Readers run inside their own web frame, or a top-level local file page.

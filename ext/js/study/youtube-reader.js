@@ -27,6 +27,7 @@ import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, 
 import {TranslationQueue} from './translation-queue.js';
 import {WORD_STATUS_KEY} from './study-data.js';
 import {studyCall} from './study-client.js';
+import {wordForms} from './word-marks.js';
 import {YoutubeOverlay, translationEngineSelect, offsetControl, repeatSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
@@ -501,14 +502,18 @@ export class YoutubeReader extends EventTarget {
 
     /** Open the existing lookup with this exact caption as its context.
      * @param {string} id
+     * @param {string} [word]
+     * @param {boolean} [openPanel]
      */
-    async lookupCaption(id) {
+    async lookupCaption(id, word = '', openPanel = false) {
         const text = this._list.ensure(id)?.querySelector('.r-text');
         const info = this._rowInfo.get(id);
         if (!text?.firstChild || !info || !youtubeStudyContext.openCard) { this._status('词卡还没准备好，请刷新页面后再试。'); return; }
         const range = document.createRange();
-        range.setStart(text.firstChild, 0); range.setEnd(text.firstChild, info.text.length);
-        await youtubeStudyContext.openCard(range, false);
+        const match = word ? [...info.text.matchAll(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)].find((m) => wordForms(m[0]).includes(word.toLowerCase())) : null;
+        if (word && !match) { return false; }
+        range.setStart(text.firstChild, match?.index ?? 0); range.setEnd(text.firstChild, match ? match.index + match[0].length : info.text.length);
+        await youtubeStudyContext.openCard(range, openPanel); return true;
     }
 
     /**
@@ -714,7 +719,7 @@ export class YoutubeReader extends EventTarget {
         words.hidden = true;
         /** @type {HTMLButtonElement[]} */
         const tabButtons = [];
-        for (const [name, label] of [['captions', '字幕'], ['words', '本视频生词']]) {
+        for (const [name, label] of [['captions', '字幕'], ['words', '我在这个视频记的词']]) {
             const tab = document.createElement('button');
             tab.type = 'button';
             tab.className = 'r-tab';
@@ -1412,7 +1417,7 @@ export class YoutubeReader extends EventTarget {
         const title = document.createElement('strong'); title.textContent = '推荐制卡';
         section.append(title);
         if (this._recommendationItems.length === 0) {
-            section.append(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '这个视频里暂时没有适合制卡的句子'}));
+            section.append(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '暂时没有：至少要有一个还在学的词出现在字幕里'}));
         }
         for (const item of this._recommendationItems) {
             const info = this._rowInfo.get(item.cueId);
@@ -1448,6 +1453,14 @@ export class YoutubeReader extends EventTarget {
         return section;
     }
 
+    /** @param {{id: string, word: string, sentence: string}} item */
+    async _openSavedWord(item) {
+        const normalize = (text) => text.replaceAll(/\s+/g, ' ').trim().toLowerCase();
+        const cue = this._session?.cues.find((row) => normalize(row.text) === normalize(item.sentence));
+        if (cue && await this.lookupCaption(cue.id, item.word, true)) { return; }
+        await this._call('openStudyRecord', {id: item.id, word: item.word, sentence: item.sentence});
+    }
+
     /**
      * Lists the words already saved from this video; clicking one returns to its moment.
      * @returns {Promise<void>}
@@ -1460,7 +1473,8 @@ export class YoutubeReader extends EventTarget {
         const recommended = this._recommendations();
         recommended.replaceChildren('正在挑选适合制卡的句子…');
         const saved = document.createElement('div');
-        view.words.replaceChildren(recommended, saved);
+        const note = Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '看视频时点过『记住它』的词。点时间可以回到那一刻。'});
+        view.words.replaceChildren(note, recommended, saved);
         saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
             const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
@@ -1475,7 +1489,7 @@ export class YoutubeReader extends EventTarget {
             // One explicit button writes a short study summary into this video's Obsidian note.
             const summary = document.createElement('div');
             summary.className = 'r-summary scan-disable';
-            const write = this._button('写入视频笔记', (event) => {
+            const write = this._button('生成学习小结（存到 Obsidian）', (event) => {
                 // Only a real click by the learner; page scripts cannot press it for them.
                 if (event?.isTrusted === false) { return; }
                 void this.writeSummary();
@@ -1483,7 +1497,8 @@ export class YoutubeReader extends EventTarget {
             write.title = '在 Obsidian 的视频记录里写入（或更新）本视频的学习小结；只改小结那一段';
             const summaryState = document.createElement('span');
             summaryState.setAttribute('role', 'status');
-            summary.append(write, summaryState);
+            const explanation = Object.assign(document.createElement('small'), {className: 'r-summary-help', textContent: '把这个视频里记的词、原句和时间链接，整理成一页笔记'});
+            summary.append(write, explanation, summaryState);
             saved.replaceChildren(summary, ...items.map((item) => {
                 const row = document.createElement('div');
                 row.className = 'r-word';
@@ -1491,7 +1506,8 @@ export class YoutubeReader extends EventTarget {
                 time.type = 'button';
                 time.className = 'r-time';
                 const seconds = typeof item.videoTime === 'number' ? item.videoTime : null;
-                time.dataset.time = seconds === null ? '—' : timeLabel(seconds * 1000);
+                time.dataset.time = seconds === null ? '' : timeLabel(seconds * 1000);
+                time.hidden = seconds === null;
                 time.setAttribute('aria-label', seconds === null ? `${item.word}（无时间）` : `回到 ${item.word} 的原句`);
                 time.disabled = seconds === null;
                 time.addEventListener('click', () => {
@@ -1506,7 +1522,11 @@ export class YoutubeReader extends EventTarget {
                 meta.className = 'r-word-meta';
                 // With sense-level records (roadmap B8) each sense is its own row.
                 const sense = typeof item.sense?.gloss === 'string' && item.sense.gloss ? `义项「${item.sense.gloss.slice(0, 20)}」 · ` : '';
-                meta.textContent = sense + (item.cards > 0 ? `${item.cards} 张卡${item.stage ? ` · 到第 ${item.stage} 阶段` : ''}` : '只记了笔记');
+                meta.textContent = sense + (item.cards > 0 ? `已制 ${item.cards} 张卡` : '还没制卡');
+                if (item.cards === 0) {
+                    const card = this._button('制卡', () => { void this._openSavedWord(item).catch(() => this._status('词卡没有打开，请再试一次。')); });
+                    card.dataset.savedCard = ''; meta.append(' ', card);
+                }
                 const sentence = document.createElement('p');
                 sentence.className = 'r-word-sentence';
                 sentence.textContent = item.sentence;
@@ -1540,8 +1560,8 @@ export class YoutubeReader extends EventTarget {
             if (generation !== this._generation) { return; }
             const open = document.createElement('a');
             open.href = result.openUrl;
-            open.textContent = '在 Obsidian 打开';
-            state.replaceChildren(`已写入 ${result.words} 个词、${result.cards} 张卡的小结 · `, open);
+            open.textContent = '打开笔记 ↗';
+            state.replaceChildren('已保存 · ', open);
         } catch (error) {
             if (generation === this._generation) { state.textContent = `没有写入：${error instanceof Error ? error.message : String(error)}`; }
         } finally {

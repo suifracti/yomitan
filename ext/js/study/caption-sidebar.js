@@ -96,6 +96,7 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-word-text{font-family:var(--st-serif,Georgia,serif);font-size:15px}
 #${ROOT_ID} .r-word-meta{color:var(--r-muted);font-size:11px;text-align:right}
 #${ROOT_ID} .r-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;color:var(--r-muted);font-size:12px}
+#${ROOT_ID} .r-summary-help{flex-basis:100%;color:var(--r-muted)}
 #${ROOT_ID} .r-summary a{color:var(--r-accent)}
 #${ROOT_ID} .r-word-sentence{grid-column:2/-1;margin:2px 0 0;color:var(--r-muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 #${ROOT_ID} button.r-more{padding:3px 8px;letter-spacing:.1em}

@@ -51,6 +51,6 @@ test('recommends distinct content words with glosses, skips carded contexts, and
         expect(lookup).toHaveBeenCalledOnce();
         saved.push(...texts.slice(0, 2).map((sentence) => ({word: 'successful', sentence, cards: 1})));
         await reader._loadWords();
-        expect(reader._view.words.querySelector('.r-recommend').textContent).toContain('这个视频里暂时没有适合制卡的句子');
+        expect(reader._view.words.querySelector('.r-recommend').textContent).toContain('暂时没有：至少要有一个还在学的词出现在字幕里');
     } finally { reader._reset(); youtubeStudyContext.openCard = null; vi.unstubAllGlobals(); await env.teardown(global); }
 });
