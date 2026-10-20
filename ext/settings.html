@@ -654,14 +654,15 @@
                     <small>请保持 Anki 与 AnkiConnect 运行；创建操作不生成卡片。</small>
                 </div></details>
                 <label class="check"><input type="checkbox" id="library-anki-enabled">启用 Anki 制卡与同步（不自动制卡）</label>
-                <div class="fields"><label>大牌组名称<input id="library-parent-deck" type="text" placeholder="外语" maxlength="180"></label><div class="library-actions"><button id="library-use-subdecks" type="button">套用三个子牌组</button></div></div>
+                <div class="fields"><label>大牌组名称<input id="library-parent-deck" type="text" placeholder="外语" maxlength="180"></label><div class="library-actions"><button id="library-use-subdecks" type="button">套用四个子牌组</button></div></div>
                 <div class="deck-routing">
                     <div class="fields">
                         <label>单词意思<select id="library-deck-meaning"></select></label>
                         <label>原句中的意思<select id="library-deck-context"></select></label>
                         <label>视频声音字幕<select id="library-deck-listening"></select></label>
+                        <label>会用（产出）<select id="library-deck-produce"></select></label>
                     </div>
-                    <small>三个子牌组归在同一大牌组下；制卡按类型分流，也可单张修改。</small>
+                    <small>四个子牌组归在同一大牌组下；制卡按类型和阶段分流（① 认得→单词意思，② 理解→原句中的意思，③ 会用→会用），也可单张修改。</small>
                     <div class="library-actions"><button type="button" id="library-create-deck">创建缺少的牌组</button></div>
                 </div>
                 <details class="deck-routing-details"><summary>其他类型与兼容设置</summary><div>

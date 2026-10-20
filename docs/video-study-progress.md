@@ -36,6 +36,7 @@ media, the note format and automatic two-way sync.
     and automatic translation are wired in batch 2.
 
 - Batch 2 — caption translation services and automation.
+
   - The background reads the service from `studySubtitlePrefs` (never from the
     page) in `subtitle-translation.js`; cache keys are namespaced per service
     (`subtitle:<engine>:…`, the model keeps its original keys).
@@ -65,9 +66,29 @@ media, the note format and automatic two-way sync.
     installer's `install-metadata.json` was already stale for several files
     before this batch (direct syncs); a full reinstall will need it refreshed.
 
+- Batch 3 — card types by stage and mastery.
+  - `ext/js/display/study-card-kinds.js`: 12 kinds in three stages (① 认得:
+    meaning, listen-meaning, form-recognize; ② 理解: context, sentence,
+    listening; ③ 会用: produce, cloze, form-produce, make-sentence,
+    expression, spelling), prerequisites (sentence, audio, forms, translation),
+    draft texts, recommendations per mastery and deck routing (new kinds use
+    their stage's subdeck; ③ goes to the new `produce` subdeck).
+  - Card panel (`study-library.js`): mastery picker (完全不会 / 有印象/模糊 /
+    认识但不会用) pre-drafts the recommended cards once; stage-grouped type
+    buttons explain missing prerequisites. Nothing is sent before 添加已选卡片.
+  - Back end: `libraryCardsAdd` accepts optional `mastery`; records keep it,
+    the note gets a 掌握程度 line, cards get `study_stage::N` and
+    `study_mastery::…` tags. For 认识但不会用, newly created stage-1 cards are
+    moved 3–7 days out with AnkiConnect `setDueDate`; existing cards are never
+    rescheduled. Audio is required for every audio kind.
+  - Settings: fourth subdeck 会用（产出）; "套用四个子牌组".
+  - The upgrade reminder (stage ①/② cards with long intervals) depends on the
+    automatic sync reading intervals and lands with batch 5.
+
 ## Next
 
-- Batch 3 — card types by stage, mastery at save, tags and scheduling.
+- Batch 4 — video card linkage (video context strip, replay clip), media
+  (screenshot, optional sentence video clip), this video's words.
 
 ## Not verified
 

@@ -209,7 +209,9 @@ def _normalize_request(p):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
         return p
-    if action == 'libraryCardsAdd' and set(p) == {'action', 'id', 'cards'}:
+    if action == 'libraryCardsAdd' and set(p) in ({'action', 'id', 'cards'}, {'action', 'id', 'cards', 'mastery'}):
+        if 'mastery' in p and p['mastery'] not in ('none', 'vague', 'known'):
+            raise ValueError('掌握程度无效。')
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']) or not isinstance(p['cards'], list) or not 1 <= len(p['cards']) <= 10:
             raise ValueError('手动卡片请求无效。')
         seen = set()
@@ -815,6 +817,10 @@ class StudyLibrary:
                     raise ValueError('卡片读回不同，请人工确认，不覆盖已有卡。')
                 if not found and any(info[0]['fields'].get(k, {}).get('value') != fields[k] for k in ('Audio', 'Image')):
                     raise ValueError('Anki 媒体字段读回不同，请人工确认。')
+                if not found:
+                    note = study_sync.schedule_new_card(self, r, card, info[0])
+                    if note:
+                        card['schedule'] = note
                 actual_deck = study_sync._actual_deck(self, info[0], card['target'].get('deck', self.deck))
                 card['target']['deck'] = actual_deck
                 card['deck'] = actual_deck

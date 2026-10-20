@@ -190,7 +190,7 @@ async function initializeStudySettings(root) {
     /** @typedef {LibraryTarget & {decks?: string[], deckByKind?: Record<string, string>, message?: string, error?: string, status?: {vaultExists?: boolean, directoryExists?: boolean, saveAvailable?: boolean, saveMessage?: string, ankiConnected?: boolean, deckExists?: boolean, modelExists?: boolean, modelCompatible?: boolean}}} LibrarySettingsResult */
     const libraryStatus = /** @type {HTMLElement} */ (root.querySelector('#library-status'));
     const libraryDeck = /** @type {HTMLSelectElement} */ (root.querySelector('#library-deck'));
-    const libraryKinds = ['meaning', 'context', 'expression', 'grammar', 'sentence', 'listening'];
+    const libraryKinds = ['meaning', 'context', 'expression', 'grammar', 'sentence', 'listening', 'produce'];
     /** @type {LibraryTarget | null} */
     let librarySaved = null;
     /** @type {string[]} */
@@ -265,7 +265,7 @@ async function initializeStudySettings(root) {
         }
         if (![...libraryDeck.options].some((item) => item.value === parent)) { option(libraryDeck, parent, parent); }
         libraryDeck.value = parent;
-        for (const [kind, label] of [['meaning', '单词意思'], ['context', '原句中的意思'], ['listening', '视频声音字幕']]) {
+        for (const [kind, label] of [['meaning', '单词意思'], ['context', '原句中的意思'], ['listening', '视频声音字幕'], ['produce', '会用']]) {
             const select = /** @type {HTMLSelectElement} */ (root.querySelector(`#library-deck-${kind}`));
             const name = `${parent}::${label}`;
             if (![...select.options].some((item) => item.value === name)) { option(select, name, name); }
@@ -273,7 +273,7 @@ async function initializeStudySettings(root) {
         }
         showNewDeck();
         if (librarySaveState) { librarySaveState.textContent = '待保存'; }
-        libraryStatus.textContent = '已填入三个子牌组；点击“保存目标”生效，再按需“创建缺少的牌组”。已有卡片不移动。';
+        libraryStatus.textContent = '已填入四个子牌组；点击“保存目标”生效，再按需“创建缺少的牌组”。已有卡片不移动。';
     });
 
     /** @param {LibrarySettingsResult} result */

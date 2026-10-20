@@ -810,3 +810,18 @@
     .sf-heading .sf-forms-preview .sf-form-piece { line-height: 15px; }
     .sf-form-explain { padding: 6px 9px; line-height: 1.45; }
 }
+
+/* Card types grouped by stage; mastery pre-selects the recommended ones. */
+.study-card-add .study-card-type-choices { display: grid; gap: 6px; }
+.study-card-stage { display: flex; align-items: flex-start; gap: 5px; }
+.study-card-stage-items { display: flex; flex: 1; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.study-card-stage-label { line-height: 26px; }
+.study-card-stage-label { flex: 0 0 52px; color: var(--sf-muted); font-size: 11px; font-weight: 600; }
+.study-card-type-choices button.is-recommended { border-color: var(--sf-accent); background: var(--st-accent-soft); }
+.study-card-mastery { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 0 0 8px; }
+.study-card-mastery>span { flex: 0 0 52px; color: var(--sf-muted); font-size: 11px; font-weight: 600; }
+.study-card-mastery button { padding: 3px 10px; border: 1px solid var(--sf-line); border-radius: 999px; background: var(--sf-paper); color: var(--sf-ink); font: inherit; font-size: var(--st-size-1); cursor: pointer; }
+.study-card-mastery button[aria-checked='true'] { border-color: var(--sf-accent); background: var(--sf-accent); color: var(--st-accent-ink); }
+@media (max-height: 350px) {
+    .study-card-stage-label, .study-card-mastery>span { flex-basis: 44px; font-size: 10px; }
+}

@@ -18,6 +18,8 @@
 
 import {SAVE_TARGETS_KEY} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
+import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
+import {explainWordForm} from './study-word-forms.js';
 
 /**
  * @param {unknown} value
@@ -73,19 +75,13 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     cardPanel.className = 'study-card-add';
     cardPanel.hidden = true;
     cardPanel.setAttribute('aria-label', '选择学习内容并制卡');
-    const cardKinds = [
-        ['meaning', '单词意思'],
-        ['context', '原句中的意思'],
-        ['expression', '表达'],
-        ['grammar', '语法'],
-        ['sentence', '句子'],
-        ['listening', '听力'],
-    ];
+    /** @type {[string, string][]} */
+    const cardKinds = [...CARD_KINDS.map((info) => /** @type {[string, string]} */ ([info.kind, info.label])), ['grammar', '语法']];
     const choices = d.createElement('div');
     choices.className = 'study-card-type-choices';
     const choiceHint = d.createElement('p');
     choiceHint.className = 'study-card-choice-hint';
-    choiceHint.textContent = '选一种或多种，确认正反面后再制卡。';
+    choiceHint.textContent = '先选掌握程度会自动勾上推荐的卡；也可以自己选，确认正反面后再制卡。';
     /** @type {import('study').SaveTargetSettings | undefined} */
     let cardSettings;
     if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
@@ -97,39 +93,95 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             }
         });
     }
+    /** @returns {import('./study-card-kinds.js').CardFacts} */
+    const cardFacts = () => {
+        const entry = getEntry();
+        const word = entry.word.trim();
+        const rawSentence = entry.sentence?.trim() || '';
+        const sentence = rawSentence.toLocaleLowerCase() === word.toLocaleLowerCase() ? '' : rawSentence;
+        const shell = container.closest('.study-focus-shell') ?? container;
+        const dictionary = [...shell.querySelectorAll('.sf-header-sense .sf-gloss-preview .sf-gloss-row')].map((row) => row.textContent?.trim()).filter(Boolean).join('\n');
+        const meaning = dictionary || (/词典/.test(entry.explanationSource || '') ? entry.meaning.replace(/^词典简释[（(][^）)]*[）)][:：]\s*/, '') : '');
+        const contextMeaning = /AI 辅助解释/.test(entry.explanationSource || '') ? entry.meaning : '';
+        const forms = [...shell.querySelectorAll('.sf-form-piece[data-form]')].map((piece) => {
+            const label = /** @type {HTMLElement} */ (piece).dataset.label || '';
+            return {label, form: /** @type {HTMLElement} */ (piece).dataset.form || '', kind: explainWordForm(label, word, []).kind};
+        }).filter((item) => item.form && item.form.toLocaleLowerCase() !== word.toLocaleLowerCase());
+        const audio = Boolean(currentSaved?.media?.audio?.name) && !currentSaved?.entry.subtitleSource;
+        return {word, sentence, translation: entry.translation?.trim() || '', meaning, contextMeaning, audio, forms};
+    };
+    /** @type {Set<string>} Kinds already drafted in this panel, so recommendations never duplicate. */
+    const draftedKinds = new Set();
+    /** @param {string} kind */
+    const draftKind = (kind) => {
+        const facts = cardFacts();
+        const deckKind = deckKindFor(kind);
+        for (const draft of cardDrafts(kind, facts)) {
+            addManualRow({kind: /** @type {import('study').CardKind} */ (kind),
+                front: draft.front,
+                back: draft.back,
+                deck: cardSettings?.deckByKind?.[/** @type {import('study').CardKind} */ (kind)] || cardSettings?.deckByKind?.[/** @type {import('study').CardKind} */ (deckKind)] || cardSettings?.deck || ''});
+        }
+        draftedKinds.add(kind);
+        addStatus.textContent = kind === 'context' && !facts.contextMeaning ? '请在背面填写本句中这个词的意思；不会用词典全部意思冒充。' : '';
+    };
+    // Mastery: the learner's own judgment, saved with the cards and used for tags and
+    // for delaying recognition cards they already know. It only pre-selects drafts.
+    /** @type {import('./study-card-kinds.js').Mastery|''} */
+    let mastery = '';
+    const masteryRow = d.createElement('div');
+    masteryRow.className = 'study-card-mastery';
+    masteryRow.setAttribute('role', 'radiogroup');
+    masteryRow.setAttribute('aria-label', '掌握程度');
+    const masteryLabel = d.createElement('span');
+    masteryLabel.textContent = '掌握程度';
+    masteryRow.append(masteryLabel);
+    for (const [value, label] of /** @type {[import('./study-card-kinds.js').Mastery, string][]} */ (Object.entries(MASTERY_LABELS))) {
+        const option = d.createElement('button');
+        option.type = 'button';
+        option.className = 'scan-disable';
+        option.dataset.studyMastery = value;
+        option.setAttribute('role', 'radio');
+        option.setAttribute('aria-checked', 'false');
+        option.textContent = label;
+        option.addEventListener('click', () => {
+            mastery = value;
+            for (const button of masteryRow.querySelectorAll('[data-study-mastery]')) { button.setAttribute('aria-checked', String(button === option)); }
+            const recommended = recommendedKinds(value, cardFacts());
+            for (const [kind, choice] of choiceButtons) { choice.classList.toggle('is-recommended', recommended.includes(kind)); }
+            for (const kind of recommended) {
+                if (!draftedKinds.has(kind)) { draftKind(kind); }
+            }
+        });
+        masteryRow.append(option);
+    }
     /** @type {Map<string, HTMLButtonElement>} */
     const choiceButtons = new Map();
-    for (const [kind, label] of [['meaning', '单词意思'], ['context', '原句中的意思'], ['listening', '视频声音字幕']]) {
-        const choice = d.createElement('button');
-        choice.type = 'button'; choice.className = 'scan-disable';
-        choice.dataset.studyCardChoice = kind; choice.textContent = label;
-        choice.addEventListener('click', () => {
-            const entry = getEntry();
-            const word = entry.word.trim();
-            const sentence = entry.sentence?.trim() || '';
-            const dictionary = [...(container.closest('.study-focus-shell') ?? container).querySelectorAll('.sf-header-sense .sf-gloss-preview .sf-gloss-row')].map((row) => row.textContent?.trim()).filter(Boolean).join('\n');
-            const dictionaryMeaning = dictionary || (/词典/.test(entry.explanationSource || '') ? entry.meaning.replace(/^词典简释[（(][^）)]*[）)][:：]\s*/, '') : '');
-            const confirmedMeaning = /AI 辅助解释/.test(entry.explanationSource || '') ? entry.meaning : '';
-            addManualRow({kind: /** @type {import('study').CardKind} */ (kind),
-                front: kind === 'meaning' ? word : (kind === 'context' ? `“${word}”在这句话中是什么意思？\n${sentence}` : `听原声，补全并理解“${word}”：\n${sentence.split(word).join('[…]')}`),
-                back: kind === 'meaning' ? dictionaryMeaning : (kind === 'context' ? confirmedMeaning : [sentence, entry.translation].filter(Boolean).join('\n')),
-                deck: cardSettings?.deckByKind?.[/** @type {import('study').CardKind} */ (kind)] || cardSettings?.deck || ''});
-            addStatus.textContent = kind === 'context' && !confirmedMeaning ? '请在背面填写本句中这个词的意思；不会用词典全部意思冒充。' : '';
-        });
-        choices.append(choice); choiceButtons.set(kind, choice);
+    for (const stage of /** @type {import('./study-card-kinds.js').CardStage[]} */ ([1, 2, 3])) {
+        const group = d.createElement('div');
+        group.className = 'study-card-stage';
+        const heading = d.createElement('span');
+        heading.className = 'study-card-stage-label';
+        heading.textContent = STAGE_LABELS[stage];
+        const items = d.createElement('span');
+        items.className = 'study-card-stage-items';
+        group.append(heading, items);
+        for (const info of CARD_KINDS.filter((item) => item.stage === stage)) {
+            const choice = d.createElement('button');
+            choice.type = 'button'; choice.className = 'scan-disable';
+            choice.dataset.studyCardChoice = info.kind; choice.textContent = info.label;
+            choice.addEventListener('click', () => draftKind(info.kind));
+            items.append(choice); choiceButtons.set(info.kind, choice);
+        }
+        choices.append(group);
     }
     const updateChoices = () => {
-        const entry = getEntry();
-        const hasSentence = Boolean(entry.sentence?.trim() && entry.sentence.trim().toLocaleLowerCase() !== entry.word.trim().toLocaleLowerCase());
-        const contextChoice = choiceButtons.get('context');
-        if (contextChoice) {
-            contextChoice.disabled = !hasSentence;
-            contextChoice.title = hasSentence ? '按当前原句单独制卡，可与单词意思一起选择。' : '没有原句，请先补充原句。';
-        }
-        const mediaChoice = choiceButtons.get('listening');
-        if (mediaChoice) {
-            mediaChoice.disabled = !hasSentence || !currentSaved?.media?.audio?.name || Boolean(currentSaved?.entry.subtitleSource);
-            mediaChoice.title = mediaChoice.disabled ? '这条记录没有可用于制卡的真实原声片段；可以先做文字卡。' : '使用这条记录已附带的真实原声与原句，不采集整页截图。';
+        const facts = cardFacts();
+        for (const [kind, choice] of choiceButtons) {
+            const info = cardKind(kind);
+            const missing = info ? missingFor(info, facts) : '';
+            choice.disabled = Boolean(missing);
+            choice.title = missing || (kind === 'listening' ? '使用这条记录已附带的真实原声与原句，不采集整页截图。' : `${STAGE_LABELS[/** @type {import('./study-card-kinds.js').CardStage} */ (info?.stage ?? 1)]} · 可与其他卡一起选择。`);
         }
         if (currentSaved?.media?.audio?.name) {
             setAudioState('ready');
@@ -266,7 +318,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         audioState.hidden = state === 'none' && captureAudio.hidden;
     };
     setAudioState('none');
-    cardPanel.append(choices, choiceHint, audioState, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
+    cardPanel.append(masteryRow, choices, choiceHint, audioState, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
     /**
      *
      */
@@ -537,6 +589,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 id: saved.id,
                 language: currentLanguage,
                 cards,
+                ...(mastery ? {mastery} : {}),
             }));
             if (!isCurrent()) { return; }
             if (result) { showAnkiStatus(result); }
@@ -545,6 +598,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             container.closest('.study-focus-shell')?.classList.remove('sf-card-editor-open');
             addCard.textContent = '再加一张卡';
             manualRows.splice(0, manualRows.length);
+            draftedKinds.clear();
             manualCards.replaceChildren();
             for (const input of /** @type {NodeListOf<HTMLInputElement>} */ (draftCards.querySelectorAll('input[data-study-review-card]'))) { input.checked = false; }
             updateSubmitState();

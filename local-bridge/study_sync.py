@@ -294,6 +294,9 @@ def add_cards(lib, p):
     if p.get('targetId') and r.get('targetId', lib.target_id) != p['targetId']:
         raise ValueError('记录目标与请求目标不同；未改投。')
     cards = r.setdefault('cards', [])
+    if p.get('mastery') in MASTERY_LABELS and r.get('mastery') != p['mastery']:
+        r['mastery'] = p['mastery']
+        body += '\n## 掌握程度\n\n' + MASTERY_LABELS[p['mastery']] + '（制卡时自评，不代表已掌握）\n'
     for proposed in p['cards']:
         cid = hashlib.sha256((r['id'] + '\n' + proposed['front']).encode()).hexdigest()[:32]
         old = next((c for c in cards if c['id'] == cid), None)
@@ -302,7 +305,7 @@ def add_cards(lib, p):
                 raise ValueError('同一问题已有不同答案；请用冲突界面核对，未新增或覆盖。')
             continue
         kind = proposed.get('kind') or default_card_kind(r['entry'])
-        if kind == 'listening' and not r.get('media', {}).get('audio'):
+        if kind in AUDIO_KINDS and not r.get('media', {}).get('audio'):
             raise ValueError('这条记录尚未附带真实音频；请先附加原声，或选文字学习卡。')
         target = card_target(lib, {**proposed, 'kind': kind})
         card = {'id': cid, 'front': proposed['front'], 'back': proposed['back'], 'kind': kind,
@@ -516,7 +519,37 @@ def require_deck(lib, deck):
         raise ValueError('目标牌组不存在；请在学习与保存设置中明确创建，不自动补建。')
 
 
+# Learning stage of each card kind: 1 recognise, 2 understand in context, 3 use.
+CARD_STAGES = {'meaning': 1, 'listen-meaning': 1, 'form-recognize': 1,
+               'context': 2, 'sentence': 2, 'listening': 2, 'grammar': 2,
+               'produce': 3, 'cloze': 3, 'form-produce': 3, 'make-sentence': 3, 'expression': 3, 'spelling': 3}
+AUDIO_KINDS = ('listening', 'listen-meaning', 'spelling')
+MASTERY_LABELS = {'none': '完全不会', 'vague': '有印象/模糊', 'known': '认识但不会用'}
+
+
 def card_tags(record, kind):
     entry = record['entry']
     source = 'subtitles' if entry.get('subtitleSource') else 'video' if entry.get('videoTime') is not None else 'web' if entry.get('url') else 'dictionary'
-    return ['study_kind::' + kind, 'study_source::' + source] + ['study_media::' + key for key in ('audio','image') if record.get('media', {}).get(key)]
+    tags = ['study_kind::' + kind, 'study_source::' + source] + ['study_media::' + key for key in ('audio','image') if record.get('media', {}).get(key)]
+    if kind in CARD_STAGES:
+        tags.append('study_stage::' + str(CARD_STAGES[kind]))
+    if record.get('mastery') in MASTERY_LABELS:
+        tags.append('study_mastery::' + record['mastery'])
+    return tags
+
+
+def schedule_new_card(lib, record, card, note_info):
+    """A learner who already recognises the word sees stage-1 cards a few days later.
+
+    Only cards created in this request are touched; existing schedules never change.
+    """
+    if record.get('mastery') != 'known' or CARD_STAGES.get(card.get('kind')) != 1:
+        return None
+    cards = note_info.get('cards', []) if isinstance(note_info, dict) else []
+    if not isinstance(cards, list) or not cards:
+        return None
+    try:
+        lib.anki('setDueDate', {'cards': cards, 'days': '3-7'})
+        return '已按“认识但不会用”延后 3–7 天'
+    except Exception:
+        return '卡片已建好；延后排程未成功，可在 Anki 里手动调整'

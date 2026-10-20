@@ -34,7 +34,7 @@ with sync_playwright() as p:
     page.evaluate('''async()=>{
         const {YoutubeReader}=await import('/js/study/youtube-reader.js');
         window.calls=[];window.assets=null;
-        window.reader=new YoutubeReader({call:async(action,data)=>{
+        window.reader=new YoutubeReader({prefs:{engine:'model'},call:async(action,data)=>{
             window.calls.push(action);
             if(action==='subtitleSettings')return {model:'fixture',effort:'low',cacheEnabled:true};
             if(action==='subtitleTranslate')return {items:data.items.map(r=>({id:r.id,translation:'我们每天进步。'}))};
