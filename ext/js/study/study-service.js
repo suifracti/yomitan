@@ -20,7 +20,6 @@ import {mediaKeyOf, timedUrl} from './media-key.js';
 import {StudySync} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
-import {rememberSaved} from './study-remember.js';
 import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
 import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
@@ -316,19 +315,9 @@ export class StudyService {
                 if (!saving) {
                     saving = (async () => {
                         if (this.#cueRuns.has(queryId)) { throw new Error('请先完成或取消当前回答；草稿不会保存。'); }
-                        if ((await this.journal.conversation(row.entry)).length === 0) { throw new Error('请先完成本句问答，再显式保存学习记录。'); }
                         this.#cueSaveGuards.set(queryId, () => this.#liveCue(runtime, queryId));
-                        const saved = await this.saveVerifiedCue(queryId, row.sender);
-                        if (data.action !== 'remember' || saved.ankiEnabled === false) { return saved; }
-                        await this.#liveCue(runtime, queryId);
-                        const source = saved.entry.subtitleSource;
-                        if (!source) { throw new Error('字幕保存回执缺少可信身份。'); }
-                        const task = {id: saved.id, language: 'en', key: sourceKey(saved.entry), source};
-                        await this.write('studyCueRememberIntentsV1', (v) => {
-                            const rows = /** @type {typeof task[]} */ (Array.isArray(v) ? v : []);
-                            return [...rows.filter((r) => r.id !== task.id), task];
-                        });
-                        return await this.#rememberCue(task, () => this.#liveCue(runtime, queryId));
+                        // Remember saves notes only, just like an ordinary word.
+                        return await this.saveVerifiedCue(queryId, row.sender);
                     })().finally(() => { this.#cueSaving.delete(queryId); this.#cueSaveGuards.delete(queryId); });
                     this.#cueSaving.set(queryId, saving);
                 }
@@ -415,15 +404,9 @@ export class StudyService {
         if (!read.ok || !entry || sourceKey(entry) !== task.key ||
         sourceKey({...entry, subtitleSource: task.source}) !== task.key || !entry.subtitleSource) { throw new Error('字幕记住意图与记录来源不一致。'); }
         const record = materials?.items?.[0]?.record;
-        if (record?.ankiEnabled === false) { return record; } // Paused intent stays queued, no new AI.
-        if (!check && !record?.reviewDraft && !record?.cards?.length && !record?.noteId) { throw new Error('复习判断尚未持久确认；请重新从同一字幕点击记住，不自动重发 AI。'); }
-        if (!check && record?.reviewDraft && (record.draftStale || record.reviewDraft.cards.length > 1)) { throw new Error('复习草稿已失效；须重新从同一字幕确认，不自动重发 AI。'); }
-        const authority = {id: task.id, source: entry.subtitleSource, check};
-        const row = await rememberSaved(this, task, (action, value) => {
-            // Recovery may replay a durable decision, never silently create a new one.
-            if (!check && (action === 'draftCards' || action === 'libraryDraftDiscard')) { throw new Error('启动恢复不能重新判断；请现场确认字幕。'); }
-            return this.handleRequest(action, value, null, authority);
-        });
+        if (record?.ankiEnabled === false) { return record; }
+        // Old durable intents may retry already-confirmed cards, never select new ones.
+        const row = await this.remember({id: task.id, language: task.language});
         if (row.ankiState !== 'pending') {
             await this.write('studyCueRememberIntentsV1', (v) => (/** @type {typeof task[]} */ (Array.isArray(v) ? v : [])).filter((r) => r.id !== task.id || cueIntentFingerprint(r) !== cueIntentFingerprint(task)));
         }
@@ -726,7 +709,7 @@ export class StudyService {
     async handleRequest(action, value, requestScope = null, authority = null) {
         const containsCue = (/** @type {unknown} */ v) => v && typeof v === 'object' &&
         (['subtitleSource', 'subtitle', 'studySubtitle', 'sourceConfirmed', 'cueAuthorization'].some((k) => k in v) || Object.values(v).some(containsCue));
-        if (containsCue(value)) { throw new Error('字幕来源只允许内部可信契约；当前未开放字幕 AI、记住或 Anki。'); }
+        if (containsCue(value)) { throw new Error('字幕来源须由私有校验取得，不能从页面参数伪造。'); }
         if (authority) {
             await authority.check?.();
             const v = /** @type {{ids?: string[], items?: {id: string}[]}} */ (value ?? {});
@@ -861,7 +844,6 @@ export class StudyService {
             const {items: materials} = /** @type {{items: import('study').LearningMaterial[]}} */ (read.library);
             if (!Array.isArray(materials) || materials.length !== ids.length || materials.some((r, i) => r.id !== ids[i])) { throw new Error('笔记读取关联不一致。'); }
             if (materials.some((m) => !m.record || m.record.id !== m.id)) { throw new Error('本机桥尚未提供持久草稿，请更新后再操作。'); }
-            if (materials.some((m) => m.record?.entry?.subtitleSource) && !authority) { throw new Error('字幕须通过私有可信记住动作。'); }
             if (materials.some((m) => m.record?.ankiEnabled === false)) { return {items: materials.map((m) => m.record)}; }
             const pending = materials.filter((m) => !m.record?.reviewDraft);
             if (pending.length === 0) { return {items: materials.map((m) => m.record)}; }
@@ -897,7 +879,6 @@ export class StudyService {
             const read = await this.native({action: 'libraryRead', language, ids: records.map((r) => r.id)}).promise;
             if (!read.ok || !read.library) { throw new Error(read.error ?? '完整学习笔记读取失败。'); }
             const materials = /** @type {{items: import('study').LearningMaterial[]}} */ (read.library).items;
-            if (materials.some((m) => m.record?.entry?.subtitleSource)) { throw new Error('字幕尚未开放 AI 整理。'); }
             if (materials.some((r, i) => r.id !== records[i]?.id || r.version !== records[i]?.version) || materials.length !== records.length) { throw new Error('笔记已更新，请重新展开记录后再整理。'); }
             const ids = new Set();
             const items = records.map(({id, entry}) => {

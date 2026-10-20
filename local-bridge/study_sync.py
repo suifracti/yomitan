@@ -211,8 +211,6 @@ def favorite(lib, p):
         if not p.get('favorite') or not p.get('entry'):
             raise ValueError('找不到要取消收藏的学习记录。') from None
         e = p['entry']
-        if e.get('subtitleSource'):
-            raise ValueError('字幕记录暂不支持收藏改写。')
         if e.get('language', lib.language) != lib.language:
             raise ValueError('语言与保存目的地不同。')
         grouped = lib.group_words
@@ -230,8 +228,6 @@ def favorite(lib, p):
         for label, key in [('含义（保存时的解释）','meaning'), ('译文','translation'), ('补充语境','context'), ('来源标题','title'), ('来源网址','url')]:
             if e.get(key): body += f'{heading} {label}\n\n{__import__("study_library").paragraph(e[key])}\n\n'
         body += f'{heading} 收藏\n\n仅收藏语境，尚未确认复习卡。\n'
-    if r['entry'].get('subtitleSource'):
-        raise ValueError('字幕记录暂不支持收藏改写。')
     if p.get('targetId') and r.get('targetId', lib.target_id) != p['targetId']:
         raise ValueError('记录目标与请求目标不同；未改投。')
     r['favorite'] = p['favorite']
@@ -250,8 +246,6 @@ def update(lib, p):
     proposed_word = p.get('entry', {}).get('word', r['entry']['word'])
     if proposed_word.casefold() != r['entry']['word'].casefold():
         raise ValueError('另一个单词必须保存为自己的学习记录；未替换原对象。')
-    if r['entry'].get('subtitleSource'):
-        raise ValueError('字幕记录暂不支持编辑。')
     if p.get('targetId') and r.get('targetId', lib.target_id) != p['targetId']:
         raise ValueError('记录目标与请求目标不同；未改投。')
     changes = {k: v for k, v in p.get('entry', {}).items() if v != r['entry'].get(k)}
@@ -294,8 +288,6 @@ def add_cards(lib, p):
     if not lib.anki_enabled:
         raise ValueError('Anki 复习已关闭；笔记保留，未添加新卡。')
     r, body, version = lib.read(p['id'])
-    if r['entry'].get('subtitleSource'):
-        raise ValueError('字幕来源暂不支持 Anki 卡片。')
     if p.get('targetId') and r.get('targetId', lib.target_id) != p['targetId']:
         raise ValueError('记录目标与请求目标不同；未改投。')
     cards = r.setdefault('cards', [])
@@ -363,8 +355,6 @@ def _note_values(lib, note_id, record, fields, review_only=False):
 def reconcile(lib, p):
     ident = p['id']
     r, body, version = lib.read(ident)
-    if r['entry'].get('subtitleSource'):
-        raise ValueError('字幕记录暂不支持与 Anki 双向同步。')
     if not r.get('cards') and not r.get('noteId'):
         return {**lib.result(ident), 'syncState':'local-only', 'conflicts':[]}
     if not lib.anki_enabled:

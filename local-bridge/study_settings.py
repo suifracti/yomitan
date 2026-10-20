@@ -362,7 +362,7 @@ class YomitanLibrary:
             lib = libraries[target_id]
             try:
                 record = records[ident][2]
-                if record['entry'].get('subtitleSource') or not (record.get('cards') or record.get('noteId')) or not lib.anki_enabled or paused:
+                if not (record.get('cards') or record.get('noteId')) or not lib.anki_enabled or paused:
                     continue
                 result = study_sync.reconcile(lib, {'id': ident})
                 synced += 1

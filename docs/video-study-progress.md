@@ -196,7 +196,8 @@ All five batches are done.
 - `test_study_workspace_browser.py` has a timing-dependent check ("dictionary
   resize does not change main preferred width") that fails about one run in
   four, also before these batches; reruns pass.
-- `test_study_video.py` has one failure that predates these batches.
+- The old `test_study_video.py` origin-fixture failure was fixed in backend B6
+  (2026-10-20): fixtures now copy the installer's actual dependencies; all 15 tests pass.
 
 - Real YouTube, Bilibili and other sites with the installed extension: the
   user reloads the extension. Sites that draw captions on a canvas, put the

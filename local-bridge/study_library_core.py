@@ -767,7 +767,7 @@ class StudyLibrary:
         if not self.anki_enabled:
             return self.result(ident)
         r, body, version = self.read(ident)
-        if r.get('noteId') and not r['entry'].get('subtitleSource'):
+        if r.get('noteId'):
             import study_sync
             return study_sync.reconcile(self, {'id': ident})
         if r.get('cards'):
@@ -856,7 +856,7 @@ class StudyLibrary:
     def sync_cards(self, r, body, version):
         if not self.anki_enabled:
             return self.result(r['id'])
-        if r.get('cards') and all(c.get('noteId') for c in r['cards']) and not r['entry'].get('subtitleSource'):
+        if r.get('cards') and all(c.get('noteId') for c in r['cards']):
             import study_sync
             return study_sync.reconcile(self, {'id': r['id']})
         for card in r['cards']:
@@ -965,19 +965,15 @@ class StudyLibrary:
             self.check_path(self.records)
             return {'items': [], 'total': 0, 'target': {'deck': self.deck, 'model': self.model}}
         with self.locked():
-            # R2 is a record-only contract. No ID-based card/AI/media route may bypass it.
-            if p['action'] in ('libraryCards', 'libraryCardsAdd', 'libraryUpdate', 'libraryReconcile', 'libraryFavorite', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'librarySync', 'libraryEnrich', 'libraryMedia'):
+            # The live source proof is acquired on first save. Saved IDs use the ordinary
+            # card/sync path; a supplied internal proof must still identify this exact record.
+            grant = p.get('cueAuthorization')
+            if grant:
                 ids = p.get('ids', []) + [x['id'] for x in p.get('items', [])]
                 if p.get('id'):
                     ids.append(p['id'])
-                for ident in ids:
-                    source = self.read(ident)[0]['entry'].get('subtitleSource')
-                    if source:
-                        grant = p.get('cueAuthorization')
-                        if not grant or grant['id'] != ident or grant['source'] != source or p['action'] in ('libraryCards', 'libraryCardsAdd', 'libraryUpdate', 'libraryFavorite', 'libraryReconcile', 'libraryEnrich', 'libraryMedia'):
-                            raise ValueError('字幕学习记录必须由私有可信记住动作授权。')
-                        if p['action'] == 'libraryDraftSave' and any(len(x['cards']) > 1 for x in p['items']):
-                            raise ValueError('字幕每次只允许必要的0或1张卡。')
+                if ids != [grant['id']] or self.read(grant['id'])[0]['entry'].get('subtitleSource') != grant['source']:
+                    raise ValueError('字幕内部授权与记录来源不一致。')
             if p['action'] == 'libraryMedia':
                 from study_media import attach
                 return attach(self, {k: v for k, v in p.items() if k != 'language'})
@@ -1055,8 +1051,6 @@ class StudyLibrary:
                 return {'items': [self.sync(r['id']) for r, _, _ in staged]}
             if p['action'] == 'librarySave':
                 e = p['entry']
-                if e.get('subtitleSource') and p['makeCard']:
-                    raise ValueError('字幕契约尚未开放 Anki；记录未保存。')
                 ident = entry_id(e)
                 target = self.path(ident, e)
                 grouped = bool(re.search(r'--w[a-f0-9]{32}\.md$', target.name))

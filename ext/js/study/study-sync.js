@@ -48,7 +48,7 @@ export class StudySync {
      * @param {import('study').LibraryRecord} row
      */
     async bind(source, row) {
-        if (!/^[a-f0-9]{32}$/.test(row?.id) || row.learningState === 'favorite-only' || row.entry?.subtitleSource) { return; }
+        if (!/^[a-f0-9]{32}$/.test(row?.id) || row.learningState === 'favorite-only') { return; }
         const key = sourceKey(source);
         const language = row.entry?.language ?? /** @type {{language?: string}} */ (source).language ?? 'en';
         await this.service.write(LINKS, (value) => {
@@ -218,7 +218,7 @@ export class StudySync {
             const pending = /** @type {import('study').SyncTask[]} */ (Array.isArray(outbox) ? outbox : []);
             let rows = /** @type {import('study').SavedWord[]} */ (Array.isArray(value) ? value : []);
             for (const record of records) {
-                if (typeof record.favorite !== 'boolean' || !record.entry || record.entry.subtitleSource) { continue; }
+                if (typeof record.favorite !== 'boolean' || !record.entry) { continue; }
                 if (pending.some((p) => p.action === 'libraryFavorite' && (p.id === record.id || (p.entry && sourceKey(p.entry) === sourceKey(record.entry))))) { continue; }
                 const old = rows.find((r) => r.libraryId === record.id || sourceKey(r) === sourceKey(record.entry));
                 if (old?.syncPending) { continue; }

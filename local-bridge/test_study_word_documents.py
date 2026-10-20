@@ -227,8 +227,8 @@ class WordDocumentTests(unittest.TestCase):
         ea, eb = cue_entry('It is just.'), cue_entry('I just arrived.')
         a, b = self.save(ea), self.save(eb)
         self.assertEqual(a['path'], b['path'])
-        with self.assertRaises(ValueError):
-            self.library.handle({'action': 'librarySync', 'ids': [a['id']]})
+        reconciled = self.library.handle({'action': 'libraryReconcile', 'id': a['id']})
+        self.assertEqual(reconciled['syncState'], 'local-only')
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryDraftSave', 'items': [{'id': b['id'], 'version': b['version'],
                 'reason': 'Cue', 'cards': []}], 'cueAuthorization': {'id': a['id'], 'source': ea['subtitleSource']}})
