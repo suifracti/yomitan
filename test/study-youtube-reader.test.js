@@ -40,7 +40,7 @@ test('loads the player caption request read-only and keeps sentences per caption
         fetched.push(url);
         return {ok: true, status: 200, text: async () => timedText};
     });
-    const reader = new YoutubeReader();
+    const reader = new YoutubeReader({prefs: {merge: false}});
     reader.start();
     expect(fetched).toEqual([]); // Nothing is requested before the user clicks.
     reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&kind=asr&tlang=zh-Hans&fmt=srv3&pot=x');
@@ -100,17 +100,18 @@ test('loads the player caption request read-only and keeps sentences per caption
 test('explicit batch translation stays on its original rows and reaches the ordinary word-card context', async () => {
     const calls = [];
     vi.stubGlobal('fetch', async () => ({ok: true, status: 200, text: async () => timedText}));
-    const reader = new YoutubeReader({call: async (action, data) => {
-        calls.push(action);
-        if (action === 'subtitleSettings') {
-            return {model: 'fixture', effort: 'low', cacheEnabled: true};
-        }
-        if (action === 'subtitleTranslate') {
-            const {items} = /** @type {{items: {id: string}[]}} */ (data);
-            return {items: items.map((r) => ({id: r.id, translation: '译文 ' + r.id}))};
-        }
-        return true;
-    }});
+    const reader = new YoutubeReader({prefs: {merge: false},
+        call: async (action, data) => {
+            calls.push(action);
+            if (action === 'subtitleSettings') {
+                return {model: 'fixture', effort: 'low', cacheEnabled: true};
+            }
+            if (action === 'subtitleTranslate') {
+                const {items} = /** @type {{items: {id: string}[]}} */ (data);
+                return {items: items.map((r) => ({id: r.id, translation: '译文 ' + r.id}))};
+            }
+            return true;
+        }});
     reader.start();
     reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
     await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-head button:last-child')).not.toBe(null));
@@ -148,7 +149,7 @@ for (const mode of ['language', 'clear']) {
             return {cancel() {}, promise: Promise.resolve({ok: true, result: {items: p.items.map((item) => ({id: item.id, translation: p.language === 'fr' ? '面包' : '疼痛'}))}})};
         });
         vi.stubGlobal('fetch', async () => ({ok: true, status: 200, text: async () => JSON.stringify({events: [{tStartMs: 0, dDurationMs: 1500, segs: [{utf8: 'Pain'}]}]})}));
-        const reader = new YoutubeReader({call: service.handle.bind(service)});
+        const reader = new YoutubeReader({prefs: {merge: false}, call: service.handle.bind(service)});
         reader.start();
         /**
          * @param {string} language
@@ -176,7 +177,7 @@ for (const mode of ['language', 'clear']) {
 for (const change of ['navigation', 'player replacement']) {
     test(`caption reload does not click an obsolete player after ${change}`, async () => {
         vi.useFakeTimers();
-        const reader = new YoutubeReader();
+        const reader = new YoutubeReader({prefs: {merge: false}});
         const cc = /** @type {HTMLButtonElement} */ (document.querySelector('#movie_player .ytp-subtitles-button'));
         cc.setAttribute('aria-pressed', 'true');
         const click = vi.spyOn(cc, 'click');
@@ -202,7 +203,7 @@ for (const change of ['navigation', 'player replacement']) {
 
 test('caption reload still reopens CC and accepts the current player request', async () => {
     vi.useFakeTimers();
-    const reader = new YoutubeReader();
+    const reader = new YoutubeReader({prefs: {merge: false}});
     const cc = /** @type {HTMLButtonElement} */ (document.querySelector('#movie_player .ytp-subtitles-button'));
     cc.setAttribute('aria-pressed', 'true');
     const click = vi.spyOn(cc, 'click');
@@ -232,7 +233,7 @@ for (const stage of ['response', 'body', 'navigation']) {
             if (stage !== 'body') { return await stalled(); }
             return {ok: true, status: 200, text: stalled};
         }));
-        const reader = new YoutubeReader();
+        const reader = new YoutubeReader({prefs: {merge: false}});
         reader.start();
         reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
         const load = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-head button:last-child'));

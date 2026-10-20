@@ -21,9 +21,11 @@
  * and nothing pretends to be the protected ASB cue (no data-asb-study-cue).
  * Explicit translation uses the existing Native path; row metadata feeds the original word card.
  */
-import {SubtitleSession, cuesFromTimedText, timeLabel} from './subtitle-session.js';
+import {SubtitleSession, cuesFromTimedText, groupForReading, timeLabel} from './subtitle-session.js';
+import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, writeSubtitlePrefs} from './subtitle-prefs.js';
 import {TranslationQueue} from './translation-queue.js';
 import {studyCall} from './study-client.js';
+import {YoutubeOverlay} from './youtube-overlay.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 
@@ -64,16 +66,49 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-loop{font:inherit;font-size:11px;line-height:20px;color:var(--r-muted);background:none;border:1px solid transparent;border-radius:6px;padding:1px 6px;cursor:pointer}
 #${ROOT_ID} .r-loop:hover{color:var(--r-accent);border-color:var(--r-line)}
 #${ROOT_ID} .r-loop[aria-pressed=true]{color:var(--r-accent);border-color:var(--r-accent)}
-@media (prefers-reduced-motion:reduce){#${ROOT_ID} *{transition:none}}
+#${ROOT_ID} button.r-more{padding:3px 8px;letter-spacing:.1em}
+#${ROOT_ID} .r-menu{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;border-top:1px solid var(--r-line);font-size:12px;color:var(--r-fg)}
+#${ROOT_ID} .r-menu[hidden]{display:none}
+#${ROOT_ID} .r-switch{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+#${ROOT_ID} .r-switch input{margin:0;accent-color:var(--r-accent)}
+#${ROOT_ID} .r-downloads{display:flex;flex-wrap:wrap;gap:6px;flex:1 0 100%}
+#${ROOT_ID}.r-blur .r-translation:not(.is-revealed){filter:blur(5px);cursor:pointer;transition:filter 120ms}
+#${ROOT_ID}.r-blur .r-cue:hover .r-translation{filter:none}
+#${ROOT_ID}.r-mono .r-translation{display:none}
+#${ROOT_ID} .r-cue.is-flash{animation:r-flash 1.2s ease-out}
+@keyframes r-flash{from{background:var(--r-mark)}to{background:transparent}}
+@media (prefers-reduced-motion:reduce){#${ROOT_ID} *{transition:none;animation:none}}
 `;
 
 /**
- * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement}} ReaderView
+ * @typedef {{root: HTMLElement, status: HTMLElement, load: HTMLButtonElement, follow: HTMLButtonElement, list: HTMLElement, translate: HTMLButtonElement, cancel: HTMLButtonElement, retry: HTMLButtonElement, more: HTMLButtonElement, menu: HTMLElement}} ReaderView
  */
 
-export class YoutubeReader {
-    /** @param {{call?: typeof studyCall}} [options] */
-    constructor({call = studyCall} = {}) {
+/**
+ * @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} RowInfo
+ */
+
+/**
+ * The single caption controller on a watch page. The sidebar is rendered here; other
+ * views (the in-video captions) subscribe to its events instead of keeping state:
+ * `session`, `reset`, `active`, `lookup`, `loop`, `translation` and `prefs`.
+ */
+export class YoutubeReader extends EventTarget {
+    /** @param {{call?: typeof studyCall, prefs?: Partial<import('./subtitle-prefs.js').SubtitlePrefs>}} [options] */
+    constructor({call = studyCall, prefs} = {}) {
+        super();
+        /** @type {import('./subtitle-prefs.js').SubtitlePrefs} */
+        this._prefs = normalizeSubtitlePrefs({...DEFAULT_SUBTITLE_PREFS, ...prefs});
+        /** @type {boolean} Tests pass fixed preferences instead of reading storage. */
+        this._fixedPrefs = prefs !== void 0;
+        /** @type {SubtitleSession|null} The provider track as received, for exports. */
+        this._rawSession = null;
+        /** @type {Map<string, string[]>} Reading row ID -> original cue IDs. */
+        this._members = new Map();
+        /** @type {Map<string, RowInfo>} */
+        this._rowInfo = new Map();
+        /** @type {MutationObserver|null} */
+        this._pin = null;
         /** @type {typeof studyCall} */
         this._call = call;
         /** @type {string} */
@@ -136,7 +171,129 @@ export class YoutubeReader {
         document.addEventListener('yt-navigate-finish', () => this._sync());
         window.addEventListener('popstate', () => this._sync());
         window.addEventListener('resize', () => this._place());
+        if (!this._fixedPrefs) {
+            void readSubtitlePrefs().then((prefs) => this.setPrefs(prefs));
+            onSubtitlePrefsChanged((prefs) => this.setPrefs(prefs));
+        }
         this._sync();
+    }
+
+    /** @returns {import('./subtitle-prefs.js').SubtitlePrefs} */
+    get prefs() { return this._prefs; }
+
+    /** @returns {SubtitleSession|null} */
+    get session() { return this._session; }
+
+    /** @returns {string} */
+    get lookupId() { return this._lookup; }
+
+    /** @returns {string} */
+    get loopId() { return this._loop?.id ?? ''; }
+
+    /**
+     * @param {string} id
+     * @returns {RowInfo|undefined}
+     */
+    rowInfo(id) { return this._rowInfo.get(id); }
+
+    /**
+     * Applies preferences from storage or another view; rebuilds rows only when the
+     * sentence grouping itself changed.
+     * @param {import('./subtitle-prefs.js').SubtitlePrefs} prefs
+     */
+    setPrefs(prefs) {
+        const previous = this._prefs;
+        this._prefs = normalizeSubtitlePrefs(prefs);
+        this._view?.root.classList.toggle('r-blur', this._prefs.blur);
+        this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
+        if (previous.merge !== this._prefs.merge && this._rawSession && this._view) {
+            this._render(this._readingSession(this._rawSession));
+        }
+        this._syncMenu();
+        this._emit('prefs', {prefs: this._prefs});
+    }
+
+    /**
+     * Saves a preference change for every view and the settings page.
+     * @param {Partial<import('./subtitle-prefs.js').SubtitlePrefs>} patch
+     */
+    updatePrefs(patch) {
+        this.setPrefs({...this._prefs, ...patch});
+        if (!this._fixedPrefs) { void writeSubtitlePrefs(patch).catch(() => {}); }
+    }
+
+    /**
+     * @param {string} type
+     * @param {Record<string, unknown>} [detail]
+     */
+    _emit(type, detail = {}) {
+        this.dispatchEvent(new CustomEvent(type, {detail}));
+    }
+
+    /**
+     * Joined sentences are display rows; each keeps its original cue IDs and times.
+     * @param {SubtitleSession} raw
+     * @returns {SubtitleSession}
+     */
+    _readingSession(raw) {
+        this._members = new Map(raw.cues.map((cue) => [cue.id, [cue.id]]));
+        if (!this._prefs.merge) { return raw; }
+        const groups = groupForReading(raw.cues);
+        if (groups.length === raw.cues.length) { return raw; }
+        this._members = new Map(groups.map((group) => [group.cueIds[0], [...group.cueIds]]));
+        return new SubtitleSession(raw.source, groups.map((group) => ({id: group.cueIds[0], startMs: group.startMs, endMs: group.endMs, text: group.text})));
+    }
+
+    /**
+     * Original cue IDs behind one reading row, for cards that must outlive regrouping.
+     * @param {string} id
+     * @returns {string[]}
+     */
+    members(id) { return [...(this._members.get(id) ?? [id])]; }
+
+    /**
+     * Scrolls the sidebar to a row and marks it briefly, without changing follow state.
+     * @param {string} id
+     */
+    revealRow(id) {
+        const row = this._rows.get(id);
+        const list = this._view?.list;
+        if (!row || !list) { return; }
+        this._pauseFollow();
+        list.scrollTop = Math.max(0, row.offsetTop - list.clientHeight / 3);
+        row.classList.remove('is-flash');
+        void row.offsetWidth;
+        row.classList.add('is-flash');
+    }
+
+    /** @param {string} id */
+    seekTo(id) { this._seek(id); }
+
+    /** @param {string} id */
+    toggleLoop(id) { this._toggleLoop(id); }
+
+    /** Starts the explicit caption load, as the sidebar button does. */
+    loadCaptions() { void this._load(this._generation); }
+
+    /** Translates the next rows from the playback position, as the sidebar button does. */
+    translateNext() { void this._translate(false); }
+
+    /**
+     * @param {'vtt'|'bilingual'|'json'} kind
+     */
+    download(kind) {
+        const raw = this._rawSession;
+        const session = this._session;
+        if (!raw || !session) { return; }
+        const base = `${this._videoId ?? 'youtube'}-${raw.source.language}`;
+        if (kind === 'vtt') {
+            saveText(`${base}.vtt`, raw.exportVtt(false), 'text/vtt');
+        } else if (kind === 'bilingual') {
+            saveText(`${base}.zh.vtt`, session.exportVtt(true), 'text/vtt');
+        } else {
+            const rows = session.cues.map((cue) => ({id: cue.id, cueIds: this.members(cue.id), startMs: cue.startMs, endMs: cue.endMs, text: cue.text, translation: session.translation(cue.id)}));
+            saveText(`${base}.json`, JSON.stringify({source: raw.source, offsetMs: session.offsetMs, cues: raw.cues, rows}, null, 2), 'application/json');
+        }
     }
 
     /**
@@ -152,7 +309,10 @@ export class YoutubeReader {
     _place() {
         const root = this._view?.root;
         const host = root ? this._host() : null;
-        if (root && host && root.parentElement !== host) { host.prepend(root); }
+        if (root && host && root.parentElement !== host) {
+            host.prepend(root);
+            this._keepFirst(host);
+        }
     }
 
     /**
@@ -188,11 +348,16 @@ export class YoutubeReader {
         this._loop = null;
         this._lookup = '';
         this._session = null;
+        this._rawSession = null;
         this._rows.clear();
+        this._rowInfo.clear();
         this._active = '';
         this._follow = true;
+        this._pin?.disconnect();
+        this._pin = null;
         this._view?.root.remove();
         this._view = null;
+        this._emit('reset');
     }
 
     /**
@@ -249,7 +414,38 @@ export class YoutubeReader {
             this._status('已取消；原文和已完成译文保留。');
         });
         cancel.hidden = true;
-        head.append(title, status, translate, retry, cancel, follow, load);
+        // Less frequent actions live behind one menu so the list stays the first thing to read.
+        const more = this._button('⋯', () => {
+            menu.hidden = !menu.hidden;
+            more.setAttribute('aria-expanded', String(!menu.hidden));
+        });
+        more.classList.add('r-more');
+        more.setAttribute('aria-label', '更多：显示方式与下载');
+        more.setAttribute('aria-expanded', 'false');
+        const menu = document.createElement('div');
+        menu.className = 'r-menu scan-disable';
+        menu.hidden = true;
+        /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
+        const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句']];
+        for (const [key, label] of toggles) {
+            const toggle = document.createElement('label');
+            toggle.className = 'r-switch';
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.dataset.pref = key;
+            box.addEventListener('change', () => this.updatePrefs({[key]: box.checked}));
+            toggle.append(box, label);
+            menu.append(toggle);
+        }
+        const downloads = document.createElement('div');
+        downloads.className = 'r-downloads';
+        for (const [kind, label] of /** @type {['vtt'|'bilingual'|'json', string][]} */ ([['vtt', '下载原文 VTT'], ['bilingual', '下载双语 VTT'], ['json', '下载 JSON']])) {
+            const button = this._button(label, () => this.download(kind));
+            button.dataset.download = kind;
+            downloads.append(button);
+        }
+        menu.append(downloads);
+        head.append(title, status, translate, retry, cancel, follow, more, load);
         const list = document.createElement('div');
         list.className = 'r-list';
         list.setAttribute('role', 'list');
@@ -258,9 +454,45 @@ export class YoutubeReader {
         list.addEventListener('touchmove', pause, {passive: true});
         // Selecting text must not be pulled away by follow scrolling.
         list.addEventListener('selectstart', pause);
-        root.append(head, list);
+        root.append(head, menu, list);
+        root.classList.toggle('r-blur', this._prefs.blur);
+        root.classList.toggle('r-mono', !this._prefs.bilingual);
+        // Reveal one blurred translation on click without affecting the others.
+        list.addEventListener('click', (event) => {
+            const target = event.target instanceof Element ? event.target.closest('.r-translation') : null;
+            if (target && root.classList.contains('r-blur')) { target.classList.toggle('is-revealed'); }
+        });
         host.prepend(root);
-        this._view = {root, status, load, follow, list, translate, cancel, retry};
+        this._view = {root, status, load, follow, list, translate, cancel, retry, more, menu};
+        this._keepFirst(host);
+        this._syncMenu();
+    }
+
+    /**
+     * YouTube inserts its own panels into the right column later; keep ours on top.
+     * @param {Element} host
+     */
+    _keepFirst(host) {
+        this._pin?.disconnect();
+        const root = this._view?.root;
+        if (!root) { return; }
+        this._pin = new MutationObserver(() => {
+            if (root.isConnected && root.parentElement === host && host.firstElementChild !== root) { host.prepend(root); }
+        });
+        this._pin.observe(host, {childList: true});
+    }
+
+    /** Mirrors the stored preferences into the sidebar menu and download buttons. */
+    _syncMenu() {
+        const view = this._view;
+        if (!view) { return; }
+        for (const box of view.menu.querySelectorAll('input[data-pref]')) {
+            const key = /** @type {keyof import('./subtitle-prefs.js').SubtitlePrefs} */ (/** @type {HTMLInputElement} */ (box).dataset.pref);
+            /** @type {HTMLInputElement} */ (box).checked = Boolean(this._prefs[key]);
+        }
+        for (const button of view.menu.querySelectorAll('button[data-download]')) {
+            /** @type {HTMLButtonElement} */ (button).disabled = !this._session;
+        }
     }
 
     /**
@@ -333,7 +565,8 @@ export class YoutubeReader {
                 url: `https://www.youtube.com/watch?v=${videoId}`,
                 trackName: kind === 'asr' ? `${language} 自动字幕` : language,
             }, cuesFromTimedText(text));
-            this._render(session);
+            this._rawSession = session;
+            this._render(this._readingSession(session));
         } catch (error) {
             if (generation === this._generation) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
@@ -393,6 +626,7 @@ export class YoutubeReader {
         this._lookup = '';
         this._session = session;
         this._rows.clear();
+        this._rowInfo.clear();
         /** @type {HTMLElement[]} */
         const rows = [];
         for (const [index, cue] of session.cues.entries()) {
@@ -418,7 +652,8 @@ export class YoutubeReader {
             const sourceUrl = new URL(session.source.url || location.href);
             const start = session.seekSeconds(cue.id);
             sourceUrl.searchParams.set('t', `${start}s`);
-            youtubeStudyContext.register(text, {
+            /** @type {RowInfo} */
+            const info = {
                 text: text.textContent.trimEnd(),
                 context: this._context(session, index),
                 start,
@@ -430,7 +665,9 @@ export class YoutubeReader {
                     return this._video;
                 },
                 isCurrent: () => this._session === session && this._videoId === youtubeVideoId(location.href),
-            });
+            };
+            youtubeStudyContext.register(text, info);
+            this._rowInfo.set(cue.id, info);
             // Row tools sit outside the sentence node so a lookup never reads their labels.
             const tools = document.createElement('span');
             tools.className = 'r-tools scan-disable';
@@ -451,6 +688,9 @@ export class YoutubeReader {
         view.translate.hidden = false;
         view.retry.hidden = true;
         this._status(`${session.source.trackName ?? session.source.language} · ${session.cues.length} 句；选词用现有词卡`);
+        this._active = '';
+        this._syncMenu();
+        this._emit('session', {session});
         const video = document.querySelector('#movie_player video');
         if (video instanceof HTMLVideoElement) {
             this._video = video;
@@ -509,6 +749,7 @@ export class YoutubeReader {
                         session.acceptTranslation(row.id, row.translation);
                         this._failed.delete(row.id);
                         if (target) { target.textContent = row.translation; }
+                        this._emit('translation', {id: row.id});
                     } else {
                         this._failed.add(row.id);
                         if (target) { target.textContent = `翻译未完成：${row.error || '可重试'}`; }
@@ -565,6 +806,7 @@ export class YoutubeReader {
         if (key === this._active) { return; }
         this._active = key;
         for (const [id, row] of this._rows) { row.classList.toggle('is-current', active.includes(id)); }
+        this._emit('active', {ids: active});
         const first = active.length > 0 ? this._rows.get(active[0]) : void 0;
         if (this._follow && first) {
             const list = this._view.list;
@@ -597,6 +839,7 @@ export class YoutubeReader {
         const row = this._rows.get(id);
         row?.classList.add('is-looping');
         row?.querySelector('.r-loop')?.setAttribute('aria-pressed', 'true');
+        this._emit('loop', {id});
         this._status('正在循环本句 · 再点「循环」或跳到别处即退出', 'loop');
         this._resumeFollow();
     }
@@ -612,6 +855,7 @@ export class YoutubeReader {
         row?.classList.remove('is-looping');
         row?.querySelector('.r-loop')?.setAttribute('aria-pressed', 'false');
         if (message) { this._status(message); }
+        this._emit('loop', {id: ''});
     }
 
     /**
@@ -625,6 +869,7 @@ export class YoutubeReader {
         this._rows.get(this._lookup)?.classList.remove('is-lookup');
         this._lookup = id;
         this._rows.get(id)?.classList.add('is-lookup');
+        this._emit('lookup', {id});
     }
 
     /** */
@@ -643,11 +888,26 @@ export class YoutubeReader {
 }
 
 /**
+ * @param {string} name
+ * @param {string} text
+ * @param {string} type
+ */
+function saveText(name, text, type) {
+    const url = URL.createObjectURL(new Blob([text], {type: `${type};charset=utf-8`}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
  * Starts the reader once per top-level YouTube page.
  * @returns {YoutubeReader}
  */
 export function startYoutubeReader() {
     const reader = new YoutubeReader();
+    new YoutubeOverlay(reader).start();
     reader.start();
     return reader;
 }
