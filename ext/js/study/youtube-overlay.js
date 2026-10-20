@@ -24,6 +24,7 @@
  */
 import {ENGINE_LABELS} from './free-translators.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
+import {youtubeSite} from './youtube-site.js';
 
 const OVERLAY_ID = 'study-yt-overlay';
 const BUTTON_ID = 'study-yt-button';
@@ -72,10 +73,13 @@ const ISOLATED_EVENTS = ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdo
 export class YoutubeOverlay {
     /**
      * @param {import('./youtube-reader.js').YoutubeReader} reader
+     * @param {import('./youtube-reader.js').ReaderSite} [site]
      */
-    constructor(reader) {
+    constructor(reader, site = youtubeSite) {
         /** @type {import('./youtube-reader.js').YoutubeReader} */
         this._reader = reader;
+        /** @type {import('./youtube-reader.js').ReaderSite} */
+        this._site = site;
         /** @type {Map<string, HTMLElement>} Lines stay connected (only hidden) so a lookup token stays valid. */
         this._lines = new Map();
         /** @type {string} */
@@ -119,22 +123,20 @@ export class YoutubeOverlay {
     }
 
     /** @returns {HTMLElement|null} */
-    _player() {
-        const player = document.querySelector('#movie_player');
-        return player instanceof HTMLElement ? player : null;
-    }
+    _player() { return this._site.player(); }
 
     /** */
     _ensureMounted() {
+        if (!this._site.active()) { return; }
         const player = this._player();
-        if (!player || location.pathname !== '/watch') { return; }
+        if (!player) { return; }
         if (!document.getElementById(STYLE_ID)) {
             const style = document.createElement('style');
             style.id = STYLE_ID;
             style.textContent = STYLE;
             document.head.append(style);
         }
-        const controls = player.querySelector('.ytp-right-controls');
+        const controls = this._site.controls();
         if (controls && !this._button?.isConnected) {
             this._button = this._makeButton();
             controls.prepend(this._button);
@@ -167,9 +169,8 @@ export class YoutubeOverlay {
 
     /** Scales the caption font with the player, like YouTube's own captions. */
     _fit() {
-        const player = this._player();
-        if (!player || !this._overlay) { return; }
-        this._overlay.style.fontSize = `${Math.max(14, Math.min(40, player.clientHeight * 0.042))}px`;
+        if (!this._overlay) { return; }
+        this._overlay.style.fontSize = `${Math.max(14, Math.min(40, this._site.height() * 0.042))}px`;
     }
 
     /** @returns {HTMLButtonElement} */
@@ -177,11 +178,13 @@ export class YoutubeOverlay {
         const button = document.createElement('button');
         button.id = BUTTON_ID;
         button.type = 'button';
-        button.className = 'ytp-button';
+        // On YouTube this joins the player bar; elsewhere it is a small launcher shown on hover.
+        button.className = this._site.kind === 'youtube' ? 'ytp-button' : 'w-launch scan-disable';
         button.setAttribute('aria-label', '字幕学习设置');
         button.setAttribute('aria-expanded', 'false');
         button.title = '字幕学习';
         button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><text x="12" y="16" text-anchor="middle" font-size="9.5" font-family="PingFang SC,sans-serif" fill="currentColor">学</text></svg>';
+        if (this._site.kind !== 'youtube') { isolate(button); }
         button.addEventListener('click', (event) => {
             event.stopPropagation();
             this._togglePanel(Boolean(this._panel?.hidden));
@@ -225,12 +228,20 @@ export class YoutubeOverlay {
         /** @type {[string, string, () => void][]} */
         const buttons = [
             ['load', '载入字幕', () => this._reader.loadCaptions()],
+            ['import', '导入字幕文件…', () => this._reader.pickFile()],
             ['translate', '翻译接下来8句', () => this._reader.translateNext()],
             ['reveal', '在侧栏查看', () => { if (this._shown) { this._reader.revealRow(this._shown); } }],
             ['vtt', '下载原文 VTT', () => this._reader.download('vtt')],
             ['bilingual', '下载双语 VTT', () => this._reader.download('bilingual')],
             ['json', '下载 JSON', () => this._reader.download('json')],
         ];
+        if (this._site.kind !== 'youtube') {
+            buttons.splice(3, 1, ['dock', '字幕栏', () => {
+                const open = this._site.toggleDock();
+                if (open && this._shown) { this._reader.revealRow(this._shown); }
+                this._applyPrefs();
+            }]);
+        }
         for (const [name, label, action] of buttons) {
             const button = document.createElement('button');
             button.type = 'button';
@@ -255,8 +266,7 @@ export class YoutubeOverlay {
     _applyPrefs() {
         const prefs = this._reader.prefs;
         const loaded = this._reader.session !== null;
-        const player = this._player();
-        player?.classList.toggle(ACTIVE_CLASS, prefs.overlay && loaded);
+        this._site.hideNative(prefs.overlay && loaded);
         if (this._overlay) {
             this._overlay.hidden = !prefs.overlay || !loaded || !this._shown;
             this._overlay.classList.toggle('o-mono', !prefs.bilingual);
@@ -270,11 +280,12 @@ export class YoutubeOverlay {
             for (const select of this._panel.querySelectorAll('select[data-engine]')) { /** @type {HTMLSelectElement} */ (select).value = prefs.engine; }
             for (const button of this._panel.querySelectorAll('button[data-action]')) {
                 const action = /** @type {HTMLButtonElement} */ (button).dataset.action;
-                /** @type {HTMLButtonElement} */ (button).disabled = action !== 'load' && !loaded;
+                /** @type {HTMLButtonElement} */ (button).disabled = !['load', 'import', 'dock'].includes(action ?? '') && !loaded;
                 if (action === 'load') { button.textContent = loaded ? '重新载入字幕' : '载入字幕'; }
+                if (action === 'dock') { button.textContent = this._site.dockOpen() ? '收起字幕栏' : '打开字幕栏'; }
             }
             const note = this._panel.querySelector('[data-note]');
-            if (note) { note.textContent = loaded ? '' : '还没载入字幕：点「载入字幕」，或用右侧字幕栏。'; }
+            if (note) { note.textContent = loaded ? '' : (this._site.kind === 'youtube' ? '还没载入字幕：点「载入字幕」，或用右侧字幕栏。' : '还没载入字幕：点「载入字幕」读取页面字幕（先在播放器里打开 CC），或导入字幕文件。'); }
         }
     }
 

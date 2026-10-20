@@ -218,7 +218,10 @@ def _normalize_request(p):
             raise ValueError('自动同步请求无效。')
         return p
     if action == 'libraryVideoWords':
-        if set(p) != {'action', 'videoId'} or not isinstance(p['videoId'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{11}', p['videoId']):
+        # Older readers send a YouTube videoId; newer ones send the shared media key.
+        if set(p) == {'action', 'videoId'} and isinstance(p['videoId'], str) and re.fullmatch(r'[A-Za-z0-9_-]{11}', p['videoId']):
+            return {'action': action, 'mediaKey': 'youtube:' + p['videoId']}
+        if set(p) != {'action', 'mediaKey'} or not isinstance(p['mediaKey'], str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400})', p['mediaKey']):
             raise ValueError('视频编号无效。')
         return p
     if action == 'libraryCardsAdd' and set(p) in ({'action', 'id', 'cards'}, {'action', 'id', 'cards', 'mastery'}):
@@ -359,8 +362,36 @@ def anki_call(action, params, timeout=5):
     return result['result']
 
 
+YOUTUBE_HOSTS = ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be')
+VIDEO_QUERY_KEYS = ('v', 'p', 'id', 'vid', 'ep', 'episode', 'video', 'list', 'index')
+
+
+def media_key_of(url):
+    """Identity of a watched video; mirrors ext/js/study/media-key.js mediaKeyOf."""
+    try:
+        parsed = urllib.parse.urlsplit(url or '')
+    except ValueError:
+        return ''
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+        return ''
+    host = parsed.hostname.lower()
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    if host in YOUTUBE_HOSTS:
+        if host == 'youtu.be':
+            video = parsed.path[1:12]
+        elif parsed.path.startswith('/shorts/'):
+            video = (parsed.path.split('/') + [''])[2]
+        else:
+            video = query.get('v', [''])[0]
+        return 'youtube:' + video if re.fullmatch(r'[\w-]{11}', video or '') else ''
+    picked = '&'.join(f'{key}={query[key][0]}' for key in VIDEO_QUERY_KEYS if key in query)
+    path = parsed.path.rstrip('/') or '/'
+    return ('web:' + host + path + ('?' + picked if picked else ''))[:400]
+
+
 def time_link(url, seconds):
-    """A clickable moment for notes, e.g. [36:02](https://youtu.be/…&t=2162s)."""
+    """A clickable moment for notes, e.g. [36:02](https://youtu.be/…&t=2162s).
+    Only YouTube and Bilibili understand t=; other pages get a plain link next to the time."""
     whole = max(0, int(seconds))
     hours, rest = divmod(whole, 3600)
     label = (f'{hours}:{rest // 60:02d}:{rest % 60:02d}' if hours else f'{rest // 60}:{rest % 60:02d}')
@@ -370,7 +401,14 @@ def time_link(url, seconds):
         return f'{label}（{whole} 秒）'
     if parsed.scheme not in ('http', 'https'):
         return f'{label}（{whole} 秒）'
-    query = [(k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if k != 't'] + [('t', f'{whole}s')]
+    host = (parsed.hostname or '').lower()
+    if host in YOUTUBE_HOSTS:
+        stamp = f'{whole}s'
+    elif host == 'bilibili.com' or host.endswith('.bilibili.com'):
+        stamp = str(whole)
+    else:
+        return f'[{label}]({urllib.parse.urlunsplit(parsed._replace(fragment="")).replace(")", "%29")})'
+    query = [(k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if k != 't'] + [('t', stamp)]
     link = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), ''))
     return f'[{label}]({link.replace(")", "%29")})'
 

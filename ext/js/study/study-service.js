@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {mediaKeyOf, timedUrl} from './media-key.js';
 import {StudySync} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
@@ -991,13 +992,7 @@ export class StudyService {
             } catch { /* Local/plain source has no web URL. */ }
             const videoTime = typeof source.videoTime === 'number' && Number.isFinite(source.videoTime) && source.videoTime >= 0 ? Math.floor(source.videoTime) : void 0;
             const sourceUrl = url;
-            if (videoTime !== void 0 && url) {
-                const link = new URL(url);
-                if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(link.hostname)) {
-                    link.searchParams.set('t', `${videoTime}s`);
-                    url = link.href;
-                }
-            }
+            if (videoTime !== void 0 && url) { url = timedUrl(url, videoTime).url; }
             let row = {id: crypto.randomUUID(), ...lookup, url, sourceUrl, title: String(source.title ?? '').slice(0, 300), videoTime, created: Date.now(), syncPending: true};
             const identity = sourceKey(row);
             await this.write(SAVED_KEY, (v) => {
@@ -1187,15 +1182,16 @@ export function prepareStudyService(lookupDictionary = null) {
             return false;
         }
         // Content scripts get only the explicit reader's read/translate/cancel path, never library writes.
+        // The reader runs in the top frame of any web page with a video.
         if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords'].includes(studyAction) && sender.id === chrome.runtime.id && sender.frameId === 0 &&
-        /^https:\/\/(?:www\.|m\.)?youtube\.com\/watch(?:[?#]|$)/.test(sender.url || '')) {
+        /^https?:\/\//.test(sender.url || '')) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
             void (async () => {
-                // The watch page may read back only the words saved from its own video.
+                // A page may read back only the words saved from its own video.
                 if (studyAction === 'libraryVideoWords') {
-                    const own = new URL(/** @type {string} */ (sender.url)).searchParams.get('v');
-                    const asked = /** @type {{videoId?: unknown}} */ (data ?? {}).videoId;
+                    const own = mediaKeyOf(/** @type {string} */ (sender.url));
+                    const asked = /** @type {{mediaKey?: unknown}} */ (data ?? {}).mediaKey;
                     if (!own || asked !== own || Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
                 }
                 // Only the model and Apple translation go through the local bridge.

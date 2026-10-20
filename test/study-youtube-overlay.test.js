@@ -136,7 +136,7 @@ test('the words tab lists only this video and returns to each moment', async () 
     await vi.waitFor(() => expect(document.querySelectorAll('#study-yt-reader').length).toBe(1));
     /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-tab[data-tab=words]')).click();
     await vi.waitFor(() => expect(document.querySelectorAll('#study-yt-reader .r-word')).toHaveLength(1));
-    expect(calls).toEqual([['libraryVideoWords', {videoId: 'abcdefghijk'}]]);
+    expect(calls).toEqual([['libraryVideoWords', {mediaKey: 'youtube:abcdefghijk'}]]);
     expect(document.querySelector('#study-yt-reader .r-list')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('#study-yt-reader .r-word-meta')?.textContent).toBe('2 张卡 · 到第 1 阶段');
 });

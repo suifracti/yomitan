@@ -52,5 +52,23 @@ await Application.main(false, async (application) => {
     if (window.self === window.top && /(^|\.)youtube\.com$/.test(location.hostname)) {
         const {startYoutubeReader} = await import('../study/youtube-reader.js');
         startYoutubeReader();
+    } else if (window.self === window.top) {
+        // Other sites load the reader only once a video shows up, and only if the learner wants it.
+        const {readSubtitlePrefs} = await import('../study/subtitle-prefs.js');
+        if ((await readSubtitlePrefs()).otherSites) {
+            const begin = async () => {
+                const {startWebReader} = await import('../study/youtube-reader.js');
+                startWebReader();
+            };
+            if (document.querySelector('video')) {
+                void begin();
+            } else {
+                const timer = setInterval(() => {
+                    if (!document.querySelector('video')) { return; }
+                    clearInterval(timer);
+                    void begin();
+                }, 2000);
+            }
+        }
     }
 });

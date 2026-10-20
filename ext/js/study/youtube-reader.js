@@ -29,6 +29,10 @@ import {studyCall} from './study-client.js';
 import {YoutubeOverlay, engineSelect} from './youtube-overlay.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
+import {timedUrl} from './media-key.js';
+import {guessLanguage, parseSubtitles, splitBilingual} from './subtitle-formats.js';
+import {WebVideoSite} from './web-video-site.js';
+import {youtubeSite} from './youtube-site.js';
 
 const ROOT_ID = 'study-yt-reader';
 const STYLE_ID = 'study-yt-reader-style';
@@ -85,6 +89,10 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-engine{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
 #${ROOT_ID} .r-engine select{font:inherit;font-size:12px;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:2px 6px}
 #${ROOT_ID} .r-downloads{display:flex;flex-wrap:wrap;gap:6px;flex:1 0 100%}
+#${ROOT_ID} .r-source{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
+#${ROOT_ID} .r-source[hidden]{display:none}
+#${ROOT_ID} .r-source select{max-width:100%;font:inherit;font-size:12px;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:2px 6px}
+#${ROOT_ID}.is-drop{outline:2px dashed var(--r-accent);outline-offset:-4px}
 #${ROOT_ID}.r-blur .r-translation:not(.is-revealed){filter:blur(5px);cursor:pointer;transition:filter 120ms}
 #${ROOT_ID}.r-blur .r-cue:hover .r-translation{filter:none}
 #${ROOT_ID}.r-mono .r-translation{display:none}
@@ -101,15 +109,28 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
  * @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} RowInfo
  */
 
+/** @typedef {import('./youtube-site.js').YoutubeSite|WebVideoSite} ReaderSite */
+
+const SUBTITLE_ACCEPT = '.srt,.vtt,.webvtt,.sbv,.ass,.ssa,.ttml,.dfxp,.xml,.json,.txt';
+const FILE_LIMIT = 4_000_000;
+
 /**
  * The single caption controller on a watch page. The sidebar is rendered here; other
  * views (the in-video captions) subscribe to its events instead of keeping state:
  * `session`, `reset`, `active`, `lookup`, `loop`, `translation` and `prefs`.
  */
 export class YoutubeReader extends EventTarget {
-    /** @param {{call?: typeof studyCall, prefs?: Partial<import('./subtitle-prefs.js').SubtitlePrefs>}} [options] */
-    constructor({call = studyCall, prefs} = {}) {
+    /** @param {{call?: typeof studyCall, prefs?: Partial<import('./subtitle-prefs.js').SubtitlePrefs>, site?: ReaderSite}} [options] */
+    constructor({call = studyCall, prefs, site = youtubeSite} = {}) {
         super();
+        /** @type {ReaderSite} */
+        this._site = site;
+        /** @type {string|null} Identity of the watched video (see media-key.js). */
+        this._mediaKey = null;
+        /** @type {{id: string, label: string}[]} Subtitle sources found on other sites. */
+        this._sources = [];
+        /** @type {Map<string, string>} Translations that came inside a bilingual file. */
+        this._fileTranslations = new Map();
         /** @type {import('./subtitle-prefs.js').SubtitlePrefs} */
         this._prefs = normalizeSubtitlePrefs({...DEFAULT_SUBTITLE_PREFS, ...prefs});
         /** @type {boolean} Tests pass fixed preferences instead of reading storage. */
@@ -193,8 +214,7 @@ export class YoutubeReader extends EventTarget {
             });
             observer.observe({type: 'resource', buffered: true});
         } catch { /* Without resource timing the user still gets an explicit failure message. */ }
-        document.addEventListener('yt-navigate-finish', () => this._sync());
-        window.addEventListener('popstate', () => this._sync());
+        this._site.watch(() => this._sync());
         window.addEventListener('resize', () => this._place());
         if (!this._fixedPrefs) {
             void readSubtitlePrefs().then((prefs) => this.setPrefs(prefs));
@@ -232,7 +252,7 @@ export class YoutubeReader extends EventTarget {
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
         if ((previous.merge !== this._prefs.merge || previous.aiSegment !== this._prefs.aiSegment) && this._rawSession && this._view) {
-            this._render(this._readingSession(this._rawSession));
+            this._present(this._rawSession);
         }
         if (this._prefs.aiSegment && !previous.aiSegment) { void this._runSegmentation(); }
         if (!this._prefs.aiSegment) { ++this._segmentRun; }
@@ -273,6 +293,22 @@ export class YoutubeReader extends EventTarget {
     }
 
     /**
+     * Renders the reading rows of a track, carrying over translations a bilingual file brought.
+     * @param {SubtitleSession} raw
+     */
+    _present(raw) {
+        const session = this._readingSession(raw);
+        if (this._fileTranslations.size > 0) {
+            for (const cue of session.cues) {
+                const text = this.members(cue.id).map((id) => this._fileTranslations.get(id) ?? '').filter(Boolean)
+                    .join('\n');
+                if (text) { session.acceptTranslation(cue.id, text.slice(0, 6000)); }
+            }
+        }
+        this._render(session);
+    }
+
+    /**
      * Original cue IDs behind one reading row, for cards that must outlive regrouping.
      * @param {string} id
      * @returns {string[]}
@@ -287,6 +323,8 @@ export class YoutubeReader extends EventTarget {
         const row = this._rows.get(id);
         const list = this._view?.list;
         if (!row || !list) { return; }
+        // On other sites the list sits in a floating panel that may be closed.
+        this._site.toggleDock(true);
         this._pauseFollow();
         list.scrollTop = Math.max(0, row.offsetTop - list.clientHeight / 3);
         row.classList.remove('is-flash');
@@ -313,7 +351,7 @@ export class YoutubeReader extends EventTarget {
         const raw = this._rawSession;
         const session = this._session;
         if (!raw || !session) { return; }
-        const base = `${this._videoId ?? 'youtube'}-${raw.source.language}`;
+        const base = `${this._videoId ?? ((document.title || 'subtitles').replaceAll(/[\\/:*?"<>|\s]+/g, '-').slice(0, 60))}-${raw.source.language}`;
         if (kind === 'vtt') {
             saveText(`${base}.vtt`, raw.exportVtt(false), 'text/vtt');
         } else if (kind === 'bilingual') {
@@ -324,19 +362,13 @@ export class YoutubeReader extends EventTarget {
         }
     }
 
-    /**
-     * The right column is hidden in YouTube's narrow layout; fall back to below the video.
-     * @returns {Element|null}
-     */
-    _host() {
-        const candidates = ['#secondary-inner', '#secondary', '#below'].map((s) => document.querySelector(s)).filter((e) => e !== null);
-        return candidates.find((e) => e instanceof HTMLElement && e.offsetWidth > 0) ?? candidates[0] ?? null;
-    }
+    /** @returns {Element|null} */
+    _host() { return this._site.host(); }
 
     /** */
     _place() {
         const root = this._view?.root;
-        const host = root ? this._host() : null;
+        const host = root && this._site.pinFirst() ? this._host() : null;
         if (root && host && root.parentElement !== host) {
             host.prepend(root);
             this._keepFirst(host);
@@ -347,6 +379,10 @@ export class YoutubeReader extends EventTarget {
      * @param {string} name
      */
     rememberRequest(name) {
+        if (this._site.kind === 'web') {
+            this._site.remember(name);
+            return;
+        }
         if (!name.includes('/api/timedtext')) { return; }
         this._seen.push(name);
         if (this._seen.length > 50) { this._seen.shift(); }
@@ -354,11 +390,25 @@ export class YoutubeReader extends EventTarget {
 
     /** */
     _sync() {
-        const id = location.pathname === '/watch' ? youtubeVideoId(location.href) : null;
-        if (id === this._videoId && (id === null || this._view?.root.isConnected)) { return; }
+        const key = this._site.mediaKey();
+        if (key === this._mediaKey && (key === null || this._view?.root.isConnected)) {
+            this._rebindVideo();
+            return;
+        }
         this._reset();
-        this._videoId = id;
-        if (id !== null) { void this._mount(++this._generation); }
+        this._mediaKey = key;
+        this._videoId = key?.startsWith('youtube:') ? key.slice(8) : null;
+        if (key !== null) { void this._mount(++this._generation); }
+    }
+
+    /** Players that rebuild their <video> keep the same captions; follow the new element. */
+    _rebindVideo() {
+        if (!this._session || this._video?.isConnected) { return; }
+        const video = this._site.video();
+        if (!video) { return; }
+        this._video?.removeEventListener('timeupdate', this._timeListener);
+        this._video = video;
+        video.addEventListener('timeupdate', this._timeListener);
     }
 
     /** */
@@ -378,6 +428,8 @@ export class YoutubeReader extends EventTarget {
         this._session = null;
         this._rawSession = null;
         this._aiGroups = null;
+        this._fileTranslations = new Map();
+        this._sources = [];
         ++this._segmentRun;
         this._rows.clear();
         this._rowInfo.clear();
@@ -429,7 +481,7 @@ export class YoutubeReader extends EventTarget {
         const status = document.createElement('span');
         status.className = 'r-status';
         status.setAttribute('role', 'status');
-        status.textContent = '载入原文后选词学习；翻译需手动点击。';
+        status.textContent = this._site.kind === 'web' ? '载入页面字幕或导入字幕文件后选词学习。' : '载入原文后选词学习；翻译需手动点击。';
         const follow = this._button('跟随播放', () => this._resumeFollow());
         follow.hidden = true;
         const load = this._button('载入字幕', () => { void this._load(generation); });
@@ -457,7 +509,16 @@ export class YoutubeReader extends EventTarget {
         menu.hidden = true;
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
         const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）']];
-        menu.append(engineSelect((engine) => this.updatePrefs({engine})));
+        // Other sites may offer several subtitle files; the learner can switch between them.
+        const source = document.createElement('label');
+        source.className = 'r-source';
+        source.hidden = true;
+        source.append('字幕来源');
+        const sourceSelect = document.createElement('select');
+        sourceSelect.dataset.source = '';
+        sourceSelect.addEventListener('change', () => { void this._load(generation, sourceSelect.value); });
+        source.append(sourceSelect);
+        menu.append(source, engineSelect((engine) => this.updatePrefs({engine})));
         for (const [key, label] of toggles) {
             const toggle = document.createElement('label');
             toggle.className = 'r-switch';
@@ -470,6 +531,9 @@ export class YoutubeReader extends EventTarget {
         }
         const downloads = document.createElement('div');
         downloads.className = 'r-downloads';
+        const importButton = this._button('导入字幕文件…', () => this.pickFile());
+        importButton.title = 'SRT、VTT、ASS、TTML、SBV 或 JSON；只在本页使用，不上传';
+        downloads.append(importButton);
         for (const [kind, label] of /** @type {['vtt'|'bilingual'|'json', string][]} */ ([['vtt', '下载原文 VTT'], ['bilingual', '下载双语 VTT'], ['json', '下载 JSON']])) {
             const button = this._button(label, () => this.download(kind));
             button.dataset.download = kind;
@@ -519,9 +583,23 @@ export class YoutubeReader extends EventTarget {
             const target = event.target instanceof Element ? event.target.closest('.r-translation') : null;
             if (target && root.classList.contains('r-blur')) { target.classList.toggle('is-revealed'); }
         });
+        // A subtitle file dropped on the panel is read locally, like the import button.
+        root.addEventListener('dragover', (event) => {
+            if (!event.dataTransfer?.types.includes('Files')) { return; }
+            event.preventDefault();
+            root.classList.add('is-drop');
+        });
+        root.addEventListener('dragleave', () => root.classList.remove('is-drop'));
+        root.addEventListener('drop', (event) => {
+            const file = event.dataTransfer?.files[0];
+            root.classList.remove('is-drop');
+            if (!file) { return; }
+            event.preventDefault();
+            void this._importFile(file);
+        });
         host.prepend(root);
         this._view = {root, status, load, follow, list, translate, cancel, retry, more, menu, words};
-        this._keepFirst(host);
+        if (this._site.pinFirst()) { this._keepFirst(host); }
         this._syncMenu();
     }
 
@@ -551,6 +629,87 @@ export class YoutubeReader extends EventTarget {
         for (const button of view.menu.querySelectorAll('button[data-download]')) {
             /** @type {HTMLButtonElement} */ (button).disabled = !this._session;
         }
+        const select = /** @type {HTMLSelectElement|null} */ (view.menu.querySelector('select[data-source]'));
+        if (select) {
+            const label = /** @type {HTMLElement} */ (select.parentElement);
+            label.hidden = this._sources.length < 2;
+            select.replaceChildren(...this._sources.map(({id, label: text}) => Object.assign(document.createElement('option'), {value: id, textContent: text})));
+            select.value = this._session?.source.trackKey ?? '';
+        }
+    }
+
+    /** Opens a file picker for a local subtitle file. */
+    pickFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = SUBTITLE_ACCEPT;
+        input.addEventListener('change', () => {
+            const file = input.files?.[0];
+            if (file) { void this._importFile(file); }
+        }, {once: true});
+        input.click();
+    }
+
+    /** @param {File} file */
+    async _importFile(file) {
+        if (!this._view || !this._mediaKey) { return; }
+        if (file.size > FILE_LIMIT) {
+            this._status('字幕文件过大（上限 4 MB）。');
+            return;
+        }
+        const generation = this._generation;
+        try {
+            const text = await file.text();
+            if (generation !== this._generation) { return; }
+            this.importText(text, file.name);
+        } catch (error) {
+            if (generation === this._generation) { this._status(`导入失败：${error instanceof Error ? error.message : String(error)}`); }
+        }
+    }
+
+    /**
+     * Uses subtitle text from a file the learner chose. Times come from the file;
+     * the offset control can line them up with this video.
+     * @param {string} text
+     * @param {string} name
+     */
+    importText(text, name) {
+        if (!this._view || !this._mediaKey) { return; }
+        try {
+            const {cues, format} = parseSubtitles(text, name);
+            this._useCues(cues, {trackKey: `file:${name.slice(0, 100)}`, label: `${name.slice(0, 60)}（本地文件 · ${format.toUpperCase()}）`, language: '', acquisition: 'import'});
+        } catch (error) {
+            this._status(`导入失败：${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * @param {import('./subtitle-session.js').SubtitleCue[]} input
+     * @param {{trackKey: string, label: string, language: string, acquisition: 'provider'|'import'}} meta
+     */
+    _useCues(input, meta) {
+        const key = this._mediaKey;
+        if (!key) { return; }
+        const bilingual = splitBilingual(input);
+        const cues = bilingual?.cues ?? input;
+        const language = meta.language || guessLanguage(cues);
+        const session = new SubtitleSession({
+            mediaKey: key,
+            trackKey: meta.trackKey,
+            revision: `${meta.trackKey}|${cues.length}|${cues.at(-1)?.endMs ?? 0}`,
+            language,
+            acquisition: meta.acquisition,
+            url: this._site.pageUrl(),
+            trackName: meta.label,
+        }, cues);
+        this._rawSession = session;
+        this._aiGroups = null;
+        /** @type {Map<string, string>} */
+        const translations = bilingual?.translations ?? new Map();
+        this._fileTranslations = translations;
+        this._present(session);
+        if (bilingual) { this._status(`${meta.label} · ${cues.length} 句 · 已带中文译文`); }
+        if (this._prefs.aiSegment) { void this._runSegmentation(); }
     }
 
     /**
@@ -579,8 +738,13 @@ export class YoutubeReader extends EventTarget {
 
     /**
      * @param {number} generation
+     * @param {string} [sourceId] A source from the menu; empty picks the best one.
      */
-    async _load(generation) {
+    async _load(generation, sourceId = '') {
+        if (this._site.kind === 'web') {
+            await this._loadWeb(generation, sourceId);
+            return;
+        }
         const view = this._view;
         const videoId = this._videoId;
         if (!view || !videoId || generation !== this._generation || this._loadController) { return; }
@@ -625,12 +789,46 @@ export class YoutubeReader extends EventTarget {
             }, cuesFromTimedText(text));
             this._rawSession = session;
             this._aiGroups = null;
-            this._render(this._readingSession(session));
+            this._fileTranslations = new Map();
+            this._present(session);
             if (this._prefs.aiSegment) { void this._runSegmentation(); }
         } catch (error) {
             if (generation === this._generation) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
             if (timeout !== null) { clearTimeout(timeout); }
+            if (this._loadController === controller) { this._loadController = null; }
+            view.load.disabled = false;
+        }
+    }
+
+    /**
+     * Other sites: the video's own text tracks or a subtitle file the page loaded.
+     * @param {number} generation
+     * @param {string} sourceId
+     */
+    async _loadWeb(generation, sourceId) {
+        const view = this._view;
+        const site = this._site;
+        if (!view || !this._mediaKey || generation !== this._generation || this._loadController || site.kind !== 'web') { return; }
+        const controller = new AbortController();
+        this._loadController = controller;
+        const timeout = setTimeout(() => controller.abort(), WAIT_MS);
+        view.load.disabled = true;
+        this._status('正在查找这个视频的字幕…');
+        try {
+            const found = await site.load({signal: controller.signal, sourceId, learning: 'en'});
+            if (generation !== this._generation) { return; }
+            this._sources = found?.all ?? site.sources('en').map(({id, label}) => ({id, label}));
+            if (!found) {
+                this._status(controller.signal.aborted ? '字幕读取超时，请重试。' : '没找到这个视频的字幕：先在播放器里打开字幕（CC）再点载入，或在「⋯」里导入字幕文件。');
+                this._syncMenu();
+                return;
+            }
+            this._useCues(found.cues, {trackKey: found.id, label: found.label, language: found.language, acquisition: 'provider'});
+        } catch (error) {
+            if (generation === this._generation) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
+        } finally {
+            clearTimeout(timeout);
             if (this._loadController === controller) { this._loadController = null; }
             view.load.disabled = false;
         }
@@ -709,22 +907,22 @@ export class YoutubeReader extends EventTarget {
             const translated = document.createElement('p');
             translated.className = 'r-translation scan-disable';
             translated.lang = 'zh-CN';
-            const sourceUrl = new URL(session.source.url || location.href);
+            translated.textContent = session.translation(cue.id);
             const start = session.seekSeconds(cue.id);
-            sourceUrl.searchParams.set('t', `${start}s`);
+            const sourceUrl = timedUrl(session.source.url || location.href, start);
             /** @type {RowInfo} */
             const info = {
                 text: text.textContent.trimEnd(),
                 context: this._context(session, index),
                 start,
                 end: (cue.endMs + session.offsetMs) / 1000,
-                url: sourceUrl.href,
+                url: sourceUrl.url,
                 translation: () => session.translation(cue.id),
                 video: () => {
                     this._markLookup(cue.id);
                     return this._video;
                 },
-                isCurrent: () => this._session === session && this._videoId === youtubeVideoId(location.href),
+                isCurrent: () => this._session === session && this._mediaKey !== null && this._mediaKey === this._site.mediaKey(),
             };
             youtubeStudyContext.register(text, info);
             this._rowInfo.set(cue.id, info);
@@ -751,8 +949,8 @@ export class YoutubeReader extends EventTarget {
         this._active = '';
         this._syncMenu();
         this._emit('session', {session});
-        const video = document.querySelector('#movie_player video');
-        if (video instanceof HTMLVideoElement) {
+        const video = this._site.video();
+        if (video) {
             this._video = video;
             video.addEventListener('timeupdate', this._timeListener);
             this._onTime();
@@ -980,7 +1178,7 @@ export class YoutubeReader extends EventTarget {
             }
             if (!live()) { return; }
             this._aiGroups = groups;
-            this._render(this._readingSession(raw));
+            this._present(raw);
             this._status(`AI 断句完成 · ${groups.length} 句`);
         } catch (error) {
             if (live()) { this._status(`AI 断句未完成：${error instanceof Error ? error.message : String(error)}；已保留规则断句。`); }
@@ -990,12 +1188,12 @@ export class YoutubeReader extends EventTarget {
     /** Lists the words already saved from this video; clicking one returns to its moment. */
     async _loadWords() {
         const view = this._view;
-        const videoId = this._videoId;
-        if (!view || !videoId) { return; }
+        const mediaKey = this._mediaKey;
+        if (!view || !mediaKey) { return; }
         const generation = this._generation;
         view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
-            const result = /** @type {{items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number}[]}} */ (await this._call('libraryVideoWords', {videoId}));
+            const result = /** @type {{items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
             if (generation !== this._generation) { return; }
             const items = result.items ?? [];
             if (items.length === 0) {
@@ -1085,6 +1283,18 @@ function saveText(name, text, type) {
 export function startYoutubeReader() {
     const reader = new YoutubeReader();
     new YoutubeOverlay(reader).start();
+    reader.start();
+    return reader;
+}
+
+/**
+ * Starts the same reader on any other page; it stays idle until a video appears.
+ * @returns {YoutubeReader}
+ */
+export function startWebReader() {
+    const site = new WebVideoSite();
+    const reader = new YoutubeReader({site});
+    new YoutubeOverlay(reader, site).start();
     reader.start();
     return reader;
 }

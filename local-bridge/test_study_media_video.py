@@ -68,6 +68,22 @@ class VideoMediaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryVideoWords', 'videoId': '../etc'})
 
+    def test_video_words_on_other_sites_use_the_media_key(self):
+        for word, url, t in [('ring', 'https://www.bilibili.com/video/BV1xx411c7mD/?p=2&spm=abc', 30), ('bell', 'https://www.bilibili.com/video/BV1xx411c7mD?p=1', 4), ('lamp', 'https://course.example.org/watch?id=7&utm=x', 9)]:
+            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} here.', 'meaning': '义', 'url': url, 'videoTime': t}, 'makeCard': False})
+        rows = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'web:www.bilibili.com/video/BV1xx411c7mD?p=2'})['items']
+        self.assertEqual([r['word'] for r in rows], ['ring'])
+        rows = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'web:course.example.org/watch?id=7'})['items']
+        self.assertEqual([r['word'] for r in rows], ['lamp'])
+        with self.assertRaises(ValueError):
+            self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'file:/etc/passwd'})
+
+    def test_time_links_only_add_t_where_sites_understand_it(self):
+        from study_library_core import time_link
+        self.assertEqual(time_link('https://www.youtube.com/watch?v=abcdefghijk', 72), '[1:12](https://www.youtube.com/watch?v=abcdefghijk&t=72s)')
+        self.assertEqual(time_link('https://www.bilibili.com/video/BV1xx411c7mD?p=2', 72), '[1:12](https://www.bilibili.com/video/BV1xx411c7mD?p=2&t=72)')
+        self.assertEqual(time_link('https://course.example.org/watch?id=7#frag', 72), '[1:12](https://course.example.org/watch?id=7)')
+
     def test_video_over_eight_megabytes_is_refused(self):
         entry = {'word': 'wall', 'sentence': 'A wall.', 'meaning': '墙', 'url': 'https://www.youtube.com/watch?v=abcdefghijk', 'videoTime': 1}
         saved = self.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})

@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+import {timedUrl} from '../study/media-key.js';
 import {prepareStudyTranslation} from './study-translation.js';
 import {prepareStudyDictionary} from './study-dictionary.js';
 import {studyFormLabel, studyPartOfSpeech} from './study-labels.js';
@@ -531,10 +532,7 @@ export function prepareStudyCard(display, detail = false) {
         try {
             const link = new URL(source.url);
             if (['http:', 'https:'].includes(link.protocol)) {
-                if (typeof source.videoTime === 'number' && ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(link.hostname)) {
-                    link.searchParams.set('t', `${Math.max(0, Math.floor(source.videoTime))}s`);
-                }
-                url = link.href.slice(0, 2000);
+                url = (typeof source.videoTime === 'number' ? timedUrl(link.href, Math.max(0, source.videoTime)).url : link.href).slice(0, 2000);
             }
         } catch { /* Local dictionary context has no web URL. */ }
         void studyCall('saved').then((value) => {

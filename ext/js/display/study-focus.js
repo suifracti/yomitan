@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+import {timedUrl} from '../study/media-key.js';
 import {studyCall} from '../study/study-client.js';
 import {prepareStudyWorkspace} from './study-workspace.js';
 import {updateStudySourcePreview} from './study-translation.js';
@@ -955,14 +956,11 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             let href = sourceUrl;
             let label = '打开来源';
             if (typeof videoTime === 'number' && Number.isFinite(videoTime) && videoTime >= 0) {
-                try {
-                    const parsed = new URL(sourceUrl);
-                    if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(parsed.hostname)) {
-                        parsed.searchParams.set('t', `${Math.floor(videoTime)}s`);
-                        href = parsed.href;
-                        label = '打开来源 · 含时间';
-                    }
-                } catch { /* Keep the plain source link. */ }
+                const timed = timedUrl(sourceUrl, videoTime);
+                if (timed.timed) {
+                    href = timed.url;
+                    label = '打开来源 · 含时间';
+                }
             }
             const link = make('a', 'sf-link scan-disable', label); link.href = href;
             link.target = '_blank'; link.rel = 'noopener noreferrer'; sourceFooter.append(link);
@@ -972,7 +970,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         // offer the clip itself. Ordinary web lookups show none of this.
         const mediaRange = /** @type {{start?: unknown, end?: unknown}|undefined} */ (display.history?.state?.studyMediaRange);
         const mediaToken = cleanText(display.history?.state?.studyMediaToken);
-        const fromVideo = typeof videoTime === 'number' && Number.isFinite(videoTime) && videoTime >= 0 && /youtu\.?be/.test(sourceUrl);
+        const fromVideo = typeof videoTime === 'number' && Number.isFinite(videoTime) && videoTime >= 0 && /^https?:\/\//.test(sourceUrl);
         if (fromVideo) {
             /**
              * @param {number} value

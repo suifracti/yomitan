@@ -33,6 +33,10 @@ export const SUBTITLE_PREFS_KEY = 'studySubtitlePrefs';
  * @property {boolean} autoTranslate Keep translating ahead of the playback position.
  * @property {SubtitleEngine} engine Translation service for captions.
  * @property {number} aheadSeconds How far ahead automatic translation stays.
+ * @property {boolean} otherSites Offer the reader on videos outside YouTube.
+ * @property {boolean} shadow Shadowing: pause after each sentence so the learner can repeat it.
+ * @property {number} shadowRepeats How many times each sentence plays before the pause (1-5).
+ * @property {boolean} resume Offer to continue from the last sentence studied in a video.
  */
 
 /** @type {Readonly<SubtitlePrefs>} */
@@ -45,6 +49,10 @@ export const DEFAULT_SUBTITLE_PREFS = Object.freeze({
     autoTranslate: false,
     engine: 'chrome',
     aheadSeconds: 60,
+    otherSites: true,
+    shadow: false,
+    shadowRepeats: 1,
+    resume: true,
 });
 
 /** @type {ReadonlyArray<SubtitleEngine>} */
@@ -59,13 +67,15 @@ export function normalizeSubtitlePrefs(value) {
     const input = /** @type {Record<string, unknown>} */ (value && typeof value === 'object' ? value : {});
     /** @type {SubtitlePrefs} */
     const result = {...DEFAULT_SUBTITLE_PREFS};
-    for (const key of /** @type {(keyof SubtitlePrefs)[]} */ (['overlay', 'bilingual', 'blur', 'merge', 'aiSegment', 'autoTranslate'])) {
+    for (const key of /** @type {(keyof SubtitlePrefs)[]} */ (['overlay', 'bilingual', 'blur', 'merge', 'aiSegment', 'autoTranslate', 'otherSites', 'shadow', 'resume'])) {
         if (typeof input[key] === 'boolean') { /** @type {Record<string, unknown>} */ (result)[key] = input[key]; }
     }
     const engine = input.engine;
     if (typeof engine === 'string' && SUBTITLE_ENGINES.includes(/** @type {SubtitleEngine} */ (engine))) { result.engine = /** @type {SubtitleEngine} */ (engine); }
     const ahead = input.aheadSeconds;
     if (typeof ahead === 'number' && Number.isFinite(ahead)) { result.aheadSeconds = Math.min(300, Math.max(20, Math.round(ahead))); }
+    const repeats = input.shadowRepeats;
+    if (typeof repeats === 'number' && Number.isFinite(repeats)) { result.shadowRepeats = Math.min(5, Math.max(1, Math.round(repeats))); }
     return result;
 }
 
