@@ -416,12 +416,12 @@ def media_key_of(url):
     return ('web:' + host + path + ('?' + picked if picked else ''))[:400]
 
 
-def time_link(url, seconds):
+def time_link(url, seconds, label=None):
     """A clickable moment for notes, e.g. [36:02](https://youtu.be/…&t=2162s).
     Only YouTube and Bilibili understand t=; other pages get a plain link next to the time."""
     whole = max(0, int(seconds))
     hours, rest = divmod(whole, 3600)
-    label = (f'{hours}:{rest // 60:02d}:{rest % 60:02d}' if hours else f'{rest // 60}:{rest % 60:02d}')
+    label = label or (f'{hours}:{rest // 60:02d}:{rest % 60:02d}' if hours else f'{rest // 60}:{rest % 60:02d}')
     try:
         parsed = urllib.parse.urlsplit(url or '')
     except ValueError:
@@ -444,6 +444,19 @@ def safe_markdown(s):
     # Keep source material literal, not executable HTML, wikilinks or Markdown embeds.
     s = html.escape(s, quote=False)
     return re.sub(r'([\\`*_{}\[\]()#!|])', r'\\\1', s)
+
+
+def source_line(entry):
+    url = entry.get('url', '')
+    parsed = urllib.parse.urlsplit(url)
+    title = safe_markdown(entry.get('title') or url)
+    if parsed.scheme in ('http', 'https'):
+        source = time_link(url, entry.get('videoTime', 0), title)
+    elif parsed.scheme == 'file':
+        source = safe_markdown(urllib.parse.unquote(parsed.path.rsplit('/', 1)[-1]))
+    else:
+        source = title
+    return '来源：' + source + '\n' if source else ''
 
 
 def paragraph(s):
@@ -1069,6 +1082,7 @@ class StudyLibrary:
                     body = (f'\n## 语境 · {safe_markdown(e["title"] or e["sentence"][:80])}\n' if grouped
                             else f'\n# {safe_markdown(e["word"])}\n')
                     body += f'\n[[{self.relative}/语境词库|语境词库]]\n\n'
+                    body += source_line(e) + '\n'
                     body += '解释来源：' + safe_markdown(e['explanationSource'] or '保存时的解释，来源未标明') + '。\n\n'
                     for label, key in [('原句', 'sentence'), ('补充语境', 'context'), ('含义（保存时的解释）', 'meaning'), ('译文', 'translation'), ('学习提示', 'notes'), ('词典原形', 'lemma'), ('假名读音' if self.language == 'ja' else '词典读音', 'reading'), ('词典形态与读音资料（非 AI）', 'dictionaryNotes'), ('词典原文与 AI 辅助中文（非语境解释）', 'dictionaryTranslation')]:
                         if e.get(key):
@@ -1085,7 +1099,7 @@ class StudyLibrary:
                                  '；轨道：' + safe_markdown(c['trackName']) + ' [' + str(c['trackIndex']) + ']；语言：' + c['language'] + '\n')
                     if e.get('sense') or self.group_words:
                         from study_senses import sense_key, gloss
-                        body += f'\n{heading} 义项\n\n' + paragraph(sense_key(e) + ' · ' + (gloss(e) or '默认义项，尚未细分')) + '\n'
+                        body += f'\n{heading} 义项\n\n' + paragraph(sense_key(e) + ' · ' + (gloss(e) or '默认义项，尚未细分')) + '\n\n' + source_line(e)
                     if e.get('kind') == 'expression':
                         linked = getattr(self, 'base_word_link', '')
                         label = safe_markdown(e['baseWord'])

@@ -23,6 +23,7 @@ import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {studyCall} from '../study/study-client.js';
 import {parseJson} from '../core/json.js';
 import {sourceKey} from '../study/study-journal.js';
+import {timedUrl} from '../study/media-key.js';
 import {AUTO_SYNC_STATE_KEY} from '../study/study-data.js';
 
 /** @type {Set<string>} Records whose earlier cards are mature enough for stage-3 cards. */
@@ -93,6 +94,42 @@ function parseLegacySourceLocator(value) {
     const locator = /** @type {Record<string, unknown>} */ (parsed);
     if (locator.kind !== 'article' || typeof locator.title !== 'string' || !Object.prototype.hasOwnProperty.call(locator, 'locator') || !Object.prototype.hasOwnProperty.call(locator, 'position')) { return null; }
     return locator;
+}
+
+/**
+ * @param {{url?: string, videoTime?: number}} entry
+ * @param {string} title
+ * @returns {HTMLElement | null}
+ */
+export function createSourceLine(entry, title) {
+    let name = title.trim();
+    let href = '';
+    try {
+        const url = new URL(entry.url);
+        if (url.protocol === 'file:') {
+            name = decodeURIComponent(url.pathname.split('/').pop());
+        } else if (['http:', 'https:'].includes(url.protocol)) {
+            const host = url.hostname.replace(/^www\./, '');
+            const platform = host === 'youtu.be' || host === 'youtube.com' || host === 'm.youtube.com' ? 'YouTube' : host;
+            name = name ? `${platform} · ${name}` : platform;
+            href = timedUrl(url.href, entry.videoTime).url;
+            if (Number.isFinite(entry.videoTime) && entry.videoTime >= 0) {
+                const seconds = Math.floor(entry.videoTime);
+                name += ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+            }
+        }
+    } catch { /* A title without a usable URL remains plain text. */ }
+    if (!name) { return null; }
+    const line = document.createElement('p'); line.className = 'study-library-source';
+    line.append('来源：');
+    const text = document.createElement(href ? 'a' : 'strong');
+    text.textContent = name + (href ? ' ↗' : '');
+    if (text instanceof HTMLAnchorElement) {
+        text.href = href;
+        text.target = '_blank'; text.rel = 'noopener noreferrer';
+    }
+    line.append(text);
+    return line;
 }
 
 /**
@@ -512,24 +549,8 @@ async function initializePage() {
                 context.textContent = record.entry.context;
                 article.append(context);
             }
-            let sourceName = record.entry?.title?.trim() ?? '';
-            if (!sourceName && typeof legacyLocator?.title === 'string') { sourceName = legacyLocator.title.trim(); }
-            if (!sourceName && record.entry?.url) {
-                try {
-                    sourceName = new URL(record.entry.url).hostname.replace(/^www\./, '');
-                } catch { /* Keep malformed source URLs out of the visible source label. */ }
-            }
-            if (!sourceName && legacyLocator?.kind === 'article') { sourceName = '文章'; }
-            if (sourceName) {
-                const sourceLine = document.createElement('p');
-                sourceLine.className = 'study-library-source';
-                const label = document.createElement('span');
-                label.textContent = '来源：';
-                const name = document.createElement('strong');
-                name.textContent = sourceName;
-                sourceLine.append(label, name);
-                article.append(sourceLine);
-            }
+            const sourceLine = createSourceLine(record.entry ?? {}, record.entry?.title?.trim() || (typeof legacyLocator?.title === 'string' ? legacyLocator.title : ''));
+            if (sourceLine) { article.append(sourceLine); }
             const technicalDetails = makeTechnicalDetails(record.path, record.entry?.subtitleSource, legacyLocator);
             if (technicalDetails) { article.append(technicalDetails); }
             const actions = document.createElement('div');
@@ -561,24 +582,6 @@ async function initializePage() {
                         .finally(() => { anki.disabled = false; });
                 });
                 actions.append(anki);
-            }
-            if (record.entry?.url) {
-                let sourceUrl = record.entry.url;
-                try {
-                    const parsed = new URL(sourceUrl);
-                    if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(parsed.hostname) && typeof record.entry.videoTime === 'number') {
-                        parsed.searchParams.set('t', `${Math.max(0, Math.floor(record.entry.videoTime))}s`);
-                        sourceUrl = parsed.href;
-                    }
-                    if (['http:', 'https:'].includes(parsed.protocol)) {
-                        const source = document.createElement('a');
-                        source.href = sourceUrl;
-                        source.target = '_blank';
-                        source.rel = 'noopener noreferrer';
-                        source.textContent = '打开来源 ↗';
-                        actions.append(source);
-                    }
-                } catch { /* Invalid or local source URLs remain visible through note text. */ }
             }
             const favorite = document.createElement('button');
             favorite.type = 'button';
@@ -639,24 +642,8 @@ async function initializePage() {
                 context.textContent = saved.context;
                 article.append(context);
             }
-            let sourceName = saved.title?.trim() ?? '';
-            if (!sourceName && typeof legacyLocator?.title === 'string') { sourceName = legacyLocator.title.trim(); }
-            if (!sourceName && saved.url) {
-                try {
-                    sourceName = new URL(saved.url).hostname.replace(/^www\./, '');
-                } catch { /* Keep malformed source URLs out of the visible source label. */ }
-            }
-            if (!sourceName && legacyLocator?.kind === 'article') { sourceName = '文章'; }
-            if (sourceName) {
-                const sourceLine = document.createElement('p');
-                sourceLine.className = 'study-library-source';
-                const label = document.createElement('span');
-                label.textContent = '来源：';
-                const name = document.createElement('strong');
-                name.textContent = sourceName;
-                sourceLine.append(label, name);
-                article.append(sourceLine);
-            }
+            const sourceLine = createSourceLine(saved, saved.title?.trim() || (typeof legacyLocator?.title === 'string' ? legacyLocator.title : ''));
+            if (sourceLine) { article.append(sourceLine); }
             const technicalDetails = makeTechnicalDetails(null, null, legacyLocator);
             if (technicalDetails) { article.append(technicalDetails); }
             const actions = document.createElement('div');
@@ -668,19 +655,6 @@ async function initializePage() {
             resume.rel = 'noopener noreferrer';
             resume.textContent = '继续学习 ↗';
             actions.append(resume);
-            if (saved.url) {
-                try {
-                    const parsed = new URL(saved.url);
-                    if (['http:', 'https:'].includes(parsed.protocol)) {
-                        const source = document.createElement('a');
-                        source.href = parsed.href;
-                        source.target = '_blank';
-                        source.rel = 'noopener noreferrer';
-                        source.textContent = '打开来源 ↗';
-                        actions.append(source);
-                    }
-                } catch { /* Keep malformed or local source values out of clickable links. */ }
-            }
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.textContent = '取消收藏';

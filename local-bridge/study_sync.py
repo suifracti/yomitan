@@ -224,6 +224,7 @@ def favorite(lib, p):
         body = (f'\n## 语境 · {__import__("study_library").safe_markdown(e["title"] or e["sentence"][:80])}\n' if grouped
                 else f'\n# {__import__("study_library").safe_markdown(e["word"])}\n')
         body += '\n[[' + str(lib.relative) + '/语境词库|语境词库]]\n\n'
+        body += __import__('study_library').source_line(e) + '\n'
         body += f'{heading} 原句\n\n{__import__("study_library").paragraph(e["sentence"])}\n\n'
         for label, key in [('含义（保存时的解释）','meaning'), ('译文','translation'), ('补充语境','context'), ('来源标题','title'), ('来源网址','url')]:
             if e.get(key): body += f'{heading} {label}\n\n{__import__("study_library").paragraph(e[key])}\n\n'
