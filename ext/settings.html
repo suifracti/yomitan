@@ -574,7 +574,31 @@
             <section><h2>词典 AI 辅助</h2><label class="check"><input type="checkbox" id="autoDictionaryTranslate">查词时自动通过 AI 翻译词典英英首义</label><p>关闭时仅在点击翻译后调用 AI。</p></section>
             <section><h2>翻译缓存</h2><label class="check"><input type="checkbox" id="cacheEnabled">将生成结果保存在本机，移开再回来直接显示</label><p>再次查看时复用已有译文。关闭后会清空缓存。</p><button type="button" id="clear-cache">清空翻译缓存</button></section>
             <div class="save-bar"><small id="settings-save-state" class="study-save-state" role="status" aria-live="polite">正在读取本地设置…</small><button type="submit" class="primary">保存设置</button></div>
-        </form><div class="advanced-only">
+        </form>
+<section id="subtitle-settings" class="study-settings-panel" aria-labelledby="subtitle-settings-title">
+            <h2 id="subtitle-settings-title">视频字幕</h2>
+            <p>视频内字幕、右侧字幕栏和播放器里的面板共用这些设置，改动立即生效。</p>
+            <fieldset class="subtitle-engines">
+                <legend>翻译服务</legend>
+                <label class="check"><input type="radio" name="subtitle-engine" value="chrome"><span><strong>Chrome 内置翻译</strong> · 免费，在本机运行，不联网发送字幕。第一次使用要下载语言模型：在视频里点一次翻译。</span></label>
+                <label class="check"><input type="radio" name="subtitle-engine" value="apple"><span><strong>Apple 翻译</strong> · 免费，在本机运行。需要本机桥，并在“系统设置 &gt; 通用 &gt; 语言与地区 &gt; 翻译语言”下载英文与简体中文。</span></label>
+                <label class="check"><input type="radio" name="subtitle-engine" value="google"><span><strong>Google 翻译</strong> · 免费网页翻译接口。字幕文字会发送给 Google；偶尔会限流。</span></label>
+                <label class="check"><input type="radio" name="subtitle-engine" value="microsoft"><span><strong>微软翻译</strong> · 免费 Edge 接口。字幕文字会发送给微软；有些网络下不可用。</span></label>
+                <label class="check"><input type="radio" name="subtitle-engine" value="model"><span><strong>你的模型</strong> · 使用上面的模型设置，消耗订阅额度；质量最好，速度最慢。</span></label>
+            </fieldset>
+            <div class="library-actions"><button type="button" id="subtitle-engine-test">测试所选服务</button><span id="subtitle-engine-result" role="status" aria-live="polite"></span></div>
+            <fieldset class="subtitle-options">
+                <legend>显示与自动化</legend>
+                <label class="check"><input type="checkbox" data-subtitle-pref="autoTranslate">自动翻译：跟着播放位置提前翻好</label>
+                <label>提前量（秒）<input type="number" id="subtitle-ahead" min="20" max="300" step="10"></label>
+                <label class="check"><input type="checkbox" data-subtitle-pref="overlay">视频内字幕（替换 YouTube 自带字幕，可直接划词）</label>
+                <label class="check"><input type="checkbox" data-subtitle-pref="bilingual">双语显示</label>
+                <label class="check"><input type="checkbox" data-subtitle-pref="blur">模糊译文（悬停或点击才显示）</label>
+                <label class="check"><input type="checkbox" data-subtitle-pref="merge">把字幕碎片合并成整句</label>
+                <label class="check"><input type="checkbox" data-subtitle-pref="aiSegment">AI 断句（用你的模型按段重新断句，会消耗额度）</label>
+            </fieldset>
+            <small id="subtitle-settings-state" class="study-save-state" role="status" aria-live="polite">正在读取…</small>
+        </section><div class="advanced-only">
         <div class="heading-container">
             <div class="heading-container-icon"><span class="icon" data-icon="translation"></span></div>
             <div class="heading-container-left"><h2 id="translation"><a href="#translation">Translation</a></h2></div>

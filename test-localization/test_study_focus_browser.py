@@ -50,6 +50,8 @@ document.querySelectorAll('[data-sc-content=glosses] > li').forEach((li,i)=>{li.
         end=upstream.find('\n}\n',begin)+3
         helper='const sourceHighlightSelections=new WeakMap();\n'+upstream[begin:end].replace('export function','function',1)
         module=module.replace("import {updateStudySourcePreview} from './study-translation.js';",helper)
+        module=module.replace("import {chromeTranslate} from '../study/free-translators.js';","const chromeTranslate=async()=>{throw new Error('not used in this fixture');};")
+        module=module.replace("import {readSubtitlePrefs} from '../study/subtitle-prefs.js';","const readSubtitlePrefs=async()=>({engine:'google'});")
         module=module.replace("import {explainWordForm, findFormExample} from './study-word-forms.js';",(ROOT/'ext/js/display/study-word-forms.js').read_text().replace('export function ','function '))
         module=module.replace('export function prepareStudyFocus','function prepareStudyFocus')
         module=module.replace("new URL('../../css/study-focus.css', import.meta.url).href", "'data:text/css,'")

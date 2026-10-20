@@ -25,6 +25,7 @@ import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
+import {normalizeSubtitlePrefs, SUBTITLE_PREFS_KEY} from './subtitle-prefs.js';
 
 /** @type {WeakSet<object>} */
 const preparedRuntimes = new WeakSet();
@@ -685,7 +686,7 @@ export class StudyService {
         }
 
 
-        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel'].includes(action)) { return await this.subtitles.handle(action, value); }
+        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment'].includes(action)) { return await this.subtitles.handle(action, value); }
 
         if (action === 'pendingPeek' || action === 'retryPending') {
             const {language = 'en'} = /** @type {{language?: string}} */ (value ?? {});
@@ -1131,12 +1132,14 @@ export function prepareStudyService(lookupDictionary = null) {
             return false;
         }
         // Content scripts get only the explicit reader's read/translate/cancel path, never library writes.
-        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel'].includes(studyAction) && sender.id === chrome.runtime.id && sender.frameId === 0 &&
+        if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment'].includes(studyAction) && sender.id === chrome.runtime.id && sender.frameId === 0 &&
         /^https:\/\/(?:www\.|m\.)?youtube\.com\/watch(?:[?#]|$)/.test(sender.url || '')) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
             void (async () => {
-                if (studyAction === 'subtitleTranslate' && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
+                // Only the model and Apple translation go through the local bridge.
+                const {engine} = normalizeSubtitlePrefs(await service.read(SUBTITLE_PREFS_KEY));
+                if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(engine)) || studyAction === 'subtitleSegment') && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
                     throw new Error('请先在学习设置中授权本机翻译，再点翻译字幕。');
                 }
                 return await service.handle(studyAction, scoped);

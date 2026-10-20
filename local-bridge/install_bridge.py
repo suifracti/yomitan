@@ -18,6 +18,23 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def compile_apple_translate(runtime):
+    """Builds the on-device Apple translation helper; skipped when swiftc is missing."""
+    source = pathlib.Path(__file__).parent / 'apple-translate' / 'main.swift'
+    swiftc = shutil.which('swiftc')
+    if not swiftc or not source.is_file():
+        return False
+    target = runtime / 'apple-translate'
+    temporary = runtime / 'apple-translate.install-tmp'
+    result = subprocess.run([swiftc, '-parse-as-library', '-O', str(source), '-o', str(temporary)], capture_output=True, timeout=300)
+    if result.returncode != 0 or not temporary.is_file():
+        temporary.unlink(missing_ok=True)
+        return False
+    temporary.chmod(0o700)
+    temporary.replace(target)
+    return True
+
+
 def install(home, codex, python, vault=None):
     home = pathlib.Path(home)
     codex = pathlib.Path(codex).resolve()
@@ -53,6 +70,7 @@ def install(home, codex, python, vault=None):
         runtime / 'study_memory.py': (pathlib.Path(__file__).parent / 'study_memory.py').read_bytes(),
         runtime / 'study_usage.py': (pathlib.Path(__file__).parent / 'study_usage.py').read_bytes(),
         runtime / 'study_media.py': (pathlib.Path(__file__).parent / 'study_media.py').read_bytes(),
+        runtime / 'study_apple_translate.py': (pathlib.Path(__file__).parent / 'study_apple_translate.py').read_bytes(),
         runtime / 'bridge-config.json': (json.dumps(config, indent=2) + '\n').encode(),
         runtime / 'launch-host': ('#!/bin/sh\nexec ' + shlex.quote(str(python)) + ' ' + shlex.quote(str(runtime / 'study_translator.py')) + ' "$@"\n').encode(),
         registry: (json.dumps({'name': HOST_NAME, 'description': '点击式英语翻译（本机 Codex）',
@@ -87,6 +105,7 @@ def install(home, codex, python, vault=None):
             file.write(data)
         temporary.chmod(0o700 if path.name == 'launch-host' else 0o600)
         temporary.replace(path)
+    compile_apple_translate(runtime)
     marker.write_text(json.dumps({'files': {str(p): digest(p) for p in content}}, indent=2) + '\n')
     marker.chmod(0o600)
     return runtime, auth.exists()

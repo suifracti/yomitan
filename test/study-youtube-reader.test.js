@@ -40,7 +40,7 @@ test('loads the player caption request read-only and keeps sentences per caption
         fetched.push(url);
         return {ok: true, status: 200, text: async () => timedText};
     });
-    const reader = new YoutubeReader({prefs: {merge: false}});
+    const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}});
     reader.start();
     expect(fetched).toEqual([]); // Nothing is requested before the user clicks.
     reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&kind=asr&tlang=zh-Hans&fmt=srv3&pot=x');
@@ -100,7 +100,7 @@ test('loads the player caption request read-only and keeps sentences per caption
 test('explicit batch translation stays on its original rows and reaches the ordinary word-card context', async () => {
     const calls = [];
     vi.stubGlobal('fetch', async () => ({ok: true, status: 200, text: async () => timedText}));
-    const reader = new YoutubeReader({prefs: {merge: false},
+    const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'},
         call: async (action, data) => {
             calls.push(action);
             if (action === 'subtitleSettings') {
@@ -141,7 +141,7 @@ for (const mode of ['language', 'clear']) {
         const {StudyService} = await import('../ext/js/study/study-service.js');
         const {SETTINGS_KEY} = await import('../ext/js/study/study-data.js');
         /** @type {Record<string, unknown>} */
-        const data = {[SETTINGS_KEY]: {model: 'fixture', effort: 'low', cacheEnabled: true}};
+        const data = {[SETTINGS_KEY]: {model: 'fixture', effort: 'low', cacheEnabled: true}, studySubtitlePrefs: {engine: 'model'}};
         let nativeCalls = 0;
         const service = new StudyService({get: async (key) => ({[key]: data[key]}), set: async (values) => { Object.assign(data, values); }}, (payload) => {
             const p = /** @type {{language: string, items: {id: string}[]}} */ (payload);
@@ -149,7 +149,7 @@ for (const mode of ['language', 'clear']) {
             return {cancel() {}, promise: Promise.resolve({ok: true, result: {items: p.items.map((item) => ({id: item.id, translation: p.language === 'fr' ? '面包' : '疼痛'}))}})};
         });
         vi.stubGlobal('fetch', async () => ({ok: true, status: 200, text: async () => JSON.stringify({events: [{tStartMs: 0, dDurationMs: 1500, segs: [{utf8: 'Pain'}]}]})}));
-        const reader = new YoutubeReader({prefs: {merge: false}, call: service.handle.bind(service)});
+        const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}, call: service.handle.bind(service)});
         reader.start();
         /**
          * @param {string} language
@@ -177,7 +177,7 @@ for (const mode of ['language', 'clear']) {
 for (const change of ['navigation', 'player replacement']) {
     test(`caption reload does not click an obsolete player after ${change}`, async () => {
         vi.useFakeTimers();
-        const reader = new YoutubeReader({prefs: {merge: false}});
+        const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}});
         const cc = /** @type {HTMLButtonElement} */ (document.querySelector('#movie_player .ytp-subtitles-button'));
         cc.setAttribute('aria-pressed', 'true');
         const click = vi.spyOn(cc, 'click');
@@ -203,7 +203,7 @@ for (const change of ['navigation', 'player replacement']) {
 
 test('caption reload still reopens CC and accepts the current player request', async () => {
     vi.useFakeTimers();
-    const reader = new YoutubeReader({prefs: {merge: false}});
+    const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}});
     const cc = /** @type {HTMLButtonElement} */ (document.querySelector('#movie_player .ytp-subtitles-button'));
     cc.setAttribute('aria-pressed', 'true');
     const click = vi.spyOn(cc, 'click');
@@ -233,7 +233,7 @@ for (const stage of ['response', 'body', 'navigation']) {
             if (stage !== 'body') { return await stalled(); }
             return {ok: true, status: 200, text: stalled};
         }));
-        const reader = new YoutubeReader({prefs: {merge: false}});
+        const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}});
         reader.start();
         reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
         const load = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-head button:last-child'));

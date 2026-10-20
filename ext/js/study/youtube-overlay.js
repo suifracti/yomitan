@@ -22,6 +22,7 @@
  * always agree. The English line is ordinary page text registered with the same
  * study context as the sidebar row, so selecting a word opens the existing card.
  */
+import {ENGINE_LABELS} from './free-translators.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 
 const OVERLAY_ID = 'study-yt-overlay';
@@ -56,6 +57,7 @@ const STYLE = `
 #${PANEL_ID}[hidden]{display:none}
 #${PANEL_ID} .p-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px;padding:0 14px;cursor:pointer}
 #${PANEL_ID} .p-row:hover{background:rgb(255 255 255 / 8%)}
+#${PANEL_ID} .p-row select{max-width:130px;padding:2px 4px;border:1px solid rgb(255 255 255 / 25%);border-radius:5px;background:#2a2a2e;color:#eee;font:inherit;font-size:12px}
 #${PANEL_ID} .p-row input{width:34px;height:18px;margin:0;accent-color:#a9b6ef;cursor:pointer}
 #${PANEL_ID} .p-note{padding:2px 14px 6px;color:#aaa;font-size:12px}
 #${PANEL_ID} .p-actions{display:flex;flex-wrap:wrap;gap:6px;padding:6px 14px 4px;border-top:1px solid rgb(255 255 255 / 12%)}
@@ -197,7 +199,10 @@ export class YoutubeOverlay {
         panel.hidden = true;
         isolate(panel);
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句']];
+        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）']];
+        const engine = engineSelect((value) => this._reader.updatePrefs({engine: value}));
+        engine.classList.add('p-row');
+        panel.append(engine);
         for (const [key, label] of toggles) {
             const row = document.createElement('label');
             row.className = 'p-row';
@@ -262,6 +267,7 @@ export class YoutubeOverlay {
                 const key = /** @type {keyof import('./subtitle-prefs.js').SubtitlePrefs} */ (/** @type {HTMLInputElement} */ (box).dataset.pref);
                 /** @type {HTMLInputElement} */ (box).checked = Boolean(prefs[key]);
             }
+            for (const select of this._panel.querySelectorAll('select[data-engine]')) { /** @type {HTMLSelectElement} */ (select).value = prefs.engine; }
             for (const button of this._panel.querySelectorAll('button[data-action]')) {
                 const action = /** @type {HTMLButtonElement} */ (button).dataset.action;
                 /** @type {HTMLButtonElement} */ (button).disabled = action !== 'load' && !loaded;
@@ -405,4 +411,26 @@ function isolate(element) {
     for (const type of ISOLATED_EVENTS) {
         element.addEventListener(type, (event) => event.stopPropagation());
     }
+}
+
+/**
+ * A labelled service picker shared by the sidebar menu and the in-video panel.
+ * @param {(engine: import('./subtitle-prefs.js').SubtitleEngine) => void} onChange
+ * @returns {HTMLLabelElement}
+ */
+export function engineSelect(onChange) {
+    const label = document.createElement('label');
+    label.className = 'r-engine';
+    label.append('翻译服务');
+    const select = document.createElement('select');
+    select.dataset.engine = '';
+    for (const [value, text] of Object.entries(ENGINE_LABELS)) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        select.append(option);
+    }
+    select.addEventListener('change', () => onChange(/** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (select.value)));
+    label.append(select);
+    return label;
 }

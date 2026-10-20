@@ -391,3 +391,21 @@ export function groupForReading(cues, {maxGapMs = 350, maxDurationMs = 12000, ma
     }
     return freeze(groups);
 }
+
+/**
+ * Turns model-proposed groups of cue IDs into reading groups, or returns null when the
+ * proposal skips, repeats or reorders a cue. Text and times always come from the cues.
+ * @param {SubtitleCue[]} cues
+ * @param {unknown} idGroups
+ * @returns {SubtitleGroup[]|null}
+ */
+export function groupsFromIds(cues, idGroups) {
+    if (!Array.isArray(idGroups) || idGroups.some((group) => !Array.isArray(group) || group.length === 0 || group.some((id) => typeof id !== 'string'))) { return null; }
+    const flat = /** @type {string[][]} */ (idGroups).flat();
+    if (flat.length !== cues.length || flat.some((id, index) => id !== cues[index].id)) { return null; }
+    const byId = new Map(cues.map((cue) => [cue.id, cue]));
+    return freeze(/** @type {string[][]} */ (idGroups).map((ids) => {
+        const members = ids.map((id) => /** @type {SubtitleCue} */ (byId.get(id)));
+        return {cueIds: [...ids], text: members.map((cue) => cue.text).join(' '), startMs: members[0].startMs, endMs: Math.max(...members.map((cue) => cue.endMs))};
+    }));
+}

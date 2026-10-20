@@ -43,7 +43,7 @@ export const DEFAULT_SUBTITLE_PREFS = Object.freeze({
     merge: true,
     aiSegment: false,
     autoTranslate: false,
-    engine: 'google',
+    engine: 'chrome',
     aheadSeconds: 60,
 });
 

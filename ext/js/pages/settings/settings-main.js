@@ -18,6 +18,7 @@
 
 import {prepareBundledDictionary} from '../common/bundled-dictionary.js';
 import {prepareStudySettings} from '../study-settings-main.js';
+import {prepareSubtitleSettings} from '../subtitle-settings.js';
 import {Application} from '../../application.js';
 import {DocumentFocusController} from '../../dom/document-focus-controller.js';
 import {querySelectorNotNull} from '../../dom/query-selector.js';
@@ -103,6 +104,7 @@ await Application.main(true, async (application) => {
     prepareSettingsNavigation(settingsRoot);
     document.body.hidden = false;
     void prepareStudySettings(settingsRoot);
+    void prepareSubtitleSettings(settingsRoot);
 
     let popupPreviewController = null;
     querySelectorNotNull(document, '#open-popup-preview').addEventListener('click', () => {

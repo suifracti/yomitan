@@ -3,6 +3,8 @@ import {studyCall} from '../study/study-client.js';
 import {prepareStudyWorkspace} from './study-workspace.js';
 import {updateStudySourcePreview} from './study-translation.js';
 import {explainWordForm, findFormExample} from './study-word-forms.js';
+import {chromeTranslate} from '../study/free-translators.js';
+import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
 
 const cleanText = (value) => typeof value === 'string' ? value : '';
 const asArray = (value) => Array.isArray(value) ? value : [];
@@ -352,13 +354,19 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     status.textContent = '正在翻译…';
                     void (async () => {
                         try {
-                            const config = /** @type {{model?: string, effort?: string}} */ (await call('subtitleSettings'));
-                            if (translateRun !== run) { return; }
-                            const result = /** @type {{items?: {id: string, translation?: string, error?: string}[]}} */ (await call('subtitleTranslate', {requestId: run,
-                                items: [{id: 'example', text: example, context: `${word}：${form}`}],
-                                config: {model: config?.model, effort: config?.effort},
-                                language: 'en',
-                                title: `${word} 词形例句`}));
+                            // Chrome's on-device translator runs in this page; other services go through the background.
+                            const local = (await readSubtitlePrefs()).engine === 'chrome' ? (await chromeTranslate([example]))[0] : '';
+                            /** @type {{items?: {id: string, translation?: string, error?: string}[]}} */
+                            let result = {items: [{id: 'example', translation: local}]};
+                            if (!local) {
+                                const config = /** @type {{model?: string, effort?: string}} */ (await call('subtitleSettings'));
+                                if (translateRun !== run) { return; }
+                                result = /** @type {{items?: {id: string, translation?: string, error?: string}[]}} */ (await call('subtitleTranslate', {requestId: run,
+                                    items: [{id: 'example', text: example, context: `${word}：${form}`}],
+                                    config: {model: config?.model, effort: config?.effort},
+                                    language: 'en',
+                                    title: `${word} 词形例句`}));
+                            }
                             if (translateRun !== run || !current()) { return; }
                             const translation = result?.items?.[0]?.translation?.trim();
                             if (!translation) { throw new Error(result?.items?.[0]?.error || '没有取得译文'); }

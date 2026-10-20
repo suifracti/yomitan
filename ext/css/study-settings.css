@@ -329,3 +329,35 @@ body.preview-sidebar-visible .preview-frame-container .preview-close {
     border-radius: var(--st-radius-2);
     background: var(--st-sheet);
 }
+
+#subtitle-settings fieldset {
+    display: grid;
+    gap: 8px;
+    margin: 14px 0;
+    padding: 0;
+    border: 0;
+}
+#subtitle-settings legend {
+    margin-bottom: 6px;
+    padding: 0;
+    color: var(--study-ink);
+    font-weight: 600;
+}
+#subtitle-settings .check {
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.55;
+}
+#subtitle-settings .check input {
+    margin-top: 4px;
+}
+#subtitle-settings .check strong {
+    color: var(--study-ink);
+}
+#subtitle-settings input[type='number'] {
+    width: 96px;
+}
+#subtitle-engine-result {
+    color: var(--study-muted);
+    overflow-wrap: anywhere;
+}

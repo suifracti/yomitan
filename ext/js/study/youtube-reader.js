@@ -21,11 +21,12 @@
  * and nothing pretends to be the protected ASB cue (no data-asb-study-cue).
  * Explicit translation uses the existing Native path; row metadata feeds the original word card.
  */
-import {SubtitleSession, cuesFromTimedText, groupForReading, timeLabel} from './subtitle-session.js';
+import {SubtitleSession, cuesFromTimedText, groupForReading, groupsFromIds, timeLabel} from './subtitle-session.js';
+import {ENGINE_LABELS, chromeTranslate} from './free-translators.js';
 import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, writeSubtitlePrefs} from './subtitle-prefs.js';
 import {TranslationQueue} from './translation-queue.js';
 import {studyCall} from './study-client.js';
-import {YoutubeOverlay} from './youtube-overlay.js';
+import {YoutubeOverlay, engineSelect} from './youtube-overlay.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 
@@ -71,6 +72,8 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-menu[hidden]{display:none}
 #${ROOT_ID} .r-switch{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
 #${ROOT_ID} .r-switch input{margin:0;accent-color:var(--r-accent)}
+#${ROOT_ID} .r-engine{display:inline-flex;align-items:center;gap:6px;flex:1 0 100%}
+#${ROOT_ID} .r-engine select{font:inherit;font-size:12px;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:2px 6px}
 #${ROOT_ID} .r-downloads{display:flex;flex-wrap:wrap;gap:6px;flex:1 0 100%}
 #${ROOT_ID}.r-blur .r-translation:not(.is-revealed){filter:blur(5px);cursor:pointer;transition:filter 120ms}
 #${ROOT_ID}.r-blur .r-cue:hover .r-translation{filter:none}
@@ -109,6 +112,12 @@ export class YoutubeReader extends EventTarget {
         this._rowInfo = new Map();
         /** @type {MutationObserver|null} */
         this._pin = null;
+        /** @type {number} Automatic translation waits until this time after a failure. */
+        this._autoBackoff = 0;
+        /** @type {string[][]|null} Model sentence groups for the current raw track. */
+        this._aiGroups = null;
+        /** @type {number} */
+        this._segmentRun = 0;
         /** @type {typeof studyCall} */
         this._call = call;
         /** @type {string} */
@@ -124,6 +133,12 @@ export class YoutubeReader extends EventTarget {
             signal.addEventListener('abort', cancel, {once: true});
             try {
                 if (signal.aborted) { throw new Error('已取消'); }
+                // Chrome's on-device translator only exists in pages, so it runs here.
+                if (this._prefs.engine === 'chrome') {
+                    const source = (this._session?.source.language || 'en').split('-')[0];
+                    const rows = await chromeTranslate(items.map((item) => item.text), {source, signal});
+                    return items.map((item, index) => ({id: item.id, translation: rows[index]}));
+                }
                 const result = /** @type {{items: {id: string, translation: string}[]}} */ (await this._call('subtitleTranslate', {requestId,
                     items,
                     config,
@@ -206,9 +221,11 @@ export class YoutubeReader extends EventTarget {
         this._prefs = normalizeSubtitlePrefs(prefs);
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
-        if (previous.merge !== this._prefs.merge && this._rawSession && this._view) {
+        if ((previous.merge !== this._prefs.merge || previous.aiSegment !== this._prefs.aiSegment) && this._rawSession && this._view) {
             this._render(this._readingSession(this._rawSession));
         }
+        if (this._prefs.aiSegment && !previous.aiSegment) { void this._runSegmentation(); }
+        if (!this._prefs.aiSegment) { ++this._segmentRun; }
         this._syncMenu();
         this._emit('prefs', {prefs: this._prefs});
     }
@@ -237,8 +254,9 @@ export class YoutubeReader extends EventTarget {
      */
     _readingSession(raw) {
         this._members = new Map(raw.cues.map((cue) => [cue.id, [cue.id]]));
-        if (!this._prefs.merge) { return raw; }
-        const groups = groupForReading(raw.cues);
+        const ai = this._prefs.aiSegment && this._aiGroups ? groupsFromIds(raw.cues, this._aiGroups) : null;
+        if (!ai && !this._prefs.merge) { return raw; }
+        const groups = ai ?? groupForReading(raw.cues);
         if (groups.length === raw.cues.length) { return raw; }
         this._members = new Map(groups.map((group) => [group.cueIds[0], [...group.cueIds]]));
         return new SubtitleSession(raw.source, groups.map((group) => ({id: group.cueIds[0], startMs: group.startMs, endMs: group.endMs, text: group.text})));
@@ -349,6 +367,8 @@ export class YoutubeReader extends EventTarget {
         this._lookup = '';
         this._session = null;
         this._rawSession = null;
+        this._aiGroups = null;
+        ++this._segmentRun;
         this._rows.clear();
         this._rowInfo.clear();
         this._active = '';
@@ -426,7 +446,8 @@ export class YoutubeReader extends EventTarget {
         menu.className = 'r-menu scan-disable';
         menu.hidden = true;
         /** @type {[keyof import('./subtitle-prefs.js').SubtitlePrefs, string][]} */
-        const toggles = [['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句']];
+        const toggles = [['autoTranslate', '自动翻译'], ['overlay', '视频内字幕'], ['bilingual', '双语显示'], ['blur', '模糊译文'], ['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）']];
+        menu.append(engineSelect((engine) => this.updatePrefs({engine})));
         for (const [key, label] of toggles) {
             const toggle = document.createElement('label');
             toggle.className = 'r-switch';
@@ -490,6 +511,7 @@ export class YoutubeReader extends EventTarget {
             const key = /** @type {keyof import('./subtitle-prefs.js').SubtitlePrefs} */ (/** @type {HTMLInputElement} */ (box).dataset.pref);
             /** @type {HTMLInputElement} */ (box).checked = Boolean(this._prefs[key]);
         }
+        for (const select of view.menu.querySelectorAll('select[data-engine]')) { /** @type {HTMLSelectElement} */ (select).value = this._prefs.engine; }
         for (const button of view.menu.querySelectorAll('button[data-download]')) {
             /** @type {HTMLButtonElement} */ (button).disabled = !this._session;
         }
@@ -566,7 +588,9 @@ export class YoutubeReader extends EventTarget {
                 trackName: kind === 'asr' ? `${language} 自动字幕` : language,
             }, cuesFromTimedText(text));
             this._rawSession = session;
+            this._aiGroups = null;
             this._render(this._readingSession(session));
+            if (this._prefs.aiSegment) { void this._runSegmentation(); }
         } catch (error) {
             if (generation === this._generation) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
@@ -735,7 +759,7 @@ export class YoutubeReader extends EventTarget {
         view.retry.disabled = true;
         view.load.disabled = true;
         view.cancel.hidden = false;
-        this._status(`正在翻译 ${items.length} 句…`);
+        this._status(`正在翻译 ${items.length} 句 · ${ENGINE_LABELS[this._prefs.engine]}…`);
         try {
             const config = /** @type {import('study').StudyConfig} */ (await this._call('subtitleSettings'));
             if (this._session !== session || this._translateRun !== runId) { return; }
@@ -756,9 +780,11 @@ export class YoutubeReader extends EventTarget {
                     }
                 }});
             if (this._session === session && !result.cancelled) {
-                this._status(`已译 ${session.progress().translated}/${session.cues.length}${this._failed.size > 0 ? ' · 有失败，可重试' : ''}`);
+                this._status(`已译 ${session.progress().translated}/${session.cues.length} · ${ENGINE_LABELS[this._prefs.engine]}${this._failed.size > 0 ? ' · 有失败，可重试或换服务' : ''}`);
+                if (this._failed.size > 0) { this._autoBackoff = Date.now() + 20000; }
             }
         } catch (error) {
+            this._autoBackoff = Date.now() + 20000;
             if (this._session === session) { this._status(error instanceof Error ? error.message : String(error)); }
         } finally {
             if (this._session === session) {
@@ -807,6 +833,7 @@ export class YoutubeReader extends EventTarget {
         this._active = key;
         for (const [id, row] of this._rows) { row.classList.toggle('is-current', active.includes(id)); }
         this._emit('active', {ids: active});
+        this._autoTranslate(video.currentTime * 1000);
         const first = active.length > 0 ? this._rows.get(active[0]) : void 0;
         if (this._follow && first) {
             const list = this._view.list;
@@ -870,6 +897,71 @@ export class YoutubeReader extends EventTarget {
         this._lookup = id;
         this._rows.get(id)?.classList.add('is-lookup');
         this._emit('lookup', {id});
+    }
+
+    /**
+     * Asks the model to regroup the whole track window by window (explicit opt-in).
+     * The last group of each window is re-sent with the next one so sentences are not
+     * cut at window edges. Any invalid answer keeps the rule-based grouping.
+     */
+    async _runSegmentation() {
+        const raw = this._rawSession;
+        if (!raw || !this._prefs.aiSegment) { return; }
+        const run = ++this._segmentRun;
+        const live = () => run === this._segmentRun && this._rawSession === raw && this._prefs.aiSegment;
+        try {
+            const config = /** @type {import('study').StudyConfig} */ (await this._call('subtitleSettings'));
+            const cues = raw.cues;
+            /** @type {string[][]} */
+            const groups = [];
+            let start = 0;
+            while (start < cues.length) {
+                if (!live()) { return; }
+                const window = [];
+                let chars = 0;
+                for (const cue of cues.slice(start, start + 60)) {
+                    const text = cue.text.slice(0, 600);
+                    if (window.length > 1 && chars + text.length > 12000) { break; }
+                    chars += text.length;
+                    window.push({id: cue.id, text});
+                }
+                this._status(`AI 断句中 ${Math.round(start / cues.length * 100)}%…`);
+                let proposed = [[window[0].id]];
+                if (window.length > 1) {
+                    const result = /** @type {{groups: string[][]}} */ (await this._call('subtitleSegment', {
+                        requestId: `seg-${run}-${start}`,
+                        items: window,
+                        language: raw.source.language,
+                        config: {model: config.model, effort: config.effort},
+                    }));
+                    proposed = result.groups;
+                }
+                if (!live()) { return; }
+                const last = start + window.length >= cues.length;
+                const keep = last || proposed.length < 2 ? proposed : proposed.slice(0, -1);
+                groups.push(...keep);
+                start += keep.flat().length;
+            }
+            if (!live()) { return; }
+            this._aiGroups = groups;
+            this._render(this._readingSession(raw));
+            this._status(`AI 断句完成 · ${groups.length} 句`);
+        } catch (error) {
+            if (live()) { this._status(`AI 断句未完成：${error instanceof Error ? error.message : String(error)}；已保留规则断句。`); }
+        }
+    }
+
+    /**
+     * Keeps translations ready ahead of the playback position while the learner has
+     * automatic translation on; pauses in background tabs and after failures.
+     * @param {number} playbackMs
+     */
+    _autoTranslate(playbackMs) {
+        const session = this._session;
+        if (!session || !this._prefs.autoTranslate || this._translating || document.hidden || Date.now() < this._autoBackoff) { return; }
+        const until = playbackMs + this._prefs.aheadSeconds * 1000;
+        const needed = session.cues.some((cue) => cue.endMs + session.offsetMs >= playbackMs && cue.startMs + session.offsetMs <= until && !session.translation(cue.id));
+        if (needed) { void this._translate(false); }
     }
 
     /** */

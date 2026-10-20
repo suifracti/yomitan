@@ -9,6 +9,7 @@ media, the note format and automatic two-way sync.
 ## Done
 
 - Batch 1 — one caption controller with two views.
+
   - `YoutubeReader` (`ext/js/study/youtube-reader.js`) is now the controller.
     It extends `EventTarget` and emits `session`, `reset`, `active`, `lookup`,
     `loop`, `translation` and `prefs`; the sidebar is rendered by it and the
@@ -34,11 +35,39 @@ media, the note format and automatic two-way sync.
     blur, merge, aiSegment, autoTranslate, engine, aheadSeconds). The engine
     and automatic translation are wired in batch 2.
 
+- Batch 2 — caption translation services and automation.
+  - The background reads the service from `studySubtitlePrefs` (never from the
+    page) in `subtitle-translation.js`; cache keys are namespaced per service
+    (`subtitle:<engine>:…`, the model keeps its original keys).
+  - Services (`ext/js/study/free-translators.js`): Google's public page
+    translation endpoint (`translate-pa.googleapis.com/v1/translateHtml`,
+    batched; checked live), Microsoft Edge's free token endpoint (returned 404
+    from this network; the settings test button reports it), Chrome's
+    on-device Translator (runs in the page; default service), Apple's
+    on-device Translation framework through the bridge, and the model.
+  - Apple: `local-bridge/apple-translate/main.swift` (compiled by
+    `install_bridge.py` with swiftc) and `local-bridge/study_apple_translate.py`;
+    new native action `appleTranslate`. Checked live through the installed
+    bridge ("Keep going." → "继续。").
+  - AI segmentation: native action `segment` (model; returns ID groups only,
+    validated to cover every cue in order) and `subtitleSegment` in the
+    background. The reader sends windows of up to 60 cues, re-sends each
+    window's last group with the next one, and keeps rule grouping on any
+    invalid answer. Results stay in page memory for that track.
+  - Automatic translation keeps `aheadSeconds` of rows translated ahead of
+    playback, pauses in background tabs and backs off 20 s after a failure.
+  - The native-messaging permission is only required for the model and Apple.
+  - Settings page: "视频字幕" section in AI 与翻译 (service with data
+    destination and cost, test button, automation and display switches). The
+    player panel and sidebar menu also pick the service.
+  - The installed bridge received `study_translator.py`,
+    `study_apple_translate.py` and the compiled `apple-translate`. The
+    installer's `install-metadata.json` was already stale for several files
+    before this batch (direct syncs); a full reinstall will need it refreshed.
+
 ## Next
 
-- Batch 2 — free translation services (Chrome built-in, Apple, Google,
-  Microsoft Edge; model optional), automatic translation ahead of playback,
-  AI segmentation, settings page section.
+- Batch 3 — card types by stage, mastery at save, tags and scheduling.
 
 ## Not verified
 
