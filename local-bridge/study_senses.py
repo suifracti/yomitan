@@ -174,6 +174,8 @@ def word_status(library, now=None):
             'new' if all(s == 'new' for s in states) else 'familiar' if all(s in MATURE for s in states) else 'learning')
         value = {'s': state, **status_for(rows, snapshot, now)[1], 'senses': len(groups(rows)),
                  'gloss': '；'.join(dict.fromkeys(gloss(r['entry']) for r in rows if gloss(r['entry'])))[:40]}
+        if any(e.get('kind') == 'newSense' for r in rows for e in r.get('contextMiss', [])):
+            value['newSense'] = True
         for row in rows:
             for alias in {row['entry']['word'].casefold(), canonical(row['entry'])}:
                 words[alias] = value

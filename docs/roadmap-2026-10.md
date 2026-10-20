@@ -122,6 +122,7 @@
   - `known`：familiar，并且有第 3 阶段的卡；
   - `partial`：部分义项是 familiar 或 known，另一部分是 new、learning 或 shaky。
 - `iv`、`lapses`：这个词所有卡里的最小间隔（天）和总遗忘次数；没有卡时省略。
+- F4 另读可选 `newSense:true`：从已有 newSense 卡点事件得出，表示本人选过新意思；不改变原掌握度分档，不新增记录或配置。
 - `gloss`：≤ 40 字的中文短义，只给悬停释义用；不能含句子、笔记或来源。
 - 复习数据在原自动同步的一轮内批量读取并缓存；最近遗忘用 Anki 的 `rated:30:1`（Again）记录判断，不从累计 lapses 猜发生日期。断连保留上次读到的数据，未读到间隔时不把第③阶段卡直接算成已掌握。
 - 键名：小写的 word 和 lemma 都写入，同一个词的两个键共用同一个值。
@@ -260,7 +261,7 @@
 | B9 今日回顾数据 | GPT | 已完成：ankiToday 按当前设置牌组统计 due/reviewed/newDue；父子去重、无空组创建；关闭/停用返回 paused；临时 Native/Anki 替身通过 |
 | F1 拆分阅读器 / F2 虚拟列表 / F8 抖动 | Claude | 进行中 |
 | F3 标色、遇见次数、悬停释义 | Claude | 待做 |
-| F4 挑句与难度 | GPT | 待做 |
+| F4 挑句与难度 | GPT | 已完成：保存词规则星标、最多 10 句推荐并 revealRow、灰字语速/在学词数；Chrome 星标与旧后端退回各一次通过 |
 | F5 本地视频与 iframe | GPT | 待做 |
 | F6 系统状态 | GPT | 待做 |
 | F7 今日回顾 | GPT | 待做 |

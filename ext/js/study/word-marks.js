@@ -49,7 +49,7 @@ const TIER_OF = {new: 'learning', learning: 'learning', shaky: 'shaky', familiar
 /** Statuses that count as "still learning" for encounters. */
 const COUNTED = new Set(['new', 'learning', 'shaky', 'partial']);
 
-/** @typedef {{s: string, gloss?: string, iv?: number, lapses?: number, senses?: number}} WordInfo */
+/** @typedef {{s: string, gloss?: string, iv?: number, lapses?: number, senses?: number, newSense?: boolean}} WordInfo */
 /** @typedef {{learning: boolean, shaky: boolean, familiar: boolean, partial: boolean}} Tiers */
 
 /**

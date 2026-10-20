@@ -25,9 +25,10 @@ import {SubtitleSession, cuesFromTimedText, groupForReading, groupsFromIds, time
 import {ENGINE_LABELS, chromeTranslate} from './free-translators.js';
 import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, readVideoState, writeSubtitlePrefs, writeVideoState} from './subtitle-prefs.js';
 import {TranslationQueue} from './translation-queue.js';
+import {WORD_STATUS_KEY} from './study-data.js';
 import {studyCall} from './study-client.js';
 import {YoutubeOverlay, engineSelect, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
-import {CaptionList, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
+import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 import {timedUrl} from './media-key.js';
@@ -157,6 +158,10 @@ export class YoutubeReader extends EventTarget {
         this._loop = null;
         /** @type {string} */
         this._lookup = '';
+        /** @type {Record<string, unknown>} */
+        this._learningWords = {};
+        /** @type {Set<string>} */
+        this._recommended = new Set();
     }
 
     /** */
@@ -172,6 +177,17 @@ export class YoutubeReader extends EventTarget {
         if (!this._fixedPrefs) {
             void readSubtitlePrefs().then((prefs) => this.setPrefs(prefs));
             onSubtitlePrefsChanged((prefs) => this.setPrefs(prefs));
+        }
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            void chrome.storage.local.get(WORD_STATUS_KEY).then((stored) => {
+                this._learningWords = /** @type {{words?: Record<string, unknown>}|undefined} */ (stored[WORD_STATUS_KEY])?.words ?? {};
+                this._refreshLearning();
+            });
+            chrome.storage.onChanged.addListener((changes, area) => {
+                if (area !== 'local' || !changes[WORD_STATUS_KEY]) { return; }
+                this._learningWords = /** @type {{words?: Record<string, unknown>}|undefined} */ (changes[WORD_STATUS_KEY].newValue)?.words ?? {};
+                this._refreshLearning();
+            });
         }
         this._sync();
     }
@@ -627,7 +643,9 @@ export class YoutubeReader extends EventTarget {
             downloads.append(button);
         }
         menu.append(downloads);
-        head.append(title, status, resume, translate, retry, cancel, follow, more, load);
+        const difficulty = document.createElement('small');
+        difficulty.className = 'r-difficulty';
+        head.append(title, difficulty, status, resume, translate, retry, cancel, follow, more, load);
         const list = document.createElement('div');
         list.className = 'r-list';
         list.setAttribute('role', 'list');
@@ -994,6 +1012,7 @@ export class YoutubeReader extends EventTarget {
             };
             this._rowInfo.set(cue.id, info);
         }
+        this._refreshLearning();
         this._list.render(view.list, session.cues);
         view.load.textContent = '重新载入';
         view.translate.hidden = false;
@@ -1051,8 +1070,13 @@ export class YoutubeReader extends EventTarget {
         loop.setAttribute('aria-pressed', 'false');
         loop.setAttribute('aria-label', `循环本句 ${timeLabel(cue.startMs)}`);
         loop.addEventListener('click', () => this._toggleLoop(cue.id));
+        const star = document.createElement('span');
+        star.className = 'r-star';
+        star.textContent = '★';
+        star.title = '本句恰好一个在学词';
+        star.hidden = !this._recommended.has(cue.id);
         tools.append(loop);
-        row.append(time, text, tools, translated);
+        row.append(time, text, tools, star, translated);
         return row;
     }
 
@@ -1299,18 +1323,52 @@ export class YoutubeReader extends EventTarget {
     }
 
     /** Lists the words already saved from this video; clicking one returns to its moment. */
+    _refreshLearning() {
+        if (!this._session || !this._view) { return; }
+        const stats = learningCaptions(this._session, this._learningWords);
+        this._recommended = stats.recommended;
+        this._view.root.querySelector('.r-difficulty').textContent = `语速 ${stats.wpm} 词/分 · 在学词 ${stats.learning}`;
+        for (const [id, row] of this._rows) { /** @type {HTMLElement} */ (row.querySelector('.r-star')).hidden = !this._recommended.has(id); }
+        const old = this._view.words.querySelector('.r-recommend');
+        if (old) { old.replaceWith(this._recommendations()); }
+    }
+
+    /** @returns {HTMLElement} */
+    _recommendations() {
+        const section = document.createElement('div');
+        section.className = 'r-recommend';
+        const title = document.createElement('strong');
+        title.textContent = '推荐制卡';
+        section.append(title);
+        for (const cue of (this._session?.cues ?? []).filter((item) => this._recommended.has(item.id)).slice(0, 10)) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = cue.text;
+            button.addEventListener('click', () => {
+                /** @type {HTMLButtonElement} */ (this._view.root.querySelector('[data-tab=captions]')).click();
+                this.revealRow(cue.id);
+            });
+            section.append(button);
+        }
+        return section;
+    }
+
+    /** @returns {Promise<void>} */
     async _loadWords() {
         const view = this._view;
         const mediaKey = this._mediaKey;
         if (!view || !mediaKey) { return; }
         const generation = this._generation;
-        view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
+        const recommended = this._recommendations();
+        const saved = document.createElement('div');
+        view.words.replaceChildren(recommended, saved);
+        saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
             const result = /** @type {{items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
             if (generation !== this._generation) { return; }
             const items = result.items ?? [];
             if (items.length === 0) {
-                view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '这个视频还没有记住的词。选词后点「记住它」就会出现在这里。'}));
+                saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '这个视频还没有记住的词。选词后点「记住它」就会出现在这里。'}));
                 return;
             }
             // One explicit button writes a short study summary into this video's Obsidian note.
@@ -1325,7 +1383,7 @@ export class YoutubeReader extends EventTarget {
             const summaryState = document.createElement('span');
             summaryState.setAttribute('role', 'status');
             summary.append(write, summaryState);
-            view.words.replaceChildren(summary, ...items.map((item) => {
+            saved.replaceChildren(summary, ...items.map((item) => {
                 const row = document.createElement('div');
                 row.className = 'r-word';
                 const time = document.createElement('button');
@@ -1356,7 +1414,7 @@ export class YoutubeReader extends EventTarget {
             }));
         } catch (error) {
             if (generation === this._generation) {
-                view.words.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: `暂时读不到：${error instanceof Error ? error.message : String(error)}`}));
+                saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: `暂时读不到：${error instanceof Error ? error.message : String(error)}`}));
             }
         }
     }

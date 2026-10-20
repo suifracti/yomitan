@@ -20,6 +20,8 @@
 // nodes are built when they come near the visible area or when the reader needs
 // that row (seek, follow, reveal). Short tracks render at once.
 
+import {wordInfo} from './word-marks.js';
+
 export const ROOT_ID = 'study-yt-reader';
 
 const EAGER_ROWS = 150;
@@ -33,6 +35,11 @@ export const SIDEBAR_STYLE = `
 #${ROOT_ID}{--r-fg:var(--st-ink,var(--yt-spec-text-primary,#1f2430));--r-muted:var(--st-muted,var(--yt-spec-text-secondary,#5a6172));--r-line:var(--st-line,var(--yt-spec-10-percent-layer,#e6e3dc));--r-tint:var(--st-tint,#f3f1ec);--r-accent:var(--st-accent,#3b4a8c);--r-mark:var(--st-mark,rgb(255 214 92 / 45%));
 margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var(--st-paper,transparent);color:var(--r-fg);font:14px/1.5 var(--st-sans,Roboto,Arial,sans-serif);overflow:hidden}
 #${ROOT_ID} .r-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 12px}
+#${ROOT_ID} .r-difficulty{color:var(--r-muted);font-size:11px}
+#${ROOT_ID} .r-star{position:absolute;right:8px;bottom:8px;color:var(--r-muted);font-size:11px;align-self:center}
+#${ROOT_ID} .r-recommend{padding:8px 12px;border-bottom:1px solid var(--r-line)}
+#${ROOT_ID} .r-recommend strong{font-size:12px}
+#${ROOT_ID} .r-recommend button{display:block;width:100%;padding:5px 0;text-align:left;border:0;background:none;color:var(--r-fg);font:inherit;font-size:13px;cursor:pointer}
 #${ROOT_ID} .r-title{flex:1 1 auto;font-weight:600;font-size:13px}
 #${ROOT_ID} .r-status{order:9;flex:1 0 100%;min-width:0;color:var(--r-muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 #${ROOT_ID} .r-status[data-mode=loop]{color:var(--r-accent)}
@@ -43,7 +50,7 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} button:focus-visible{outline:2px solid var(--r-accent);outline-offset:1px}
 #${ROOT_ID} .r-list{position:relative;max-height:min(60vh,520px);overflow:auto;overscroll-behavior:contain;border-top:1px solid var(--r-line)}
 #${ROOT_ID} .r-list:empty{display:none}
-#${ROOT_ID} .r-cue{display:grid;grid-template-columns:46px minmax(0,1fr) auto;column-gap:6px;padding:7px 8px 7px 0;border-left:3px solid transparent}
+#${ROOT_ID} .r-cue{position:relative;display:grid;grid-template-columns:46px minmax(0,1fr) auto;column-gap:6px;padding:7px 8px 7px 0;border-left:3px solid transparent}
 #${ROOT_ID} .r-cue.is-current{background:var(--r-tint);border-left-color:var(--r-accent)}
 #${ROOT_ID} .r-cue.is-lookup .r-text{text-decoration:underline 2px var(--r-mark);text-underline-offset:4px}
 #${ROOT_ID} .r-cue.is-looping{border-left-color:var(--r-accent);background:var(--r-tint)}
@@ -188,4 +195,31 @@ export class CaptionList {
         this._paintRow(item.id, row);
         return row;
     }
+}
+
+/**
+ * Saved words only; no frequency table or invented difficulty levels.
+ * @param {import('./subtitle-session.js').SubtitleSession} session
+ * @param {Record<string, unknown>} words
+ * @returns {{recommended: Set<string>, learning: number, wpm: number}}
+ */
+export function learningCaptions(session, words) {
+    const learning = new Set();
+    const recommended = new Set();
+    let total = 0;
+    for (const cue of session.cues) {
+        const tokens = cue.text.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) ?? [];
+        total += tokens.length;
+        const inLine = new Set();
+        for (const token of tokens) {
+            const info = wordInfo(token, words);
+            if (info && (['new', 'learning', 'shaky', 'partial'].includes(info.s) || info.newSense)) {
+                inLine.add(info.word);
+                learning.add(info.word);
+            }
+        }
+        if (tokens.length >= 5 && tokens.length <= 20 && inLine.size === 1) { recommended.add(cue.id); }
+    }
+    const duration = session.cues.length > 0 ? (Math.max(...session.cues.map((cue) => cue.endMs)) - session.cues[0].startMs) / 60000 : 0;
+    return {recommended, learning: learning.size, wpm: duration > 0 ? Math.round(total / duration) : 0};
 }
