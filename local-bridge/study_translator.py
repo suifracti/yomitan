@@ -65,9 +65,9 @@ def normalize_request(value):
     if isinstance(value, dict) and value.get('action') == 'senseMatch':
         from study_senses import normalize_match
         return normalize_match(value)
-    if isinstance(value, dict) and value.get('action') == 'bridgeHealth':
+    if isinstance(value, dict) and value.get('action') in ('bridgeHealth', 'ankiToday'):
         if set(value) != {'action'}:
-            raise ValueError('体检请求不接受额外参数。')
+            raise ValueError('状态请求不接受额外参数。')
         return value
     if isinstance(value, dict) and value.get('action') == 'subtitles':
         return _normalize_subtitle_request(value)
@@ -611,6 +611,12 @@ def main():
             library = YomitanLibrary(root / 'bridge-config.json', cache_dir=root / 'learning-cache')
             result = match_sense(library, payload, run_optional_model)
             write_frame(sys.stdout.buffer, {'ok': True, 'library': result})
+            return 0
+        if payload['action'] == 'ankiToday':
+            from study_settings import YomitanLibrary
+            from study_stats import anki_today
+            root = pathlib.Path(__file__).parent
+            write_frame(sys.stdout.buffer, {'ok': True, 'library': anki_today(YomitanLibrary(root / 'bridge-config.json'))})
             return 0
         if payload['action'] == 'bridgeHealth':
             from study_health import health
