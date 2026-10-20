@@ -24,11 +24,9 @@ struct AppleTranslate {
         }
         let source = Locale.Language(identifier: input.source)
         let target = Locale.Language(identifier: input.target)
-        switch await LanguageAvailability().status(from: source, to: target) {
-        case .installed: break
-        case .supported: emit(Output(error: "需要先下载语言包", code: "download"), 3)
-        default: emit(Output(error: "不支持这组语言", code: "unsupported"), 4)
-        }
+        // "supported" can still translate when the system has the model cached, so try first.
+        let status = await LanguageAvailability().status(from: source, to: target)
+        if status == .unsupported { emit(Output(error: "不支持这组语言", code: "unsupported"), 4) }
         let session = TranslationSession(installedSource: source, target: target)
         let requests = input.texts.enumerated().map { TranslationSession.Request(sourceText: $0.element, clientIdentifier: String($0.offset)) }
         do {
@@ -38,7 +36,7 @@ struct AppleTranslate {
             }
             emit(Output(translations: result), 0)
         } catch {
-            emit(Output(error: error.localizedDescription, code: "failed"), 5)
+            emit(Output(error: error.localizedDescription, code: status == .installed ? "failed" : "download"), status == .installed ? 5 : 3)
         }
     }
 }
