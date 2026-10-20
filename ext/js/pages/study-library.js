@@ -314,6 +314,23 @@ export async function prepareStudyLibraryLookup(application) {
 }
 
 /**
+ * Optional today strip, refreshed when this page is explicitly loaded/refreshed.
+ * @returns {Promise<void>}
+ */
+export async function refreshToday() {
+    const line = document.getElementById('study-library-today');
+    const open = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-open-anki'));
+    try {
+        const today = /** @type {{due: number, reviewed: number, paused?: boolean}} */ (await studyCall('ankiToday'));
+        line.hidden = open.hidden = today.paused === true;
+        line.textContent = today.paused ? '' : `今天还有 ${today.due} 张 · 已复习 ${today.reviewed}`;
+        open.onclick = () => {
+            void studyCall('ankiOpen').catch(() => { line.textContent = '未能打开 Anki，请先启动 Anki 后再试。'; });
+        };
+    } catch { line.hidden = open.hidden = true; }
+}
+
+/**
  * @returns {Promise<void>}
  */
 async function initializePage() {
@@ -771,6 +788,7 @@ async function initializePage() {
         async function loadPage(reset) {
             if (loading) { return; }
             loading = true;
+            if (reset) { void refreshToday(); }
             more.disabled = true;
             setStatus(reset ? '正在读取学习库…' : '正在读取下一页…');
             render();

@@ -137,8 +137,20 @@ export class StudyService {
                 return {...previous, error: error instanceof Error ? error.message : '自动同步未完成。', at: Date.now()};
             });
         } finally {
+            await this.refreshTodayBadge();
             this.#autoSyncing = false;
         }
+    }
+
+    /** @returns {Promise<void>} */
+    async refreshTodayBadge() {
+        let text = '';
+        try {
+            const response = await this.native({action: 'ankiToday'}).promise;
+            const today = /** @type {{due: number, paused?: boolean}} */ (response.library);
+            if (response.ok && !today.paused && today.due > 0) { text = String(today.due); }
+        } catch { /* An old or disconnected bridge simply has no badge. */ }
+        await chrome.action.setBadgeText({text});
     }
 
     /**
@@ -815,7 +827,7 @@ export class StudyService {
         if (action === 'practiceCheck' && !studyConfig(await this.read(SETTINGS_KEY)).practiceEnabled) {
             throw new Error('练习批改未开启；请先在 AI 设置中明确开启。');
         }
-        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'senseMatch', 'ankiToday', 'bridgeHealth', 'practiceCheck'].includes(action)) {
+        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'senseMatch', 'ankiToday', 'ankiOpen', 'bridgeHealth', 'practiceCheck'].includes(action)) {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
             if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;

@@ -72,7 +72,7 @@ def normalize_request(value):
     if isinstance(value, dict) and value.get('action') == 'senseMatch':
         from study_senses import normalize_match
         return normalize_match(value)
-    if isinstance(value, dict) and value.get('action') in ('bridgeHealth', 'bridgePing', 'ankiToday'):
+    if isinstance(value, dict) and value.get('action') in ('bridgeHealth', 'bridgePing', 'ankiToday', 'ankiOpen'):
         if set(value) != {'action'}:
             raise ValueError('状态请求不接受额外参数。')
         return value
@@ -631,6 +631,11 @@ def main():
             library = YomitanLibrary(root / 'bridge-config.json', cache_dir=root / 'learning-cache')
             result = match_sense(library, payload, run_optional_model)
             write_frame(sys.stdout.buffer, {'ok': True, 'library': result})
+            return 0
+        if payload['action'] == 'ankiOpen':
+            from study_library import anki_call
+            anki_call('guiDeckBrowser', {})
+            write_frame(sys.stdout.buffer, {'ok': True, 'library': {'opened': True}})
             return 0
         if payload['action'] == 'ankiToday':
             from study_settings import YomitanLibrary
