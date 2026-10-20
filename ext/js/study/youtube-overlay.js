@@ -51,6 +51,8 @@ const STYLE = `
 #${OVERLAY_ID} .o-side button{width:26px;height:22px;padding:0;border:0;border-radius:4px;background:rgb(8 8 10 / 72%);color:#fff;font:13px/22px -apple-system,sans-serif;cursor:pointer}
 #${OVERLAY_ID} .o-side button[aria-pressed=true]{color:#a9b6ef}
 #${OVERLAY_ID} .o-chip{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:3px 6px 3px 10px;border-radius:999px;background:rgb(8 8 10 / 72%);color:#eee;font:13px/1.4 -apple-system,'PingFang SC',sans-serif;white-space:nowrap;pointer-events:auto}
+#${OVERLAY_ID} .o-chip.o-shadow{bottom:auto;top:calc(100% + 6px);width:max-content;max-width:min(90vw,650px);white-space:normal;flex-wrap:wrap;border-radius:8px}
+#${OVERLAY_ID} .o-shadow-translation{flex-basis:100%;margin:0;color:#f3e7c4}
 #${OVERLAY_ID} .o-chip[hidden]{display:none}
 #${OVERLAY_ID} .o-chip button{padding:1px 8px;border:1px solid rgb(255 255 255 / 30%);border-radius:999px;background:none;color:#fff;font:inherit;font-size:12px;cursor:pointer}
 #${OVERLAY_ID} .o-chip button[hidden]{display:none}
@@ -108,18 +110,25 @@ export class YoutubeOverlay {
         this._chip = null;
         /** @type {number} */
         this._chipTimer = 0;
+        /** @type {string} */
+        this._shadowId = '';
+        /** @type {number} */
+        this._shadowCountdown = 0;
+        /** @type {HTMLVideoElement|null} */
+        this._playVideo = null;
+        this._onPlay = () => this._clearShadow();
     }
 
     /** */
     start() {
         const reader = this._reader;
-        reader.addEventListener('session', () => this._onSession());
-        reader.addEventListener('reset', () => this._clear());
+        reader.addEventListener('session', () => { this._clearShadow(); this._onSession(); });
+        reader.addEventListener('reset', () => { this._clearShadow(); this._clear(); });
         reader.addEventListener('active', (event) => this._onActive(/** @type {CustomEvent<{ids: string[]}>} */ (event).detail.ids));
         reader.addEventListener('translation', (event) => this._onTranslation(/** @type {CustomEvent<{id: string}>} */ (event).detail.id));
         reader.addEventListener('lookup', () => this._paintStates());
         reader.addEventListener('loop', () => this._paintStates());
-        reader.addEventListener('prefs', () => this._applyPrefs());
+        reader.addEventListener('prefs', () => { if (!reader.prefs.shadow) { this._clearShadow(); } this._applyPrefs(); });
         reader.addEventListener('offset', () => this._applyPrefs());
         reader.addEventListener('resume', (event) => {
             const {ms} = /** @type {CustomEvent<{ms: number}>} */ (event).detail;
@@ -129,12 +138,18 @@ export class YoutubeOverlay {
                 this._hint(`上次学到 ${clock(ms)}`, '继续', () => reader.resume(), 12000);
             }
         });
-        reader.addEventListener('shadow', () => this._hint('跟读：说完这句，再按播放继续', '', null, 4000));
+        reader.addEventListener('shadow', (event) => this._showShadow(/** @type {CustomEvent<{id: string, plays: number}>} */ (event).detail));
         document.addEventListener('pointerdown', (event) => {
             const target = /** @type {Node} */ (event.target);
             if (this._panel && !this._panel.hidden && !this._panel.contains(target) && !this._button?.contains(target)) { this._togglePanel(false); }
         }, true);
         document.addEventListener('keydown', (event) => {
+            const target = event.target instanceof Element ? event.target : document.activeElement;
+            if (this._shadowId && this._site.video()?.paused && !target?.closest('input,textarea,select,[contenteditable]') &&
+            !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && [' ', 'r', 'R'].includes(event.key)) {
+                event.preventDefault(); event.stopImmediatePropagation(); this._cancelShadowCountdown();
+                if (event.key === ' ') { reader.continueShadow(); } else { reader.replayShadow(); }
+            }
             if (event.key === 'Escape' && this._panel && !this._panel.hidden) { this._togglePanel(false); }
         }, true);
         // The player is rebuilt on some navigations; re-attach our nodes when that happens.
@@ -155,6 +170,11 @@ export class YoutubeOverlay {
             style.id = STYLE_ID;
             style.textContent = STYLE;
             document.head.append(style);
+        }
+        const video = this._site.video();
+        if (video !== this._playVideo) {
+            this._playVideo?.removeEventListener('play', this._onPlay);
+            this._playVideo = video; video?.addEventListener('play', this._onPlay);
         }
         const controls = this._site.controls();
         if (controls && !this._button?.isConnected) {
@@ -248,7 +268,7 @@ export class YoutubeOverlay {
         repeats.classList.add('p-row');
         const offset = offsetControl(this._reader);
         offset.classList.add('p-row', 'p-offset');
-        panel.append(repeats, offset);
+        panel.append(repeats, shadowContinueSelect((shadowContinueSeconds) => this._reader.updatePrefs({shadowContinueSeconds})), offset);
         const note = document.createElement('div');
         note.className = 'p-note';
         note.dataset.note = '';
@@ -323,6 +343,50 @@ export class YoutubeOverlay {
         }
     }
 
+    /** Cancel the resume countdown without dismissing the actions. */
+    _cancelShadowCountdown() {
+        clearInterval(this._shadowCountdown); this._shadowCountdown = 0;
+        this._chip?.querySelector('.o-countdown')?.remove();
+    }
+
+    /** Dismiss pause actions once playback resumes or this video changes. */
+    _clearShadow() {
+        this._cancelShadowCountdown(); this._shadowId = '';
+        if (this._chip?.classList.contains('o-shadow')) { this._chip.hidden = true; this._chip.classList.remove('o-shadow'); }
+    }
+
+    /** @param {{id: string, plays: number}} detail */
+    _showShadow({id, plays}) {
+        this._clearShadow(); this._hint('已暂停跟读'); this._shadowId = id;
+        const chip = this._chip;
+        if (!chip) { return; }
+        chip.classList.add('o-shadow');
+        const add = (label, action) => {
+            const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+            button.addEventListener('click', () => { this._cancelShadowCountdown(); action(); }); chip.append(button);
+        };
+        add('空格 继续', () => this._reader.continueShadow());
+        add('R 再听一遍', () => this._reader.replayShadow());
+        add('关闭跟读', () => { this._reader.updatePrefs({shadow: false}); this._clearShadow(); });
+        if (plays >= 2) {
+            add('看译文', () => {
+                const line = chip.querySelector('.o-shadow-translation') || document.createElement('p');
+                line.className = 'o-shadow-translation'; line.textContent = '翻译中…'; chip.append(line);
+                void this._reader.showSentenceTranslation(id).then((value) => { if (this._shadowId === id) { line.textContent = value; } });
+            });
+            add('查这句', () => { void this._reader.lookupCaption(id).catch(() => {}); });
+        }
+        let left = this._reader.prefs.shadowContinueSeconds;
+        if (left > 0) {
+            const countdown = document.createElement('span'); countdown.className = 'o-countdown'; chip.append(countdown);
+            countdown.textContent = `${left} 秒后继续`;
+            this._shadowCountdown = window.setInterval(() => {
+                --left; countdown.textContent = `${left} 秒后继续`;
+                if (left <= 0) { this._cancelShadowCountdown(); this._reader.continueShadow(); }
+            }, 1000);
+        }
+    }
+
     /**
      * @param {string} text Empty hides the hint.
      * @param {string} [label]
@@ -333,6 +397,7 @@ export class YoutubeOverlay {
         const chip = this._chip;
         if (!chip) { return; }
         clearTimeout(this._chipTimer);
+        chip.classList.remove('o-shadow');
         chip.hidden = !text;
         if (!text) { return; }
         const button = document.createElement('button');
@@ -560,6 +625,7 @@ export function offsetControl(reader) {
  * @param {import('./youtube-reader.js').YoutubeReader} reader
  */
 export function syncControls(menu, reader) {
+    for (const select of menu.querySelectorAll('select[data-shadow-continue]')) { /** @type {HTMLSelectElement} */ (select).value = String(reader.prefs.shadowContinueSeconds); }
     for (const select of menu.querySelectorAll('select[data-engine]')) {
         const picker = /** @type {HTMLSelectElement} */ (select);
         if (!['apple', 'model'].includes(reader.prefs.engine)) { picker.options[0].value = reader.prefs.engine; }
@@ -586,4 +652,16 @@ export function translationEngineSelect(onChange) {
     }
     select.addEventListener('change', () => onChange(/** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (select.value)));
     label.append(select); return label;
+}
+
+/** @param {(seconds: number) => void} onChange
+ * @returns {HTMLLabelElement}
+ */
+export function shadowContinueSelect(onChange) {
+    const label = document.createElement('label'); label.className = 'p-row'; label.append('暂停后自动继续');
+    const select = document.createElement('select'); select.dataset.shadowContinue = '';
+    for (const [value, text] of [[0, '不自动'], [3, '3 秒'], [5, '5 秒']]) {
+        select.append(Object.assign(document.createElement('option'), {value: String(value), textContent: String(text)}));
+    }
+    select.addEventListener('change', () => onChange(Number(select.value))); label.append(select); return label;
 }

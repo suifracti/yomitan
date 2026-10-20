@@ -27,7 +27,7 @@ import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, 
 import {TranslationQueue} from './translation-queue.js';
 import {WORD_STATUS_KEY} from './study-data.js';
 import {studyCall} from './study-client.js';
-import {YoutubeOverlay, translationEngineSelect, offsetControl, repeatSelect, syncControls} from './youtube-overlay.js';
+import {YoutubeOverlay, translationEngineSelect, offsetControl, repeatSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
@@ -77,6 +77,8 @@ export class YoutubeReader extends EventTarget {
         this._shadowRow = null;
         /** @type {string} The sentence we just paused after, so playing on does not pause again. */
         this._shadowDone = '';
+        /** @type {{id: string, plays: number}|null} */
+        this._shadowPause = null;
         /** @type {number} */
         this._shadowTimer = 0;
         /** @type {number} */
@@ -422,8 +424,9 @@ export class YoutubeReader extends EventTarget {
         video.pause();
         this._shadowDone = row.id;
         this._shadowRow = null;
-        this._status('跟读：跟着说完这句，再按播放继续', 'shadow');
-        this._emit('shadow', {id: row.id});
+        this._shadowPause = {id: row.id, plays: (this._shadowPause?.id === row.id ? this._shadowPause.plays : 0) + row.plays};
+        this._status('已暂停跟读，按空格继续，或按 R 再听一遍。', 'shadow');
+        this._emit('shadow', this._shadowPause);
     }
 
     /**
@@ -477,6 +480,35 @@ export class YoutubeReader extends EventTarget {
             host.prepend(root);
             this._keepFirst(host);
         }
+    }
+
+    /** Continue after the learner has repeated the sentence. */
+    continueShadow() { void this._video?.play()?.catch(() => this._status('播放没有开始，请点播放器的播放按钮。')); }
+
+    /** Replay the paused sentence; the next pause counts this listen too. */
+    replayShadow() {
+        if (!this._shadowPause || !this._session || !this._video) { return; }
+        this._video.currentTime = this._session.seekSeconds(this._shadowPause.id);
+        this._shadowDone = ''; this._shadowRow = null;
+        this.continueShadow();
+    }
+
+    /** @param {string} id */
+    async showSentenceTranslation(id) {
+        if (!this._session?.translation(id)) { await this._translate(false, false, id); }
+        return this._session?.translation(id) || '这句还没翻译出来，请再点一次「看译文」。';
+    }
+
+    /** Open the existing lookup with this exact caption as its context.
+     * @param {string} id
+     */
+    async lookupCaption(id) {
+        const text = this._list.ensure(id)?.querySelector('.r-text');
+        const info = this._rowInfo.get(id);
+        if (!text?.firstChild || !info || !youtubeStudyContext.openCard) { this._status('词卡还没准备好，请刷新页面后再试。'); return; }
+        const range = document.createRange();
+        range.setStart(text.firstChild, 0); range.setEnd(text.firstChild, info.text.length);
+        await youtubeStudyContext.openCard(range, false);
     }
 
     /**
@@ -539,7 +571,7 @@ export class YoutubeReader extends EventTarget {
         this._offsetMs = 0;
         this._resumeMs = -1;
         this._shadowRow = null;
-        this._shadowDone = '';
+        this._shadowDone = ''; this._shadowPause = null;
         if (this._shadowTimer) {
             clearInterval(this._shadowTimer);
             this._shadowTimer = 0;
@@ -648,7 +680,7 @@ export class YoutubeReader extends EventTarget {
             toggle.append(box, label);
             menu.append(toggle);
         }
-        menu.append(repeatSelect((shadowRepeats) => this.updatePrefs({shadowRepeats})), offsetControl(this));
+        menu.append(repeatSelect((shadowRepeats) => this.updatePrefs({shadowRepeats})), shadowContinueSelect((shadowContinueSeconds) => this.updatePrefs({shadowContinueSeconds})), offsetControl(this));
         const downloads = document.createElement('div');
         downloads.className = 'r-downloads';
         const importButton = this._button('导入字幕文件…', () => this.pickFile());
@@ -1130,8 +1162,9 @@ export class YoutubeReader extends EventTarget {
     /**
      * @param {boolean} retryOnly
      * @param {boolean} [full]
+     * @param {string} [onlyId]
      */
-    async _translate(retryOnly, full = false) {
+    async _translate(retryOnly, full = false, onlyId) {
         const session = this._session;
         const view = this._view;
         if (!session || !view || this._translating) { return; }
@@ -1139,7 +1172,7 @@ export class YoutubeReader extends EventTarget {
         const index = active ? session.cues.indexOf(active) : 0;
         const ordered = [...session.cues.slice(index), ...session.cues.slice(0, index)];
         const needed = ordered.filter((cue) => (retryOnly ? this._failed.has(cue.id) : !session.translation(cue.id)));
-        const selected = full || retryOnly ? needed : needed.slice(0, 8);
+        const selected = onlyId ? needed.filter((cue) => cue.id === onlyId) : (full || retryOnly ? needed : needed.slice(0, 8));
         const items = selected.map((cue) => ({
             id: cue.id,
             text: cue.text.replaceAll(/\s*\n\s*/g, ' '),

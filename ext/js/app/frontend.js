@@ -404,9 +404,9 @@ export class Frontend {
         this._textScanner.on('selectionShortcut', this._onSelectionShortcut.bind(this));
         this._textScanner.prepare();
         if (this._pageType === 'web') {
-            youtubeStudyContext.openCard = async (range) => {
+            youtubeStudyContext.openCard = async (range, openPanel = true) => {
                 const source = TextSourceRange.createLazy(range);
-                this._studyCardSources.add(source);
+                if (openPanel) { this._studyCardSources.add(source); }
                 this._textScanner.setCurrentTextSource(null);
                 await this._textScanner.search(source, {focus: true, restoreSelection: true}, true);
             };

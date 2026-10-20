@@ -37,6 +37,7 @@ export const TRANSLATION_PREFS_KEY = 'studyTranslationPrefs';
  * @property {number} aheadSeconds How far ahead automatic translation stays.
  * @property {boolean} otherSites Offer the reader on videos outside YouTube.
  * @property {boolean} shadow Shadowing: pause after each sentence so the learner can repeat it.
+ * @property {number} shadowContinueSeconds Resume delay after shadow pause (0, 3 or 5).
  * @property {number} shadowRepeats How many times each sentence plays before the pause (1-5).
  * @property {boolean} resume Offer to continue from the last sentence studied in a video.
  */
@@ -54,6 +55,7 @@ export const DEFAULT_SUBTITLE_PREFS = Object.freeze({
     otherSites: true,
     shadow: false,
     shadowRepeats: 1,
+    shadowContinueSeconds: 0,
     resume: true,
 });
 
@@ -76,6 +78,7 @@ export function normalizeSubtitlePrefs(value) {
     if (typeof engine === 'string' && SUBTITLE_ENGINES.includes(/** @type {SubtitleEngine} */ (engine))) { result.engine = /** @type {SubtitleEngine} */ (engine); }
     const ahead = input.aheadSeconds;
     if (typeof ahead === 'number' && Number.isFinite(ahead)) { result.aheadSeconds = Math.min(300, Math.max(20, Math.round(ahead))); }
+    if ([0, 3, 5].includes(/** @type {number} */ (input.shadowContinueSeconds))) { result.shadowContinueSeconds = /** @type {number} */ (input.shadowContinueSeconds); }
     const repeats = input.shadowRepeats;
     if (typeof repeats === 'number' && Number.isFinite(repeats)) { result.shadowRepeats = Math.min(5, Math.max(1, Math.round(repeats))); }
     return result;
