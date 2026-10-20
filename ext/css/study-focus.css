@@ -801,7 +801,10 @@
 .sf-form-explain-note { color: var(--sf-muted); }
 .sf-form-explain-example { font-family: var(--st-serif); font-size: var(--st-size-2); color: var(--sf-muted); }
 .sf-form-explain-example mark { padding: 0 1px; border-radius: 2px; background: var(--st-mark); color: var(--sf-ink); }
-.study-focus-shell .sf-form-explain .sf-form-explain-more { min-height: 22px; margin-top: 6px; padding: 1px 7px; font-size: 11px; }
+.sf-form-explain-translation { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
+.sf-form-explain-translation p { margin: 0; color: var(--sf-ink); font-size: var(--st-size-2); }
+.study-focus-shell .sf-form-explain .sf-form-explain-translation button { min-height: 22px; padding: 1px 7px; font-size: 11px; }
+.sf-form-explain-status { color: var(--sf-muted); font-size: 11px; }
 @media (max-height: 350px) {
     .sf-heading .sf-forms-preview { gap: 4px; line-height: 16px; }
     .sf-heading .sf-forms-preview .sf-form-piece { line-height: 15px; }

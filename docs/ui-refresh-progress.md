@@ -59,9 +59,11 @@ settings.
   form is used for, the matching Chinese sense from the card (or a plain note
   that the card lists no sense for that part of speech), and a dictionary
   example that uses the exact form when one exists. A click pins the note;
-  Escape or a click elsewhere closes it; "完整词形 ↗" opens the full
-  dictionary as the old forms button did. Rules live in
-  `ext/js/display/study-word-forms.js`; nothing is generated or fetched.
+  Escape or a click elsewhere closes it. "翻译例句" translates the example on
+  request through the existing sentence translation service
+  (`subtitleTranslate`); results stay in memory for the card. Clicking a form
+  no longer opens the dictionary card. Rules live in
+  `ext/js/display/study-word-forms.js`.
 
 ## Status
 

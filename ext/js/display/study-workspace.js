@@ -238,7 +238,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
     /** @param {MouseEvent} event */
     const onClick = (event) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest('.sf-forms-preview') || target?.closest('button') === dictionaryButton) {
+        if (target?.closest('button') === dictionaryButton) {
             event.preventDefault(); event.stopImmediatePropagation();
             open();
         }

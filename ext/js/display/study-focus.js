@@ -296,6 +296,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             /** @type {?HTMLButtonElement} */
             let shownPiece = null;
             let pinned = false;
+            let quietFocus = false;
             let hideTimer = 0;
             const senses = () => {
                 const seen = new Set();
@@ -316,7 +317,68 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     yield node.textContent || '';
                 }
             };
+            // Example translation runs only on an explicit click, through the same
+            // sentence translation service the caption reader uses; results stay in memory.
+            /** @type {Map<string, string>} */
+            const exampleTranslations = new Map();
+            let translateRun = '';
+            const cancelExampleTranslation = () => {
+                if (!translateRun) { return; }
+                void call('subtitleCancel', {requestId: translateRun}).catch(() => {});
+                translateRun = '';
+            };
+            /**
+             * @param {string} example
+             * @param {string} form
+             * @returns {HTMLElement}
+             */
+            const exampleTranslation = (example, form) => {
+                const holder = make('div', 'sf-form-explain-translation');
+                const known = exampleTranslations.get(example);
+                if (known) {
+                    holder.append(make('p', '', known));
+                    return holder;
+                }
+                const action = button('翻译例句', `翻译 ${form} 的例句`);
+                const status = make('span', 'sf-form-explain-status');
+                status.setAttribute('role', 'status');
+                action.addEventListener('click', () => {
+                    if (!current() || translateRun) { return; }
+                    const run = `form-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+                    translateRun = run;
+                    pinned = true;
+                    shownPiece?.setAttribute('aria-expanded', 'true');
+                    action.disabled = true;
+                    status.textContent = '正在翻译…';
+                    void (async () => {
+                        try {
+                            const config = /** @type {{model?: string, effort?: string}} */ (await call('subtitleSettings'));
+                            if (translateRun !== run) { return; }
+                            const result = /** @type {{items?: {id: string, translation?: string, error?: string}[]}} */ (await call('subtitleTranslate', {requestId: run,
+                                items: [{id: 'example', text: example, context: `${word}：${form}`}],
+                                config: {model: config?.model, effort: config?.effort},
+                                language: 'en',
+                                title: `${word} 词形例句`}));
+                            if (translateRun !== run || !current()) { return; }
+                            const translation = result?.items?.[0]?.translation?.trim();
+                            if (!translation) { throw new Error(result?.items?.[0]?.error || '没有取得译文'); }
+                            exampleTranslations.set(example, translation);
+                            holder.replaceChildren(make('p', '', translation));
+                        } catch (error) {
+                            if (translateRun !== run || !current()) { return; }
+                            action.disabled = false;
+                            action.textContent = '重试';
+                            status.textContent = `翻译未完成：${error instanceof Error ? error.message : String(error)}`;
+                        } finally {
+                            if (translateRun === run) { translateRun = ''; }
+                        }
+                    })();
+                });
+                holder.append(action, status);
+                return holder;
+            };
             const hideExplain = () => {
+                cancelExampleTranslation();
                 clearTimeout(hideTimer);
                 explain.hidden = true;
                 pinned = false;
@@ -331,6 +393,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const showExplain = (piece, pin) => {
                 if (!current()) { return; }
                 clearTimeout(hideTimer);
+                if (explain.dataset.form !== piece.dataset.form) { cancelExampleTranslation(); }
                 if (shownPiece && shownPiece !== piece) {
                     shownPiece.setAttribute('aria-expanded', 'false');
                     shownPiece.removeAttribute('aria-describedby');
@@ -359,17 +422,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     if (at >= 0) {
                         line.append(example.slice(0, at), make('mark', '', example.slice(at, at + form.length)), example.slice(at + form.length));
                     } else { line.textContent = example; }
-                    parts.push(line);
+                    parts.push(line, exampleTranslation(example, form));
                 }
-                const more = button('完整词形 ↗', '在详细词典查看完整词形');
-                more.classList.add('sf-form-explain-more');
-                more.addEventListener('click', () => {
-                    if (!current()) { return; }
-                    hideExplain();
-                    select(1);
-                    dictionaryScroll.scrollTop = 0;
-                });
-                parts.push(more);
                 explain.replaceChildren(...parts);
                 explain.dataset.form = form;
                 explain.hidden = false;
@@ -405,7 +459,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 }
                 piece.addEventListener('mouseenter', () => showExplain(piece, false));
                 piece.addEventListener('mouseleave', scheduleHide);
-                piece.addEventListener('focus', () => showExplain(piece, false));
+                piece.addEventListener('focus', () => {
+                    if (!quietFocus) { showExplain(piece, false); }
+                });
                 piece.addEventListener('blur', () => {
                     if (!explain.contains(d.activeElement)) { scheduleHide(); }
                 });
@@ -426,7 +482,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 if (e.key !== 'Escape' || explain.hidden) { return; }
                 const piece = shownPiece;
                 hideExplain();
+                quietFocus = true;
                 piece?.focus();
+                quietFocus = false;
             };
             /** @param {PointerEvent} e */
             const onFormsPointer = (e) => {
@@ -435,6 +493,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             d.addEventListener('keydown', onFormsKey);
             d.addEventListener('pointerdown', onFormsPointer);
             disposeForms = () => {
+                cancelExampleTranslation();
                 clearTimeout(hideTimer);
                 d.removeEventListener('keydown', onFormsKey);
                 d.removeEventListener('pointerdown', onFormsPointer);
