@@ -575,8 +575,8 @@ class StudyLibrary:
     def read(self, ident):
         return self.read_file(self.path(ident), ident)
 
-    def read_file(self, p, ident):
-        content = self.file_content(p)
+    def read_file(self, p, ident, content=None):
+        content = self.file_content(p) if content is None else content
         if re.search(r'--w[a-f0-9]{32}\.md$', p.name):
             contexts = self.word_contexts(content)
             if ident not in contexts:
@@ -715,17 +715,25 @@ class StudyLibrary:
         return details
 
     def result(self, ident):
-        r, body, version = self.read(ident)
+        path = self.path(ident)
+        r, body, version = self.read_file(path, ident)
+        return self.result_from(r, body, version, path)
+
+    def indexed_files(self):
+        from study_index import RecordIndex
+        return RecordIndex(self).refresh()
+
+    def result_from(self, r, body, version, path):
         import study_sync
         latest = study_sync.local_fields(r, body)
         r = {**r, 'entry': {**r['entry'], **{k: latest[k] for k in study_sync.SYNC_KEYS}}, 'favorite': latest.get('favorite', r.get('favorite', False))}
         stale = bool(r.get('reviewDraft')) and r['reviewDraft']['sourceHash'] != hashlib.sha256(self.without_draft(r, body).encode()).hexdigest()
         return {**r, 'favorite': bool(r.get('favorite', False)),
                 'learningState': r.get('learningState', 'saved'), 'syncState': r.get('syncState', r.get('ankiState', 'saved')),
-                'version': version, 'path': str(self.path(ident).relative_to(self.vault)),
+                'version': version, 'path': str(path.relative_to(self.vault)),
                 'target': self.target_details(), 'draftStale': stale,
                 **({'targetId': self.target_id, 'ankiEnabled': self.anki_enabled} if self.target_id else {}),
-                'vaultSaved': True, 'openUrl': self.open_url(ident)}
+                'vaultSaved': True, 'openUrl': 'obsidian://open?' + urllib.parse.urlencode({'vault': self.vault.name, 'file': str(path.relative_to(self.vault))})}
 
     def open_url(self, ident):
         return 'obsidian://open?' + urllib.parse.urlencode({'vault': self.vault.name, 'file': str(self.path(ident).relative_to(self.vault))})
@@ -1115,8 +1123,9 @@ class StudyLibrary:
                 return self.sync(ident) if p['makeCard'] else self.result(ident)
             if p['action'] == 'libraryList':
                 rows = []
-                for f, ident in self.record_files():
-                    r = self.result(ident)
+                cached = [item for stamp in self.indexed_files().values() for item in stamp['rows']]
+                for item in cached:
+                    r = {**item['result'], 'target': self.target_details()}
                     e = r['entry']
                     match = True if p.get('scope') == 'all' else (r['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title']))
                     if match:

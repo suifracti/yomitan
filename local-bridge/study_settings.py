@@ -270,37 +270,53 @@ class YomitanLibrary:
                 raise ValueError('语境目录必须位于当前选定的 Vault 内；原设置未改变。') from None
         return {'path': str(chosen), 'cancelled': False}
 
-    def word_status(self):
-        """Learning status of every saved English word, for colouring pages.
-
-        'known' once the learner has a stage-3 (use) card for it, otherwise
-        'learning'. Only the word, its dictionary form and the status leave
-        the bridge; no sentences, notes or sources.
-        """
-        import study_sync
-        words, seen = {}, set()
+    def indexed(self):
+        """One incremental cache pass over each distinct record folder."""
+        files, records, seen, libraries = {}, {}, set(), {}
         for target_id, target in self.targets.items():
             folder = (target['vault'], target['directory'])
             if folder in seen or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
                 continue
             seen.add(folder)
             lib = self.library_for(target_id)
-            if not lib.records.is_dir() or getattr(lib, 'language', 'en') != 'en':
+            for name, stamp in lib.indexed_files().items():
+                path = lib.records / name
+                files[str(path)] = stamp['mtime']
+                for item in stamp['rows']:
+                    ident = item['id']
+                    original = item.get('targetId') or self.legacy_id
+                    if original not in self.targets:
+                        raise ValueError('记录的原保存目的地已失效，未改投当前目录。')
+                    if original not in libraries:
+                        libraries[original] = self.library_for(original)
+                    original_lib = libraries[original]
+                    saved = item['result'].get('savedTarget')
+                    if ((str(original_lib.vault), str(original_lib.relative)) != folder or
+                            (saved and any(saved.get(k) != self.targets[original][k] for k in ('targetId', 'vault', 'directory', 'deck', 'model')))):
+                        raise ValueError('记录原目的地与历史设置不同，未重定向。')
+                    if ident in records:
+                        raise ValueError('不同目录有相同学习编号，请先人工确认；没有自动覆盖。')
+                    row = {**item['result'], 'target': original_lib.target_details(),
+                           'targetId': original, 'ankiEnabled': original_lib.anki_enabled}
+                    records[ident] = (original_lib, path, row)
+        return files, records
+
+    def word_status(self):
+        """Read page-colouring metadata without rereading unchanged note bodies."""
+        import study_sync
+        words = {}
+        for lib, _path, record in self.indexed()[1].values():
+            if lib.language != 'en':
                 continue
-            for _path, ident in lib.record_files():
-                try:
-                    record = lib.read(ident)[0]
-                except (OSError, ValueError, FileNotFoundError):
-                    continue
-                known = any(study_sync.CARD_STAGES.get(c.get('kind')) == 3 for c in record.get('cards', []))
-                status = 'known' if known else 'learning'
-                entry = record['entry']
-                for key in {entry.get('word', ''), entry.get('lemma', '')}:
-                    key = key.strip().lower()
-                    if 1 < len(key) <= 60 and words.get(key) != 'known':
-                        words[key] = status
-                if len(words) >= 20000:
-                    return words
+            known = any(study_sync.CARD_STAGES.get(c.get('kind')) == 3 for c in record.get('cards', []))
+            status = 'known' if known else 'learning'
+            entry = record['entry']
+            for key in {entry.get('word', ''), entry.get('lemma', '')}:
+                key = key.strip().lower()
+                if 1 < len(key) <= 60 and words.get(key) != 'known':
+                    words[key] = status
+            if len(words) >= 20000:
+                return words
         return words
 
     def auto_sync(self, now=None):
@@ -325,30 +341,16 @@ class YomitanLibrary:
         first = not isinstance(state.get('files'), dict)
         files = state.get('files') if not first else {}
         notes = state.get('notes') if isinstance(state.get('notes'), dict) else {}
-        seen_folders, libraries, owner, changed = set(), {}, {}, []
-        for target_id, target in self.targets.items():
-            folder = (target['vault'], target['directory'])
-            if folder in seen_folders or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
-                continue
-            seen_folders.add(folder)
-            lib = self.library_for(target_id)
-            if not lib.records.is_dir():
-                continue
-            libraries[target_id] = lib
-            for path, ident in lib.record_files():
-                key = str(path)
-                mtime = path.stat().st_mtime_ns
-                if files.get(key) != mtime:
-                    if not first:
-                        changed.append((target_id, ident))
-                    files[key] = mtime
-                try:
-                    record = lib.read(ident)[0]
-                except (OSError, ValueError, FileNotFoundError):
-                    continue
-                owner['study_' + ident] = (target_id, ident)
-                for card in record.get('cards', []):
-                    owner['studycard_' + card['id']] = (target_id, ident)
+        current_files, records = self.indexed()
+        libraries = {lib.target_id: lib for lib, _path, _row in records.values()}
+        owner, changed = {}, []
+        for ident, (lib, path, record) in records.items():
+            if not first and files.get(str(path)) != current_files[str(path)]:
+                changed.append((lib.target_id, ident))
+            owner['study_' + ident] = (lib.target_id, ident)
+            for card in record.get('cards', []):
+                owner['studycard_' + card['id']] = (lib.target_id, ident)
+        files = current_files
         anki_ok = any(lib.anki_enabled for lib in libraries.values())
         paused = ''
         if anki_ok:
@@ -373,7 +375,7 @@ class YomitanLibrary:
             done.add((target_id, ident))
             lib = libraries[target_id]
             try:
-                record = lib.read(ident)[0]
+                record = records[ident][2]
                 if record['entry'].get('subtitleSource') or not (record.get('cards') or record.get('noteId')) or not lib.anki_enabled or paused:
                     continue
                 result = study_sync.reconcile(lib, {'id': ident})
@@ -382,9 +384,10 @@ class YomitanLibrary:
                     conflicts += 1
             except Exception as error:
                 errors.append(str(error)[:120] if isinstance(error, ValueError) else '同步未完成')
-        # Our own writes must not look like new edits on the next pass.
-        for lib in libraries.values():
-            for path, _ident in lib.record_files():
+        # Only re-stat records we attempted; quiet passes never reopen note bodies.
+        for _target_id, ident in done:
+            path = records[ident][1]
+            if path.is_file():
                 files[str(path)] = path.stat().st_mtime_ns
         upgrade = state.get('upgrade', []) if isinstance(state.get('upgrade'), list) else []
         if anki_ok and not paused and now - state.get('upgradeAt', 0) > 600:
@@ -397,7 +400,7 @@ class YomitanLibrary:
                     for tag in note.get('tags', []):
                         if tag in owner:
                             target_id, ident = owner[tag]
-                            record = libraries[target_id].read(ident)[0]
+                            record = records[ident][2]
                             if not any(study_sync.CARD_STAGES.get(c.get('kind')) == 3 for c in record.get('cards', [])):
                                 ready[ident] = record['entry']['word']
                 upgrade = [{'id': ident, 'word': word} for ident, word in sorted(ready.items())][:200]
@@ -417,25 +420,16 @@ class YomitanLibrary:
         from study_library_core import media_key_of
         from study_sync import CARD_STAGES
 
-        rows, seen = [], set()
-        for target_id, target in self.targets.items():
-            folder = (target['vault'], target['directory'])
-            if folder in seen or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
+        rows = []
+        for lib, _path, row in self.indexed()[1].values():
+            entry = row['entry']
+            if media_key_of(entry.get('url')) != media_key:
                 continue
-            seen.add(folder)
-            lib = self.library_for(target_id)
-            if not lib.records.is_dir():
-                continue
-            for _file, ident in lib.record_files():
-                row = self.locate(ident).result(ident)
-                entry = row['entry']
-                if media_key_of(entry.get('url')) != media_key:
-                    continue
-                stages = [CARD_STAGES.get(card.get('kind'), 0) for card in row.get('cards', [])]
-                rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', '')[:300],
-                             'path': row.get('path', ''), 'vault': str(lib.vault),
-                             'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
-                             'cards': len(row.get('cards', [])), 'stage': max(stages, default=0)})
+            stages = [CARD_STAGES.get(card.get('kind'), 0) for card in row.get('cards', [])]
+            rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', '')[:300],
+                         'path': row.get('path', ''), 'vault': str(lib.vault),
+                         'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
+                         'cards': len(row.get('cards', [])), 'stage': max(stages, default=0)})
         rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
         return rows[:300]
 
@@ -491,19 +485,11 @@ class YomitanLibrary:
             return {'words': self.word_status()}
         if action == 'libraryList':
             rows = []
-            seen = set()
-            for target_id, target in self.targets.items():
-                folder = (target['vault'], target['directory'])
-                if folder in seen or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir(): continue
-                seen.add(folder)
-                lib = self.library_for(target_id)
-                if not lib.records.is_dir(): continue
-                for file, ident in lib.record_files():
-                    row = self.locate(ident).result(ident)
-                    e = row['entry']
-                    match = True if p.get('scope') == 'all' else (row['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title']))
-                    if match:
-                        rows.append(row)
+            for _lib, _path, row in self.indexed()[1].values():
+                e = row['entry']
+                match = True if p.get('scope') == 'all' else (row['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title']))
+                if match:
+                    rows.append(row)
             rows.sort(key=lambda row: row['created'], reverse=True)
             offset = p.get('offset', 0)
             return {'items': rows[offset:offset + 10], 'total': len(rows), 'ankiEnabled': self.anki_enabled, 'target': self.settings()}

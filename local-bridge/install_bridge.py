@@ -61,6 +61,7 @@ def install(home, codex, python, vault=None):
     content = {
         runtime / 'study_translator.py': (pathlib.Path(__file__).parent / 'study_translator.py').read_bytes(),
         runtime / 'study_settings.py': (pathlib.Path(__file__).parent / 'study_settings.py').read_bytes(),
+        runtime / 'study_index.py': (pathlib.Path(__file__).parent / 'study_index.py').read_bytes(),
         runtime / 'study_library.py': (pathlib.Path(__file__).parent / 'study_library.py').read_bytes(),
         runtime / 'study_library_core.py': (pathlib.Path(__file__).parent / 'study_library_core.py').read_bytes(),
         runtime / 'study_sync.py': (pathlib.Path(__file__).parent / 'study_sync.py').read_bytes(),
