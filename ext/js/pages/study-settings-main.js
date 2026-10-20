@@ -483,7 +483,13 @@ export function prepareSystemStatus(root) {
             show('vault', value.vault.ok);
             show('apple', value.appleTranslate);
             command.hidden = same;
-            section.querySelector('[data-health-errors]').textContent = value.errors.map((error) => `${error.action}：${error.message}`).join('\n') || '没有最近错误';
+            const errors = new Map();
+            for (const error of [...value.errors].reverse()) {
+                const text = `${error.action}：${error.message}`;
+                errors.set(text, (errors.get(text) || 0) + 1);
+            }
+            section.querySelector('[data-health-errors]').textContent = [...errors].slice(0, 5)
+                .map(([text, count]) => `${text}${count > 1 ? ` ×${count}` : ''}`).join('\n') || '没有最近错误';
             summary.textContent = allowed ? '检查完成' : '请到 Chrome 扩展详情开启「允许访问文件网址」。';
         } catch {
             for (const key of /** @type {('bridge'|'anki'|'vault'|'apple')[]} */ (['bridge', 'anki', 'vault', 'apple'])) { show(key, false); }

@@ -27,6 +27,17 @@ class TodayTests(unittest.TestCase):
         self.assertEqual(result, {'due': 23, 'reviewed': 2, 'newDue': 5, 'decks': ['English "other"', '外语']})
         self.assertEqual([c[0] for c in calls], ['deckNames', 'getDeckStats', 'findCards'])
 
+    def test_real_deck_id_stats_allow_an_unreadable_deck(self):
+        from study_stats import anki_today
+        def anki(action, params):
+            if action == 'deckNames': return ['外语::单词', '外语::语境']
+            if action == 'getDeckStats':
+                return {'1723456789000': {'name': '外语::单词', 'new_count': 2, 'learn_count': 1, 'review_count': 4}}
+            if action == 'findCards': return [123]
+            self.fail(action)
+        library = SimpleNamespace(settings=lambda: {'deck': '外语::单词', 'deckByKind': {'context': '外语::语境'}}, anki=anki)
+        self.assertEqual(anki_today(library), {'due': 5, 'reviewed': 1, 'newDue': 2, 'decks': ['外语::单词', '外语::语境']})
+
     def test_closed_or_disabled_anki_reports_paused(self):
         from study_stats import anki_today
         def offline(action, params):
