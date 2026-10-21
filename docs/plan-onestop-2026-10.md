@@ -171,3 +171,15 @@
 - 用户验收：重载扩展后，在真实 YouTube 和英文文章上试一遍。
 
 Claude 负责：每批推送后审查提交，看有没有照方案做、有没有做复杂；不写实现代码。
+
+
+## 2026-10-21 日常扩展回归修复与真实 Chrome 结果
+
+本轮用 Playwright 驱动本机 Google Chrome，加载 `/Users/apple/backup/english-study-extensions/yomitan`，扩展 ID 为 `fdibnlkfllnojcmhcghkmdlceeegmhpf`。浏览器使用独立临时 Profile，不是把测试 HTML 冒充真实网站。
+
+- **弹窗：通过。** 删除 `study-ui.js` 的全局增强及两个控件内部的 MutationObserver，只在 `data-study-ui` 容器挂载时显式增强。设置、字幕和模型列表更新后显式刷新控件。真实 `action-popup.html` 正常显示，可打开菜单、切换翻译形式，控制台错误为 0。顺手处理无网页消息回复时读取 `active` 的错误。
+- **文章与 K/L/I：前端实机通过。** 在 `https://docs.python.org/3/tutorial/controlflow.html` 的原生正文单词 `encounter` 上，K 显示“已标为认识”、I 显示“已忽略”、L 显示延迟保存提示并立即撤销。页面原有 9 个 select 全部未被包装。仅 Native 通信使用内存替身，没有读取真实 Vault、创建正式笔记或卡片；这不代表正式数据写入链路验收。
+- **YouTube：代码已修，真实字幕验收未通过。** 默认使用 `_findCaptionUrl` 捕获的播放器请求；换轨只改 lang/kind/name，保留 pot 等凭证，抓不到真实请求才用 baseUrl。现有语言测试增加凭证保留断言并通过。真实打开 `https://www.youtube.com/watch?v=arj7oStGLkU` 时，播放器返回 `LOGIN_REQUIRED`（“请登录，以便我们确认你不是聊天机器人”），轨道列表和字幕请求均为空，因此不能确认自动载入和切换语言后仍有字幕；没有拿夹具补作通过，也没有绕过登录验证。
+- **欢迎页：通过。** 预设 `showGuide=false`；自动入口只留首次安装，展示标记改为持久保存；更新迁移只保留原模板警告，不自动开页。欢迎页直接引入 study tokens / study-settings.css。临时 Profile 首次安装欢迎页 1 个；重启 Chrome 并重新加载同一目录后 0 个，弹窗仍正常；读取到纸色 `#fbfaf7`。
+- **最少自检：** 3 项定向 Vitest 通过（控件范围、视频上不截 K、字幕语言与凭证）。仅新增控件范围这一个用例；未跑全量测试矩阵。改动 JS 已跑 ESLint，零错误文件保持零错误，存量文件未增加错误；全库类型检查仍有原有问题，不在本轮扩修。
+- **范围：** 不读 Obsidian，不调用付费模型，不写正式学习数据，不动 `companion-app/`。仅同步日常扩展与原运行桥目标；本轮没有 Python 变动，桥源码无需更换。真实 YouTube 自动载入/换语言仍待可正常播放的会话验收。

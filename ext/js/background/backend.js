@@ -335,11 +335,6 @@ export class Backend {
 
             this._attachOmniboxListener();
 
-            const options = this._getProfileOptions({current: true}, false);
-            if (options.general.showGuide) {
-                void this._openWelcomeGuidePageOnce();
-            }
-
             this._clipboardMonitor.on('change', this._onClipboardTextChange.bind(this));
 
             this._sendMessageAllTabsIgnoreResponse({action: 'applicationBackendReady'});
@@ -495,6 +490,7 @@ export class Backend {
     _onInstalled({reason}) {
         if (reason !== 'install') { return; }
         void this._requestPersistentStorage();
+        void this._openWelcomeGuidePageOnce();
     }
 
     // Message handlers
@@ -2854,11 +2850,11 @@ export class Backend {
      * @returns {Promise<void>}
      */
     async _openWelcomeGuidePageOnce() {
-        const result = await chrome.storage.session.get(['openedWelcomePage']);
+        const result = await chrome.storage.local.get(['openedWelcomePage']);
         if (!result.openedWelcomePage) {
             await Promise.all([
                 this._openWelcomeGuidePage(),
-                chrome.storage.session.set({openedWelcomePage: true}),
+                chrome.storage.local.set({openedWelcomePage: true}),
             ]);
         }
     }

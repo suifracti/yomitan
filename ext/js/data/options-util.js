@@ -1171,8 +1171,6 @@ export class OptionsUtil {
 
         if (customTemplates && isObjectNotArray(chrome.storage)) {
             void chrome.storage.session.set({needsCustomTemplatesWarning: true});
-            await this._createTab(chrome.runtime.getURL('/welcome.html'));
-            void chrome.storage.session.set({openedWelcomePage: true});
         }
     }
 
