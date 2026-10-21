@@ -17,6 +17,7 @@
  */
 
 import '../study/study-ui.js';
+import {preparePageControls} from '../study/page-translate.js';
 import {ThemeController} from '../app/theme-controller.js';
 import {Application} from '../application.js';
 import {getAllPermissions, hasRequiredPermissionsForOptions} from '../data/permissions-util.js';
@@ -55,6 +56,7 @@ export class DisplayController {
         const pageWords = document.getElementById('action-page-words');
         void chrome.tabs.query({active:true,currentWindow:true}).then(async ([tab]) => {
             if (!tab?.id) { return; }
+            await preparePageControls(document, tab);
             try {
                 const result = await chrome.tabs.sendMessage(tab.id,{studyPageWords:'count'},{frameId:0});
                 pageWords.textContent = `本页生词（${result.count}）`;

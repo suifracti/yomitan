@@ -231,6 +231,7 @@ export class YoutubeReader extends EventTarget {
             this._translateRun = ''; this._queue.cancel();
         }
         this._prefs = normalizeSubtitlePrefs(prefs);
+        if (previous.enabled !== this._prefs.enabled) { this._sync(); }
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
         if ((previous.merge !== this._prefs.merge || previous.aiSegment !== this._prefs.aiSegment) && this._rawSession && this._view) {
@@ -542,7 +543,7 @@ export class YoutubeReader extends EventTarget {
 
     /** */
     _sync() {
-        const key = this._site.mediaKey();
+        const key = this._prefs.enabled ? this._site.mediaKey() : null;
         if (key === this._mediaKey && (key === null || this._view?.root.isConnected)) {
             this._rebindVideo();
             return;

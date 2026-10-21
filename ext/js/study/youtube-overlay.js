@@ -62,6 +62,7 @@ const STYLE = `
 #${PANEL_ID} .p-offset output{min-width:4.5em;text-align:center;font-variant-numeric:tabular-nums}
 #${BUTTON_ID}{display:inline-flex;align-items:center;justify-content:center;width:48px;opacity:.9}
 #${BUTTON_ID} svg{width:24px;height:24px}
+#${BUTTON_ID}[hidden]{display:none}
 #${BUTTON_ID}[aria-expanded=true]{opacity:1}
 #${PANEL_ID}{position:absolute;right:12px;bottom:60px;z-index:70;box-sizing:border-box;width:min(380px,calc(100% - 16px));max-height:calc(100% - 80px);overflow:auto;padding:6px 0;border-radius:10px;background:rgb(28 28 30 / 94%);color:#eee;font:13px/1.4 -apple-system,'PingFang SC',sans-serif;box-shadow:0 6px 20px rgb(0 0 0 / 40%)}
 #${PANEL_ID}[hidden]{display:none}
@@ -329,6 +330,8 @@ export class YoutubeOverlay {
     _applyPrefs() {
         const prefs = this._reader.prefs;
         const loaded = this._reader.session !== null;
+        if (this._button) { this._button.hidden = !prefs.enabled; }
+        if (this._panel && !prefs.enabled) { this._togglePanel(false); }
         this._site.hideNative(prefs.overlay && loaded);
         if (this._overlay) {
             this._overlay.hidden = (!prefs.overlay || !loaded || !this._shown) && (this._chip?.hidden ?? true);

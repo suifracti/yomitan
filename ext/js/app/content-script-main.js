@@ -48,6 +48,8 @@ await Application.main(false, async (application) => {
     if (window.self === window.top) {
         const {startWordMarks} = await import('../study/word-marks.js');
         startWordMarks();
+        const {PageTranslate} = await import('../study/page-translate.js');
+        void new PageTranslate().start();
     }
     if (window.self === window.top && /(^|\.)youtube\.com$/.test(location.hostname)) {
         const {startYoutubeReader} = await import('../study/youtube-reader.js');

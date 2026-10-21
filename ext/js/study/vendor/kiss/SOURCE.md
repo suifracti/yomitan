@@ -54,3 +54,16 @@ Do not edit the JavaScript file; types live in the adjacent `.d.ts`. It only par
 - 原样引入划词按钮 / 窗口 / hooks 会要求 **React、MUI、JSX 转换**（见上游 package.json）；当前项目不能用浏览器原生 ESM 直接运行这些模块。没有为此加依赖或改变构建。
 - 因此**没有批准任何整包复制清单**。建议 Claude 审查后明确：是否允许按上述位置抽取一个受限核心（这会修改源码，需逐段标出来源/差异），或放宽体积/构建约束。未定之前不创建适配层、不先写一套自己的 DOM 翻译器。
 - 以后若引入原样文件，沿用上方 ref/path/blob 校验方式；若必须改 import/抽取方法，逐项记在这里，保留许可证与版权。当前新增实际文件数：**0**（本 SOURCE.md 除外）。
+
+
+## 2026-10-21 审查后实际引入（批 4）
+
+按用户审查结论，只引入下面的独立文件；没有引入 translator、translatorManager 或任何 React/MUI/JSX。
+
+| 本地文件 | 上游 ref / 路径 | 行数 | Git blob SHA-1 | 改动 |
+|---|---|---:|---|---|
+| translationTargets.js | be97e68251adcd8a56754c803b43e0e90b0f269c / src/libs/translationTargets.js | 66 | e20c23be187b01fa2195a899acd6f9aa3188fa02 | 无，字节相同 |
+| translationTasks.js | 同 ref / src/libs/translationTasks.js | 27 | fe43508a02df3a27923a11aa64e2ab9ab3362183 | 无，字节相同 |
+| default-selectors.js | 同 ref / src/config/rules.js | 原文件 227 行，摘取 3 个常量 | c8f87768094b427005320dfd71a842805ae05ed5（原文件） | 只摘 DEFAULT_SELECTOR / DEFAULT_IGNORE_SELECTOR / DEFAULT_KEEP_SELECTOR，常量原样，加来源注释 |
+
+相邻两个 .d.ts 是本项目类型声明，不是上游源码。以上适用 KISS 的 GPL-3.0 许可和版权。源码请求、原文节点保留/恢复、两个显示形式、开关和样式在本项目 page-translate.js，使用原生 DOM；批 4 / 5 自写代码合计受约 700 行上限约束。只看译文时，原节点只加隐藏 class，原文在新译文元素的悬停浮层显示，避免展开原段落使鼠标位置反复跳动。

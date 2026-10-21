@@ -1269,7 +1269,7 @@ export function prepareStudyService(lookupDictionary = null) {
         }
         const prefix = chrome.runtime.getURL('');
         const pathname = sender.url?.slice(prefix.length).split(/[?#]/)[0];
-        if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(prefix) || !['popup.html', 'search.html', 'study-settings.html', 'study-library.html', 'settings.html'].includes(pathname ?? '')) {
+        if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(prefix) || !['action-popup.html', 'popup.html', 'search.html', 'study-settings.html', 'study-library.html', 'settings.html'].includes(pathname ?? '')) {
             reply({ok: false, error: '不允许此页面访问学习组件。'});
             return false;
         }

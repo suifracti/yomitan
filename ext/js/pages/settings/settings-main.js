@@ -17,6 +17,7 @@
  */
 
 import '../../study/study-ui.js';
+import {preparePageControls} from '../../study/page-translate.js';
 import {prepareBundledDictionary} from '../common/bundled-dictionary.js';
 import {prepareStudySettings} from '../study-settings-main.js';
 import {prepareSubtitleSettings} from '../subtitle-settings.js';
@@ -207,6 +208,7 @@ await Application.main(true, async (application) => {
 
     await Promise.all(preparePromises);
 
+    void preparePageControls(document);
     document.documentElement.dataset.loaded = 'true';
     void prepareBundledDictionary(settingsController, querySelectorNotNull(document, '[data-settings-category-panel="lookup"]'));
 });

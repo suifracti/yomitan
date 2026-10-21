@@ -28,8 +28,16 @@
         </header>
         <p class="scan-state" role="status">正在读取设置…</p>
         <p class="tooltip">按住 Ctrl，鼠标移到单词上即可查询</p>
+        <section class="page-quick-controls">
+            <button type="button" id="page-toggle">翻译本页</button>
+            <select id="page-mode" aria-label="翻译形式"><option value="bilingual">双语</option><option value="translation">只看译文</option></select>
+            <label><input type="checkbox" id="page-site">总是翻译这个网站</label>
+            <label><input type="checkbox" id="page-auto">英文网页自动翻译</label>
+            <label><input type="checkbox" id="page-marks">网页生词标色</label>
+            <button type="button" id="action-page-words">本页生词（…） →</button>
+            <label><input type="checkbox" id="page-video">视频字幕学习</label>
+        </section>
         <div class="action-buttons">
-            <button type="button" id="action-page-words">本页生词（…）</button>
             <a class="action-open-study-library" href="/study-library.html" target="_blank"><strong>学习库</strong><span id="action-today" hidden></span></a>
             <a class="action-open-settings" href="/settings.html">设置</a>
         </div>
