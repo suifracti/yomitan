@@ -20,20 +20,33 @@ import {builtinEnvironments} from 'vitest/environments';
 
 test('K over video captions is left to the player and never changes word state', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<div id="movie_player"><span>architecture</span></div>'}});
+    const words = {architecture: {s: 'learning'}};
+    const send = vi.fn();
+    vi.stubGlobal('CSS', {highlights: new Map()});
+    vi.stubGlobal('Highlight', Set);
+    vi.stubGlobal('chrome', {runtime: {sendMessage: send, onMessage: {addListener() {}}},
+        storage: {
+            local: {get: async () => ({studyWordMarks: {enabled: true, possible: false, encounters: false}, studyWordStatus: {words}})},
+            onChanged: {addListener() {}},
+        }});
+    vi.useFakeTimers();
     try {
         const {WordMarks} = await import('../ext/js/study/word-marks.js');
         const marks = new WordMarks();
-        marks._enabled = true;
-        marks._words = {architecture: {s: 'learning'}};
+        await marks.start();
         document.elementFromPoint = () => document.querySelector('span');
         const point = vi.spyOn(marks, '_pointWord');
-        marks._bindHover();
         const event = new KeyboardEvent('keydown', {key: 'k', bubbles: true, cancelable: true});
         document.dispatchEvent(event);
         expect(event.defaultPrevented).toBe(false);
         expect(point).not.toHaveBeenCalled();
-        expect(marks._words.architecture).toEqual({s: 'learning'});
+        expect(send).not.toHaveBeenCalled();
+        expect(words.architecture).toEqual({s: 'learning'});
     } finally {
+        vi.clearAllTimers();
+        await vi.advanceTimersByTimeAsync(0);
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
         await env.teardown(global);
     }
 });
