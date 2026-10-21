@@ -81,6 +81,8 @@ export class YoutubeReader extends EventTarget {
         this._shadowDone = '';
         /** @type {{id: string, plays: number}|null} */
         this._shadowPause = null;
+        /** @type {(()=>void)|null} */
+        this._restoreReplay = null;
         /** @type {number} */
         this._shadowTimer = 0;
         /** @type {number} */
@@ -231,6 +233,7 @@ export class YoutubeReader extends EventTarget {
             this._translateRun = ''; this._queue.cancel();
         }
         this._prefs = normalizeSubtitlePrefs(prefs);
+        if (!this._prefs.shortcuts) { this._restoreReplay?.(); }
         if (previous.enabled !== this._prefs.enabled) { this._sync(); }
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
@@ -403,7 +406,7 @@ export class YoutubeReader extends EventTarget {
     _shadowTick() {
         const session = this._session;
         const video = this._video;
-        if (!session || !video || video.paused || this._loop || !this._prefs.shadow) { return; }
+        if (!session || !video || video.paused || this._loop || this._restoreReplay || !this._prefs.shadow) { return; }
         const offset = session.offsetMs;
         const now = video.currentTime * 1000 - offset;
         let row = this._shadowRow;
@@ -486,7 +489,72 @@ export class YoutubeReader extends EventTarget {
     }
 
     /** Continue after the learner has repeated the sentence. */
-    continueShadow() { void this._video?.play()?.catch(() => this._status('播放没有开始，请点播放器的播放按钮。')); }
+    continueShadow() {
+        void this._video?.play()?.catch(() => {
+            this._restoreReplay?.();
+            this._status('播放没有开始，请点播放器的播放按钮。');
+        });
+    }
+
+    /**
+     * A/S/D operate only on the loaded track, preserving the user's playback rate.
+     * @param {string} key
+     * @param {boolean} slow
+     * @returns {boolean}
+     */
+    captionShortcut(key, slow) {
+        const session = this._session;
+        const video = this._video;
+        if (!session || !video || session.cues.length === 0) { return false; }
+        this._restoreReplay?.();
+        const paused = video.paused && this._shadowPause ? session.cues.findIndex((c) => c.id === this._shadowPause?.id) : -1;
+        let current = paused;
+        if (current < 0) {
+            current = 0;
+            for (let i = 0; i < session.cues.length; ++i) {
+                if (session.cues[i].startMs + session.offsetMs <= video.currentTime * 1000) {
+                    current = i;
+                } else {
+                    break;
+                }
+            }
+        }
+        const index = Math.max(0, Math.min(session.cues.length - 1, current + (key === 'a' ? -1 : (key === 'd' ? 1 : 0))));
+        const cue = session.cues[index];
+        this._stopLoop('');
+        this._seek(cue.id);
+        this._shadowRow = null;
+        this._shadowDone = '';
+        this._shadowPause = null;
+        if (key === 's') {
+            const rate = video.playbackRate;
+            const start = session.seekSeconds(cue.id);
+            const end = (cue.endMs + session.offsetMs) / 1000;
+            const restore = () => {
+                video.playbackRate = rate;
+                video.removeEventListener('timeupdate', finish);
+                video.removeEventListener('seeking', seek);
+                video.removeEventListener('ended', restore);
+                this._restoreReplay = null;
+            };
+            const finish = () => {
+                if (video.currentTime >= end) {
+                    video.pause();
+                    restore();
+                }
+            };
+            const seek = () => {
+                if (video.currentTime < start - 0.5 || video.currentTime > end + 0.5) { restore(); }
+            };
+            this._restoreReplay = restore;
+            if (slow) { video.playbackRate = 0.75; }
+            video.addEventListener('timeupdate', finish);
+            video.addEventListener('seeking', seek);
+            video.addEventListener('ended', restore);
+        }
+        this.continueShadow();
+        return true;
+    }
 
     /** Replay the paused sentence; the next pause counts this listen too. */
     replayShadow() {
@@ -559,6 +627,7 @@ export class YoutubeReader extends EventTarget {
         if (!this._session || this._video?.isConnected) { return; }
         const video = this._site.video();
         if (!video) { return; }
+        this._restoreReplay?.();
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._video = video;
         video.addEventListener('timeupdate', this._timeListener);
@@ -566,6 +635,7 @@ export class YoutubeReader extends EventTarget {
 
     /** */
     _reset() {
+        this._restoreReplay?.();
         ++this._generation;
         this._loadController?.abort();
         this._loadController = null;
@@ -750,6 +820,9 @@ export class YoutubeReader extends EventTarget {
             button.dataset.download = kind; downloads.append(button);
         }
         files.append(load, importButton, downloads); menu.append(translation, processing, files);
+        const shortcutHint = document.createElement('small');
+        shortcutHint.dataset.shortcutHint = '';
+        menu.append(shortcutHint);
         const difficulty = document.createElement('small');
         difficulty.className = 'r-difficulty';
         head.append(title, difficulty);
@@ -837,6 +910,8 @@ export class YoutubeReader extends EventTarget {
     _syncMenu() {
         const view = this._view;
         if (!view) { return; }
+        const shortcutHint = view.menu.querySelector('[data-shortcut-hint]');
+        if (shortcutHint) { shortcutHint.textContent = this._prefs.shortcuts ? 'A 上一句 · S 重听 · D 下一句 · Shift+S 慢速重听' : '字幕快捷键已关闭，可在设置里开启'; }
         for (const box of view.menu.querySelectorAll('input[data-pref]')) {
             const key = /** @type {keyof import('./subtitle-prefs.js').SubtitlePrefs} */ (/** @type {HTMLInputElement} */ (box).dataset.pref);
             /** @type {HTMLInputElement} */ (box).checked = Boolean(this._prefs[key]);
@@ -1105,6 +1180,7 @@ export class YoutubeReader extends EventTarget {
      * @param {SubtitleSession} session
      */
     _render(session) {
+        this._restoreReplay?.();
         const view = this._view;
         if (!view) { return; }
         this._queue.cancel();
@@ -1313,6 +1389,7 @@ export class YoutubeReader extends EventTarget {
      * @param {string} id
      */
     _seek(id) {
+        this._restoreReplay?.();
         if (!this._session || !this._video) { return; }
         if (this._loop && this._loop.id !== id) { this._stopLoop('已退出循环'); }
         try {

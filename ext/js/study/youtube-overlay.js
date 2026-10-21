@@ -172,6 +172,12 @@ export class YoutubeOverlay {
         document.addEventListener('fullscreenchange', () => this._applyPrefs());
         document.addEventListener('keydown', (event) => {
             const target = event.target instanceof Element ? event.target : document.activeElement;
+            if (reader.prefs.shortcuts && reader.session && !target?.closest('input,textarea,select,[contenteditable]:not([contenteditable=false])') &&
+            !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && ['a', 's', 'd'].includes(event.key.toLowerCase()) && reader.captionShortcut(event.key.toLowerCase(), event.shiftKey)) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this._cancelShadowCountdown();
+            }
             if (this._shadowId && this._site.video()?.paused && !target?.closest('input,textarea,select,[contenteditable]') &&
             !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && [' ', 'r', 'R'].includes(event.key)) {
                 event.preventDefault();

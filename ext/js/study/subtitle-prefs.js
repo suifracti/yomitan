@@ -27,6 +27,7 @@ export const TRANSLATION_PREFS_KEY = 'studyTranslationPrefs';
 
 /**
  * @typedef {object} SubtitlePrefs
+ * @property {boolean} shortcuts Enable A/S/D caption shortcuts.
  * @property {boolean} enabled Enable video subtitle learning.
  * @property {boolean} overlay Show our captions inside the video and hide YouTube's own.
  * @property {boolean} bilingual Show the Chinese line under the English one.
@@ -46,6 +47,7 @@ export const TRANSLATION_PREFS_KEY = 'studyTranslationPrefs';
 /** @type {Readonly<SubtitlePrefs>} */
 export const DEFAULT_SUBTITLE_PREFS = Object.freeze({
     enabled: true,
+    shortcuts: true,
     overlay: true,
     bilingual: true,
     blur: false,
@@ -73,7 +75,7 @@ export function normalizeSubtitlePrefs(value) {
     const input = /** @type {Record<string, unknown>} */ (value && typeof value === 'object' ? value : {});
     /** @type {SubtitlePrefs} */
     const result = {...DEFAULT_SUBTITLE_PREFS};
-    for (const key of /** @type {(keyof SubtitlePrefs)[]} */ (['enabled', 'overlay', 'bilingual', 'blur', 'merge', 'aiSegment', 'autoTranslate', 'otherSites', 'shadow', 'resume'])) {
+    for (const key of /** @type {(keyof SubtitlePrefs)[]} */ (['shortcuts', 'enabled', 'overlay', 'bilingual', 'blur', 'merge', 'aiSegment', 'autoTranslate', 'otherSites', 'shadow', 'resume'])) {
         if (typeof input[key] === 'boolean') { /** @type {Record<string, unknown>} */ (result)[key] = input[key]; }
     }
     const engine = input.engine;

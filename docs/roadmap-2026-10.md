@@ -331,3 +331,9 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 ## 2026-10-21 批 5：划词与悬停
 
 获准用原生 JS，共用 page-translate.js 请求缓存、译文节点和还原。`pageSentenceSave` 只接受 sentence / translation，后台补当前 sender 的网页来源，经原 librarySave(makeCard:false) 保存；entry.kind='sentence'，不进网页词级标色列表。以后制卡沿现有 sentence（句子英→中）卡型，不在“记住这句”时自动制卡。未引入 React、输入框翻译或 PDF/EPUB。
+
+## 2026-10-21 批 6：字幕快捷键
+
+沿 studySubtitlePrefs.shortcuts（默认 true）控制 A / S / D / Shift+S，仅在字幕和视频就绪、焦点不在输入区、没有 Ctrl/Alt/Cmd 时生效。A/D 跳句并播放，S 单句回听到句尾暂停；Shift+S 临时 0.75 倍速，结束、另一次跳句、换轨、关闭快捷键或重载时恢复原速度。跟读空格/R 保留，单句回听期间不让跟读循环抢播放位置；菜单底部显示键位或已关闭说明。
+
+一个 Vitest 用例、一个真实 Chrome 本地生成视频夹具通过；后者确认 A/D、慢速、句尾暂停及 1.5 倍原速度恢复。没有使用用户视频、笔记、卡片或付费服务。
