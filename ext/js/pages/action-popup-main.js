@@ -54,15 +54,15 @@ export class DisplayController {
         void this._setupEnvironment();
 
         void this._updateToday();
-        const pageWords = document.getElementById('action-page-words');
+        const pageWords = /** @type {HTMLButtonElement} */ (document.getElementById('action-page-words'));
         void chrome.tabs.query({active:true,currentWindow:true}).then(async ([tab]) => {
             if (!tab?.id) { return; }
             await preparePageControls(document, tab);
             try {
                 const result = await chrome.tabs.sendMessage(tab.id,{studyPageWords:'count'},{frameId:0});
-                pageWords.textContent = `本页生词（${result.count}）`;
+                pageWords.textContent = `本页 ${result.count} 个 ›`;
                 pageWords.onclick = () => { void chrome.tabs.sendMessage(tab.id,{studyPageWords:'open'},{frameId:0}); window.close(); };
-            } catch { pageWords.textContent='本页生词：请先打开一个网页'; pageWords.disabled=true; }
+            } catch { pageWords.textContent='打开网页后查看 ›'; pageWords.disabled=true; }
         });
         this._setupButtonEvents('.action-open-info', 'openInfoPage', chrome.runtime.getURL('/info.html'));
 
@@ -120,16 +120,18 @@ export class DisplayController {
             .join(' + ');
         for (const hint of modifierKeyHint) {
             hint.textContent = keys ? `按住 ${keys}，鼠标移到单词上即可查询` : '鼠标移到单词上即可查询';
+            const row = /** @type {HTMLElement} */ (document.querySelector('.scan-row'));
+            row.title = hint.textContent;
         }
     }
 
     /** */
     async _updateToday() {
-        const node = document.querySelector('#action-today');
+        const node = /** @type {HTMLElement} */ (document.querySelector('#action-today'));
         try {
             const today = /** @type {{due: number, paused?: boolean}} */ (await studyCall('ankiToday'));
             node.hidden = today.paused === true;
-            node.textContent = today.paused ? '' : `今天 ${today.due} 张`;
+            node.textContent = today.paused ? '' : `（今天 ${today.due} 张）`;
         } catch { node.hidden = true; }
     }
 

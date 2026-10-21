@@ -22,28 +22,35 @@
         正在打开…
     </div>
     <div id="action-popup">
-        <header class="action-heading">
-            <h1>英语学习</h1>
-            <label class="toggle"><input type="checkbox" class="enable-search" aria-label="划词查询"><span class="toggle-body"><span class="toggle-track"></span><span class="toggle-knob"></span></span></label>
-        </header>
-        <p class="scan-state" role="status">正在读取设置…</p>
-        <p class="tooltip">按住 Ctrl，鼠标移到单词上即可查询</p>
-        <section class="page-quick-controls">
+        <header class="action-heading"><h1>英语学习</h1></header>
+        <section class="page-quick-controls" aria-labelledby="popup-translation-title">
+            <h2 id="popup-translation-title">翻译</h2>
             <button type="button" id="page-toggle">翻译本页</button>
-            <small id="page-selection-hint">选中句子点「译」；鼠标停在段落上按 Alt 翻译这一段</small>
             <select id="page-engine" aria-label="翻译服务"><option value="chrome">免费引擎</option><option value="apple">Apple</option><option value="model">AI 模型</option></select>
             <select id="page-mode" aria-label="翻译形式"><option value="bilingual">双语</option><option value="translation">只看译文</option></select>
             <label><input type="checkbox" id="page-site">总是翻译这个网站</label>
             <label><input type="checkbox" id="page-auto">英文网页自动翻译</label>
-            <label><input type="checkbox" id="page-marks">网页生词标色</label>
-            <button type="button" id="action-page-words">本页生词（…） →</button>
+        </section>
+        <section class="page-quick-controls" aria-labelledby="popup-learning-title">
+            <h2 id="popup-learning-title">学习</h2>
+            <div class="popup-row scan-row">
+                <span>划词查询</span>
+                <label class="toggle"><input type="checkbox" class="enable-search" aria-label="划词查询"><span class="toggle-body"><span class="toggle-track"></span><span class="toggle-knob"></span></span></label>
+            </div>
+            <p class="scan-state" role="status" hidden></p>
+            <p class="tooltip" hidden>按住 Ctrl，鼠标移到单词上即可查询</p>
+            <div class="popup-row">
+                <span>网页生词标色</span>
+                <button type="button" id="action-page-words">本页 … 个 ›</button>
+                <label class="toggle"><input type="checkbox" id="page-marks" aria-label="网页生词标色"><span class="toggle-body"></span></label>
+            </div>
             <label><input type="checkbox" id="page-video">视频字幕学习</label>
         </section>
-        <div class="action-buttons">
-            <a class="action-open-study-library" href="/study-library.html" target="_blank"><strong>学习库</strong><span id="action-today" hidden></span></a>
-            <a class="action-open-settings" href="/settings.html">设置</a>
-        </div>
-        <footer><a class="action-open-info" href="/info.html">帮助 ↗</a></footer>
+        <footer>
+            <a class="action-open-study-library" href="/study-library.html" target="_blank">学习库<span id="action-today" hidden></span></a>
+            <span aria-hidden="true"> · </span><a class="action-open-settings" href="/settings.html">设置</a>
+            <span aria-hidden="true"> · </span><a class="action-open-info" href="/info.html">帮助</a>
+        </footer>
     </div>
 </body>
 </html>
