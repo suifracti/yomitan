@@ -31,6 +31,7 @@ import {wordForms} from './word-marks.js';
 import {YoutubeOverlay, translationEngineSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
+import {confirmTranslation} from './translation-confirm.js';
 import {enhanceStudyUi} from './study-ui.js';
 import {captionUrl, captionTrackId, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 import {timedUrl} from './media-key.js';
@@ -1367,8 +1368,7 @@ export class YoutubeReader extends EventTarget {
             if (full && this._prefs.engine === 'model' && this._fullConsent !== consent) {
                 // Token estimate only; no provider pricing or billing precision is claimed.
                 const estimate = Math.ceil(items.reduce((sum, item) => sum + item.text.length + item.context.length, 0) / 3 + items.length * 80);
-                // eslint-disable-next-line no-alert -- Explicit consent before a paid full-track translation.
-                if (!window.confirm(`全文 ${session.cues.length} 句，大约消耗 ${estimate.toLocaleString()} Token（估算，实际用量由模型决定）。继续吗？`)) {
+                if (!await confirmTranslation(`全文 ${session.cues.length} 句，大约消耗 ${estimate.toLocaleString()} Token（估算，实际用量由模型决定）。继续吗？`)) {
                     this._status('没有开始翻译。'); return;
                 }
                 this._fullConsent = consent;

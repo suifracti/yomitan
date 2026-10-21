@@ -1191,6 +1191,18 @@ export function prepareStudyService(lookupDictionary = null) {
         if (typeof studyAction !== 'string') {
             return false;
         }
+        if (studyAction === 'pageTranslationConsent' && sender.id === chrome.runtime.id && /^https?:/.test(sender.url || '')) {
+            const origin = new URL(/** @type {string} */ (sender.url)).origin;
+            void (async () => {
+                const {studyTranslationConsents = []} = /** @type {{studyTranslationConsents?: string[]}} */ (await chrome.storage.session.get('studyTranslationConsents'));
+                if (data?.approve === true && !studyTranslationConsents.includes(origin)) {
+                    studyTranslationConsents.push(origin);
+                    await chrome.storage.session.set({studyTranslationConsents});
+                }
+                return studyTranslationConsents.includes(origin);
+            })().then((/** @type {boolean} */ value) => reply({ok: true, value}));
+            return true;
+        }
         if (studyAction === 'pageSentenceSave' && sender.id === chrome.runtime.id && /^https?:/.test(sender.url || '')) {
             const selected = /** @type {{sentence?:unknown,translation?:unknown}} */ (data || {});
             if (typeof selected.sentence !== 'string' || !selected.sentence.trim() || selected.sentence.length > 2400 || typeof selected.translation !== 'string' || !selected.translation.trim() || selected.translation.length > 5000) {

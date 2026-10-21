@@ -22,6 +22,7 @@ import {chromeTranslate} from './free-translators.js';
 import {readSubtitlePrefs, writeSubtitlePrefs} from './subtitle-prefs.js';
 import {studyCall} from './study-client.js';
 import {TextToSpeechAudio} from '../media/text-to-speech-audio.js';
+import {confirmTranslation} from './translation-confirm.js';
 import {WORD_MARKS_KEY} from './study-data.js';
 
 export const PAGE_PREFS_KEY = 'studyPageTranslation';
@@ -155,20 +156,23 @@ export class PageTranslate {
         return target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable=false])'));
     }
 
-    /**
-     * @param {string} [text]
-     * @returns {Promise<boolean>}
-     */
-    async approve(text = document.body.textContent || '') {
+    /** @returns {Promise<boolean>} */
+    async approve() {
         const {engine} = await readSubtitlePrefs();
-        if (engine !== 'model') { return true; }
-        const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
-        const key = JSON.stringify([engine, config.model, config.effort]);
-        if (this.consent === key) { return true; }
+        if (engine !== 'model' || this.consent === location.origin) { return true; }
+        if (await studyCall('pageTranslationConsent') === true) {
+            this.consent = location.origin;
+            return true;
+        }
+        let text = '';
+        this.scan(document.body, (node) => {
+            const box = node.getBoundingClientRect();
+            if (box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth) { text += this.source(node); }
+        });
         const size = Math.ceil(text.length / 3);
-        // eslint-disable-next-line no-alert -- Explicit consent before model billing.
-        if (!window.confirm(`翻译会使用 AI 模型。这次大约消耗 ${size} Token；只翻进入视口的内容。继续吗？`)) { return false; }
-        this.consent = key;
+        if (!await confirmTranslation(`当前屏幕待翻内容约 ${size.toLocaleString()} Token。往下滚动还会继续翻译新内容。是否继续？`)) { return false; }
+        await studyCall('pageTranslationConsent', {approve: true});
+        this.consent = location.origin;
         return true;
     }
 
@@ -185,8 +189,11 @@ export class PageTranslate {
         return parts.join(' ').replaceAll(/\s+/g, ' ').trim();
     }
 
-    /** @param {Element} root */
-    scan(root) {
+    /**
+     * @param {Element} root
+     * @param {(node:Element)=>void} [collect]
+     */
+    scan(root, collect) {
         visitTranslationTargets(root, {autoScan: 'true',
             selector: DEFAULT_SELECTOR,
             ignoreSelector: SKIP,
@@ -194,7 +201,13 @@ export class PageTranslate {
             hasText: (/** @type {Element} */ node) => [...node.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim()),
             wrapperClass: 'study-page-translation'}, (/** @type {Element} */ node) => {
             if (node === document.body || [...node.children].some((child) => !child.matches(SKIP) && !['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(child).display))) { return; }
-            if (!this.rows.has(node) && !this.pending.has(node) && /[A-Za-z]{2,}/.test(this.source(node))) { this.io?.observe(node); }
+            if (!this.rows.has(node) && !this.pending.has(node) && /[A-Za-z]{2,}/.test(this.source(node))) {
+                if (collect) {
+                    collect(node);
+                } else {
+                    this.io?.observe(node);
+                }
+            }
         });
     }
 
@@ -255,6 +268,7 @@ export class PageTranslate {
     async translateNode(original, manual = false) {
         const text = this.source(original);
         if (!text || !/[A-Za-z]{2,}/.test(text) || (text.match(/[\u3400-\u9fff]/g)?.length || 0) > text.length / 5 || this.pending.has(original)) { return; }
+        if (!manual && !await this.approve()) { return; }
         this.pending.add(original);
         const version = this.version;
         try {
@@ -286,11 +300,7 @@ export class PageTranslate {
             if (this.rows.has(original)) {
                 this.restore(original);
             } else {
-                void this.approve(this.source(original)).then((yes) => {
-                    if (yes) {
-                        void this.translateNode(original, true);
-                    }
-                });
+                void this.translateNode(original, true);
             }
         });
     }
@@ -329,10 +339,6 @@ export class PageTranslate {
      * @param {HTMLElement} ui
      */
     async openSelection(text, ui) {
-        if (!await this.approve(text)) {
-            ui.remove();
-            return;
-        }
         ui.textContent = '翻译中…';
         try {
             const translation = await this.requestText(text);
@@ -426,6 +432,7 @@ export class PageTranslate {
 export async function preparePageControls(root, tab) {
     const query = (/** @type {string} */ id) => /** @type {HTMLInputElement|null} */ (root.querySelector(`#${id}`));
     const mode = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-mode'));
+    const engine = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-engine'));
     const auto = query('page-auto');
     const site = query('page-site');
     const sites = /** @type {HTMLTextAreaElement|null} */ (root.querySelector('#page-sites'));
@@ -437,6 +444,10 @@ export async function preparePageControls(root, tab) {
     const host = tab?.url && /^https?:/.test(tab.url) ? new URL(tab.url).hostname : '';
     const paint = async () => {
         const prefs = await readPagePrefs();
+        if (engine) {
+            engine.value = (await readSubtitlePrefs()).engine;
+            engine.dispatchEvent(new Event('study-ui-sync'));
+        }
         const hint = root.querySelector('#page-selection-hint');
         if (hint) { hint.textContent = `选中句子点「译」；鼠标停在段落上按 ${prefs.hoverKey} 翻译这一段`; }
         if (selection) {
@@ -460,6 +471,7 @@ export async function preparePageControls(root, tab) {
         }
         if (video) { video.checked = (await readSubtitlePrefs()).enabled; }
     };
+    engine?.addEventListener('change', () => { void writeSubtitlePrefs({engine: /** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (engine.value)}); });
     selection?.addEventListener('change', () => { void writePagePrefs({selection: /** @type {PagePrefs['selection']} */ (selection.value)}); });
     hoverKey?.addEventListener('keydown', (event) => {
         if (event.key !== 'Tab') {
