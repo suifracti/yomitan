@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-import '../study/study-ui.js';
+import {enhanceStudyUi} from '../study/study-ui.js';
 import {Application} from '../application.js';
 import {Frontend} from '../app/frontend.js';
 import {PopupFactory} from '../app/popup-factory.js';
@@ -981,6 +981,7 @@ async function initializePage() {
             }
         });
         await loadPage(true);
+        enhanceStudyUi(document.body);
     });
 }
 

@@ -128,7 +128,6 @@ export function menuSelect(select) {
         }
     });
     select.addEventListener('study-ui-sync', paint);
-    new MutationObserver(paint).observe(select, {childList: true, subtree: true, attributes: true});
     select.addEventListener('change', paint);
     paint();
     return root;
@@ -192,21 +191,17 @@ export function switchRow(input) {
         input.dispatchEvent(new Event('change', {bubbles: true}));
     };
     input.addEventListener('change', paint);
-    new MutationObserver(paint).observe(input, {attributes: true});
+    input.addEventListener('study-ui-sync', paint);
     paint();
     return row;
 }
-// Pages and dynamically mounted cards share these two controls, not another settings controller.
-if (typeof document !== 'undefined') {
-    const page = document;
-    const enhance = () => {
-        for (const select of page.querySelectorAll('select')) {
-            menuSelect(select);
-        }
-        for (const input of page.querySelectorAll(/** @type {'input'} */ ('input[type=checkbox]'))) {
-            switchRow(input);
-        }
-    };
-    new MutationObserver(enhance).observe(document.documentElement, {childList: true, subtree: true});
-    enhance();
+
+/**
+ * Enhance only an explicitly mounted learning interface, never the host website.
+ * @param {HTMLElement} container
+ */
+export function enhanceStudyUi(container) {
+    if (!Object.hasOwn(container.dataset, 'studyUi')) { return; }
+    for (const select of container.querySelectorAll('select')) { menuSelect(select); }
+    for (const input of container.querySelectorAll(/** @type {'input'} */ ('input[type=checkbox]'))) { switchRow(input); }
 }

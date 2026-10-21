@@ -25,7 +25,7 @@
  * count of how often learning words are met in the wild (no URLs or sentences kept).
  * Inputs, editors, code and our own learning UI are skipped.
  */
-import './study-ui.js';
+import {enhanceStudyUi} from './study-ui.js';
 import {readResponseJson} from '../core/json.js';
 import {FUNCTION_WORDS} from './caption-sidebar.js';
 import {studyCall} from './study-client.js';
@@ -893,6 +893,7 @@ export class WordMarks {
         document.getElementById('study-page-words')?.remove();
         const panel = document.createElement('aside');
         panel.id = 'study-page-words';
+        panel.dataset.studyUi = '';
         panel.className = 'scan-disable st-scope';
         panel.style.cssText = 'position:fixed;right:12px;top:12px;bottom:12px;width:min(380px,calc(100vw - 24px));box-sizing:border-box;overflow:auto;padding:18px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);border:1px solid #dce2eb;border-radius:12px;z-index:2147483001;font:14px/1.6 sans-serif;box-shadow:0 5px 25px #0003';
         const title = document.createElement('h3');
@@ -951,6 +952,7 @@ export class WordMarks {
             }
         };
         document.documentElement.append(panel);
+        enhanceStudyUi(panel);
     }
 
     /** */

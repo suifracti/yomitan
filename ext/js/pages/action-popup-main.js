@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import '../study/study-ui.js';
+import {enhanceStudyUi} from '../study/study-ui.js';
 import {preparePageControls} from '../study/page-translate.js';
 import {ThemeController} from '../app/theme-controller.js';
 import {Application} from '../application.js';
@@ -43,6 +43,7 @@ export class DisplayController {
     /** */
     async prepare() {
         this._themeController.prepare();
+        enhanceStudyUi(document.body);
 
         const manifest = chrome.runtime.getManifest();
 

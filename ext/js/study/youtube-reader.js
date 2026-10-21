@@ -21,17 +21,17 @@
  * and nothing pretends to be the protected ASB cue (no data-asb-study-cue).
  * Explicit translation uses the existing Native path; row metadata feeds the original word card.
  */
-import {SETTINGS_KEY, studyConfig} from './study-data.js';
+import {SETTINGS_KEY, studyConfig, WORD_STATUS_KEY} from './study-data.js';
 import {SubtitleSession, cuesFromTimedText, groupForReading, groupsFromIds, timeLabel} from './subtitle-session.js';
 import {ENGINE_LABELS, chromeTranslate} from './free-translators.js';
 import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, readVideoState, writeSubtitlePrefs, writeVideoState} from './subtitle-prefs.js';
 import {TranslationQueue} from './translation-queue.js';
-import {WORD_STATUS_KEY} from './study-data.js';
 import {studyCall} from './study-client.js';
 import {wordForms} from './word-marks.js';
 import {YoutubeOverlay, translationEngineSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
+import {enhanceStudyUi} from './study-ui.js';
 import {captionUrl, captionTrackId, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 import {timedUrl} from './media-key.js';
 import {guessLanguage, parseSubtitles, splitBilingual} from './subtitle-formats.js';
@@ -483,7 +483,8 @@ export class YoutubeReader extends EventTarget {
         }
         const host = root && this._site.pinFirst() ? this._host() : null;
         if (root && host && root.parentElement !== host) {
-            host.prepend(root);
+            enhanceStudyUi(root);
+        host.prepend(root);
             this._keepFirst(host);
         }
     }
@@ -703,6 +704,7 @@ export class YoutubeReader extends EventTarget {
         document.getElementById(ROOT_ID)?.remove();
         const root = document.createElement('section');
         root.id = ROOT_ID;
+        root.dataset.studyUi = '';
         root.className = 'st-scope';
         root.lang = 'zh-CN';
         const head = document.createElement('div');
@@ -770,6 +772,8 @@ export class YoutubeReader extends EventTarget {
             const found = catalog.find((m) => m.model === config.model);
             effort.replaceChildren(...(found?.efforts || [config.effort]).map((value) => Object.assign(document.createElement('option'),{value,textContent:({none:'关闭',minimal:'最小',low:'低 · 更快',medium:'中',high:'高',xhigh:'很高',max:'最高',ultra:'极高'})[value] || value})));
             effort.value = config.effort;
+            model.dispatchEvent(new Event('study-ui-sync'));
+            effort.dispatchEvent(new Event('study-ui-sync'));
         };
         const saveModel = async (patch) => {
             const config = studyConfig((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
@@ -884,6 +888,7 @@ export class YoutubeReader extends EventTarget {
             event.preventDefault();
             void this._importFile(file);
         });
+        enhanceStudyUi(root);
         host.prepend(root);
         this._view = {root, status, progress, load, follow, resume, list, translate, cancel, retry, more, menu, words};
         this._place();

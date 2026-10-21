@@ -81,6 +81,8 @@ async function initializeStudySettings(root) {
             option(effort, value, effortNames.get(value) ?? value);
         }
         effort.value = preferred && [...effort.options].some((o) => o.value === preferred) ? preferred : found?.defaultEffort ?? DEFAULTS.effort;
+        model.dispatchEvent(new Event('study-ui-sync'));
+        effort.dispatchEvent(new Event('study-ui-sync'));
     }
     /**
      * @param {import('study').StudyConfig} config
@@ -264,6 +266,7 @@ async function initializeStudySettings(root) {
         if (librarySaveState) { librarySaveState.textContent = '已保存'; }
         showNewDeck();
         libraryControls(!libraryBusy);
+        for (const select of root.querySelectorAll('#library-settings select')) { select.dispatchEvent(new Event('study-ui-sync')); }
     }
 
     root.querySelector('#library-use-subdecks')?.addEventListener('click', () => {
@@ -281,6 +284,7 @@ async function initializeStudySettings(root) {
             select.value = name;
         }
         showNewDeck();
+        for (const select of root.querySelectorAll('#library-settings select')) { select.dispatchEvent(new Event('study-ui-sync')); }
         if (librarySaveState) { librarySaveState.textContent = '待保存'; }
         libraryStatus.textContent = '已填入四个子牌组；点击“保存目标”生效，再按需“创建缺少的牌组”。已有卡片不移动。';
     });
@@ -354,6 +358,7 @@ async function initializeStudySettings(root) {
         const choose = (path) => {
             input.value = path;
             choices.value = path;
+            choices.dispatchEvent(new Event('study-ui-sync'));
             if (kind === 'vault') {
                 /** @type {HTMLElement} */ (root.querySelector('#library-directory-options')).hidden = true;
             }

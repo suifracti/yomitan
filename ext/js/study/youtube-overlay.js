@@ -283,6 +283,7 @@ export class YoutubeOverlay {
     _makePanel() {
         const panel = document.createElement('div');
         panel.id = PANEL_ID;
+        panel.dataset.studyUi = '';
         panel.className = 'scan-disable';
         panel.setAttribute('role', 'dialog');
         panel.setAttribute('aria-label', '字幕学习设置');

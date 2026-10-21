@@ -15,7 +15,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import './study-ui.js';
 import {visitTranslationTargets} from './vendor/kiss/translationTargets.js';
 import {runTranslationTasks} from './vendor/kiss/translationTasks.js';
 import {DEFAULT_SELECTOR, DEFAULT_IGNORE_SELECTOR, DEFAULT_KEEP_SELECTOR} from './vendor/kiss/default-selectors.js';
@@ -482,7 +481,7 @@ export async function preparePageControls(root, tab) {
     button?.addEventListener('click', () => {
         if (tab?.id) {
             void chrome.tabs.sendMessage(tab.id, {studyPage: 'toggle'}, {frameId: 0}).then((/** @type {{error?:string,active:boolean}} */ r) => {
-                button.textContent = r.error || (r.active ? '显示原文' : '翻译本页');
+                button.textContent = r?.error || (r?.active ? '显示原文' : '翻译本页');
             }, () => {
                 button.textContent = '请先刷新这个网页';
             });
@@ -490,7 +489,7 @@ export async function preparePageControls(root, tab) {
     });
     if (tab?.id && button) {
         void chrome.tabs.sendMessage(tab.id, {studyPage: 'state'}, {frameId: 0}).then((/** @type {{active:boolean}} */ r) => {
-            button.textContent = r.active ? '显示原文' : '翻译本页';
+            button.textContent = r?.active ? '显示原文' : '翻译本页';
         }, () => {});
     }
     chrome.storage.onChanged.addListener(() => { void paint(); });

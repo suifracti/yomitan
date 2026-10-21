@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import '../../study/study-ui.js';
+import {enhanceStudyUi} from '../../study/study-ui.js';
 import {preparePageControls} from '../../study/page-translate.js';
 import {prepareBundledDictionary} from '../common/bundled-dictionary.js';
 import {prepareStudySettings} from '../study-settings-main.js';
@@ -207,6 +207,15 @@ await Application.main(true, async (application) => {
     preparePromises.push(recommendedSettingsController.prepare());
 
     await Promise.all(preparePromises);
+
+    enhanceStudyUi(document.body);
+    settingsController.on('optionsChanged', () => {
+        queueMicrotask(() => {
+            for (const control of document.body.querySelectorAll('[data-study-ui] select,[data-study-ui] input')) {
+                control.dispatchEvent(new Event('study-ui-sync'));
+            }
+        });
+    });
 
     void preparePageControls(document);
     document.documentElement.dataset.loaded = 'true';
