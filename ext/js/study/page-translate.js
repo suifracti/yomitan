@@ -52,7 +52,8 @@ export async function writePagePrefs(patch) {
 async function translateText(text) {
     const prefs = await readSubtitlePrefs();
     const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
-    const language = document.documentElement.lang.split('-')[0] || 'en';
+    const declared = document.documentElement.lang.split('-')[0] || 'en';
+    const language = declared === 'zh' ? 'en' : declared;
     const result = [];
     for (let offset = 0; offset < text.length; offset += 2200) {
         const part = text.slice(offset, offset + 2200);
@@ -81,7 +82,7 @@ export class PageTranslate {
          *
          */
         this.prefs = {...DEFAULTS};
-        /** @type {Map<Element,{node:HTMLElement,text:string,manual:boolean}>} */
+        /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,manual:boolean}>} */
         this.rows = new Map();
         /** @type {Map<string,Promise<string>>} */
         this.cache = new Map();
@@ -197,10 +198,12 @@ export class PageTranslate {
         visitTranslationTargets(root, {autoScan: 'true',
             selector: DEFAULT_SELECTOR,
             ignoreSelector: SKIP,
-            isBlock: (/** @type {Element} */ node) => !['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(node).display),
+            isBlock: (/** @type {Element} */ node) => !['none', '', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(node).display),
             hasText: (/** @type {Element} */ node) => [...node.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim()),
-            wrapperClass: 'study-page-translation'}, (/** @type {Element} */ node) => {
-            if (node === document.body || [...node.children].some((child) => !child.matches(SKIP) && !['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(child).display))) { return; }
+            wrapperClass: 'study-page-translation'}, (/** @type {Element} */ leaf) => {
+            let node = leaf;
+            while (node.parentElement && ['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(node).display)) { node = node.parentElement; }
+            if (node === document.body || [...node.children].some((child) => !child.matches(SKIP) && !['none', '', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(child).display))) { return; }
             if (!this.rows.has(node) && !this.pending.has(node) && /[A-Za-z]{2,}/.test(this.source(node))) {
                 if (collect) {
                     collect(node);
@@ -240,7 +243,7 @@ export class PageTranslate {
         node.textContent = translation;
         node.dataset.original = text;
         original.after(node);
-        this.rows.set(original, {node, text, manual});
+        this.rows.set(original, {node, text, snapshot: this.source(original), manual});
         this.paint();
     }
 
@@ -268,14 +271,15 @@ export class PageTranslate {
     async translateNode(original, manual = false) {
         const text = this.source(original);
         if (!text || !/[A-Za-z]{2,}/.test(text) || (text.match(/[\u3400-\u9fff]/g)?.length || 0) > text.length / 5 || this.pending.has(original)) { return; }
-        if (!manual && !await this.approve()) { return; }
         this.pending.add(original);
         const version = this.version;
         try {
+            if (!manual && !await this.approve()) { return; }
+            if (version !== this.version || !original.isConnected) { return; }
             const result = await this.requestText(text);
-            if ((this.active || manual) && version === this.version && original.isConnected) { this.render(original, text, result, manual); }
+            if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) { this.render(original, text, result, manual); }
         } catch {
-            if ((this.active || manual) && version === this.version && original.isConnected) {
+            if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) {
                 this.render(original, text, '这段没翻译成功 · 点击重试', manual);
                 const row = this.rows.get(original);
                 if (row) {
@@ -284,7 +288,10 @@ export class PageTranslate {
                     original.classList.remove('study-original-hidden');
                 }
             }
-        } finally { this.pending.delete(original); }
+        } finally {
+            this.pending.delete(original);
+            if (this.active && original.isConnected && this.source(original) !== text) { this.scan(original); }
+        }
     }
 
     /** Selection and paragraph hover share requests, rendering and original-node restoration. */
@@ -396,19 +403,35 @@ export class PageTranslate {
             }
         });
         this.mo = new MutationObserver((records) => {
+            for (const original of this.rows.keys()) {
+                if (!original.isConnected) { this.restore(original); }
+            }
+            /** @type {Set<Element>} */
+            const roots = new Set();
             for (const record of records) {
                 const root = record.target instanceof Element ? record.target : record.target.parentElement;
                 if (!root || root.closest(SKIP)) { continue; }
-                if (this.rows.has(root) && this.rows.get(root)?.text !== this.source(root)) { this.restore(root); }
-                for (const node of record.addedNodes) {
-                    if (node instanceof Element && !node.closest(SKIP)) {
-                        this.scan(node);
+                const changed = [...record.addedNodes, ...record.removedNodes];
+                if (record.type === 'childList' && changed.every((node) => node instanceof Element && node.matches('.study-page-translation'))) { continue; }
+                let host = root;
+                for (let parent = root; parent; parent = parent.parentElement) {
+                    const row = this.rows.get(parent);
+                    if (row && row.snapshot !== this.source(parent)) {
+                        this.restore(parent);
+                        host = parent;
+                        break;
                     }
                 }
-                if (record.type === 'characterData' || [...record.addedNodes].some((n) => n.nodeType === Node.TEXT_NODE)) { this.scan(root); }
+                for (const node of record.addedNodes.length > 0 ? record.addedNodes : [host]) {
+                    let block = node instanceof Element ? node : host;
+                    if (block.closest(SKIP)) { continue; }
+                    while (block.parentElement && ['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(block).display)) { block = block.parentElement; }
+                    roots.add(block);
+                }
             }
+            for (const root of roots) { this.scan(root); }
         });
-        this.mo.observe(document.body, {childList: true, subtree: true, characterData: true});
+        this.mo.observe(document.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'open']});
         this.scan(document.body);
     }
 
