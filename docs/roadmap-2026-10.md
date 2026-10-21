@@ -49,7 +49,7 @@
 | 5 | `youtube-reader.js` 1500 行、`study-service.js` 1240 行、`study_library_core.py` 1140 行 | F1 / B 项各自顺手 |
 | 6 | 字幕列表一次渲染全部行，长视频会卡 | F2 |
 | 7 | 读不到本地视频（`file://`）和跨域 iframe 里的播放器 | F5 |
-| 8 | 测试债：工作区浏览器测试抖动；`test_study_video` 有一项失败；`test-study-library-flow.mjs` 留着旧的自动择卡断言；tsc 基线 98 个错误 | B6 / F8 |
+| 8 | 测试债：工作区浏览器测试抖动；`test_study_video` 有一项失败；`test-study-library-flow.mjs` 留着旧的自动择卡断言；tsc 基线 195 个错误（2026-10-21 实测，`npx tsc --noEmit --project jsconfig.json`） | B6 / F8 |
 | 9 | 旧 ASB 受保护 cue 记录不能制卡、不能同步，和新阅读器是两套路径 | B5 |
 | 10 | **"认识这个词，却看不懂这句"没有被记录**：掌握度按词汇总，新义项、搭配、句子结构、一时没认出这几种卡点都会漏掉 | B8 / F9 |
 
