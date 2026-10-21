@@ -342,3 +342,9 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 ### 2026-10-21 划词译文展示约定
 
 `studyPageTranslation.selectionDisplay` 为 `inline`（默认，插在选区段落下方）或 `card`（悬浮卡片），未保存该项时沿用默认。只增加用户明确要求的这个展示选项；不改变学习记录格式。两种方式共用现有全局翻译服务，主动划词/悬停不询问费用；内嵌译文复用整页渲染和同段落的原始节点。
+
+## 2026-10-21 第 7 项：悬浮球与单句显示约定
+
+`studyPageTranslation` 继续共用 mode（整页）、selectionDisplay（划词与悬停单句）。新增 ball（默认 true）、ballSites（按网站存 hidden / y，y 为视口高度比例、默认 0.6），不复制翻译服务设置。悬浮球只在顶层网页显示，全屏隐藏。Alt 用 `.?!` 定位鼠标所在句，同句再按收起，不替换原文。
+
+文本输入沿现有 subtitleTranslate / appleTranslate / subtitles 传可选 target（zh / en，默认 zh），只有中文原文选 en；缓存按目标语言隔离。免费、Apple、模型使用同一全局引擎；不新增后台动作、不写学习数据。

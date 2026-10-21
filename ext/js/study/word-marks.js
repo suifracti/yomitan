@@ -315,6 +315,11 @@ export class WordMarks {
             return;
         }
         await this._load();
+        document.addEventListener('study-page-words', (event) => {
+            const detail = /** @type {CustomEvent<{count:number,open?:boolean}>} */ (event).detail;
+            detail.count = this.pageWords().length;
+            if (detail.open) { void this.openPageWords(); }
+        });
         chrome.runtime.onMessage?.addListener((message, _sender, reply) => {
             if (!message.studyPageWords) {
                 return;

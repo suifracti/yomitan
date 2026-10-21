@@ -1,6 +1,6 @@
 {
     "bridge_files.py": "df9b87dccd2f88500b9573764800628896e9890a8518572ecb2e75b030f53deb",
-    "study_apple_translate.py": "6d2f7aac564d368f2f867f958fb11c4e10d15150ea0b2c0979dac5601435f9b7",
+    "study_apple_translate.py": "be84c10cff0251efa7e134f6632580d445f39c18eae6b263dd995bcae6df5237",
     "study_health.py": "d50d1c9a7f3b6dd9d92b39c3e9fd56a3e22abfba85e5680affa4b9c5cc9e28b1",
     "study_index.py": "dca6ffc8c0ef6e34802ad304d7a03e030d11d4f98432466470d9a18ccc9b7e14",
     "study_japanese.py": "05c565a3b3588cec0526b42f629fb9ad92b963cd4433aca432f8be727d1512f2",
@@ -14,7 +14,7 @@
     "study_settings.py": "9dfc8e179ac302b84113345ba7528be2114cdec2bebc262fe3bc4defcaf20858",
     "study_stats.py": "57e4127fe20e7e8f36348c8bb2deb42beb93c9ecb4182f6ec7cedff88e59467c",
     "study_sync.py": "90e9c7374241af3b23318d1fa9166cbe3b99ff184344b287589e07905d625395",
-    "study_translator.py": "74c04a287843e3361ac1c65d5a0c2dbdb50f27a734b96b72df6cff8c2c747178",
+    "study_translator.py": "72dc2bf830e47d0277269e75e49bb29a5dc661a98104a282f0d4a052989befe5",
     "study_usage.py": "3dc4a5dd0af9b2bf10d78979dfaaa00c85c1a63961cdf01d6d77050a4fa1a56d",
     "study_video.py": "1bee606308cac5ce2ec1d35b8228645aad440d6e8135099040c5ce4beef0b037"
 }

@@ -18,7 +18,7 @@
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 
-test('selection translation saves a sentence only on click, while Alt toggles the same paragraph renderer', async () => {
+test('selection translation saves a sentence only on click, while Alt toggles the same sentence renderer', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<p id="source">We learn from real sentences.</p>', url: 'https://example.test/article'}});
     const send = vi.fn(async () => ({ok: true, value: {model: 'fixture', effort: 'low'}}));
     vi.stubGlobal('chrome', {runtime: {sendMessage: send}, storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'chrome'}})}}});
@@ -46,7 +46,8 @@ test('selection translation saves a sentence only on click, while Alt toggles th
         window.getSelection().removeAllRanges();
         controller.showSelection();
         controller.bindSelection();
-        original.dispatchEvent(new MouseEvent('pointerover', {bubbles: true}));
+        document.caretRangeFromPoint = () => range;
+        original.dispatchEvent(new MouseEvent('pointermove', {bubbles: true}));
         document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Alt'}));
         document.dispatchEvent(new KeyboardEvent('keyup', {key: 'Alt'}));
         await vi.waitFor(() => expect(original.nextElementSibling?.classList.contains('study-page-translation')).toBe(true));

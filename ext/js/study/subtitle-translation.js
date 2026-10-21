@@ -38,7 +38,7 @@ export class SubtitleTranslation {
      */
     async handle(action, value) {
         if (action === 'subtitleSettings') { return studyConfig(await this.service.read(SETTINGS_KEY)); }
-        const v = /** @type {{requestId?: string, items?: Item[], language?: string, title?: string, freeOnly?: boolean, config?: {model?: string, effort?: string}}} */ (value ?? {});
+        const v = /** @type {{requestId?: string, items?: Item[], language?: string, target?: 'zh'|'en', title?: string, freeOnly?: boolean, config?: {model?: string, effort?: string}}} */ (value ?? {});
         const id = v.requestId;
         if (typeof id !== 'string' || !/^[\w:.-]{1,200}$/.test(id)) { throw new Error('字幕请求编号无效。'); }
         if (action === 'subtitleCancel') {
@@ -46,7 +46,7 @@ export class SubtitleTranslation {
             return true;
         }
         if (action === 'subtitleSegment') { return await this.segment(id, value); }
-        if (Object.keys(v).some((k) => !['requestId', 'items', 'language', 'title', 'config', 'freeOnly'].includes(k))) { throw new Error('字幕翻译参数无效。'); }
+        if (Object.keys(v).some((k) => !['requestId', 'items', 'language', 'title', 'config', 'freeOnly', 'target'].includes(k))) { throw new Error('字幕翻译参数无效。'); }
         const items = v.items;
         if (!Array.isArray(items) || items.length === 0 || items.length > 8 || new Set(items.map((r) => r.id)).size !== items.length ||
         items.some((r) => !r || typeof r.id !== 'string' || !/^[\w-]{1,128}$/.test(r.id) || typeof r.text !== 'string' || !r.text.trim() || r.text.length > 2400 ||
@@ -70,6 +70,7 @@ export class SubtitleTranslation {
             if (engine === 'chrome') { throw new Error('Chrome 内置翻译在页面里运行；请刷新页面后再点翻译。'); }
             if (engine === 'model' && (v.config?.model !== config.model || v.config?.effort !== config.effort)) { throw new Error('模型设置已改变，请重新点翻译。'); }
             const language = v.language || 'en';
+            const target = v.target === 'en' ? 'en' : 'zh';
             const base = language.split('-')[0].toLowerCase();
             /**
              * @param {Item} item
@@ -80,7 +81,8 @@ export class SubtitleTranslation {
                 // Other subtitle languages must not share English's sentence cache namespace.
                 const scoped = ['en', 'ja'].includes(language) ? key : JSON.stringify([language, key]);
                 // Each service keeps its own translations; the model keeps the original keys.
-                return engine === 'model' ? scoped : `${engine}:${scoped}`;
+                const directed = target === 'zh' ? scoped : `en:${scoped}`;
+                return engine === 'model' ? directed : `${engine}:${directed}`;
             };
             const cache = config.cacheEnabled ? await this.service.cache() : [];
             checkCancelled();
@@ -95,15 +97,16 @@ export class SubtitleTranslation {
             });
             if (missing.length > 0 && (engine === 'google' || engine === 'microsoft')) {
                 const translate = engine === 'google' ? googleTranslate : microsoftTranslate;
-                const rows = await translate(missing.map((item) => item.text), {source: base, signal: web.signal});
+                const rows = await translate(missing.map((item) => item.text), {source: base, target, signal: web.signal});
                 checkCancelled();
                 for (const [index, item] of missing.entries()) { translations.set(item.id, rows[index]); }
             } else if (missing.length > 0) {
                 const rowsToSend = missing.map(({id: rowId, text}) => ({id: rowId, text}));
                 call = engine === 'apple' ?
-                    this.service.native({action: 'appleTranslate', language: base, items: rowsToSend}) :
+                    this.service.native({action: 'appleTranslate', language: base, ...(target === 'en' ? {target} : {}), items: rowsToSend}) :
                     this.service.native({action: 'subtitles',
                         language,
+                        ...(target === 'en' ? {target} : {}),
                         title: (v.title || '').slice(0, 300),
                         context: [...new Set(items.map((r) => r.context || ''))].join('\n').slice(0, 1200),
                         items: rowsToSend,

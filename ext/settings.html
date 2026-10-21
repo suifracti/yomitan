@@ -586,13 +586,14 @@
     <section class="settings-category-panel" data-settings-category-panel="ai" hidden>
 <section class="study-settings-panel" id="page-translation-settings">
     <h2>网页翻译</h2>
-    <label>翻译形式<select id="page-mode"><option value="bilingual">双语对照</option><option value="translation">只看译文</option></select></label>
+    <label>整页翻译形式<select id="page-mode"><option value="bilingual">双语对照</option><option value="translation">只看译文</option></select></label>
+    <label class="check"><input type="checkbox" id="page-ball">显示悬浮球</label>
     <label class="check"><input type="checkbox" id="page-auto">英文网页自动翻译</label>
     <label>总是翻译这些网站（每行一个）<textarea id="page-sites" rows="3"></textarea></label>
     <label class="check"><input type="checkbox" id="page-video">视频字幕学习</label>
     <label>划词翻译<select id="page-selection"><option value="button">选中后显示小按钮</option><option value="auto">选中后直接翻译</option><option value="off">关闭</option></select></label>
-    <label>译文显示在<select id="page-selection-display"><option value="inline">句子下方</option><option value="card">悬浮卡片</option></select></label>
-    <label>悬停段落翻译按键（点击后按一个键）<input id="page-hover-key" type="text" readonly></label>
+    <label>单句翻译显示在<select id="page-selection-display"><option value="inline">原文下方</option><option value="card">悬浮卡片</option></select></label>
+    <label>悬停单句翻译按键（点击后按一个键）<input id="page-hover-key" type="text" readonly></label>
     <small>Alt+A 翻译本页，再按一次显示原文。网页生词标色在「查词与词典」里设置。</small>
 </section>
 <form id="settings-form" class="study-settings-panel">

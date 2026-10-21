@@ -24,13 +24,14 @@ import {studyCall} from './study-client.js';
 import {TextToSpeechAudio} from '../media/text-to-speech-audio.js';
 import {menuSelect} from './study-ui.js';
 import {confirmTranslation} from './translation-confirm.js';
+import {mountTranslationBall} from './translation-ball.js';
 import {WORD_MARKS_KEY} from './study-data.js';
 
 export const PAGE_PREFS_KEY = 'studyPageTranslation';
 
-/** @typedef {{mode:'bilingual'|'translation',sites:string[],auto:boolean,selection:'button'|'auto'|'off',hoverKey:string,selectionDisplay:'inline'|'card'}} PagePrefs */
+/** @typedef {{mode:'bilingual'|'translation',sites:string[],auto:boolean,selection:'button'|'auto'|'off',hoverKey:string,selectionDisplay:'inline'|'card',ball:boolean,ballSites:Record<string,{hidden?:boolean,y?:number}>}} PagePrefs */
 /** @type {PagePrefs} */
-const DEFAULTS = {mode: 'bilingual', sites: [], auto: false, selection: 'button', hoverKey: 'Alt', selectionDisplay: 'inline'};
+const DEFAULTS = {mode: 'bilingual', sites: [], auto: false, selection: 'button', hoverKey: 'Alt', selectionDisplay: 'inline', ball: true, ballSites: {}};
 const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
 const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:24px;height:24px;padding:0}.study-selection-trigger button{display:block;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--st-accent,#505ead);color:white;font:12px sans-serif;cursor:pointer}.study-selection-translation{border-left:2px solid var(--st-line,#dce2eb);padding-left:10px}.study-selection-actions{display:none;gap:2px;float:right}.study-selection-translation:hover .study-selection-actions,.study-selection-translation:focus-within .study-selection-actions,.study-selection-card .study-selection-actions{display:inline-flex}.study-selection-actions button,.study-selection-card header>button{all:unset;cursor:pointer;font:14px/1.4 sans-serif;padding:4px}.study-selection-card{width:360px;box-sizing:border-box;max-width:calc(100vw - 16px)}.study-selection-card header{display:flex;align-items:center;gap:4px}.study-selection-card .study-ui-select{flex:1;min-width:0}.study-selection-source{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;color:var(--st-muted,#6b7280)}.study-selection-source.is-expanded{display:block}.study-selection-card .study-page-translation{font-size:15px;color:var(--st-ink,#263248)}.study-page-flash{animation:study-page-flash .9s ease-out}@keyframes study-page-flash{from{background:var(--st-accent-soft,#e8eaff)}to{background:transparent}}.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
 
@@ -48,20 +49,21 @@ export async function writePagePrefs(patch) {
 /**
  * The same translation engine used by captions and sentence cards.
  * @param {string} text
+ * @param {{language?:string,target?:string}} [options]
  * @returns {Promise<string>}
  */
-async function translateText(text) {
+async function translateText(text, {language, target = 'zh'} = {}) {
     const prefs = await readSubtitlePrefs();
     const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
     const declared = document.documentElement.lang.split('-')[0] || 'en';
-    const language = declared === 'zh' ? 'en' : declared;
+    language ||= declared === 'zh' ? 'en' : declared;
     const result = [];
     for (let offset = 0; offset < text.length; offset += 2200) {
         const part = text.slice(offset, offset + 2200);
         if (prefs.engine === 'chrome') {
-            result.push((await chromeTranslate([part], {source: language}))[0]);
+            result.push((await chromeTranslate([part], {source: language, target}))[0]);
         } else {
-            const reply = /** @type {{items:{translation:string}[]}} */ (await studyCall('subtitleTranslate', {requestId: crypto.randomUUID(), language, items: [{id: 'page', text: part}], config: {model: config.model, effort: config.effort}}));
+            const reply = /** @type {{items:{translation:string}[]}} */ (await studyCall('subtitleTranslate', {requestId: crypto.randomUUID(), language, target, items: [{id: 'page', text: part}], config: {model: config.model, effort: config.effort}}));
             result.push(reply.items[0].translation);
         }
     }
@@ -103,6 +105,10 @@ export class PageTranslate {
         this.consent = '';
         /** @type {Element|null} */
         this.pointer = null;
+        /** Mouse location for sentence-level hover translation. */
+        this.point = {x: 0, y: 0};
+        /** In-flight page requests, used by the floating ball. */
+        this.busy = 0;
         /** @type {HTMLElement|null} */
         this.selectionUi = null;
         /** @type {HTMLElement|null} */
@@ -124,6 +130,7 @@ export class PageTranslate {
         document.head.append(style);
         this.prefs = await readPagePrefs();
         this.bindSelection();
+        mountTranslationBall(this, writePagePrefs);
         onSubtitlePrefsChanged((prefs) => {
             const select = /** @type {HTMLSelectElement|null|undefined} */ (this.selectionCard?.querySelector('select'));
             if (select) {
@@ -229,6 +236,7 @@ export class PageTranslate {
 
     /** Switch presentation without replacing, moving or serializing original nodes. */
     paint() {
+        document.dispatchEvent(new Event('study-page-change'));
         for (const [original, row] of this.rows) {
             original.classList.toggle('study-original-hidden', this.prefs.mode === 'translation' && !row.manual && !row.node.classList.contains('study-page-error'));
             row.node.dataset.only = String(this.prefs.mode === 'translation' && !row.manual);
@@ -287,6 +295,8 @@ export class PageTranslate {
         const text = this.source(original);
         if (!text || !/[A-Za-z]{2,}/.test(text) || (text.match(/[\u3400-\u9fff]/g)?.length || 0) > text.length / 5 || this.pending.has(original)) { return; }
         this.pending.add(original);
+        ++this.busy;
+        document.dispatchEvent(new Event('study-page-change'));
         const version = this.version;
         try {
             if (!manual && !await this.approve()) { return; }
@@ -305,17 +315,22 @@ export class PageTranslate {
             }
         } finally {
             this.pending.delete(original);
+            --this.busy;
+            document.dispatchEvent(new Event('study-page-change'));
             if (this.active && original.isConnected && this.source(original) !== text) { this.scan(original); }
         }
     }
 
-    /** Selection and paragraph hover share requests, rendering and original-node restoration. */
+    /** Selection and sentence hover share requests, rendering and original-node restoration. */
     bindSelection() {
         document.addEventListener('pointerdown', (event) => {
             const card = this.selectionCard;
             if (card && card.dataset.pinned !== 'true' && event.target instanceof Node && !card.contains(event.target)) { this.closeSelectionCard(); }
         });
-        document.addEventListener('pointerover', (event) => { this.pointer = event.target instanceof Element ? event.target : null; });
+        document.addEventListener('pointermove', (event) => {
+            this.pointer = event.target instanceof Element ? event.target : null;
+            this.point = {x: event.clientX, y: event.clientY};
+        });
         document.addEventListener('selectionchange', () => this.showSelection());
         document.addEventListener('keydown', (event) => { this.hoverKeyOnly = event.key === this.prefs.hoverKey && !event.ctrlKey && !event.metaKey && (!event.altKey || event.key === 'Alt') && !this.editing(event.target); });
         document.addEventListener('keyup', (event) => {
@@ -323,10 +338,24 @@ export class PageTranslate {
             this.hoverKeyOnly = false;
             const original = this.pointer?.closest('p,li,h1,h2,h3,h4,h5,h6,blockquote,div');
             if (!original || original.closest(SKIP)) { return; }
-            if (this.rows.has(original)) {
+            const caret = document.caretRangeFromPoint(this.point.x, this.point.y);
+            if (!caret || !original.contains(caret.startContainer)) { return; }
+            const prefix = document.createRange();
+            prefix.selectNodeContents(original);
+            prefix.setEnd(caret.startContainer, caret.startOffset);
+            const offset = prefix.toString().length;
+            const sentence = [...(original.textContent || '').matchAll(/[^.!?]+[.!?]*|[.!?]+/g)].find((m) => m.index + m[0].length > offset)?.[0].trim();
+            if (!sentence) { return; }
+            if (this.rows.get(original)?.text === sentence) {
                 this.restore(original);
+            } else if (this.selectionCard && this.selectionCard.querySelector('.study-selection-source')?.textContent === sentence) {
+                this.closeSelectionCard();
             } else {
-                void this.translateNode(original, true);
+                const ui = document.createElement('div');
+                ui.style.left = `${this.point.x}px`;
+                ui.style.top = `${this.point.y + 20}px`;
+                document.body.append(ui);
+                void this.openSelection(sentence, ui, original);
             }
         });
     }
@@ -543,6 +572,7 @@ export class PageTranslate {
     /** Restore page markup; late translation replies cannot reinsert content. */
     stop() {
         this.active = false;
+        document.dispatchEvent(new Event('study-page-change'));
         ++this.version;
         this.io?.disconnect();
         this.mo?.disconnect();
@@ -563,6 +593,7 @@ export async function preparePageControls(root, tab) {
     const mode = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-mode'));
     const engine = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-engine'));
     const auto = query('page-auto');
+    const ball = query('page-ball');
     const site = query('page-site');
     const sites = /** @type {HTMLTextAreaElement|null} */ (root.querySelector('#page-sites'));
     const marks = query('page-marks');
@@ -580,7 +611,7 @@ export async function preparePageControls(root, tab) {
             engine.dispatchEvent(new Event('study-ui-sync'));
         }
         const hint = root.querySelector('#page-selection-hint');
-        if (hint) { hint.textContent = `选中句子点「译」；鼠标停在段落上按 ${prefs.hoverKey} 翻译这一段`; }
+        if (hint) { hint.textContent = `选中句子点「译」；鼠标停在句子上按 ${prefs.hoverKey} 翻译这一句`; }
         if (selection) {
             selection.value = prefs.selection;
             selection.dispatchEvent(new Event('study-ui-sync'));
@@ -595,6 +626,7 @@ export async function preparePageControls(root, tab) {
             mode.dispatchEvent(new Event('study-ui-sync'));
         }
         if (auto) { auto.checked = prefs.auto; }
+        if (ball) { ball.checked = prefs.ball; }
         if (site) {
             site.checked = prefs.sites.includes(host);
             site.disabled = !host;
@@ -616,6 +648,7 @@ export async function preparePageControls(root, tab) {
         }
     });
     mode?.addEventListener('change', () => { void writePagePrefs({mode: /** @type {PagePrefs['mode']} */ (mode.value)}); });
+    ball?.addEventListener('change', () => { void writePagePrefs({ball: ball.checked}); });
     auto?.addEventListener('change', () => { void writePagePrefs({auto: auto.checked}); });
     site?.addEventListener('change', () => { void readPagePrefs().then((p) => writePagePrefs({sites: [...p.sites.filter((s) => s !== host), ...(site.checked ? [host] : [])]})); });
     sites?.addEventListener('change', () => { void writePagePrefs({sites: sites.value.split(/\s+/).filter(Boolean)}); });
@@ -643,3 +676,5 @@ export async function preparePageControls(root, tab) {
     chrome.storage.onChanged.addListener(() => { void paint(); });
     await paint();
 }
+
+export {translateText};

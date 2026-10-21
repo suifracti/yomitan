@@ -76,14 +76,14 @@ function ensureOk(response, service) {
 
 /**
  * @param {string[]} texts
- * @param {{source?: string, signal?: AbortSignal, fetchImpl?: typeof fetch}} [options]
+ * @param {{source?: string, target?: string, signal?: AbortSignal, fetchImpl?: typeof fetch}} [options]
  * @returns {Promise<string[]>}
  */
-export async function googleTranslate(texts, {source = 'en', signal, fetchImpl = fetch} = {}) {
+export async function googleTranslate(texts, {source = 'en', target = 'zh', signal, fetchImpl = fetch} = {}) {
     const response = await fetchImpl(GOOGLE_URL, {
         method: 'POST',
         headers: {'Content-Type': 'application/json+protobuf', 'X-Goog-API-Key': GOOGLE_KEY},
-        body: JSON.stringify([[texts.map(escapeHtml), source, 'zh-CN'], 'te_lib']),
+        body: JSON.stringify([[texts.map(escapeHtml), source, target === 'zh' ? 'zh-CN' : target], 'te_lib']),
         signal,
     });
     ensureOk(response, 'Google 翻译');
@@ -97,10 +97,10 @@ let microsoftToken = null;
 
 /**
  * @param {string[]} texts
- * @param {{source?: string, signal?: AbortSignal, fetchImpl?: typeof fetch}} [options]
+ * @param {{source?: string, target?: string, signal?: AbortSignal, fetchImpl?: typeof fetch}} [options]
  * @returns {Promise<string[]>}
  */
-export async function microsoftTranslate(texts, {source = 'en', signal, fetchImpl = fetch} = {}) {
+export async function microsoftTranslate(texts, {source = 'en', target = 'zh', signal, fetchImpl = fetch} = {}) {
     if (!microsoftToken || microsoftToken.expires < Date.now()) {
         const auth = await fetchImpl(MICROSOFT_AUTH_URL, {signal});
         ensureOk(auth, '微软翻译');
@@ -109,7 +109,7 @@ export async function microsoftTranslate(texts, {source = 'en', signal, fetchImp
         // Edge tokens last ten minutes; refresh a little early.
         microsoftToken = {token, expires: Date.now() + 8 * 60 * 1000};
     }
-    const url = `${MICROSOFT_URL}?from=${encodeURIComponent(source)}&to=zh-Hans&api-version=3.0`;
+    const url = `${MICROSOFT_URL}?from=${encodeURIComponent(source)}&to=${encodeURIComponent(target === 'zh' ? 'zh-Hans' : target)}&api-version=3.0`;
     const response = await fetchImpl(url, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${microsoftToken.token}`},
@@ -148,18 +148,19 @@ export async function chromeTranslatorStatus(source = 'en') {
  * Chrome's on-device translation. The first use may download a language model, which
  * Chrome only allows right after a click.
  * @param {string[]} texts
- * @param {{source?: string, signal?: AbortSignal}} [options]
+ * @param {{source?: string, target?: string, signal?: AbortSignal}} [options]
  * @returns {Promise<string[]>}
  * @throws {Error}
  */
-export async function chromeTranslate(texts, {source = 'en', signal} = {}) {
+export async function chromeTranslate(texts, {source = 'en', target = 'zh', signal} = {}) {
     const api = /** @type {{create?: (o: {sourceLanguage: string, targetLanguage: string}) => Promise<BuiltInTranslator>}|undefined} */ (/** @type {Record<string, unknown>} */ (globalThis).Translator);
     if (!api?.create) { throw new Error('这个 Chrome 版本没有内置翻译，可换一种服务。'); }
-    let translator = builtIn.get(source);
+    const key = `${source}:${target}`;
+    let translator = builtIn.get(key);
     if (!translator) {
-        translator = api.create({sourceLanguage: source, targetLanguage: 'zh'});
-        builtIn.set(source, translator);
-        translator.catch(() => builtIn.delete(source));
+        translator = api.create({sourceLanguage: source, targetLanguage: target});
+        builtIn.set(key, translator);
+        translator.catch(() => builtIn.delete(key));
     }
     let ready;
     try {
