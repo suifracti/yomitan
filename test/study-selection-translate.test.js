@@ -25,7 +25,8 @@ test('selection translation saves a sentence only on click, while Alt toggles th
     const {PageTranslate} = await import('../ext/js/study/page-translate.js');
     const controller = new PageTranslate({translate: async () => '我们从真实的句子学习。'});
     try {
-        Range.prototype.getBoundingClientRect = () => ({left: 10, bottom: 20});
+        Range.prototype.getBoundingClientRect = () => ({left: 10, right: 200, bottom: 20});
+        Range.prototype.getClientRects = () => [];
         const original = document.querySelector('#source');
         const range = document.createRange();
         range.selectNodeContents(original);
@@ -33,11 +34,15 @@ test('selection translation saves a sentence only on click, while Alt toggles th
         controller.showSelection();
         expect(controller.selectionUi.textContent).toBe('译');
         controller.selectionUi.querySelector('button').click();
-        await vi.waitFor(() => expect(controller.selectionUi.textContent).toContain('记住这句'));
+        await vi.waitFor(() => expect(original.nextElementSibling?.classList.contains('study-selection-translation')).toBe(true));
         expect(send.mock.calls.some(([m]) => m.studyAction === 'pageSentenceSave')).toBe(false);
-        [...controller.selectionUi.querySelectorAll('button')].find((b) => b.textContent === '记住这句').click();
+        original.nextElementSibling.querySelector('button[title=记住这句]').click();
         await vi.waitFor(() => expect(send.mock.calls.some(([m]) => m.studyAction === 'pageSentenceSave')).toBe(true));
         expect(original.textContent).toBe('We learn from real sentences.');
+        await controller.openSelection('learn from', document.createElement('div'), original);
+        expect(document.querySelectorAll('.study-selection-translation')).toHaveLength(1);
+        expect(original.nextElementSibling.dataset.original).toBe('learn from');
+        controller.restore(original);
         window.getSelection().removeAllRanges();
         controller.showSelection();
         controller.bindSelection();

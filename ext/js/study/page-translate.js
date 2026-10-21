@@ -19,19 +19,20 @@ import {visitTranslationTargets} from './vendor/kiss/translationTargets.js';
 import {runTranslationTasks} from './vendor/kiss/translationTasks.js';
 import {DEFAULT_SELECTOR, DEFAULT_IGNORE_SELECTOR, DEFAULT_KEEP_SELECTOR} from './vendor/kiss/default-selectors.js';
 import {chromeTranslate} from './free-translators.js';
-import {readSubtitlePrefs, writeSubtitlePrefs} from './subtitle-prefs.js';
+import {readSubtitlePrefs, writeSubtitlePrefs, onSubtitlePrefsChanged} from './subtitle-prefs.js';
 import {studyCall} from './study-client.js';
 import {TextToSpeechAudio} from '../media/text-to-speech-audio.js';
+import {menuSelect} from './study-ui.js';
 import {confirmTranslation} from './translation-confirm.js';
 import {WORD_MARKS_KEY} from './study-data.js';
 
 export const PAGE_PREFS_KEY = 'studyPageTranslation';
 
-/** @typedef {{mode:'bilingual'|'translation',sites:string[],auto:boolean,selection:'button'|'auto'|'off',hoverKey:string}} PagePrefs */
+/** @typedef {{mode:'bilingual'|'translation',sites:string[],auto:boolean,selection:'button'|'auto'|'off',hoverKey:string,selectionDisplay:'inline'|'card'}} PagePrefs */
 /** @type {PagePrefs} */
-const DEFAULTS = {mode: 'bilingual', sites: [], auto: false, selection: 'button', hoverKey: 'Alt'};
+const DEFAULTS = {mode: 'bilingual', sites: [], auto: false, selection: 'button', hoverKey: 'Alt', selectionDisplay: 'inline'};
 const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
-const STYLE = '.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
+const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:24px;height:24px;padding:0}.study-selection-trigger button{display:block;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--st-accent,#505ead);color:white;font:12px sans-serif;cursor:pointer}.study-selection-translation{border-left:2px solid var(--st-line,#dce2eb);padding-left:10px}.study-selection-actions{display:none;gap:2px;float:right}.study-selection-translation:hover .study-selection-actions,.study-selection-translation:focus-within .study-selection-actions,.study-selection-card .study-selection-actions{display:inline-flex}.study-selection-actions button,.study-selection-card header>button{all:unset;cursor:pointer;font:14px/1.4 sans-serif;padding:4px}.study-selection-card{width:360px;box-sizing:border-box;max-width:calc(100vw - 16px)}.study-selection-card header{display:flex;align-items:center;gap:4px}.study-selection-card .study-ui-select{flex:1;min-width:0}.study-selection-source{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;color:var(--st-muted,#6b7280)}.study-selection-source.is-expanded{display:block}.study-selection-card .study-page-translation{font-size:15px;color:var(--st-ink,#263248)}.study-page-flash{animation:study-page-flash .9s ease-out}@keyframes study-page-flash{from{background:var(--st-accent-soft,#e8eaff)}to{background:transparent}}.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
 
 /** @returns {Promise<PagePrefs>} */
 export async function readPagePrefs() {
@@ -104,6 +105,8 @@ export class PageTranslate {
         this.pointer = null;
         /** @type {HTMLElement|null} */
         this.selectionUi = null;
+        /** @type {HTMLElement|null} */
+        this.selectionCard = null;
         /**
          *
          */
@@ -121,6 +124,13 @@ export class PageTranslate {
         document.head.append(style);
         this.prefs = await readPagePrefs();
         this.bindSelection();
+        onSubtitlePrefsChanged((prefs) => {
+            const select = /** @type {HTMLSelectElement|null|undefined} */ (this.selectionCard?.querySelector('select'));
+            if (select) {
+                select.value = ['apple', 'model'].includes(prefs.engine) ? prefs.engine : 'chrome';
+                select.dispatchEvent(new Event('study-ui-sync'));
+            }
+        });
         chrome.runtime.onMessage.addListener((message, _sender, reply) => {
             const action = (/** @type {Record<string,unknown>} */ (message)).studyPage;
             if (typeof action !== 'string') { return false; }
@@ -136,7 +146,10 @@ export class PageTranslate {
             const prefs = /** @type {PagePrefs} */ (changes[PAGE_PREFS_KEY].newValue);
             this.prefs = {...DEFAULTS, ...prefs};
             this.paint();
-            if (this.prefs.selection === 'off') { this.selectionUi?.remove(); }
+            if (this.prefs.selection === 'off') {
+                this.selectionUi?.remove();
+                this.closeSelectionCard();
+            }
         });
         document.addEventListener('keydown', (event) => {
             if (event.altKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyA' && !this.editing(event.target)) {
@@ -234,6 +247,7 @@ export class PageTranslate {
      * @param {string} text
      * @param {string} translation
      * @param {boolean} [manual]
+     * @returns {HTMLElement}
      */
     render(original, text, translation, manual = false) {
         this.restore(original);
@@ -245,6 +259,7 @@ export class PageTranslate {
         original.after(node);
         this.rows.set(original, {node, text, snapshot: this.source(original), manual});
         this.paint();
+        return node;
     }
 
     /**
@@ -296,6 +311,10 @@ export class PageTranslate {
 
     /** Selection and paragraph hover share requests, rendering and original-node restoration. */
     bindSelection() {
+        document.addEventListener('pointerdown', (event) => {
+            const card = this.selectionCard;
+            if (card && card.dataset.pinned !== 'true' && event.target instanceof Node && !card.contains(event.target)) { this.closeSelectionCard(); }
+        });
         document.addEventListener('pointerover', (event) => { this.pointer = event.target instanceof Element ? event.target : null; });
         document.addEventListener('selectionchange', () => this.showSelection());
         document.addEventListener('keydown', (event) => { this.hoverKeyOnly = event.key === this.prefs.hoverKey && !event.ctrlKey && !event.metaKey && (!event.altKey || event.key === 'Alt') && !this.editing(event.target); });
@@ -327,62 +346,145 @@ export class PageTranslate {
         this.selectionText = text;
         this.selectionUi?.remove();
         const ui = document.createElement('div');
-        ui.className = 'study-page-tools scan-disable';
-        const box = range.getBoundingClientRect();
-        Object.assign(ui.style, {left: `${Math.max(8, Math.min(innerWidth - 300, box.left))}px`, top: `${Math.max(8, Math.min(innerHeight - 160, box.bottom + 8))}px`, maxHeight: '70vh', overflow: 'auto'});
+        ui.className = 'study-selection-trigger scan-disable';
+        const box = [...range.getClientRects()].at(-1) || range.getBoundingClientRect();
+        Object.assign(ui.style, {left: `${Math.max(4, Math.min(innerWidth - 32, box.right + 5))}px`, top: `${Math.max(4, Math.min(innerHeight - 32, box.bottom + 5))}px`});
+        let original = selection.focusNode instanceof Element ? selection.focusNode : selection.focusNode?.parentElement || element;
+        while (original.parentElement && ['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(original).display)) { original = original.parentElement; }
         ui.onmousedown = (event) => event.preventDefault();
         document.documentElement.append(ui);
         this.selectionUi = ui;
         const trigger = document.createElement('button');
         trigger.type = 'button';
         trigger.textContent = '译';
-        trigger.onclick = () => { void this.openSelection(text, ui); };
+        trigger.title = '翻译选中文字';
+        trigger.setAttribute('aria-label', trigger.title);
+        trigger.onclick = () => { void this.openSelection(text, ui, original); };
         ui.append(trigger);
         if (this.prefs.selection === 'auto') { trigger.click(); }
+    }
+
+    /** Close just the floating result, without changing any source paragraph. */
+    closeSelectionCard() {
+        for (const original of this.rows.keys()) {
+            if (this.selectionCard?.contains(original)) { this.restore(original); }
+        }
+        this.selectionCard?.remove();
+        this.selectionCard = null;
     }
 
     /**
      * @param {string} text
      * @param {HTMLElement} ui
+     * @param {Element} original
      */
-    async openSelection(text, ui) {
-        ui.textContent = '翻译中…';
+    async openSelection(text, ui, original) {
+        const existing = this.rows.get(original);
+        if (existing && !existing.manual && !existing.node.classList.contains('study-page-error')) {
+            existing.node.classList.remove('study-page-flash');
+            void existing.node.offsetWidth;
+            existing.node.classList.add('study-page-flash');
+            ui.remove();
+            return;
+        }
+        const inline = this.prefs.selectionDisplay !== 'card';
+        this.selectionUi = null;
+        if (inline) {
+            ui.remove();
+        } else {
+            this.closeSelectionCard();
+            this.selectionCard = ui;
+            ui.className = 'study-page-tools study-selection-card scan-disable';
+            ui.dataset.studyUi = '';
+            ui.style.maxHeight = '70vh';
+            ui.style.overflow = 'auto';
+            ui.style.left = `${Math.max(8, Math.min(innerWidth - 368, Number.parseFloat(ui.style.left)))}px`;
+            ui.style.top = `${Math.max(8, Math.min(innerHeight - 300, Number.parseFloat(ui.style.top)))}px`;
+            ui.replaceChildren();
+            const header = document.createElement('header');
+            const engine = document.createElement('select');
+            engine.setAttribute('aria-label', '翻译服务');
+            for (const [value, label] of [['chrome', '免费引擎'], ['apple', 'Apple'], ['model', 'AI 模型']]) { engine.append(Object.assign(document.createElement('option'), {value, textContent: label})); }
+            const selectedEngine = (await readSubtitlePrefs()).engine;
+            engine.value = ['apple', 'model'].includes(selectedEngine) ? selectedEngine : 'chrome';
+            engine.onchange = () => { void writeSubtitlePrefs({engine: /** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (engine.value)}); };
+            const pin = Object.assign(document.createElement('button'), {type: 'button', textContent: '📌', title: '固定'});
+            pin.setAttribute('aria-pressed', 'false');
+            pin.onclick = () => {
+                ui.dataset.pinned = String(ui.dataset.pinned !== 'true');
+                pin.setAttribute('aria-pressed', ui.dataset.pinned);
+            };
+            const close = Object.assign(document.createElement('button'), {type: 'button', textContent: '✕', title: '关闭'});
+            close.onclick = () => this.closeSelectionCard();
+            header.append(engine, pin, close);
+            ui.append(header);
+            menuSelect(engine);
+            const source = document.createElement('p');
+            source.className = 'study-selection-source';
+            source.textContent = text;
+            const expand = Object.assign(document.createElement('button'), {type: 'button', textContent: '显示全部', hidden: true});
+            expand.onclick = () => {
+                source.classList.toggle('is-expanded');
+                expand.textContent = source.classList.contains('is-expanded') ? '收起原文' : '显示全部';
+            };
+            ui.append(source, expand);
+            requestAnimationFrame(() => { expand.hidden = source.scrollHeight <= source.clientHeight + 1; });
+            original = source;
+        }
+        this.render(original, text, '翻译中…', true);
+        const waiting = this.rows.get(original);
         try {
             const translation = await this.requestText(text);
-            if (!ui.isConnected) { return; }
-            ui.replaceChildren();
-            const source = document.createElement('p');
-            source.textContent = text;
-            ui.append(source);
-            this.render(source, text, translation, true);
-            for (const label of ['复制', '朗读', '记住这句']) {
+            if (!original.isConnected || this.rows.get(original) !== waiting) { return; }
+            const node = this.render(original, text, translation, true);
+            if (inline) { node.classList.add('study-selection-translation'); }
+            const tools = document.createElement('span');
+            tools.className = 'study-selection-actions';
+            for (const [icon, label] of [['🔊', '朗读'], ['⧉', '复制'], ['☆', '记住这句'], ['✕', '收起']]) {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.textContent = label;
-                button.onclick = () => {
+                button.textContent = icon;
+                button.title = label;
+                button.setAttribute('aria-label', label);
+                button.onclick = (event) => {
+                    event.stopPropagation();
                     void (async () => {
                         if (label === '复制') {
                             await navigator.clipboard.writeText(translation);
-                            button.textContent = '已复制';
+                            button.textContent = '✓';
                         }
                         if (label === '朗读') {
                             const voice = speechSynthesis.getVoices().find((v) => /^en/i.test(v.lang));
                             if (voice) {
                                 await new TextToSpeechAudio(text, voice).play();
                             } else {
-                                button.textContent = '英语声音还没准备好，请再点一次';
+                                button.title = '英语声音还没准备好，请再点一次';
                             }
                         }
                         if (label === '记住这句') {
                             button.disabled = true;
                             await studyCall('pageSentenceSave', {sentence: text, translation});
-                            button.textContent = '已记住';
+                            button.textContent = '★';
+                            button.title = '已记住';
                         }
-                    })().catch((error) => { button.disabled = false; button.textContent = `没完成：${String(error)}`; });
+                        if (label === '收起') {
+                            if (inline) {
+                                this.restore(original);
+                            } else {
+                                this.closeSelectionCard();
+                            }
+                        }
+                    })().catch((error) => {
+                        button.disabled = false;
+                        button.title = `没完成：${String(error)}`;
+                    });
                 };
-                ui.append(button);
+                tools.append(button);
             }
-        } catch { ui.textContent = '没翻译成功，请重新选中后点「译」。'; }
+            node.append(tools);
+        } catch {
+            if (waiting && this.rows.get(original) === waiting) { waiting.node.textContent = '没翻译成功，请重新选中后点「译」。'; }
+        }
     }
 
     /** @returns {Promise<void>} */
@@ -392,6 +494,9 @@ export class PageTranslate {
             return;
         }
         if (!await this.approve()) { return; }
+        for (const [original, row] of this.rows) {
+            if (row.manual && !original.closest('.study-selection-card')) { this.restore(original); }
+        }
         this.active = true;
         ++this.version;
         this.io = new IntersectionObserver((entries) => {
@@ -444,6 +549,7 @@ export class PageTranslate {
         for (const original of this.rows.keys()) { this.restore(original); }
         this.pending = new WeakSet();
         this.selectionUi?.remove();
+        this.closeSelectionCard();
     }
 }
 
@@ -463,12 +569,14 @@ export async function preparePageControls(root, tab) {
     const video = query('page-video');
     const selection = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-selection'));
     const hoverKey = query('page-hover-key');
+    const display = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-selection-display'));
     const button = root.querySelector('#page-toggle');
     const host = tab?.url && /^https?:/.test(tab.url) ? new URL(tab.url).hostname : '';
     const paint = async () => {
         const prefs = await readPagePrefs();
         if (engine) {
-            engine.value = (await readSubtitlePrefs()).engine;
+            const selectedEngine = (await readSubtitlePrefs()).engine;
+            engine.value = ['apple', 'model'].includes(selectedEngine) ? selectedEngine : 'chrome';
             engine.dispatchEvent(new Event('study-ui-sync'));
         }
         const hint = root.querySelector('#page-selection-hint');
@@ -478,6 +586,10 @@ export async function preparePageControls(root, tab) {
             selection.dispatchEvent(new Event('study-ui-sync'));
         }
         if (hoverKey) { hoverKey.value = prefs.hoverKey; }
+        if (display) {
+            display.value = prefs.selectionDisplay;
+            display.dispatchEvent(new Event('study-ui-sync'));
+        }
         if (mode) {
             mode.value = prefs.mode;
             mode.dispatchEvent(new Event('study-ui-sync'));
@@ -496,6 +608,7 @@ export async function preparePageControls(root, tab) {
     };
     engine?.addEventListener('change', () => { void writeSubtitlePrefs({engine: /** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (engine.value)}); });
     selection?.addEventListener('change', () => { void writePagePrefs({selection: /** @type {PagePrefs['selection']} */ (selection.value)}); });
+    display?.addEventListener('change', () => { void writePagePrefs({selectionDisplay: /** @type {PagePrefs['selectionDisplay']} */ (display.value)}); });
     hoverKey?.addEventListener('keydown', (event) => {
         if (event.key !== 'Tab') {
             event.preventDefault();
