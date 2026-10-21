@@ -1189,6 +1189,14 @@ export function prepareStudyService(lookupDictionary = null) {
         if (typeof studyAction !== 'string') {
             return false;
         }
+        if (studyAction === 'youtubeCaptionTracks' && sender.id === chrome.runtime.id && sender.tab?.id && /^https:\/\/(www\.)?youtube\.com\//.test(sender.url || '')) {
+            void chrome.scripting.executeScript({target:{tabId:sender.tab.id,frameIds:[sender.frameId || 0]},world:'MAIN',func:() => {
+                const player = document.querySelector('#movie_player');
+                const response = player?.getPlayerResponse?.();
+                return response?.captions?.playerCaptionsTracklistRenderer?.captionTracks || player?.getOption?.('captions','tracklist') || [];
+            }}).then((rows) => reply({ok:true,value:rows[0]?.result || []}), () => reply({ok:true,value:[]}));
+            return true;
+        }
         if (studyAction === 'openStudySettings' && sender.id === chrome.runtime.id &&
         (/^(?:https?|file):/.test(sender.url || '') || sender.url?.startsWith(chrome.runtime.getURL('')))) {
             const section = /** @type {{section?: string}} */ (data || {}).section === 'save' ? 'save' : 'ai';

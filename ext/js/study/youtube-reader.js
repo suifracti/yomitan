@@ -32,7 +32,7 @@ import {wordForms} from './word-marks.js';
 import {YoutubeOverlay, translationEngineSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
-import {captionUrl, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
+import {captionUrl, captionTrackId, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 import {timedUrl} from './media-key.js';
 import {guessLanguage, parseSubtitles, splitBilingual} from './subtitle-formats.js';
 import {WebVideoSite} from './web-video-site.js';
@@ -514,6 +514,7 @@ export class YoutubeReader extends EventTarget {
     async lookupCaption(id, word = '', openPanel = false) {
         const text = this._list.ensure(id)?.querySelector('.r-text');
         const info = this._rowInfo.get(id);
+        if (!/^en(?:-|$)/i.test(this._session?.source.language || '')) { return false; }
         if (!text?.firstChild || !info || !youtubeStudyContext.openCard) {
             this._status('词卡还没准备好，请刷新页面后再试。');
             return;
@@ -718,12 +719,12 @@ export class YoutubeReader extends EventTarget {
         source.className = 'r-source';
         source.hidden = true;
         source.append('字幕来源');
-        const sourceSelect = document.createElement('select'); sourceSelect.dataset.source = '';
+        const sourceSelect = document.createElement('select'); sourceSelect.dataset.source = ''; sourceSelect.dataset.label = '字幕语言';
         sourceSelect.addEventListener('change', () => {
             void this._load(generation, sourceSelect.value);
         });
         source.append(sourceSelect);
-        processing.append(source);
+        head.append(source);
         for (const [key, label] of [['merge', '合并成整句'], ['aiSegment', 'AI 断句（用模型）'], ['resume', '记住观看进度']]) {
             const toggle = document.createElement('label'); toggle.className = 'r-switch';
             const box = document.createElement('input');
@@ -845,12 +846,12 @@ export class YoutubeReader extends EventTarget {
         for (const button of view.menu.querySelectorAll('button[data-download]')) {
             /** @type {HTMLButtonElement} */ (button).disabled = !this._session;
         }
-        const select = /** @type {HTMLSelectElement|null} */ (view.menu.querySelector('select[data-source]'));
+        const select = /** @type {HTMLSelectElement|null} */ (view.root.querySelector('select[data-source]'));
         if (select) {
             const label = /** @type {HTMLElement} */ (select.parentElement);
             (select.closest('.r-source') || label).hidden = this._sources.length < 2;
             select.replaceChildren(...this._sources.map(({id, label: text}) => Object.assign(document.createElement('option'), {value: id, textContent: text})));
-            select.value = this._session?.source.trackKey ?? '';
+            select.value = this._session?.source.trackKey ?? ''; select.dispatchEvent(new Event('study-ui-sync'));
         }
     }
 
@@ -973,7 +974,13 @@ export class YoutubeReader extends EventTarget {
         let timedOut = false;
         view.load.disabled = true;
         try {
-            const url = await this._findCaptionUrl(videoId, generation);
+            const tracks = await this._call('youtubeCaptionTracks').catch(() => []);
+            const available = (Array.isArray(tracks) ? tracks : []).filter((track) => captionUrl(track.baseUrl, videoId));
+            available.sort((a,b) => Number(a.kind === 'asr') - Number(b.kind === 'asr'));
+            this._sources = available.map((track) => ({id:captionTrackId(track),label:`${track.name?.simpleText || track.name?.runs?.map((r) => r.text).join('') || track.languageCode}${track.kind === 'asr' ? ' · 自动' : ''}`}));
+            const state = await readVideoState(`youtube:${videoId}`);
+            const chosen = available.find((t) => captionTrackId(t) === (sourceId || state?.selectedTrackKey)) || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
+            const url = chosen ? captionUrl(chosen.baseUrl,videoId) : await this._findCaptionUrl(videoId, generation);
             if (generation !== this._generation) { return; }
             if (!url) {
                 this._status('没有找到字幕，可导入字幕文件。');
@@ -999,13 +1006,14 @@ export class YoutubeReader extends EventTarget {
             const kind = url.searchParams.get('kind') ?? '';
             const session = new SubtitleSession({
                 mediaKey: `youtube:${videoId}`,
-                trackKey: `${language}|${kind}`,
+                trackKey: chosen ? captionTrackId(chosen) : `${language}|${kind}`,
                 revision: `${language}|${kind}|${url.searchParams.get('name') ?? ''}`,
                 language: language || 'und',
                 acquisition: 'provider',
                 url: `https://www.youtube.com/watch?v=${videoId}`,
-                trackName: kind === 'asr' ? `${language} 自动字幕` : language,
+                trackName: chosen ? this._sources.find((s) => s.id === captionTrackId(chosen)).label : (kind === 'asr' ? `${language} 自动字幕` : language),
             }, cuesFromTimedText(text));
+            if (chosen) { await writeVideoState(`youtube:${videoId}`,{selectedTrackKey:captionTrackId(chosen)}); }
             this._rawSession = session;
             this._aiGroups = null;
             this._fileTranslations = new Map();
@@ -1129,10 +1137,10 @@ export class YoutubeReader extends EventTarget {
         this._refreshLearning();
         this._list.render(view.list, session.cues);
         view.load.textContent = '重新载入';
-        view.translate.hidden = false;
+        view.translate.hidden = /^(zh|cmn|yue)(?:-|$)/i.test(session.source.language);
         view.progress.textContent = `已翻译 ${session.progress().translated}/${session.cues.length}`;
         view.retry.hidden = true;
-        this._status(`${session.source.trackName ?? session.source.language} · ${session.cues.length} 句；选词用现有词卡`);
+        this._status(`${session.source.trackName ?? session.source.language} · ${session.cues.length} 句`);
         this._active = '';
         this._syncMenu();
         this._emit('session', {session});
@@ -1167,10 +1175,11 @@ export class YoutubeReader extends EventTarget {
         const text = document.createElement('p');
         text.className = 'r-text';
         text.lang = session.source.language;
+        if (!/^en(?:-|$)/i.test(text.lang)) { text.classList.add('scan-disable'); }
         // The newline (pre-line) ends Yomitan's sentence at this caption instead of running into the next row.
         // Line breaks inside one caption are display wrapping, not sentence ends.
         text.textContent = `${info.text}\n`;
-        youtubeStudyContext.register(text, info);
+        if (/^en(?:-|$)/i.test(session.source.language)) { youtubeStudyContext.register(text, info); }
         const translated = document.createElement('p');
         translated.className = 'r-translation scan-disable';
         translated.lang = 'zh-CN';
@@ -1226,7 +1235,7 @@ export class YoutubeReader extends EventTarget {
     async _translate(retryOnly, full = false, onlyId) {
         const session = this._session;
         const view = this._view;
-        if (!session || !view || this._translating) { return; }
+        if (!session || !view || this._translating || /^(zh|cmn|yue)(?:-|$)/i.test(session.source.language)) { return; }
         const active = session.active((this._video?.currentTime || 0) * 1000)[0];
         const index = active ? session.cues.indexOf(active) : 0;
         const ordered = [...session.cues.slice(index), ...session.cues.slice(0, index)];
@@ -1456,7 +1465,7 @@ export class YoutubeReader extends EventTarget {
     /** Updates learning marks and recommendations. */
     _refreshLearning() {
         if (!this._session || !this._view) { return; }
-        const stats = learningCaptions(this._session, this._learningWords, this._cardContexts);
+        const stats = learningCaptions(this._session, /^en(?:-|$)/i.test(this._session.source.language) ? this._learningWords : {}, this._cardContexts);
         this._recommended = stats.recommended;
         this._recommendationItems = stats.items;
         this._view.root.querySelector('.r-difficulty').textContent = `语速 ${stats.wpm} 词/分 · 在学词 ${stats.learning}`;

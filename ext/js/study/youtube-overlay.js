@@ -537,7 +537,7 @@ export class YoutubeOverlay {
         text.className = 'o-text';
         // Same sentence boundary as the sidebar: the trailing newline ends the scan here.
         text.textContent = `${info.text}\n`;
-        youtubeStudyContext.register(text, info);
+        if (/^en(?:-|$)/i.test(this._reader.session?.source.language || '')) { youtubeStudyContext.register(text, info); } else { text.classList.add('scan-disable'); }
         const zh = document.createElement('p');
         zh.className = 'o-zh scan-disable';
         zh.lang = 'zh-CN';

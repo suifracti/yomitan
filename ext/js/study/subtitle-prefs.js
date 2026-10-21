@@ -148,7 +148,7 @@ export const VIDEO_STATE_KEY = 'studyVideoState';
 
 const VIDEO_STATE_LIMIT = 300;
 
-/** @typedef {{resumeMs?: number, offsetMs?: number, trackKey?: string, at: number}} VideoState */
+/** @typedef {{resumeMs?: number, offsetMs?: number, trackKey?: string, selectedTrackKey?: string, at: number}} VideoState */
 
 /**
  * @param {string} mediaKey
