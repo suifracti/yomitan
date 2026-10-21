@@ -122,7 +122,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             const engine = prefs.engine;
             if (run !== sequence || !isCurrent()) { return; }
             if (!explicit && !prefs.autoTranslate) {
-                for (const row of rows) { row.chinese.textContent = '点「翻译本句」查看中文'; }
+                for (const row of rows) { row.chinese.textContent = ''; }
                 return;
             }
             const config = /** @type {Partial<import('study').StudyConfig>} */ (engine === 'model' ? await call('subtitleSettings') : {});

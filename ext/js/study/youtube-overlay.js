@@ -22,6 +22,7 @@
  * always agree. The English line is ordinary page text registered with the same
  * study context as the sidebar row, so selecting a word opens the existing card.
  */
+import {menuSelect} from './study-ui.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {youtubeSite} from './youtube-site.js';
 
@@ -280,35 +281,19 @@ export class YoutubeOverlay {
         panel.setAttribute('aria-label', '字幕学习设置');
         panel.hidden = true;
         isolate(panel);
-        /**
-         * @param {string} text
-         * @param {Node} control
-         * @returns {HTMLDivElement}
-         */
-        const row = (text, control) => {
-            const line = document.createElement('div'); line.className = 'p-row';
-            const label = document.createElement('span');
-            label.className = 'p-label';
-            label.textContent = text;
-            line.append(label, control); return line;
+        const choice = (label, key, values, change) => {
+            const select = document.createElement('select'); select.dataset.label = label; select.dataset[key] = '';
+            for (const [value, text] of values) { select.append(Object.assign(document.createElement('option'), {value, textContent:text})); }
+            panel.append(select); select.addEventListener('change', () => change(select.value)); menuSelect(select); return select;
         };
-        const modes = document.createElement('div'); modes.className = 'p-modes';
-        for (const [mode, text] of [['original', '原文'], ['bilingual', '双语'], ['blur', '双语·译文模糊'], ['off', '关闭']]) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.textContent = text;
-            button.dataset.subtitleMode = mode;
-            button.addEventListener('click', () => this._reader.updatePrefs(mode === 'off' ?
-{overlay: false} :
-                {overlay: true, bilingual: mode !== 'original', blur: mode === 'blur'}));
-            modes.append(button);
-        }
-        const shadow = document.createElement('select'); shadow.dataset.shadowMode = '';
-        for (const count of [0, 1, 2, 3]) {
-            shadow.append(Object.assign(document.createElement('option'), {value: String(count), textContent: count ? `每句 ${count} 遍` : '关'}));
-        }
-        shadow.addEventListener('change', () => this._reader.updatePrefs(shadow.value === '0' ? {shadow: false} : {shadow: true, shadowRepeats: Number(shadow.value)}));
-        panel.append(row('字幕', modes), row('跟读', shadow), offsetControl(this._reader));
+        choice('字幕', 'subtitleMode', [['original','原文'],['bilingual','双语'],['blur','双语·译文模糊'],['off','关闭']], (mode) =>
+            this._reader.updatePrefs(mode === 'off' ? {overlay:false} : {overlay:true,bilingual:mode !== 'original',blur:mode === 'blur'}));
+        choice('跟读', 'shadowMode', [['0','关'],['1','每句 1 遍'],['2','每句 2 遍'],['3','每句 3 遍']], (value) =>
+            this._reader.updatePrefs(value === '0' ? {shadow:false} : {shadow:true,shadowRepeats:Number(value)}));
+        choice('字幕偏移', 'offsetMenu', [['current','0 秒'],['minus','−0.5 秒'],['plus','+0.5 秒'],['reset','归零']], (value) => {
+            if (value !== 'current') { this._reader.setOffset(value === 'reset' ? 0 : this._reader.offsetMs + (value === 'minus' ? -500 : 500)); }
+            this._applyPrefs();
+        });
         const note = document.createElement('small'); note.className = 'p-note';
         note.textContent = '更多设置在右侧字幕栏 ⋯'; panel.append(note);
         return panel;
@@ -356,9 +341,9 @@ export class YoutubeOverlay {
                 mode = 'original';
                 if (prefs.bilingual) { mode = prefs.blur ? 'blur' : 'bilingual'; }
             }
-            for (const button of this._panel.querySelectorAll('[data-subtitle-mode]')) {
-                button.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (button).dataset.subtitleMode === mode));
-            }
+            this._panel.querySelector('select[data-subtitle-mode]').value = mode;
+            const offset = this._panel.querySelector('select[data-offset-menu]');
+            offset.options[0].textContent = `${this._reader.offsetMs / 1000} 秒`; offset.value = 'current';
             const shadow = /** @type {HTMLSelectElement} */ (this._panel.querySelector('[data-shadow-mode]'));
             shadow.querySelector('[data-legacy]')?.remove();
             if (prefs.shadow && prefs.shadowRepeats > 3) {
@@ -367,6 +352,7 @@ export class YoutubeOverlay {
             }
             shadow.value = prefs.shadow ? String(prefs.shadowRepeats) : '0';
             syncControls(this._panel, this._reader);
+            for (const select of this._panel.querySelectorAll('select')) { select.dispatchEvent(new Event('study-ui-sync')); }
             /** @type {HTMLElement} */ (this._panel.querySelector('.p-note')).hidden = Boolean(document.fullscreenElement);
             this._positionPanel();
         }
@@ -698,6 +684,7 @@ export function syncControls(menu, reader) {
         const seconds = reader.offsetMs / 1000;
         output.textContent = `${seconds > 0 ? '+' : ''}${Number(seconds.toFixed(2))} 秒`;
     }
+    for (const select of menu.querySelectorAll('select')) { select.dispatchEvent(new Event('study-ui-sync')); }
     for (const button of menu.querySelectorAll('[data-offset-step]')) { /** @type {HTMLButtonElement} */ (button).disabled = !reader.session; }
 }
 

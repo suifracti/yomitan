@@ -21,6 +21,7 @@
  * and nothing pretends to be the protected ASB cue (no data-asb-study-cue).
  * Explicit translation uses the existing Native path; row metadata feeds the original word card.
  */
+import {SETTINGS_KEY, studyConfig} from './study-data.js';
 import {SubtitleSession, cuesFromTimedText, groupForReading, groupsFromIds, timeLabel} from './subtitle-session.js';
 import {ENGINE_LABELS, chromeTranslate} from './free-translators.js';
 import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, readVideoState, writeSubtitlePrefs, writeVideoState} from './subtitle-prefs.js';
@@ -683,6 +684,35 @@ export class YoutubeReader extends EventTarget {
             return field;
         };
         const translation = group('翻译'); translation.append(translationEngineSelect((engine) => this.updatePrefs({engine})));
+        const modelRows = document.createElement('div'); modelRows.dataset.modelRows = ''; translation.append(modelRows);
+        const model = document.createElement('select'); model.dataset.model = ''; model.dataset.label = '模型';
+        const effort = document.createElement('select'); effort.dataset.effort = ''; effort.dataset.label = '推理强度';
+        const modelStatus = document.createElement('small'); modelStatus.setAttribute('role','status');
+        modelRows.append(model, effort, modelStatus);
+        let catalog = [];
+        const fillModel = async () => {
+            const config = studyConfig((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
+            model.replaceChildren(...(catalog.length ? catalog : [{model:config.model,displayName:config.model}]).map((m) => Object.assign(document.createElement('option'),{value:m.model,textContent:m.displayName})));
+            if (![...model.options].some((o) => o.value === config.model)) { model.append(Object.assign(document.createElement('option'),{value:config.model,textContent:config.model})); }
+            model.value = config.model;
+            const found = catalog.find((m) => m.model === config.model);
+            effort.replaceChildren(...(found?.efforts || [config.effort]).map((value) => Object.assign(document.createElement('option'),{value,textContent:({none:'关闭',minimal:'最小',low:'低 · 更快',medium:'中',high:'高',xhigh:'很高',max:'最高',ultra:'极高'})[value] || value})));
+            effort.value = config.effort;
+        };
+        const saveModel = async (patch) => {
+            const config = studyConfig((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
+            await chrome.storage.local.set({[SETTINGS_KEY]:{...config,...patch}}); await fillModel(); modelStatus.textContent = '已保存';
+        };
+        model.addEventListener('change', () => { const found = catalog.find((m) => m.model === model.value); void saveModel({model:model.value,effort:found?.defaultEffort || 'low'}); });
+        effort.addEventListener('change', () => { void saveModel({effort:effort.value}); });
+        let loadingModels = false;
+        translation.addEventListener('click', () => {
+            if (this._prefs.engine !== 'model' || catalog.length || loadingModels) { return; }
+            loadingModels = true; modelStatus.textContent = '正在读取模型列表…';
+            void studyCall('subtitleModels').then((rows) => { catalog = rows; modelStatus.textContent = ''; return fillModel(); }, () => { modelStatus.textContent = '没读到模型列表，请在设置里授权本机连接后再点一次。'; }).finally(() => { loadingModels = false; });
+        });
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) { void fillModel(); }
+        chrome.storage?.onChanged?.addListener((changes, area) => { if (area === 'local' && changes[SETTINGS_KEY] && root.isConnected) { void fillModel(); } });
         const processing = group('字幕处理');
         const source = document.createElement('label');
         source.className = 'r-source';
@@ -811,13 +841,14 @@ export class YoutubeReader extends EventTarget {
         }
         for (const select of view.menu.querySelectorAll('select[data-engine]')) { /** @type {HTMLSelectElement} */ (select).value = this._prefs.engine; }
         syncControls(view.menu, this);
+        view.menu.querySelector('[data-model-rows]').hidden = this._prefs.engine !== 'model';
         for (const button of view.menu.querySelectorAll('button[data-download]')) {
             /** @type {HTMLButtonElement} */ (button).disabled = !this._session;
         }
         const select = /** @type {HTMLSelectElement|null} */ (view.menu.querySelector('select[data-source]'));
         if (select) {
             const label = /** @type {HTMLElement} */ (select.parentElement);
-            label.hidden = this._sources.length < 2;
+            (select.closest('.r-source') || label).hidden = this._sources.length < 2;
             select.replaceChildren(...this._sources.map(({id, label: text}) => Object.assign(document.createElement('option'), {value: id, textContent: text})));
             select.value = this._session?.source.trackKey ?? '';
         }

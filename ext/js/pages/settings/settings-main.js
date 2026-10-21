@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import '../../study/study-ui.js';
 import {prepareBundledDictionary} from '../common/bundled-dictionary.js';
 import {prepareStudySettings} from '../study-settings-main.js';
 import {prepareSubtitleSettings} from '../subtitle-settings.js';

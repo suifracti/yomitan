@@ -37,7 +37,7 @@ export async function prepareSubtitleSettings(root, {call = studyCall} = {}) {
     const paint = (prefs) => {
         const engine = /** @type {HTMLSelectElement} */ (section.querySelector('select[name="subtitle-engine"]'));
         if (!['apple', 'model'].includes(prefs.engine)) { engine.options[0].value = prefs.engine; }
-        engine.value = prefs.engine;
+        engine.value = prefs.engine; engine.dispatchEvent(new Event('study-ui-sync'));
         const model = /** @type {HTMLElement} */ (section.querySelector('[data-translation-model]'));
         model.hidden = prefs.engine !== 'model';
         for (const box of section.querySelectorAll('input[data-subtitle-pref]')) {

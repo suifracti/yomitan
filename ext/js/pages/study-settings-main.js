@@ -18,7 +18,7 @@
 
 import {readResponseJson} from '../core/json.js';
 import {studyCall} from '../study/study-client.js';
-import {DEFAULTS} from '../study/study-data.js';
+import {DEFAULTS, SETTINGS_KEY, studyConfig} from '../study/study-data.js';
 
 /** @type {WeakMap<HTMLElement, Promise<void>>} */
 const initializedRoots = new WeakMap();
@@ -173,6 +173,12 @@ async function initializeStudySettings(root) {
             await studyCall('clearCache');
             status.textContent = '翻译缓存已清空；在途结果也不会写回此缓存。';
         });
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !changes[SETTINGS_KEY]) { return; }
+        const config = studyConfig(changes[SETTINGS_KEY].newValue);
+        if (![...model.options].some((o) => o.value === config.model)) { option(model,config.model,config.model); }
+        model.value = config.model; refreshEffort(config.effort);
     });
     const loadSavedSettings = run(async () => {
         fill(/** @type {import('study').StudyConfig} */ (await studyCall('settings')));
