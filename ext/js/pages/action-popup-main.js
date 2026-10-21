@@ -55,14 +55,26 @@ export class DisplayController {
 
         void this._updateToday();
         const pageWords = /** @type {HTMLButtonElement} */ (document.getElementById('action-page-words'));
-        void chrome.tabs.query({active:true,currentWindow:true}).then(async ([tab]) => {
-            if (!tab?.id) { return; }
+        void chrome.tabs.query({active: true, currentWindow: true}).then(async ([tab]) => {
+            if (!tab?.id) {
+                return;
+            }
             await preparePageControls(document, tab);
             try {
-                const result = await chrome.tabs.sendMessage(tab.id,{studyPageWords:'count'},{frameId:0});
+                const result = /** @type {{count: number}} */ (await chrome.tabs.sendMessage(
+                    tab.id,
+                    {studyPageWords: 'count'},
+                    {frameId: 0},
+                ));
                 pageWords.textContent = `本页 ${result.count} 个 ›`;
-                pageWords.onclick = () => { void chrome.tabs.sendMessage(tab.id,{studyPageWords:'open'},{frameId:0}); window.close(); };
-            } catch { pageWords.textContent='打开网页后查看 ›'; pageWords.disabled=true; }
+                pageWords.onclick = () => {
+                    void chrome.tabs.sendMessage(tab.id, {studyPageWords: 'open'}, {frameId: 0});
+                    window.close();
+                };
+            } catch {
+                pageWords.textContent = '打开网页后查看 ›';
+                pageWords.disabled = true;
+            }
         });
         this._setupButtonEvents('.action-open-info', 'openInfoPage', chrome.runtime.getURL('/info.html'));
 
