@@ -880,3 +880,9 @@
 .sf-reference-summary { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sf-muted); font-size: 11px; font-weight: 400; }
 .sf-dictionary-forms { margin: 12px 0 0; padding: 0; border-top: 1px solid var(--sf-line); border-bottom: 0; }
 .study-focus-active .study-token-summary, .study-focus-active .study-token-count, .sf-usage-reference { display: none !important; }
+
+/* Detailed reading: grammar stays in the headword chips; etymology follows all senses. */
+.study-focus-active .sf-dictionary-forms[hidden] { display: none; }
+.sf-grammar-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; border-radius: 4px; color: var(--sf-muted); background: var(--sf-tint); font-size: 10px; font-weight: 400; }
+.sf-dictionary-etymology { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--sf-line); color: var(--sf-muted); font-size: 11px; line-height: 1.6; }
+.sf-dictionary-etymology summary { font-weight: 500; font-size: 11px; }

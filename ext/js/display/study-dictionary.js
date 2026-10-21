@@ -84,25 +84,12 @@ export function prepareStudyDictionary(entry, word) {
         if (translated) { tag.textContent = translated; }
     }
     if (senses.length === 0) { return () => {}; }
-    for (const details of entry.querySelectorAll('[data-sc-content=details-entry-examples]')) {
-        if (!(details instanceof HTMLDetailsElement)) { continue; }
+    for (const details of entry.querySelectorAll('details')) {
         details.open = true;
+        if (details.dataset.scContent !== 'details-entry-examples') { continue; }
         const summary = details.querySelector('summary');
         if (summary) { summary.textContent = '例句'; }
-        const extras = [...details.querySelectorAll(':scope>[data-sc-content=extra-info]')];
-        if (extras.length > 1) {
-            for (const extra of extras.slice(1)) { /** @type {HTMLElement} */ (extra).hidden = true; }
-            const more = d.createElement('button');
-            more.type = 'button';
-            more.className = 'study-example-more scan-disable';
-            more.textContent = `另 ${extras.length - 1} 个例句`;
-            more.addEventListener('click', () => {
-                const show = /** @type {HTMLElement} */ (extras[1]).hidden;
-                for (const extra of extras.slice(1)) { /** @type {HTMLElement} */ (extra).hidden = !show; }
-                more.textContent = show ? '收起额外例句' : `另 ${extras.length - 1} 个例句`;
-            });
-            details.append(more);
-        }
+        for (const extra of details.querySelectorAll(':scope>[data-sc-content=extra-info]')) { /** @type {HTMLElement} */ (extra).hidden = false; }
     }
     /** @type {{node: HTMLElement, id: string, text: string, pos: string}[][]} */
     const pages = [];

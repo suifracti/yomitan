@@ -224,6 +224,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         dictionaryReference.hidden = true;
         const dictionaryInfo = make('section', 'sf-dictionary-info');
         const dictionaryForms = make('section', 'sf-dictionary-forms');
+        dictionaryForms.hidden = true;
+        const dictionaryEtymology = make('section', 'sf-dictionary-etymology');
         const entryHeader = entry?.querySelector('.entry-header');
         move(entryHeader, dictionaryInfo);
         move(anchor.querySelector('.study-reading-meaning'), dictionaryReference);
@@ -250,7 +252,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         dictionaryPager.hidden = !dictionaryPager.childElementCount;
         const referenceStates = new Map();
         const seenReferences = new Set();
-        for (const label of [...dictionaryScroll.querySelectorAll('[data-sc-content=summary-entry]')]) {
+        for (const label of /** @type {HTMLElement[]} */ ([...dictionaryScroll.querySelectorAll('[data-sc-content=summary-entry]')])) {
             if (!['词形与语法', '词源', 'Grammar', 'Etymology'].includes(label.textContent?.trim() || '')) { continue; }
             const details = label.closest('details');
             if (!details || referenceStates.has(details)) { continue; }
@@ -259,14 +261,22 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const duplicate = Boolean(signature && seenReferences.has(signature));
             if (signature) { seenReferences.add(signature); }
             const grammar = ['词形与语法', 'Grammar'].includes(label.textContent?.trim() || '');
-            move(details, grammar ? dictionaryForms : dictionaryInfo);
+            const sourceScope = details.closest('.definition-item');
+            move(details, grammar ? dictionaryForms : dictionaryEtymology);
             referenceStates.set(details, {open: details.open, hidden: details.hidden});
-            details.open = false;
-            details.classList.add('sf-reference-fold');
+            details.open = true;
+            if (!grammar) { details.classList.add('sf-etymology'); }
             if (grammar) {
-                const preview = make('span', 'sf-reference-summary', [...details.children].filter((node) => node.tagName !== 'SUMMARY')
-                    .map((node) => node.textContent.trim()).join(' ').replace(/\s+/g, ' '));
-                label.append(preview); owned.push(preview);
+                const countability = details.textContent?.match(/\b(countable and uncountable|uncountable|countable)\b/i)?.[0].toLowerCase();
+                const caption = new Map([['countable and uncountable', '可数 / 不可数'], ['uncountable', '不可数'], ['countable', '可数']]).get(countability || '') || '';
+                const pos = sourceScope?.querySelector('[data-category=partOfSpeech], [data-sc-category=partOfSpeech]') || sourceScope?.querySelector('.definition-tag-list');
+                if (pos && caption && !sourceScope?.querySelector('.sf-grammar-tag')) {
+                    const badge = d.createElement('span');
+                    badge.className = 'sf-grammar-tag';
+                    badge.textContent = caption;
+                    pos.after(badge);
+                    owned.push(badge);
+                }
             }
             details.hidden = duplicate;
             if (dict) {
@@ -274,7 +284,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 label.insertBefore(origin, label.querySelector('.sf-reference-summary')); owned.push(origin);
             }
         }
-        dictionaryScroll.append(dictionaryForms, dictionaryInfo, dictionaryReference);
+        dictionaryScroll.append(dictionaryForms, dictionaryInfo, dictionaryReference, dictionaryEtymology);
         const formNodes = entryHeader?.querySelectorAll('[data-study-meta-role="forms"], [data-sc-study-role="forms"]') || [];
         const formText = [...formNodes].map((node) => {
             const items = [...node.querySelectorAll('.study-form-item')];
@@ -508,7 +518,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         }
         const resetDictionaryScroll = () => { if (current()) { dictionaryScroll.scrollTop = 0; } };
         entry?.addEventListener('study-dictionary-pagechange', resetDictionaryScroll);
-        owned.push(dictionaryForms, dictionaryInfo, dictionaryReference);
+        owned.push(dictionaryForms, dictionaryInfo, dictionaryReference, dictionaryEtymology);
         const quickLabels = new Map();
         const syncQuickLabels = () => {
             for (const label of dictionaryInfo.querySelectorAll('.note-actions-container [data-action="save-note"] .study-action-label')) {
@@ -1014,7 +1024,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             disposeForms();
             for (const [node, state] of referenceStates) {
                 node.open = state.open; node.hidden = state.hidden;
-                node.classList.remove('sf-reference-fold');
+                node.classList.remove('sf-reference-fold', 'sf-etymology');
             }
             editor?.removeEventListener('change', onSourceEdit);
             sourcePane.removeEventListener('input', resizeEditors);

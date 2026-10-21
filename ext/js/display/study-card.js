@@ -747,7 +747,7 @@ export function prepareStudyCard(display, detail = false) {
             for (const disclosure of element.querySelectorAll('[data-sc-study-role=english], [data-sc-study-role=more]')) {
                 if (disclosure instanceof HTMLDetailsElement) {
                     const supplement = disclosure.dataset.scStudyRole === 'english' && element.querySelector('[data-sc-content=glosses]') !== null;
-                    disclosure.open = !supplement;
+                    disclosure.open = true;
                     if (supplement) {
                         disclosure.classList.add('study-extra-english');
                         const summary = disclosure.querySelector('summary');
