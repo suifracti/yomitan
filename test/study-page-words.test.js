@@ -26,7 +26,7 @@ test('level candidates exclude saved and function words, and page selection writ
  marks._words={architecture:{s:'learning'}};marks._highlights={possible:new Set(),learning:new Set()};
  try{
   marks._mark(document.querySelector('p').firstChild);expect(marks.pageWords().map(r=>r.word)).toEqual(['appreciate','sophisticated']);
-  marks.openPageWords();document.querySelector('#study-page-words input').checked=true;
+  await marks.openPageWords();document.querySelector('#study-page-words input').checked=true;
   const done=[...document.querySelectorAll('#study-page-words button')].find(n=>n.textContent==='完成');done.click();
   await vi.waitFor(()=>expect(calls.some(c=>c.studyAction==='knownWords'&&c.data.known?.add?.includes('sophisticated'))).toBe(true));
   expect(calls.some(c=>c.studyAction==='pageWordsSave')).toBe(false);

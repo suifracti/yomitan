@@ -14,7 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 // Keep the original controls and events for the existing controllers; only their view changes.
 const STYLE = `
 .study-ui-select,.study-ui-switch{font:inherit;color:inherit;box-sizing:border-box}
@@ -39,78 +38,175 @@ const STYLE = `
 
 `;
 
-/** Present a native select as a row with a checked submenu; its bindings stay intact. */
+/**
+ * Present a native select as a row with a checked submenu; its bindings stay intact.
+ * @param {HTMLSelectElement} select
+ * @returns {HTMLElement}
+ */
 export function menuSelect(select) {
-    if (select.closest('.study-ui-select')) { return select.parentElement; }
+    if (select.closest('.study-ui-select')) {
+        return /** @type {HTMLElement} */ (select.parentElement);
+    }
     if (!document.getElementById('study-ui-style')) {
-        const style = document.createElement('style'); style.id = 'study-ui-style'; style.textContent = STYLE; document.head.append(style);
+        const style = document.createElement('style');
+        style.id = 'study-ui-style';
+        style.textContent = STYLE;
+        document.head.append(style);
     }
     const parent = select.parentElement;
     let name = select.dataset.label || select.getAttribute('aria-label') || '';
     if (parent?.tagName === 'LABEL') {
         const texts = [...parent.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE);
         name ||= texts.map((n) => n.textContent).join('').trim();
-        for (const n of texts) { n.remove(); }
+        for (const n of texts) {
+            n.remove();
+        }
     }
-    const root = document.createElement('div'); root.className = 'study-ui-select';
-    const current = document.createElement('button'); current.type = 'button'; current.className = 'su-current';
-    const label = document.createElement('span'); label.textContent = name;
-    const value = document.createElement('span'); value.className = 'su-value'; current.append(label, value);
-    const options = document.createElement('div'); options.className = 'su-options'; options.hidden = true;
-    select.before(root); root.append(select, current, options);
+    const root = document.createElement('div');
+    root.className = 'study-ui-select';
+    const current = document.createElement('button');
+    current.type = 'button';
+    current.className = 'su-current';
+    const label = document.createElement('span');
+    label.textContent = name;
+    const value = document.createElement('span');
+    value.className = 'su-value';
+    current.append(label, value);
+    const options = document.createElement('div');
+    options.className = 'su-options';
+    options.hidden = true;
+    select.before(root);
+    root.append(select, current, options);
     const paint = () => {
         value.textContent = (select.selectedOptions[0]?.textContent || select.value) + ' ›';
         current.disabled = select.disabled;
         options.replaceChildren();
-        const back = document.createElement('button'); back.type = 'button'; back.className = 'su-back'; back.textContent = '‹ 返回';
-        back.onclick = () => { options.hidden = true; current.hidden = false; current.setAttribute('aria-expanded', 'false'); }; options.append(back);
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'su-back';
+        back.textContent = '‹ 返回';
+        back.onclick = () => {
+            options.hidden = true;
+            current.hidden = false;
+            current.setAttribute('aria-expanded', 'false');
+        };
+        options.append(back);
         for (const item of select.options) {
-            if (item.hidden) { continue; }
-            const button = document.createElement('button'); button.type = 'button'; button.className = 'su-option'; button.disabled = item.disabled;
-            button.textContent = item.textContent + (item.value === select.value ? ' ✓' : ''); button.dataset.value = item.value;
+            if (item.hidden) {
+                continue;
+            }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'su-option';
+            button.disabled = item.disabled;
+            button.textContent = item.textContent + (item.value === select.value ? ' ✓' : '');
+            button.dataset.value = item.value;
             button.onclick = () => {
-                select.value = item.value; options.hidden = true; current.hidden = false; current.setAttribute('aria-expanded', 'false');
-                select.dispatchEvent(new Event('input', {bubbles:true})); select.dispatchEvent(new Event('change', {bubbles:true}));
-            }; options.append(button);
+                select.value = item.value;
+                options.hidden = true;
+                current.hidden = false;
+                current.setAttribute('aria-expanded', 'false');
+                select.dispatchEvent(new Event('input', {bubbles: true}));
+                select.dispatchEvent(new Event('change', {bubbles: true}));
+            };
+            options.append(button);
         }
     };
-    current.onclick = (event) => { event.preventDefault(); paint(); options.hidden = false; current.hidden = true; current.setAttribute('aria-expanded', 'true'); };
-    root.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.stopPropagation(); options.hidden = true; current.hidden = false; current.focus(); } });
+    current.onclick = (event) => {
+        event.preventDefault();
+        paint();
+        options.hidden = false;
+        current.hidden = true;
+        current.setAttribute('aria-expanded', 'true');
+    };
+    root.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            event.stopPropagation();
+            options.hidden = true;
+            current.hidden = false;
+            current.focus();
+        }
+    });
     select.addEventListener('study-ui-sync', paint);
-    new MutationObserver(paint).observe(select, {childList:true,subtree:true,attributes:true});
-    select.addEventListener('change', paint); paint(); return root;
+    new MutationObserver(paint).observe(select, {childList: true, subtree: true, attributes: true});
+    select.addEventListener('change', paint);
+    paint();
+    return root;
 }
 
-/** Draw a switch without changing the original checkbox's data binding. */
+/**
+ * Draw a switch without changing the original checkbox's data binding.
+ * @param {HTMLInputElement} input
+ * @returns {HTMLElement}
+ */
 export function switchRow(input) {
     if (!document.getElementById('study-ui-style')) {
-        const style=document.createElement('style');style.id='study-ui-style';style.textContent=STYLE;document.head.append(style);
+        const style = document.createElement('style');
+        style.id = 'study-ui-style';
+        style.textContent = STYLE;
+        document.head.append(style);
     }
-    if (input.closest('.study-ui-switch')) { return input.parentElement; }
-    const row = document.createElement('span'); row.className = 'study-ui-switch';
+    if (input.closest('.study-ui-switch')) {
+        return /** @type {HTMLElement} */ (input.parentElement);
+    }
+    const row = document.createElement('span');
+    row.className = 'study-ui-switch';
     const parent = input.closest('label');
-    const text = document.createElement('span'); text.textContent = input.dataset.label || input.getAttribute('aria-label') || '';
+    const text = document.createElement('span');
+    text.textContent = input.dataset.label || input.getAttribute('aria-label') || '';
     if (parent && !parent.classList.contains('toggle')) {
-        text.textContent = [...parent.childNodes].filter((n) => n !== input).map((n) => n.textContent).join('').trim();
-        for (const n of [...parent.childNodes]) { if (n !== input) { n.remove(); } }
+        text.textContent = [...parent.childNodes].filter((n) => n !== input).map((n) => n.textContent).join('')
+            .trim();
+        for (const n of parent.childNodes) {
+            if (n !== input) {
+                n.remove();
+            }
+        }
     }
-    input.before(row); const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role','switch');
-    button.setAttribute('aria-label', text.textContent || '开关'); row.append(input,text,button);
-    if (parent?.classList.contains('toggle')) { parent.querySelector('.toggle-body')?.remove(); }
-    const paint = () => { button.setAttribute('aria-checked', String(input.checked)); button.disabled = input.disabled; };
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
-    Object.defineProperty(input, 'checked', {configurable:true,get() {return descriptor.get.call(this);},set(v) {descriptor.set.call(this,v);paint();}});
-    button.onclick = (event) => { event.preventDefault(); input.checked = !input.checked; input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true})); };
-    input.addEventListener('change',paint); new MutationObserver(paint).observe(input,{attributes:true}); paint(); return row;
+    input.before(row);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', 'switch');
+    button.setAttribute('aria-label', text.textContent || '开关');
+    row.append(input, text, button);
+    if (parent?.classList.contains('toggle')) {
+        parent.querySelector('.toggle-body')?.remove();
+    }
+    const paint = () => {
+        button.setAttribute('aria-checked', String(input.checked));
+        button.disabled = input.disabled;
+    };
+    const descriptor = /** @type {Required<TypedPropertyDescriptor<boolean>>} */ (Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked'));
+    Object.defineProperty(input, 'checked', {configurable: true,
+        get() {
+            return descriptor.get.call(this);
+        },
+        set(v) {
+            descriptor.set.call(this, v);
+            paint();
+        }});
+    button.onclick = (event) => {
+        event.preventDefault();
+        input.checked = !input.checked;
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        input.dispatchEvent(new Event('change', {bubbles: true}));
+    };
+    input.addEventListener('change', paint);
+    new MutationObserver(paint).observe(input, {attributes: true});
+    paint();
+    return row;
 }
-
 // Pages and dynamically mounted cards share these two controls, not another settings controller.
 if (typeof document !== 'undefined') {
     const page = document;
     const enhance = () => {
-        for (const select of page.querySelectorAll('select:not(.study-ui-select>select)')) { menuSelect(select); }
-        for (const input of page.querySelectorAll('input[type=checkbox]:not(.study-ui-switch>input)')) { switchRow(input); }
+        for (const select of page.querySelectorAll('select')) {
+            menuSelect(select);
+        }
+        for (const input of page.querySelectorAll(/** @type {'input'} */ ('input[type=checkbox]'))) {
+            switchRow(input);
+        }
     };
-    new MutationObserver(enhance).observe(document.documentElement,{childList:true,subtree:true});
+    new MutationObserver(enhance).observe(document.documentElement, {childList: true, subtree: true});
     enhance();
 }
