@@ -1056,12 +1056,32 @@ export class YoutubeReader extends EventTarget {
         view.load.disabled = true;
         try {
             const tracks = await this._call('youtubeCaptionTracks').catch(() => []);
-            const available = (Array.isArray(tracks) ? tracks : []).filter((track) => captionUrl(track.baseUrl, videoId));
+            const available = /** @type {{baseUrl: string, languageCode: string, vssId?: string, kind?: string, name?: {simpleText?: string, runs?: {text: string}[]}}[]} */ ((Array.isArray(tracks) ? tracks : []).filter((track) => captionUrl(track.baseUrl, videoId)));
             available.sort((a,b) => Number(a.kind === 'asr') - Number(b.kind === 'asr'));
             this._sources = available.map((track) => ({id:captionTrackId(track),label:`${track.name?.simpleText || track.name?.runs?.map((r) => r.text).join('') || track.languageCode}${track.kind === 'asr' ? ' · 自动' : ''}`}));
             const state = await readVideoState(`youtube:${videoId}`);
-            const chosen = available.find((t) => captionTrackId(t) === (sourceId || state?.selectedTrackKey)) || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
-            const url = chosen ? captionUrl(chosen.baseUrl,videoId) : await this._findCaptionUrl(videoId, generation);
+            const requested = sourceId || state?.selectedTrackKey;
+            /** @type {(typeof available)[number]|undefined} */
+            let chosen = available.find((t) => captionTrackId(t) === requested) || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
+            const captured = await this._findCaptionUrl(videoId, generation);
+            const url = captured || (chosen ? captionUrl(chosen.baseUrl, videoId) : null);
+            if (captured && chosen && requested) {
+                // Keep the player's signed URL and proof token; change only the track identity.
+                const trackUrl = new URL(chosen.baseUrl, location.href);
+                for (const key of ['lang', 'kind', 'name']) {
+                    const value = trackUrl.searchParams.get(key);
+                    if (value) {
+                        captured.searchParams.set(key, value);
+                    } else {
+                        captured.searchParams.delete(key);
+                    }
+                }
+            } else if (captured) {
+                chosen = available.find((t) => {
+                    const trackUrl = new URL(t.baseUrl, location.href);
+                    return ['lang', 'kind', 'name'].every((key) => trackUrl.searchParams.get(key) === captured.searchParams.get(key));
+                });
+            }
             if (generation !== this._generation) { return; }
             if (!url) {
                 this._status('没有找到字幕，可导入字幕文件。');
