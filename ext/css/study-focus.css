@@ -857,7 +857,7 @@
 .study-focus-shell[data-panel='0'] .sf-save-bar { bottom: 0; }
 .study-focus-active .sf-heading .sf-gloss-preview { display: block; max-height: none; overflow: visible; -webkit-line-clamp: unset; }
 .study-focus-active .sf-source-pane .study-source p { max-height: none; overflow: visible; -webkit-line-clamp: unset; }
-.study-focus-active .sf-source-pane .study-source-translation { display: block; overflow: visible; color: var(--sf-muted); font-size: 12px; }
+.study-focus-active .sf-source-pane .study-source-translation:not([hidden]) { display: block; overflow: visible; color: var(--sf-muted); font-size: 12px; }
 
 .study-focus-active .sf-heading .sf-forms-preview { display: flex; flex-wrap: wrap; white-space: normal; overflow: visible; max-height: none; }
 
