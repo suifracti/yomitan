@@ -28,12 +28,16 @@ export async function prepareWordMarkSettings(root) {
     const excluded = /** @type {HTMLTextAreaElement|null} */ (root.querySelector('#word-marks-excluded'));
     const hover = /** @type {HTMLInputElement|null} */ (root.querySelector('#word-marks-hover'));
     const encounters = /** @type {HTMLInputElement|null} */ (root.querySelector('#word-marks-encounters'));
+    const level = root.querySelector('#word-marks-level');
+    const possible = root.querySelector('#word-marks-possible');
+    const shortcuts = root.querySelector('#word-marks-shortcuts');
     const state = /** @type {HTMLElement|null} */ (root.querySelector('#word-marks-state'));
     if (!box || !excluded || !state || typeof chrome === 'undefined' || !chrome.storage?.local) { return; }
     const tierBoxes = /** @type {HTMLInputElement[]} */ ([...root.querySelectorAll('input[data-word-tier]')]);
     const stored = /** @type {Record<string, unknown>} */ (await chrome.storage.local.get([WORD_MARKS_KEY, WORD_STATUS_KEY]));
     const marks = /** @type {{enabled?: unknown, excluded?: unknown, tiers?: Record<string, unknown>, hover?: unknown, encounters?: unknown}|undefined} */ (stored[WORD_MARKS_KEY]);
     box.checked = marks?.enabled !== false;
+    level.value = marks?.level || 'gk'; possible.checked = marks?.possible !== false; shortcuts.checked = marks?.shortcuts !== false;
     if (hover) { hover.checked = marks?.hover !== false; }
     if (encounters) { encounters.checked = marks?.encounters !== false; }
     for (const tier of tierBoxes) { tier.checked = marks?.tiers?.[tier.dataset.wordTier ?? ''] !== false; }
@@ -43,7 +47,7 @@ export async function prepareWordMarkSettings(root) {
     const counts = {};
     for (const value of Object.values(status?.words ?? {})) {
         const s = normalizeInfo(value)?.s ?? '';
-        counts[s] = (counts[s] ?? 0) + 1;
+        if (s !== 'ignored') { counts[s] = (counts[s] ?? 0) + 1; }
     }
     const phraseCount = Object.keys(status?.phrases ?? {}).length;
     const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
@@ -54,9 +58,9 @@ export async function prepareWordMarkSettings(root) {
         const sites = excluded.value.split('\n').map((line) => line.trim()).filter(Boolean)
             .slice(0, 200);
         const tiers = Object.fromEntries(tierBoxes.map((tier) => [tier.dataset.wordTier ?? '', tier.checked]));
-        void chrome.storage.local.set({[WORD_MARKS_KEY]: {enabled: box.checked, excluded: sites, tiers, hover: hover?.checked !== false, encounters: encounters?.checked !== false}}).then(() => {
+        void chrome.storage.local.set({[WORD_MARKS_KEY]: {enabled: box.checked, excluded: sites, tiers, hover: hover?.checked !== false, encounters: encounters?.checked !== false, level:level.value, possible:possible.checked, shortcuts:shortcuts.checked}}).then(() => {
             state.textContent = '已保存，已打开的网页会立即更新。';
         });
     };
-    for (const input of [box, excluded, hover, encounters, ...tierBoxes]) { input?.addEventListener('change', save); }
+    for (const input of [box, excluded, hover, encounters, level, possible, shortcuts, ...tierBoxes]) { input?.addEventListener('change', save); }
 }

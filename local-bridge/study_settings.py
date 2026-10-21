@@ -507,6 +507,9 @@ class YomitanLibrary:
             return videos.write_summary(p['url'], p['title'], rows, links)
         if action == 'libraryAutoSync':
             return self.auto_sync()
+        if action == 'knownWords':
+            from study_senses import known_words
+            return known_words(self, p)
         if action == 'libraryMarkKnown':
             from study_senses import mark_known
             return mark_known(self, p['word'], p['known'])

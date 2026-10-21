@@ -215,6 +215,21 @@ def _normalize_request(p):
         if 'fresh' in p and type(p['fresh']) is not bool:
             raise ValueError('历史核对刷新标志无效。')
         return {**p, 'word': text(p['word'], 128, True), **({'lemma': text(p['lemma'], 128, True)} if 'lemma' in p else {})}
+    if action == 'knownWords':
+        if set(p) - {'action', 'known', 'ignored'}:
+            raise ValueError('这里只能标记认识或忽略的词。')
+        result = {'action': action}
+        for key in ('known', 'ignored'):
+            if key not in p: continue
+            change = p[key]
+            if not isinstance(change, dict) or set(change) - {'add', 'remove'}:
+                raise ValueError('词列表没有读完整，请重试。')
+            result[key] = {}
+            for op, words in change.items():
+                if not isinstance(words, list) or len(words) > 6000 or any(not isinstance(w, str) or not re.fullmatch(r"[a-zA-Z]+(?:['’-][a-zA-Z]+)*", w) or len(w) > 128 for w in words):
+                    raise ValueError('一次最多标记 6000 个英文词。')
+                result[key][op] = sorted({w.casefold().replace('’', "'") for w in words})
+        return result
     if action == 'libraryMarkKnown' and set(p) == {'action', 'word', 'known'} and type(p['known']) is bool:
         return {**p, 'word': text(p['word'], 128, True)}
     if action == 'libraryFavorite':

@@ -26,6 +26,8 @@
  * count of how often learning words are met in the wild (no URLs or sentences kept).
  * Inputs, editors, code and our own learning UI are skipped.
  */
+import './study-ui.js';
+import {FUNCTION_WORDS} from './caption-sidebar.js';
 import {studyCall} from './study-client.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {safePerformance} from '../core/safe-performance.js';
@@ -36,6 +38,7 @@ export const ENCOUNTERS_KEY = 'studyEncounters';
 const STYLE_ID = 'study-word-marks-style';
 const TIP_ID = 'study-word-gloss';
 const STYLE = `
+::highlight(study-possible){text-decoration:underline dashed 1px rgb(130 140 160 / 28%);text-underline-offset:3px}
 ::highlight(study-learning){text-decoration:underline dotted 1.5px rgb(217 169 28 / 85%);text-underline-offset:3px}
 ::highlight(study-shaky){text-decoration:underline dotted 1.5px rgb(214 92 72 / 75%);text-underline-offset:3px}
 ::highlight(study-familiar){text-decoration:underline solid 1px rgb(63 140 90 / 28%);text-underline-offset:3px}
@@ -48,7 +51,7 @@ const MAX_RANGES = 6000;
 const SKIP = 'script,style,noscript,textarea,input,select,option,code,pre,kbd,samp,svg,math,[contenteditable=""],[contenteditable="true"],.scan-disable,#study-yt-panel';
 const WORD = /[A-Za-z][A-Za-z'’-]*[A-Za-z]/g;
 /** @type {Record<string, 'learning'|'shaky'|'familiar'|'partial'|''>} Highlight for each status; '' = not marked. */
-const TIER_OF = {new: 'learning', learning: 'learning', shaky: 'shaky', familiar: 'familiar', partial: 'partial', known: ''};
+const TIER_OF = {new: 'learning', learning: 'learning', shaky: 'shaky', familiar: 'familiar', partial: 'partial', known: '', ignored: '', possible:'possible'};
 /** Statuses that count as "still learning" for encounters. */
 const COUNTED = new Set(['new', 'learning', 'shaky', 'partial']);
 
@@ -219,6 +222,8 @@ export class WordMarks {
     constructor() {
         /** @type {Record<string, unknown>} */
         this._words = {};
+        this._levels = {}; this._glosses = {}; this._level = 2; this._possible = true; this._shortcuts = true;
+        this._candidates = new Map(); this._hoverPoint = {x:0,y:0};
         /** @type {Map<string, {rest: string[], key: string, info: WordInfo}[]>} Saved phrases by their first word. */
         this._phrases = new Map();
         /** @type {Map<Text, Range[]>} */
@@ -263,19 +268,33 @@ export class WordMarks {
     async start() {
         const registry = /** @type {{highlights?: Map<string, Highlight>}} */ (/** @type {unknown} */ (globalThis.CSS));
         if (!registry?.highlights || typeof Highlight !== 'function' || typeof chrome === 'undefined' || !chrome.storage?.local) { return; }
+        try {
+            [this._levels,this._glosses] = await Promise.all(['word-levels','word-glosses'].map(async name => (await fetch(chrome.runtime.getURL(`data/study/${name}.json`))).json()));
+        } catch { /* Saved-word marking remains available if bundled data cannot be read. */ }
         await this._load();
+        chrome.runtime.onMessage?.addListener((message,_sender,reply) => {
+            if (!message.studyPageWords) { return; }
+            if (message.studyPageWords === 'open') { this.openPageWords(); }
+            reply({count:this.pageWords().length});
+        });
         chrome.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && (changes[WORD_STATUS_KEY] || changes[WORD_MARKS_KEY])) { void this._load(); }
+            if (area === 'local' && (changes[WORD_STATUS_KEY] || changes[WORD_MARKS_KEY] || changes.studyKnownWords)) { void this._load(); }
         });
     }
 
     /** Reads the switches, the excluded sites and the word list, then rebuilds. */
     async _load() {
-        const stored = /** @type {Record<string, unknown>} */ (await chrome.storage.local.get([WORD_MARKS_KEY, WORD_STATUS_KEY]));
+        const stored = /** @type {Record<string, unknown>} */ (await chrome.storage.local.get([WORD_MARKS_KEY, WORD_STATUS_KEY, 'studyKnownWords']));
         const marks = /** @type {{enabled?: unknown, excluded?: unknown, tiers?: Partial<Tiers>, hover?: unknown, encounters?: unknown}|undefined} */ (stored[WORD_MARKS_KEY]);
         const status = /** @type {{words?: unknown, phrases?: unknown}|undefined} */ (stored[WORD_STATUS_KEY]);
         const excluded = Array.isArray(marks?.excluded) ? marks.excluded.filter((item) => typeof item === 'string') : [];
-        const words = status?.words && typeof status.words === 'object' ? /** @type {Record<string, unknown>} */ (status.words) : {};
+        const savedWords = status?.words && typeof status.words === 'object' ? /** @type {Record<string, unknown>} */ (status.words) : {};
+        const words = {...savedWords};
+        const manual = stored.studyKnownWords || {known:[],ignored:[]};
+        for (const word of manual.known) { words[word] = {...normalizeInfo(words[word]),s:'known',manualKnown:true}; }
+        for (const word of manual.ignored) { words[word] = {...normalizeInfo(words[word]),s:'ignored'}; }
+        this._level = ({gk:2,cet4:3,cet6:4,ky:5,ielts:7})[marks?.level || 'gk'];
+        this._possible = marks?.possible !== false; this._shortcuts = marks?.shortcuts !== false;
         const phrases = status?.phrases && typeof status.phrases === 'object' ? /** @type {Record<string, unknown>} */ (status.phrases) : {};
         this._tiers = {learning: true, shaky: true, familiar: true, partial: true};
         for (const key of /** @type {(keyof Tiers)[]} */ (['learning', 'shaky', 'familiar', 'partial'])) {
@@ -283,7 +302,7 @@ export class WordMarks {
         }
         this._hover = marks?.hover !== false;
         this._encounters = marks?.encounters !== false;
-        this._enabled = marks?.enabled !== false && Object.keys(words).length + Object.keys(phrases).length > 0 && !siteExcluded(location.hostname, excluded);
+        this._enabled = marks?.enabled !== false && !siteExcluded(location.hostname, excluded);
         this._words = words;
         this._phrases = new Map();
         for (const [key, value] of Object.entries(phrases)) {
@@ -303,7 +322,7 @@ export class WordMarks {
             (document.head ?? document.documentElement).append(style);
         }
         const registry = /** @type {{highlights: Map<string, Highlight>}} */ (/** @type {unknown} */ (CSS));
-        this._highlights = {learning: new Highlight(), shaky: new Highlight(), familiar: new Highlight(), partial: new Highlight()};
+        this._highlights = {possible: new Highlight(), learning: new Highlight(), shaky: new Highlight(), familiar: new Highlight(), partial: new Highlight()};
         for (const [name, highlight] of Object.entries(this._highlights)) { registry.highlights.set(`study-${name}`, highlight); }
         this._observer = new MutationObserver((records) => {
             for (const record of records) {
@@ -319,7 +338,7 @@ export class WordMarks {
         this._observer.observe(document.body, {childList: true, subtree: true, characterData: true});
         this._queue.push(document.body);
         this._schedule();
-        if (this._hover && !this._hoverBound) { this._bindHover(); }
+        if (!this._hoverBound) { this._bindHover(); }
     }
 
     /** */
@@ -327,7 +346,7 @@ export class WordMarks {
         this._observer?.disconnect();
         this._observer = null;
         this._queue = [];
-        this._ranges.clear();
+        this._ranges.clear(); this._candidates.clear();
         this._count = 0;
         if (this._highlights) {
             for (const highlight of Object.values(this._highlights)) { highlight.clear(); }
@@ -392,7 +411,7 @@ export class WordMarks {
      */
     _highlightFor(info) {
         const tier = TIER_OF[info.s] ?? 'learning';
-        return tier && this._tiers[tier] && this._highlights ? this._highlights[tier] : null;
+        return tier && (tier === 'possible' ? this._possible : this._tiers[tier]) && this._highlights ? this._highlights[tier] : null;
     }
 
     /** @param {Text} node */
@@ -433,7 +452,17 @@ export class WordMarks {
                 i += phrase.length - 1;
                 continue;
             }
-            const info = wordInfo(token[0], this._words);
+            let info = wordInfo(token[0], this._words);
+            if (!info && this._possible) {
+                const word = wordForms(token[0]).find((w) => Object.hasOwn(this._levels,w));
+                const level = this._levels[word];
+                if (word && !FUNCTION_WORDS.has(word) && !FUNCTION_WORDS.has(token[0].toLowerCase()) &&
+                    (level[0] ? level[0] > this._level : level[1] > 8000)) {
+                    info = {word,s:'possible',gloss:this._glosses[word] || ''};
+                    const sentence = this._sentence(node,start);
+                    this._candidates.set(word,{word,sentence,meaning:info.gloss,node});
+                }
+            }
             if (info) { add(start, start + token[0].length, info, info.word); }
         }
         if (ranges.length > 0) { this._ranges.set(node, ranges); }
@@ -507,6 +536,7 @@ export class WordMarks {
         let x = 0;
         let y = 0;
         document.addEventListener('pointermove', (event) => {
+            this._hoverPoint = {x:event.clientX,y:event.clientY};
             if (!this._hover || !this._enabled) { return; }
             if (this._tip && !this._tip.hidden) {
                 const box = this._tip.getBoundingClientRect();
@@ -518,7 +548,15 @@ export class WordMarks {
             clearTimeout(this._tipTimer);
             this._tipTimer = window.setTimeout(() => this._showTipAt(x, y), 600);
         }, {passive: true});
-        for (const type of ['pointerdown', 'keydown', 'scroll', 'blur']) {
+        document.addEventListener('keydown',(event) => {
+            if (!this._shortcuts || !this._enabled || event.ctrlKey || event.altKey || event.metaKey || event.repeat || event.target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable=false])') || !['k','l','i'].includes(event.key.toLowerCase())) { return; }
+            const item = this._pointWord(this._hoverPoint.x,this._hoverPoint.y);
+            if (!item) { return; }
+            event.preventDefault(); event.stopImmediatePropagation();
+            if (event.key.toLowerCase() === 'l') { this._remember([item]); }
+            else { void this._manualMark(item.word,event.key.toLowerCase() === 'i' ? 'ignored' : 'known'); }
+        },true);
+        for (const type of ['pointerdown' , 'keydown', 'scroll', 'blur']) {
             window.addEventListener(type, (event) => {
                 if (event.target instanceof Node && this._tip?.contains(event.target) && ['pointerdown', 'keydown'].includes(type)) { return; }
                 clearTimeout(this._tipTimer);
@@ -559,11 +597,92 @@ export class WordMarks {
             this._hideTip();
             void youtubeStudyContext.openCard?.(range.cloneRange(), false).catch(() => {});
         };
-        this._tip.replaceChildren([info.word, info.gloss].filter(Boolean).join(' · '), known, lookup);
+        const page = document.createElement('button'); page.type='button'; page.textContent=`本页生词（${this.pageWords().length}）`; page.onclick=()=>this.openPageWords();
+        const keys=document.createElement('small'); keys.style.display='block'; keys.textContent='K 认识 · L 记住 · I 忽略';
+        this._tip.replaceChildren([info.word, info.gloss].filter(Boolean).join(' · '), known, lookup,page,keys);
         this._tip.hidden = false;
         const height = this._tip.getBoundingClientRect().height;
         const top = box.bottom + 6 + height > innerHeight ? Math.max(4, box.top - height - 6) : box.bottom + 6;
         Object.assign(this._tip.style, {left: `${Math.max(4, Math.min(innerWidth - 284, box.left))}px`, top: `${top}px`});
+    }
+
+    _sentence(node, offset) {
+        const text = node.data;
+        const start = Math.max(text.lastIndexOf('.',offset-1),text.lastIndexOf('!',offset-1),text.lastIndexOf('?',offset-1),text.lastIndexOf('\n',offset-1)) + 1;
+        const rest = text.slice(offset).search(/[.!?\n]/);
+        return text.slice(start,rest < 0 ? text.length : offset+rest+1).trim().slice(0,2400);
+    }
+
+    _pointWord(x,y) {
+        const position=document.caretPositionFromPoint?.(x,y);
+        const node=position?.offsetNode;
+        if (node?.nodeType !== Node.TEXT_NODE || node.parentElement?.closest(SKIP)) { return null; }
+        const token=[...node.data.matchAll(WORD)].find(m=>m.index <= position.offset && position.offset <= m.index+m[0].length);
+        if (!token) { return null; }
+        const range=document.createRange(); range.setStart(node,token.index); range.setEnd(node,token.index+token[0].length);
+        const box=range.getBoundingClientRect(); if (x < box.left || x > box.right || y < box.top || y > box.bottom) { return null; }
+        const word=wordInfo(token[0],this._words)?.word || wordForms(token[0]).find(w=>this._levels[w]) || token[0].toLowerCase();
+        return {word,sentence:this._sentence(node,token.index),meaning:this._glosses[word] || ''};
+    }
+
+    pageWords() { return [...this._candidates.values()].filter(r=>r.node.isConnected && !wordInfo(r.word,this._words)); }
+
+    async _manualMark(word,type) {
+        const stored=await studyCall('knownWords').catch(()=>({known:[],ignored:[]}));
+        const old=wordInfo(word,this._words);
+        try {
+            if (type === 'known') { await studyCall('libraryMarkKnown',{word,known:true}); }
+            else { await studyCall('knownWords',{ignored:{add:[word]}}); }
+            this._notice(type === 'known' ? '已标为认识' : '已忽略',async()=>{
+                if (type === 'known') { await studyCall('libraryMarkKnown',{word,known:old?.manualKnown === true}); }
+                await studyCall('knownWords',{known:{add:stored.known.includes(word)?[word]:[],remove:stored.known.includes(word)?[]:[word]},ignored:{add:stored.ignored.includes(word)?[word]:[],remove:stored.ignored.includes(word)?[]:[word]}});
+            });
+        } catch(error) {this._notice(`没有保存：${error.message}`);}
+    }
+
+    _notice(text,undo,commit) {
+        const notice=document.createElement('div'); notice.className='scan-disable'; notice.setAttribute('role','status');
+        notice.style.cssText='position:fixed;bottom:18px;left:50%;transform:translateX(-50%);padding:10px 16px;border-radius:8px;background:#263248;color:white;z-index:2147483646;font:14px sans-serif';
+        const timer=setTimeout(()=>{if(commit){notice.textContent='正在保存笔记…';void commit().then(()=>notice.remove(),error=>{notice.textContent=`没有保存：${error.message}`;setTimeout(()=>notice.remove(),5000);});}else{notice.remove();}},5000);
+        notice.append(text);
+        if (undo) {const button=document.createElement('button'); button.type='button';button.textContent='撤销';button.onclick=()=>{clearTimeout(timer);Promise.resolve(undo()).then(()=>notice.remove(),error=>{notice.textContent=`没能撤销：${error.message}`;});}; notice.append(' · ',button);}
+        document.documentElement.append(notice);
+    }
+
+    _remember(items,undo=()=>{}) {
+        this._notice('已记住，5 秒后保存笔记',undo,async()=>{
+            await studyCall('knownWords',{known:{remove:items.map(r=>r.word)},ignored:{remove:items.map(r=>r.word)}});
+            await studyCall('pageWordsSave',{items:items.map(({word,sentence,meaning})=>({word,sentence,meaning}))});
+        });
+    }
+
+    openPageWords() {
+        document.getElementById('study-page-words')?.remove();
+        const panel=document.createElement('aside'); panel.id='study-page-words';panel.className='scan-disable st-scope';
+        panel.style.cssText='position:fixed;right:12px;top:12px;bottom:12px;width:min(380px,calc(100vw - 24px));box-sizing:border-box;overflow:auto;padding:18px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);border:1px solid #dce2eb;border-radius:12px;z-index:2147483001;font:14px/1.6 sans-serif;box-shadow:0 5px 25px #0003';
+        const title=document.createElement('h3'); title.textContent=`本页生词（${this.pageWords().length}）`;
+        const close=document.createElement('button');close.textContent='关闭';close.onclick=()=>panel.remove();
+        const note=document.createElement('p');note.textContent='只勾不认识的，其余会标为认识。忽略的词以后不再提示。';panel.append(title,close,note);
+        const rows=this.pageWords();
+        for(const row of rows) {
+            const item=document.createElement('section');item.style.cssText='padding:10px 0;border-top:1px solid #dce2eb';
+            const label=document.createElement('label');const box=document.createElement('input');box.type='checkbox';row.box=box;label.append(box,`${row.word} · ${row.meaning || '词典暂无简义'}`);
+            const sentence=document.createElement('p');sentence.textContent=row.sentence;sentence.style.cssText='font-size:12px;color:#758095';
+            const ignore=document.createElement('button');ignore.textContent='忽略';ignore.onclick=()=>{row.ignored=true;item.remove();void this._manualMark(row.word,'ignored');};item.append(label,sentence,ignore);panel.append(item);
+        }
+        const done=document.createElement('button');done.textContent='完成';panel.append(done);done.onclick=async()=>{
+            done.disabled=true;
+            try {
+                const words=rows.filter(r=>!r.ignored && !r.box.checked).map(r=>r.word);
+                const old=await studyCall('knownWords');
+                await studyCall('knownWords',{known:{add:words}});
+                const undo=()=>studyCall('knownWords',{known:{remove:words.filter(w=>!old.known.includes(w))}});
+                const learning=rows.filter(r=>!r.ignored && r.box.checked);
+                if(learning.length){this._remember(learning,undo);}else{this._notice('已标为认识',undo);}
+                panel.remove();
+            } catch(error){note.textContent=`没有保存：${error.message}`;done.disabled=false;}
+        };
+        document.documentElement.append(panel);
     }
 
     /** */

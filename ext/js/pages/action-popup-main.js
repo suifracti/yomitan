@@ -52,6 +52,15 @@ export class DisplayController {
         void this._setupEnvironment();
 
         void this._updateToday();
+        const pageWords = document.getElementById('action-page-words');
+        void chrome.tabs.query({active:true,currentWindow:true}).then(async ([tab]) => {
+            if (!tab?.id) { return; }
+            try {
+                const result = await chrome.tabs.sendMessage(tab.id,{studyPageWords:'count'},{frameId:0});
+                pageWords.textContent = `本页生词（${result.count}）`;
+                pageWords.onclick = () => { void chrome.tabs.sendMessage(tab.id,{studyPageWords:'open'},{frameId:0}); window.close(); };
+            } catch { pageWords.textContent='本页生词：请先打开一个网页'; pageWords.disabled=true; }
+        });
         this._setupButtonEvents('.action-open-info', 'openInfoPage', chrome.runtime.getURL('/info.html'));
 
         const optionsFull = await this._api.optionsGetFull();

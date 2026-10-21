@@ -306,3 +306,13 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 - 视频「学」面板只放字幕四模式、跟读关/1/2/3 遍、同一行的字幕偏移；沿用原 overlay / bilingual / blur / shadow / shadowRepeats 值。旧 4/5 遍只显示为当前原设置，不自动降档。
 - 字幕栏 ⋯ 分翻译、字幕处理、文件三组；字幕显示、跟读次数和偏移不再重复。下载折叠成一个菜单，失败重试留在错误提示里，继续观看用原画面提示。
 - 面板在播放器内从按钮上方弹出，高度不足只滚动内部；网页播放器按钮放右下，保持同样方向。全屏时隐藏“更多设置”说明。无新增数据库、轮询或字幕配置迁移。
+
+## 2026-10-21 批 3：词级认识 / 忽略和本页生词（先定约定）
+
+- `knownWords` 读请求 `{action:"knownWords"}`；增删请求 `{action:"knownWords", known:{add:[word], remove:[word]}, ignored:{add:[word], remove:[word]}}`，两组均可省略。返回 `{known:[word], ignored:[word]}`。词不区分大小写、去重，写桥目录的 `known-words.json`，不写 Vault 或 Anki；认识与忽略互斥，忽略优先。
+- `libraryMarkKnown` 对未保存词同样成功，写上述文件；已保存词仍沿用原 metadata。前端把 known 合并为 known、ignored 合并为 ignored；忽略优先于任何义项状态，不标色、不推荐、不统计。
+- `studyWordMarks` 增加 level（gk/cet4/cet6/ky/ielts，默认 gk）、possible（默认开）、shortcuts（默认开）；不是新的设置存储。考试级别按 zk/gk/cet4/cet6/ky/toefl/ielts/gre 顺序。只提示超过水平且未保存、未认识、未忽略的词，功能词不参与。
+- 本页生词与 K/L/I 只处理当前网页词句。`pageWordsSave` 传 `{items:[{word,sentence,meaning}]}`，后台补当前网页 URL / 标题，逐条复用 librarySave(makeCard:false)，绝不自动制卡。认识/忽略即时写入，撤销恢复前值；记住操作留 5 秒撤销窗口再保存，取消不删除笔记或卡片。
+- Popup 通过当前 tab 的 `studyPageWords` 消息读取数量/打开浮层；不是后台扫描网页。ECDICT 词表与中文简义均来自原 MIT 数据，不调模型。
+
+批 3 实现记录：词级表由仓库现有、已固定来源的 ECDICT 包生成，21600 词、433089 字节；简义另存同源 `word-glosses.json`，避免额外模型或词典查询。构建脚本也支持从原 CSV 同时生成。Chrome 临时文章夹具已看标色 / 浮层，K/L/I 及撤销只用消息替身；桥测试只用临时库。

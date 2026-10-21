@@ -31,6 +31,22 @@ class SenseTests(AutoSyncTests):
         self.assertEqual(self.library.handle({'action': 'libraryList', 'scope': 'manual-known', 'url': '', 'title': ''})['total'], 0)
         self.assertEqual(self.calls, [])
 
+    def test_known_and_ignored_words_live_outside_vault_and_undo_without_anki(self):
+        self.calls.clear()
+        result = self.library.handle({'action': 'libraryMarkKnown', 'word': 'architecture', 'known': True})
+        self.assertEqual(result['updated'], 0)
+        path = self.library.config_path.parent / 'known-words.json'
+        self.assertEqual(json.loads(path.read_text()), {'known': ['architecture'], 'ignored': []})
+        self.library.handle({'action': 'knownWords', 'ignored': {'add': ['Architecture', 'Brand']}})
+        status = self.library.handle({'action': 'libraryWordStatus'})['words']
+        self.assertEqual(status['architecture']['s'], 'ignored')
+        self.library.handle({'action': 'knownWords', 'ignored': {'remove': ['architecture']}, 'known': {'add': ['architecture']}})
+        self.assertEqual(self.library.handle({'action': 'libraryWordStatus'})['words']['architecture']['s'], 'known')
+        self.library.handle({'action': 'libraryMarkKnown', 'word': 'architecture', 'known': False})
+        self.assertNotIn('architecture', self.library.handle({'action': 'libraryWordStatus'})['words'])
+        self.assertEqual(list(self.vault.rglob('*.md')), [])
+        self.assertEqual(self.calls, [])
+
     def save_word(self, word='run', sentence='I run daily.', **extra):
         return self.library.handle({'action': 'librarySave', 'makeCard': False,
             'entry': {'word': word, 'sentence': sentence, 'meaning': '跑', 'url': 'https://example.test/learn', **extra}})

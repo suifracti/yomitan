@@ -83,6 +83,9 @@ export function menuSelect(select) {
 
 /** Draw a switch without changing the original checkbox's data binding. */
 export function switchRow(input) {
+    if (!document.getElementById('study-ui-style')) {
+        const style=document.createElement('style');style.id='study-ui-style';style.textContent=STYLE;document.head.append(style);
+    }
     if (input.closest('.study-ui-switch')) { return input.parentElement; }
     const row = document.createElement('span'); row.className = 'study-ui-switch';
     const parent = input.closest('label');

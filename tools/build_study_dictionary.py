@@ -63,6 +63,45 @@ def convert(row, sequence):
     content = node('div', parts, 'card')
     return [word, '', '', '', 0, [{'type': 'structured-content', 'content': content}], sequence, '']
 
+LEVELS = ['zk', 'gk', 'cet4', 'cet6', 'ky', 'toefl', 'ielts', 'gre']
+
+
+def build_levels(rows, directory):
+    levels, glosses = {}, {}
+    for row in rows:
+        word = clean(row.get('word')).lower()
+        if not re.fullmatch(r"[a-z]+(?:['-][a-z]+)*", word):
+            continue
+        tags = row.get('tag', '').split()
+        level = next((i + 1 for i, key in enumerate(LEVELS) if key in tags), 0)
+        rank = int(row.get('frq') or 0)
+        if not level and not 0 < rank <= 20000:
+            continue
+        levels[word] = [level, rank]
+        glosses[word] = '；'.join(lines(row.get('translation')))[:60]
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, data in [('word-levels.json', levels), ('word-glosses.json', glosses)]:
+        (directory / name).write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n')
+    print(f'levels: {len(levels)} words, {(directory / "word-levels.json").stat().st_size} bytes; ECDICT MIT')
+
+
+def archive_rows(path):
+    # The bundled dictionary is the already pinned, lossless source for these fields.
+    def plain(node):
+        if isinstance(node, str): return node
+        if isinstance(node, list): return ''.join(plain(n) for n in node)
+        return plain(node.get('content', '')) if isinstance(node, dict) else ''
+    with zipfile.ZipFile(path) as archive:
+        for name in archive.namelist():
+            if not re.fullmatch(r'term_bank_\d+\.json', name): continue
+            for term in json.loads(archive.read(name)):
+                parts = term[5][0]['content']['content']
+                tagged = {node.get('data', {}).get('studyRole'): node for node in parts}
+                tags = [key for key, label in TAGS.items() if label in plain(tagged.get('tags', ''))]
+                rank = re.search(r'COCA 排名 (\d+)', plain(tagged.get('frequency', '')))
+                meaning = tagged.get('meaning', {}).get('content', [])
+                yield {'word': term[0], 'tag':' '.join(tags), 'frq':rank[1] if rank else '', 'translation':'；'.join(plain(n) for n in meaning[1:])}
+
 def build(source, output, license_path):
     checksum = hashlib.sha256(source.read_bytes()).hexdigest()
     if checksum != SOURCE_SHA256:
@@ -91,12 +130,15 @@ def build(source, output, license_path):
             write(z, f'term_bank_{number}.json', json.dumps(bank, ensure_ascii=False, separators=(',', ':')))
         write(z, 'LICENSE.txt', license_path.read_bytes())
         write(z, 'SOURCE.txt', f'https://github.com/skywind3000/ECDICT/blob/master/ecdict.csv\nGit blob: c4ade63ea08cf39d9c3475e96929036d64d94c94\nSHA256: {checksum}\nData license: MIT; original attribution in LICENSE.txt.\nConverted by tools/build_study_dictionary.py; no generated examples.\n')
+    with source.open(newline='') as f: build_levels(csv.DictReader(f), Path(__file__).resolve().parents[1] / 'ext/data/study')
     print(f'{count} entries; {output.stat().st_size} bytes; sha256 {hashlib.sha256(output.read_bytes()).hexdigest()}')
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('source', type=Path)
     p.add_argument('output', type=Path)
-    p.add_argument('--license', type=Path, required=True)
+    p.add_argument('--license', type=Path)
+    p.add_argument('--from-archive', action='store_true')
     args = p.parse_args()
-    build(args.source, args.output, args.license)
+    if args.from_archive: build_levels(archive_rows(args.source), args.output)
+    else: build(args.source, args.output, args.license)

@@ -107,6 +107,8 @@ export class StudyService {
     async refreshWordStatus() {
         if (typeof chrome === 'undefined' || !await chrome.permissions?.contains?.({permissions: ['nativeMessaging']})) { return; }
         try {
+            const manual = await this.native({action:'knownWords'}).promise;
+            if (manual.ok && manual.library) { await this.write('studyKnownWords', () => manual.library); }
             const response = await this.native({action: 'libraryWordStatus'}).promise;
             // v1: {words: {word: status}}; v2 adds per-word details and saved phrases (docs/roadmap-2026-10.md).
             const library = /** @type {{words?: unknown, phrases?: unknown, version?: unknown}|undefined} */ (response.library);
@@ -827,12 +829,12 @@ export class StudyService {
         if (action === 'practiceCheck' && !studyConfig(await this.read(SETTINGS_KEY)).practiceEnabled) {
             throw new Error('练习批改未开启；请先在 AI 设置中明确开启。');
         }
-        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryRepair', 'libraryOrphan', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'libraryMarkKnown', 'senseMatch', 'ankiToday', 'ankiOpen', 'bridgeHealth', 'practiceCheck'].includes(action)) {
+        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryRepair', 'libraryOrphan', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'libraryMarkKnown', 'knownWords', 'senseMatch', 'ankiToday', 'ankiOpen', 'bridgeHealth', 'practiceCheck'].includes(action)) {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
             if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
-            if (action === 'libraryMarkKnown') { await this.refreshWordStatus(); }
+            if (action === 'libraryMarkKnown' || (action === 'knownWords' && ('known' in value || 'ignored' in value))) { await this.refreshWordStatus(); }
             if (action === 'libraryList' || action === 'libraryMemory') {
                 const items = /** @type {{items?: import('study').LibraryRecord[]}} */ (response.library).items;
                 if (Array.isArray(items)) { await this.sync.favoritesFrom(items.filter((r) => r.entry && r.vaultSaved !== false)); }
@@ -1189,6 +1191,20 @@ export function prepareStudyService(lookupDictionary = null) {
         if (typeof studyAction !== 'string') {
             return false;
         }
+        if (studyAction === 'pageWordsSave' && sender.id === chrome.runtime.id && /^https?:/.test(sender.url || '')) {
+            const items = data?.items;
+            if (!Array.isArray(items) || items.length > 6000 || items.some((r) => !r || typeof r.word !== 'string' || r.word.length > 128 || typeof r.sentence !== 'string' || !r.sentence || r.sentence.length > 2400 || typeof r.meaning !== 'string' || r.meaning.length > 5000)) {
+                reply({ok:false,error:'词和原句没读完整，请重试。'}); return false;
+            }
+            void (async () => {
+                for (const item of items) {
+                    const entry = {word:item.word,sentence:item.sentence,meaning:item.meaning,url:sender.url,title:sender.tab?.title?.slice(0,300) || '',language:'en',context:'',translation:'',notes:''};
+                    await service.handle('librarySave',{entry,makeCard:false});
+                    await service.handle('libraryMarkKnown',{word:item.word,known:false});
+                }
+                await service.refreshWordStatus(); return true;
+            })().then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message})); return true;
+        }
         if (studyAction === 'youtubeCaptionTracks' && sender.id === chrome.runtime.id && sender.tab?.id && /^https:\/\/(www\.)?youtube\.com\//.test(sender.url || '')) {
             void chrome.scripting.executeScript({target:{tabId:sender.tab.id,frameIds:[sender.frameId || 0]},world:'MAIN',func:() => {
                 const player = document.querySelector('#movie_player');
@@ -1219,7 +1235,7 @@ export function prepareStudyService(lookupDictionary = null) {
         // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
         // the video study summary, built from the learner's own saved words for the sender's video.
         // Readers run inside their own web frame, or a top-level local file page.
-        if (['subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown'].includes(studyAction) && sender.id === chrome.runtime.id &&
+        if (['subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
         (/^https?:\/\//.test(sender.url || '') || (sender.frameId === 0 && /^file:\/\//.test(sender.url || '')))) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};

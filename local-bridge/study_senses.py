@@ -150,6 +150,32 @@ def senses(library, word, now=None):
             'misses': {kind: sum(e.get('kind') == kind for r in rows for e in r.get('contextMiss', [])) for kind in MISS_KINDS}}
 
 
+def known_words(library, patch=None):
+    import fcntl
+    import os
+    import tempfile
+    path = pathlib.Path(library.config_path).parent / 'known-words.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix('.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        values = json.loads(path.read_text()) if path.exists() else {'known': [], 'ignored': []}
+        if patch and any(key in patch for key in ('known', 'ignored')):
+            for key in ('known', 'ignored'):
+                change = patch.get(key, {})
+                current = set(values[key]) - set(change.get('remove', []))
+                current.update(change.get('add', []))
+                values[key] = sorted(current)
+                other = 'ignored' if key == 'known' else 'known'
+                values[other] = sorted(set(values[other]) - set(change.get('add', [])))
+            fd, name = tempfile.mkstemp(prefix='.known-words-', dir=path.parent)
+            try:
+                with os.fdopen(fd, 'w') as stream: json.dump(values, stream, ensure_ascii=False)
+                os.replace(name, path)
+            finally:
+                if os.path.exists(name): os.unlink(name)
+        return values
+
+
 def mark_known(library, word, known):
     records = list(library.indexed()[1].values())
     wanted = word.strip().casefold()
@@ -166,8 +192,7 @@ def mark_known(library, word, known):
             record['manualKnown'] = known
             lib.write(record, body, expected=version)
         updated.add(path)
-    if not updated:
-        raise ValueError('这个词还没有保存过，请先点「记住它」。')
+    known_words(library, {'known': {'add' if known else 'remove': [wanted]}})
     return {'word': word, 'manualKnown': known, 'updated': len(updated)}
 
 
@@ -197,7 +222,13 @@ def word_status(library, now=None):
     for word, rows in phrases.items():
         phrase_values[word] = {'s': 'known' if any(r.get('manualKnown') for r in rows) else status_for(rows, snapshot, now)[0],
                                'manualKnown': any(r.get('manualKnown') for r in rows), 'gloss': gloss(rows[0]['entry'])}
+    manual = known_words(library)
+    for word in manual['known']:
+        words[word] = {**words.get(word, {}), 's': 'known', 'manualKnown': True}
+    for word in manual['ignored']:
+        words[word] = {**words.get(word, {}), 's': 'ignored'}
     return {'version': 2, 'words': words, 'phrases': phrase_values}
+
 
 
 def assign_entry(library, entry):

@@ -59,9 +59,12 @@
     <section class="settings-category-panel" data-settings-category-panel="lookup" hidden>
 <section id="word-mark-settings" class="study-settings-panel" aria-labelledby="word-mark-title">
             <h2 id="word-mark-title">网页生词标色</h2>
-            <p>标色只针对你保存过的词；悬停在词上可以点『认识了』取消标色。</p>
-            <p>在所有网页上，给你记住过的英文词和搭配加一条很淡的下划线。不改网页文字和排版，输入框、代码和编辑器里不标。所有义项都已会的词不标。</p>
+            <p>按你的水平淡淡提示可能不认识的词；悬停后可以查词，或标为认识。人名、品牌等可忽略。</p>
+            <p>在所有网页上，给在学的英文词、搭配和超出水平的词加一条很淡的下划线。不改网页文字和排版，输入框、代码和编辑器里不标。所有义项都已会的词不标。</p>
             <label class="check"><input type="checkbox" id="word-marks-enabled">开启网页生词标色</label>
+            <label>我的水平<select id="word-marks-level"><option value="gk">高考</option><option value="cet4">四级</option><option value="cet6">六级</option><option value="ky">考研</option><option value="ielts">雅思</option></select></label>
+            <label class="check"><input type="checkbox" id="word-marks-possible">淡淡标出可能不认识的词</label>
+            <label class="check"><input type="checkbox" id="word-marks-shortcuts">悬停快捷键：K 认识 · L 记住 · I 忽略</label>
             <fieldset class="word-mark-tiers">
                 <legend>标哪些</legend>
                 <label class="check"><input type="checkbox" data-word-tier="learning"><span class="word-mark-sample word-mark-learning">黄色点线</span>学习中</label>

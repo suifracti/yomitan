@@ -25,7 +25,7 @@ import {wordInfo} from './word-marks.js';
 export const ROOT_ID = 'study-yt-reader';
 
 // Exclusion only: common function words are not a vocabulary/difficulty scale.
-const FUNCTION_WORDS = new Set(`a an the this that these those i me my mine myself we us our ours ourselves you your yours yourself yourselves
+export const FUNCTION_WORDS = new Set(`a an the this that these those i me my mine myself we us our ours ourselves you your yours yourself yourselves
 he him his himself she her hers herself it its itself they them their theirs themselves one ones oneself who whom whose what which
 whoever whomever whatever whichever here there where when why how all any both each either enough every everybody everyone everything
 neither nobody none no nothing other others some somebody someone something such several much many more most less least few fewer little
@@ -248,7 +248,7 @@ export function learningCaptions(session, words, cardContexts = []) {
         for (const token of tokens) {
             if (FUNCTION_WORDS.has(token.toLowerCase().replaceAll('’', "'"))) { continue; }
             const info = wordInfo(token, words);
-            if (info && FUNCTION_WORDS.has(info.word)) { continue; }
+            if (info && (info.s === 'ignored' || FUNCTION_WORDS.has(info.word))) { continue; }
             if (info && !info.manualKnown && (['new', 'learning', 'shaky', 'partial'].includes(info.s) || info.newSense)) {
                 inLine.set(info.word, {word: info.word, gloss: info.gloss || '', term: token, cueId: cue.id});
                 learning.add(info.word);

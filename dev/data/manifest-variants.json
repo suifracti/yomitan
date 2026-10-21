@@ -111,6 +111,8 @@
                     "popup.html",
                     "template-renderer.html",
                     "js/*",
+                    "data/study/word-levels.json",
+                    "data/study/word-glosses.json",
                     "lib/resvg.wasm"
                 ],
                 "matches": [
