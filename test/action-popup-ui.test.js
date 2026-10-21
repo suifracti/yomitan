@@ -21,37 +21,43 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {describe, expect, test} from 'vitest';
 
-describe('action popup navigation', () => {
-    test('renders labeled lookup, library, and settings actions without removing the existing controls', () => {
-        const html = readFileSync(resolve(process.cwd(), 'ext/action-popup.html'), 'utf8');
-        document.body.replaceChildren(...new DOMParser().parseFromString(html, 'text/html').body.childNodes);
+/**
+ * @param {string} path
+ * @returns {Document}
+ */
+function parsePage(path) {
+    return new DOMParser().parseFromString(readFileSync(resolve(process.cwd(), path), 'utf8'), 'text/html');
+}
 
-        expect(document.querySelector('.action-open-search')?.textContent).toContain('查词');
-        expect(document.querySelector('.action-open-study-library')?.textContent).toContain('学习库');
-        expect(document.querySelector('.action-open-settings')?.textContent).toContain('设置');
-        expect(document.querySelector('.enable-search')).not.toBeNull();
-        expect(document.querySelector('.profile-select')).not.toBeNull();
-        expect(document.querySelector('.action-open-info')?.textContent).toContain('帮助');
-        expect([...document.querySelectorAll('.action-buttons .action-label')].slice(0, 3).map((node) => node.textContent)).toEqual(['查词', '学习库', '设置']);
+describe('action popup navigation', () => {
+    test('renders the translation, learning and footer entries', () => {
+        const page = parsePage('ext/action-popup.html');
+
+        expect(page.querySelector('#page-toggle')?.textContent).toContain('翻译本页');
+        expect(page.querySelector('#action-page-words')).not.toBeNull();
+        expect(page.querySelector('.enable-search')).not.toBeNull();
+        expect(page.querySelector('#page-marks')).not.toBeNull();
+        expect(page.querySelector('#page-video')).not.toBeNull();
+        expect([...page.querySelectorAll('footer a')].map((link) => [link.textContent.trim(), link.getAttribute('href')])).toEqual([
+            ['学习库', '/study-library.html'],
+            ['设置', '/settings.html'],
+            ['帮助', '/info.html'],
+        ]);
     });
 
-    test('honors explicit light and dark theme attributes, with OS dark as fallback', () => {
+    test('defaults to the light theme, honors a dark attribute, and follows OS dark', () => {
         const css = readFileSync(resolve(process.cwd(), 'ext/css/study-library.css'), 'utf8');
-        expect(css).toContain(":root[data-theme='light']");
+        expect(css).toMatch(/:root\s*\{[^}]*color-scheme:\s*light/);
         expect(css).toContain(":root[data-theme='dark']");
+        expect(css).toContain('@media (prefers-color-scheme: dark)');
         expect(css).toContain(':root:not([data-theme])');
     });
 
-    test('uses the shared library and settings navigation on the library page', () => {
-        const html = readFileSync(resolve(process.cwd(), 'ext/study-library.html'), 'utf8');
-        document.body.replaceChildren(...new DOMParser().parseFromString(html, 'text/html').body.childNodes);
-        const links = [...document.querySelectorAll('.study-library-nav a')];
+    test('links the library and settings pages from each other\'s header', () => {
+        const libraryLink = parsePage('ext/study-library.html').querySelector('header .study-page-link');
+        expect([libraryLink?.textContent, libraryLink?.getAttribute('href')]).toEqual(['设置 ↗', '/settings.html#save']);
 
-        expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
-            ['查词', '/search.html'],
-            ['学习库', '/study-library.html'],
-            ['设置', '/settings.html#save'],
-        ]);
-        expect(links.find((link) => link.getAttribute('href') === '/study-library.html')?.getAttribute('aria-current')).toBe('page');
+        const settingsLink = parsePage('ext/settings.html').querySelector('header.settings-page-title a');
+        expect([settingsLink?.textContent, settingsLink?.getAttribute('href')]).toEqual(['学习库 ↗', '/study-library.html']);
     });
 });
