@@ -201,6 +201,8 @@ def word_status(library, now=None):
     snapshot, by_word, phrases = metrics(library), {}, {}
     for _lib, _path, row in library.indexed()[1].values():
         entry = row['entry']
+        if entry.get('kind') == 'sentence':
+            continue
         if entry.get('kind') == 'expression':
             phrases.setdefault(entry['word'].casefold(), []).append(row)
         else:

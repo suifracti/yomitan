@@ -327,3 +327,7 @@ F7 的显式 `ankiOpen` 请求仅含 `{action:"ankiOpen"}`，返回 `{opened:tru
 `studyPageTranslation` 仅存方案字段 mode（bilingual/translation，默认 bilingual）、sites（记住的网站）、auto（默认 false）；批 5 预留 selection（button/auto/off，默认 button）和 hoverKey（默认 Alt）。视频总开关沿现有 studySubtitlePrefs.enabled（默认 true），标色沿 studyWordMarks.enabled，不复制一套开关。
 
 只原样引入获准 KISS traversal/tasks 和三条全局选择器；原文节点不替换、不移动、不序列化。视口进入后翻译，动态内容由 MutationObserver 接续；错误可以就地重试，显示原文时删译文、去隐藏 class。全局引擎共用，模型需首次确认，没有新增后台/数据库。只看译文的原文悬停提示放在新节点，避免页面跳动。
+
+## 2026-10-21 批 5：划词与悬停
+
+获准用原生 JS，共用 page-translate.js 请求缓存、译文节点和还原。`pageSentenceSave` 只接受 sentence / translation，后台补当前 sender 的网页来源，经原 librarySave(makeCard:false) 保存；entry.kind='sentence'，不进网页词级标色列表。以后制卡沿现有 sentence（句子英→中）卡型，不在“记住这句”时自动制卡。未引入 React、输入框翻译或 PDF/EPUB。

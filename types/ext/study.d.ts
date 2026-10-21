@@ -36,7 +36,7 @@ export type CueSaveIntent = {targetId?: string; key: string; entry: LibraryEntry
 
 export type LibraryEntry = {
     sense?: {key: string; gloss: string};
-    kind?: 'expression';
+    kind?: 'expression' | 'sentence';
     baseWord?: string;
     recordId?: string;
     subtitleSource?: SubtitleSourceV1;

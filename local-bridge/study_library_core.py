@@ -139,7 +139,9 @@ def normalize_entry(value):
         if key != 'new' and not re.fullmatch(r'.+#[1-9][0-9]{0,5}', key):
             raise ValueError('义项编号无效。')
         result['sense'] = {'key': key, 'gloss': text(sense['gloss'], 40)}
-    if 'kind' in value or 'baseWord' in value:
+    if value.get('kind') == 'sentence' and 'baseWord' not in value:
+        result['kind'] = 'sentence'
+    elif 'kind' in value or 'baseWord' in value:
         if value.get('kind') != 'expression':
             raise ValueError('搭配条目类型须为 expression。')
         result.update({'kind': 'expression', 'baseWord': text(value.get('baseWord'), 128, True)})

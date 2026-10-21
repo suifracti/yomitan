@@ -1191,6 +1191,24 @@ export function prepareStudyService(lookupDictionary = null) {
         if (typeof studyAction !== 'string') {
             return false;
         }
+        if (studyAction === 'pageSentenceSave' && sender.id === chrome.runtime.id && /^https?:/.test(sender.url || '')) {
+            const selected = /** @type {{sentence?:unknown,translation?:unknown}} */ (data || {});
+            if (typeof selected.sentence !== 'string' || !selected.sentence.trim() || selected.sentence.length > 2400 || typeof selected.translation !== 'string' || !selected.translation.trim() || selected.translation.length > 5000) {
+                reply({ok: false, error: '这段太长或译文还没出来，请少选一点再保存。'});
+                return false;
+            }
+            const entry = {word: selected.sentence.trim().slice(0, 128),
+                sentence: selected.sentence,
+                translation: selected.translation,
+                kind: 'sentence',
+                meaning: '',
+                notes: '',
+                context: '',
+                url: sender.url,
+                title: sender.tab?.title?.slice(0, 300) || ''};
+            void service.handle('librarySave', {entry, makeCard: false}).then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: String(error)}));
+            return true;
+        }
         if (studyAction === 'pageWordsSave' && sender.id === chrome.runtime.id && /^https?:/.test(sender.url || '')) {
             const items = data?.items;
             if (!Array.isArray(items) || items.length > 6000 || items.some((r) => !r || typeof r.word !== 'string' || r.word.length > 128 || typeof r.sentence !== 'string' || !r.sentence || r.sentence.length > 2400 || typeof r.meaning !== 'string' || r.meaning.length > 5000)) {

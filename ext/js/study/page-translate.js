@@ -22,6 +22,7 @@ import {DEFAULT_SELECTOR, DEFAULT_IGNORE_SELECTOR, DEFAULT_KEEP_SELECTOR} from '
 import {chromeTranslate} from './free-translators.js';
 import {readSubtitlePrefs, writeSubtitlePrefs} from './subtitle-prefs.js';
 import {studyCall} from './study-client.js';
+import {TextToSpeechAudio} from '../media/text-to-speech-audio.js';
 import {WORD_MARKS_KEY} from './study-data.js';
 
 export const PAGE_PREFS_KEY = 'studyPageTranslation';
@@ -29,7 +30,7 @@ export const PAGE_PREFS_KEY = 'studyPageTranslation';
 /** @typedef {{mode:'bilingual'|'translation',sites:string[],auto:boolean,selection:'button'|'auto'|'off',hoverKey:string}} PagePrefs */
 /** @type {PagePrefs} */
 const DEFAULTS = {mode: 'bilingual', sites: [], auto: false, selection: 'button', hoverKey: 'Alt'};
-const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay`;
+const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
 const STYLE = '.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
 
 /** @returns {Promise<PagePrefs>} */
@@ -80,7 +81,7 @@ export class PageTranslate {
          *
          */
         this.prefs = {...DEFAULTS};
-        /** @type {Map<Element,{node:HTMLElement,text:string}>} */
+        /** @type {Map<Element,{node:HTMLElement,text:string,manual:boolean}>} */
         this.rows = new Map();
         /** @type {Map<string,Promise<string>>} */
         this.cache = new Map();
@@ -98,6 +99,18 @@ export class PageTranslate {
          *
          */
         this.consent = '';
+        /** @type {Element|null} */
+        this.pointer = null;
+        /** @type {HTMLElement|null} */
+        this.selectionUi = null;
+        /**
+         *
+         */
+        this.selectionText = '';
+        /**
+         *
+         */
+        this.hoverKeyOnly = false;
     }
 
     /** Connect only this document; no background page scanning. */
@@ -106,6 +119,7 @@ export class PageTranslate {
         style.textContent = STYLE;
         document.head.append(style);
         this.prefs = await readPagePrefs();
+        this.bindSelection();
         chrome.runtime.onMessage.addListener((message, _sender, reply) => {
             const action = (/** @type {Record<string,unknown>} */ (message)).studyPage;
             if (typeof action !== 'string') { return false; }
@@ -121,6 +135,7 @@ export class PageTranslate {
             const prefs = /** @type {PagePrefs} */ (changes[PAGE_PREFS_KEY].newValue);
             this.prefs = {...DEFAULTS, ...prefs};
             this.paint();
+            if (this.prefs.selection === 'off') { this.selectionUi?.remove(); }
         });
         document.addEventListener('keydown', (event) => {
             if (event.altKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyA' && !this.editing(event.target)) {
@@ -141,16 +156,19 @@ export class PageTranslate {
         return target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable=false])'));
     }
 
-    /** @returns {Promise<boolean>} */
-    async approve() {
+    /**
+     * @param {string} [text]
+     * @returns {Promise<boolean>}
+     */
+    async approve(text = document.body.textContent || '') {
         const {engine} = await readSubtitlePrefs();
         if (engine !== 'model') { return true; }
         const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
         const key = JSON.stringify([engine, config.model, config.effort]);
         if (this.consent === key) { return true; }
-        const size = Math.ceil((document.body.textContent?.length || 0) / 3);
+        const size = Math.ceil(text.length / 3);
         // eslint-disable-next-line no-alert -- Explicit consent before model billing.
-        if (!window.confirm(`翻译会使用 AI 模型。这页大约消耗 ${size} Token；只翻进入视口的内容。继续吗？`)) { return false; }
+        if (!window.confirm(`翻译会使用 AI 模型。这次大约消耗 ${size} Token；只翻进入视口的内容。继续吗？`)) { return false; }
         this.consent = key;
         return true;
     }
@@ -184,8 +202,8 @@ export class PageTranslate {
     /** Switch presentation without replacing, moving or serializing original nodes. */
     paint() {
         for (const [original, row] of this.rows) {
-            original.classList.toggle('study-original-hidden', this.prefs.mode === 'translation' && !row.node.classList.contains('study-page-error'));
-            row.node.dataset.only = String(this.prefs.mode === 'translation');
+            original.classList.toggle('study-original-hidden', this.prefs.mode === 'translation' && !row.manual && !row.node.classList.contains('study-page-error'));
+            row.node.dataset.only = String(this.prefs.mode === 'translation' && !row.manual);
         }
     }
 
@@ -200,8 +218,9 @@ export class PageTranslate {
      * @param {Element} original
      * @param {string} text
      * @param {string} translation
+     * @param {boolean} [manual]
      */
-    render(original, text, translation) {
+    render(original, text, translation, manual = false) {
         this.restore(original);
         const node = document.createElement('div');
         node.className = 'study-page-translation scan-disable';
@@ -209,39 +228,149 @@ export class PageTranslate {
         node.textContent = translation;
         node.dataset.original = text;
         original.after(node);
-        this.rows.set(original, {node, text});
+        this.rows.set(original, {node, text, manual});
         this.paint();
     }
 
-    /** @param {Element} original */
-    async translateNode(original) {
+    /**
+     * @param {string} text
+     * @returns {Promise<string>}
+     */
+    async requestText(text) {
+        const prefs = await readSubtitlePrefs();
+        const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
+        const key = JSON.stringify([text, prefs.engine, config.model, config.effort]);
+        let task = this.cache.get(key);
+        if (!task) {
+            task = this.translate(text);
+            this.cache.set(key, task);
+            task.catch(() => this.cache.delete(key));
+        }
+        return (await runTranslationTasks([() => task]))[0];
+    }
+
+    /**
+     * @param {Element} original
+     * @param {boolean} [manual]
+     */
+    async translateNode(original, manual = false) {
         const text = this.source(original);
         if (!text || !/[A-Za-z]{2,}/.test(text) || (text.match(/[\u3400-\u9fff]/g)?.length || 0) > text.length / 5 || this.pending.has(original)) { return; }
         this.pending.add(original);
         const version = this.version;
         try {
-            const prefs = await readSubtitlePrefs();
-            const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
-            const key = JSON.stringify([text, prefs.engine, config.model, config.effort]);
-            let task = this.cache.get(key);
-            if (!task) {
-                task = this.translate(text);
-                this.cache.set(key, task);
-                task.catch(() => this.cache.delete(key));
-            }
-            const result = await runTranslationTasks([() => task]);
-            if (this.active && version === this.version && original.isConnected) { this.render(original, text, result[0]); }
+            const result = await this.requestText(text);
+            if ((this.active || manual) && version === this.version && original.isConnected) { this.render(original, text, result, manual); }
         } catch {
-            if (this.active && version === this.version && original.isConnected) {
-                this.render(original, text, '这段没翻译成功 · 点击重试');
+            if ((this.active || manual) && version === this.version && original.isConnected) {
+                this.render(original, text, '这段没翻译成功 · 点击重试', manual);
                 const row = this.rows.get(original);
                 if (row) {
                     row.node.classList.add('study-page-error');
-                    row.node.onclick = () => { void this.translateNode(original); };
+                    row.node.onclick = () => { void this.translateNode(original, manual); };
                     original.classList.remove('study-original-hidden');
                 }
             }
         } finally { this.pending.delete(original); }
+    }
+
+    /** Selection and paragraph hover share requests, rendering and original-node restoration. */
+    bindSelection() {
+        document.addEventListener('pointerover', (event) => { this.pointer = event.target instanceof Element ? event.target : null; });
+        document.addEventListener('selectionchange', () => this.showSelection());
+        document.addEventListener('keydown', (event) => { this.hoverKeyOnly = event.key === this.prefs.hoverKey && !event.ctrlKey && !event.metaKey && (!event.altKey || event.key === 'Alt') && !this.editing(event.target); });
+        document.addEventListener('keyup', (event) => {
+            if (event.key !== this.prefs.hoverKey || !this.hoverKeyOnly || this.editing(event.target)) { return; }
+            this.hoverKeyOnly = false;
+            const original = this.pointer?.closest('p,li,h1,h2,h3,h4,h5,h6,blockquote,div');
+            if (!original || original.closest(SKIP)) { return; }
+            if (this.rows.has(original)) {
+                this.restore(original);
+            } else {
+                void this.approve(this.source(original)).then((yes) => {
+                    if (yes) {
+                        void this.translateNode(original, true);
+                    }
+                });
+            }
+        });
+    }
+
+    /** Show nothing for a single word or an editable selection. */
+    showSelection() {
+        const selection = window.getSelection();
+        const text = selection?.toString().trim() || '';
+        if (this.editing(document.activeElement) || !selection?.rangeCount || this.prefs.selection === 'off' || (text.match(/\p{L}+/gu)?.length || 0) < 2) {
+            this.selectionUi?.remove();
+            return;
+        }
+        const range = selection.getRangeAt(0);
+        const element = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+        if (!element || element.closest(SKIP) || this.editing(selection.anchorNode?.parentElement || null) || this.editing(selection.focusNode?.parentElement || null)) { return; }
+        if (text === this.selectionText && this.selectionUi?.isConnected) { return; }
+        this.selectionText = text;
+        this.selectionUi?.remove();
+        const ui = document.createElement('div');
+        ui.className = 'study-page-tools scan-disable';
+        const box = range.getBoundingClientRect();
+        Object.assign(ui.style, {left: `${Math.max(8, Math.min(innerWidth - 300, box.left))}px`, top: `${Math.max(8, Math.min(innerHeight - 160, box.bottom + 8))}px`, maxHeight: '70vh', overflow: 'auto'});
+        ui.onmousedown = (event) => event.preventDefault();
+        document.documentElement.append(ui);
+        this.selectionUi = ui;
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.textContent = '译';
+        trigger.onclick = () => { void this.openSelection(text, ui); };
+        ui.append(trigger);
+        if (this.prefs.selection === 'auto') { trigger.click(); }
+    }
+
+    /**
+     * @param {string} text
+     * @param {HTMLElement} ui
+     */
+    async openSelection(text, ui) {
+        if (!await this.approve(text)) {
+            ui.remove();
+            return;
+        }
+        ui.textContent = '翻译中…';
+        try {
+            const translation = await this.requestText(text);
+            if (!ui.isConnected) { return; }
+            ui.replaceChildren();
+            const source = document.createElement('p');
+            source.textContent = text;
+            ui.append(source);
+            this.render(source, text, translation, true);
+            for (const label of ['复制', '朗读', '记住这句']) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = label;
+                button.onclick = () => {
+                    void (async () => {
+                        if (label === '复制') {
+                            await navigator.clipboard.writeText(translation);
+                            button.textContent = '已复制';
+                        }
+                        if (label === '朗读') {
+                            const voice = speechSynthesis.getVoices().find((v) => /^en/i.test(v.lang));
+                            if (voice) {
+                                await new TextToSpeechAudio(text, voice).play();
+                            } else {
+                                button.textContent = '英语声音还没准备好，请再点一次';
+                            }
+                        }
+                        if (label === '记住这句') {
+                            button.disabled = true;
+                            await studyCall('pageSentenceSave', {sentence: text, translation});
+                            button.textContent = '已记住';
+                        }
+                    })().catch((error) => { button.disabled = false; button.textContent = `没完成：${String(error)}`; });
+                };
+                ui.append(button);
+            }
+        } catch { ui.textContent = '没翻译成功，请重新选中后点「译」。'; }
     }
 
     /** @returns {Promise<void>} */
@@ -286,6 +415,7 @@ export class PageTranslate {
         this.mo?.disconnect();
         for (const original of this.rows.keys()) { this.restore(original); }
         this.pending = new WeakSet();
+        this.selectionUi?.remove();
     }
 }
 
@@ -302,10 +432,19 @@ export async function preparePageControls(root, tab) {
     const sites = /** @type {HTMLTextAreaElement|null} */ (root.querySelector('#page-sites'));
     const marks = query('page-marks');
     const video = query('page-video');
+    const selection = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-selection'));
+    const hoverKey = query('page-hover-key');
     const button = root.querySelector('#page-toggle');
     const host = tab?.url && /^https?:/.test(tab.url) ? new URL(tab.url).hostname : '';
     const paint = async () => {
         const prefs = await readPagePrefs();
+        const hint = root.querySelector('#page-selection-hint');
+        if (hint) { hint.textContent = `选中句子点「译」；鼠标停在段落上按 ${prefs.hoverKey} 翻译这一段`; }
+        if (selection) {
+            selection.value = prefs.selection;
+            selection.dispatchEvent(new Event('study-ui-sync'));
+        }
+        if (hoverKey) { hoverKey.value = prefs.hoverKey; }
         if (mode) {
             mode.value = prefs.mode;
             mode.dispatchEvent(new Event('study-ui-sync'));
@@ -322,6 +461,13 @@ export async function preparePageControls(root, tab) {
         }
         if (video) { video.checked = (await readSubtitlePrefs()).enabled; }
     };
+    selection?.addEventListener('change', () => { void writePagePrefs({selection: /** @type {PagePrefs['selection']} */ (selection.value)}); });
+    hoverKey?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Tab') {
+            event.preventDefault();
+            void writePagePrefs({hoverKey: event.key});
+        }
+    });
     mode?.addEventListener('change', () => { void writePagePrefs({mode: /** @type {PagePrefs['mode']} */ (mode.value)}); });
     auto?.addEventListener('change', () => { void writePagePrefs({auto: auto.checked}); });
     site?.addEventListener('change', () => { void readPagePrefs().then((p) => writePagePrefs({sites: [...p.sites.filter((s) => s !== host), ...(site.checked ? [host] : [])]})); });

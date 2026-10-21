@@ -47,6 +47,16 @@ class SenseTests(AutoSyncTests):
         self.assertEqual(list(self.vault.rglob('*.md')), [])
         self.assertEqual(self.calls, [])
 
+    def test_selected_sentence_uses_existing_note_save_without_anki_or_word_marks(self):
+        self.calls.clear()
+        record = self.save_word(word='We learn from real sentences.', sentence='We learn from real sentences.',
+                                translation='我们从真实的句子学习。', kind='sentence')
+        self.assertEqual(record['entry']['kind'], 'sentence')
+        self.assertEqual(record['entry']['translation'], '我们从真实的句子学习。')
+        self.assertEqual(record.get('cards', []), [])
+        self.assertNotIn(record['entry']['word'].lower(), self.library.handle({'action': 'libraryWordStatus'})['words'])
+        self.assertEqual(self.calls, [])
+
     def save_word(self, word='run', sentence='I run daily.', **extra):
         return self.library.handle({'action': 'librarySave', 'makeCard': False,
             'entry': {'word': word, 'sentence': sentence, 'meaning': '跑', 'url': 'https://example.test/learn', **extra}})
