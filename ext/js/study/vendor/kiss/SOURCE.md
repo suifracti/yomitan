@@ -36,7 +36,7 @@ Do not edit the JavaScript file; types live in the adjacent `.d.ts`. It only par
 | 划词内容（需 JSX） | `src/views/Selection/TranCont.js` | 746 | `e40c6d6db9273eb59b7f3d50df5f249e95cda6ec` | React hooks、API/服务配置及其他词典/译文子组件 |
 | 窗口外观（需 JSX） | `src/components/TranslationPanel/Surface.js` | 44 | `0bab3d0790c2576efbde419d478a6548a95f333c` | MUI Box/Paper、styles；JSX |
 | 窗口头（需 JSX） | `src/components/TranslationPanel/Header.js` | 299 | `618c80bf6512940d9d86217e4d6b9af4a533e9e2` | React hooks、MUI 与图标；JSX |
-| 窗口内容（需 JSX） | `src/components/TranslationPanel/Content.js` | 10 | `2df12b319e217b47962f3a37b2d9ab28669d7a3f` | MUI Box、Surface；JSX |
+| 窗口内容（需 JSX） | `src/components/TranslationPanel/Content.js` | 10 | `2df12b319e217b47962f3a37b2d9ab28669d7a3f` | views/Selection/TranForm；JSX |
 | 窗口样式 | `src/components/TranslationPanel/styles.js` | 60 | `b0f8f4bdb5cfa7bffc81131e4cb349d739a84276` | 纯样式常量 |
 
 ### 三块逻辑确切在哪里

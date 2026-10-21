@@ -9,7 +9,7 @@
 - `2a4fedf7`：先改 roadmap；ECDICT 生成水平词表和简义，本页生词与 K/L/I 认识/记住/忽略，桥目录 known-words.json 不进 Vault，5 秒撤销。L / 本页勾选记住有 5 秒暂缓保存窗口，撤销不删除笔记或卡片。
 - 三批各一个 Vitest，批 3 另一个临时桥测试；真实 Chrome 只跑临时视频菜单、多轨、英文文章与 K/L/I 夹具，所有消息/翻译/笔记为替身，无正式数据写入或付费调用。截图在本机 `/tmp/yomitan-onestop-batch1.png`、`/tmp/yomitan-onestop-batch2.png`、`/tmp/yomitan-onestop-batch3.png`。
 - 新版批 4 明确停审：KISS 引入候选、行数、依赖和 blob 见 `ext/js/study/vendor/kiss/SOURCE.md`。主要类 5541 行且划词组件需要 React/MUI/JSX，已到用户要求的停止点；没有开始整页翻译/划词翻译或字幕快捷键。
-- 只同步原日常扩展和运行桥；不提交 companion-app，不读 Obsidian，不开分支或 PR。安装字节同步不等于用户已重载扩展和验收真实站点。
+- 已按字节同步并读回 24 个文件到原日常扩展和运行桥；生成的扩展清单仅补两个公开词表资源，保留原安装身份与其他字段。不提交 companion-app，不读 Obsidian，不开分支或 PR。安装字节同步不等于用户已重载扩展和验收真实站点。
 
 ## 2026-10-20 设置入口、跟读、已记词与认识标记
 
