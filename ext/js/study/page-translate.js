@@ -18,7 +18,7 @@
 import {visitTranslationTargets} from './vendor/kiss/translationTargets.js';
 import {runTranslationTasks} from './vendor/kiss/translationTasks.js';
 import {DEFAULT_SELECTOR, DEFAULT_IGNORE_SELECTOR, DEFAULT_KEEP_SELECTOR} from './vendor/kiss/default-selectors.js';
-import {chromeTranslate} from './free-translators.js';
+import {chromeTranslate, chromeTranslatorStatus} from './free-translators.js';
 import {fillEngineSelect} from './translation-engines.js';
 import {readSubtitlePrefs, writeSubtitlePrefs, onSubtitlePrefsChanged} from './subtitle-prefs.js';
 import {studyCall} from './study-client.js';
@@ -62,6 +62,12 @@ async function translateText(text, {language, target = 'zh'} = {}) {
     for (let offset = 0; offset < text.length; offset += 2200) {
         const part = text.slice(offset, offset + 2200);
         if (prefs.engine === 'chrome') {
+            const status = await chromeTranslatorStatus(language);
+            if (status !== 'available') {
+                throw new Error(status === 'unavailable' ?
+                    '这个 Chrome 版本没有内置翻译，请换用 Google 免费翻译。' :
+                    'Chrome 内置翻译还没下载语言包，请先到设置里点「测试所选服务」完成下载，或换用 Google 免费翻译。');
+            }
             result.push((await chromeTranslate([part], {source: language, target}))[0]);
         } else {
             const reply = /** @type {{items:{translation:string}[]}} */ (await studyCall('subtitleTranslate', {requestId: crypto.randomUUID(), language, target, items: [{id: 'page', text: part}], config: {model: config.model, effort: config.effort}}));
