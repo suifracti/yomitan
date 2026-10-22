@@ -19,6 +19,7 @@ import {visitTranslationTargets} from './vendor/kiss/translationTargets.js';
 import {runTranslationTasks} from './vendor/kiss/translationTasks.js';
 import {DEFAULT_SELECTOR, DEFAULT_IGNORE_SELECTOR, DEFAULT_KEEP_SELECTOR} from './vendor/kiss/default-selectors.js';
 import {chromeTranslate} from './free-translators.js';
+import {fillEngineSelect} from './translation-engines.js';
 import {readSubtitlePrefs, writeSubtitlePrefs, onSubtitlePrefsChanged} from './subtitle-prefs.js';
 import {studyCall} from './study-client.js';
 import {TextToSpeechAudio} from '../media/text-to-speech-audio.js';
@@ -68,6 +69,16 @@ async function translateText(text, {language, target = 'zh'} = {}) {
         }
     }
     return result.join('\n');
+}
+
+/**
+ * The learner needs to see why a service did not answer, not a generic failure.
+ * @param {unknown} error
+ * @returns {string}
+ */
+function reasonOf(error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.replaceAll(/\s+/g, ' ').trim().slice(0, 160);
 }
 
 export class PageTranslate {
@@ -133,10 +144,7 @@ export class PageTranslate {
         mountTranslationBall(this, writePagePrefs);
         onSubtitlePrefsChanged((prefs) => {
             const select = /** @type {HTMLSelectElement|null|undefined} */ (this.selectionCard?.querySelector('select'));
-            if (select) {
-                select.value = ['apple', 'model'].includes(prefs.engine) ? prefs.engine : 'chrome';
-                select.dispatchEvent(new Event('study-ui-sync'));
-            }
+            if (select) { fillEngineSelect(select, prefs.engine); }
         });
         chrome.runtime.onMessage.addListener((message, _sender, reply) => {
             const action = (/** @type {Record<string,unknown>} */ (message)).studyPage;
@@ -303,9 +311,9 @@ export class PageTranslate {
             if (version !== this.version || !original.isConnected) { return; }
             const result = await this.requestText(text);
             if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) { this.render(original, text, result, manual); }
-        } catch {
+        } catch (error) {
             if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) {
-                this.render(original, text, '这段没翻译成功 · 点击重试', manual);
+                this.render(original, text, `这段没翻译成功：${reasonOf(error)} · 点击重试`, manual);
                 const row = this.rows.get(original);
                 if (row) {
                     row.node.classList.add('study-page-error');
@@ -433,9 +441,7 @@ export class PageTranslate {
             const header = document.createElement('header');
             const engine = document.createElement('select');
             engine.setAttribute('aria-label', '翻译服务');
-            for (const [value, label] of [['chrome', '免费引擎'], ['apple', 'Apple'], ['model', 'AI 模型']]) { engine.append(Object.assign(document.createElement('option'), {value, textContent: label})); }
-            const selectedEngine = (await readSubtitlePrefs()).engine;
-            engine.value = ['apple', 'model'].includes(selectedEngine) ? selectedEngine : 'chrome';
+            fillEngineSelect(engine, (await readSubtitlePrefs()).engine);
             engine.onchange = () => { void writeSubtitlePrefs({engine: /** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (engine.value)}); };
             const pin = Object.assign(document.createElement('button'), {type: 'button', textContent: '📌', title: '固定'});
             pin.setAttribute('aria-pressed', 'false');
@@ -511,8 +517,8 @@ export class PageTranslate {
                 tools.append(button);
             }
             node.append(tools);
-        } catch {
-            if (waiting && this.rows.get(original) === waiting) { waiting.node.textContent = '没翻译成功，请重新选中后点「译」。'; }
+        } catch (error) {
+            if (waiting && this.rows.get(original) === waiting) { waiting.node.textContent = `没翻译成功：${reasonOf(error)}，请重新选中后点「译」。`; }
         }
     }
 
@@ -606,9 +612,7 @@ export async function preparePageControls(root, tab) {
     const paint = async () => {
         const prefs = await readPagePrefs();
         if (engine) {
-            const selectedEngine = (await readSubtitlePrefs()).engine;
-            engine.value = ['apple', 'model'].includes(selectedEngine) ? selectedEngine : 'chrome';
-            engine.dispatchEvent(new Event('study-ui-sync'));
+            fillEngineSelect(engine, (await readSubtitlePrefs()).engine);
         }
         const hint = root.querySelector('#page-selection-hint');
         if (hint) { hint.textContent = `选中句子点「译」；鼠标停在句子上按 ${prefs.hoverKey} 翻译这一句`; }

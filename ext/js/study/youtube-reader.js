@@ -758,7 +758,7 @@ export class YoutubeReader extends EventTarget {
             field.append(legend);
             return field;
         };
-        const translation = group('翻译'); translation.append(translationEngineSelect((engine) => this.updatePrefs({engine})));
+        const translation = group('翻译'); translation.append(translationEngineSelect((engine) => this.updatePrefs({engine}), this._prefs.engine));
         const modelRows = document.createElement('div'); modelRows.dataset.modelRows = ''; translation.append(modelRows);
         const model = document.createElement('select'); model.dataset.model = ''; model.dataset.label = '模型';
         const effort = document.createElement('select'); effort.dataset.effort = ''; effort.dataset.label = '推理强度';

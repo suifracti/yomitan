@@ -17,6 +17,7 @@
 
 import {chromeTranslate, ENGINE_LABELS} from '../study/free-translators.js';
 import {studyCall} from '../study/study-client.js';
+import {fillEngineSelect} from '../study/translation-engines.js';
 import {onSubtitlePrefsChanged, readSubtitlePrefs, writeSubtitlePrefs} from '../study/subtitle-prefs.js';
 
 const PROBE = 'The brain can change itself.';
@@ -36,8 +37,7 @@ export async function prepareSubtitleSettings(root, {call = studyCall} = {}) {
     /** @param {import('../study/subtitle-prefs.js').SubtitlePrefs} prefs */
     const paint = (prefs) => {
         const engine = /** @type {HTMLSelectElement} */ (section.querySelector('select[name="subtitle-engine"]'));
-        if (!['apple', 'model'].includes(prefs.engine)) { engine.options[0].value = prefs.engine; }
-        engine.value = prefs.engine; engine.dispatchEvent(new Event('study-ui-sync'));
+        fillEngineSelect(engine, prefs.engine);
         const model = /** @type {HTMLElement} */ (section.querySelector('[data-translation-model]'));
         model.hidden = prefs.engine !== 'model';
         for (const box of section.querySelectorAll('input[data-subtitle-pref]')) {

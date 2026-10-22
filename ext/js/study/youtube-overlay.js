@@ -23,6 +23,7 @@
  * study context as the sidebar row, so selecting a word opens the existing card.
  */
 import {menuSelect} from './study-ui.js';
+import {fillEngineSelect} from './translation-engines.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {youtubeSite} from './youtube-site.js';
 
@@ -685,9 +686,7 @@ export function offsetControl(reader) {
 export function syncControls(menu, reader) {
     for (const select of menu.querySelectorAll('select[data-shadow-continue]')) { /** @type {HTMLSelectElement} */ (select).value = String(reader.prefs.shadowContinueSeconds); }
     for (const select of menu.querySelectorAll('select[data-engine]')) {
-        const picker = /** @type {HTMLSelectElement} */ (select);
-        if (!['apple', 'model'].includes(reader.prefs.engine)) { picker.options[0].value = reader.prefs.engine; }
-        picker.value = reader.prefs.engine;
+        fillEngineSelect(/** @type {HTMLSelectElement} */ (select), reader.prefs.engine);
     }
     for (const select of menu.querySelectorAll('select[data-repeats]')) { /** @type {HTMLSelectElement} */ (select).value = String(reader.prefs.shadowRepeats); }
     for (const output of menu.querySelectorAll('output[data-offset]')) {
@@ -701,15 +700,14 @@ export function syncControls(menu, reader) {
 /**
  * The same global translation choice in both video menus.
  * @param {(engine: import('./subtitle-prefs.js').SubtitleEngine) => void} onChange
+ * @param {import('./subtitle-prefs.js').SubtitleEngine} [current]
  * @returns {HTMLLabelElement}
  */
-export function translationEngineSelect(onChange) {
+export function translationEngineSelect(onChange, current = 'chrome') {
     const label = document.createElement('label'); label.className = 'r-engine';
     label.append('翻译：');
     const select = document.createElement('select'); select.dataset.engine = '';
-    for (const [value, text] of [['chrome', '免费引擎'], ['apple', 'Apple'], ['model', 'AI 模型']]) {
-        select.append(Object.assign(document.createElement('option'), {value, textContent: text}));
-    }
+    fillEngineSelect(select, current);
     select.addEventListener('change', () => onChange(/** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (select.value)));
     label.append(select); return label;
 }
