@@ -24,6 +24,8 @@ h2 { margin: 0; padding: 8px 0 3px; color: var(--st-muted); font: 500 11px/1.6 v
 #page-toggle { min-height: 40px; margin: 4px 0; background: var(--st-accent); color: var(--st-accent-ink); border: 0; border-radius: var(--st-radius-1); font: inherit; cursor: pointer; }
 #action-page-words { border: 0; padding: 4px 0; background: none; color: var(--st-accent); font: 11px/1.5 var(--st-sans); cursor: pointer; }
 footer { padding-top: 12px; color: var(--st-muted); font-size: 11px; white-space: nowrap; }
+.ball-restore { margin: 8px 0 0; font-size: 11px; }
+.ball-restore a { color: var(--st-accent); }
 a { color: var(--st-accent); text-decoration: none; }
 footer .action-open-study-library { color: var(--st-accent); background: none; }
 #action-today { color: var(--st-muted); }

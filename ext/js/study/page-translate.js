@@ -167,6 +167,7 @@ export class PageTranslate {
             const prefs = /** @type {PagePrefs} */ (changes[PAGE_PREFS_KEY].newValue);
             this.prefs = {...DEFAULTS, ...prefs};
             this.paint();
+            document.dispatchEvent(new Event('study-page-change'));
             if (this.prefs.selection === 'off') {
                 this.selectionUi?.remove();
                 this.closeSelectionCard();
@@ -606,6 +607,7 @@ export async function preparePageControls(root, tab) {
     const engine = /** @type {HTMLSelectElement|null} */ (root.querySelector('#page-engine'));
     const auto = query('page-auto');
     const ball = query('page-ball');
+    const ballRestore = /** @type {HTMLAnchorElement|null} */ (root.querySelector('#page-ball-restore'));
     const site = query('page-site');
     const sites = /** @type {HTMLTextAreaElement|null} */ (root.querySelector('#page-sites'));
     const marks = query('page-marks');
@@ -637,6 +639,13 @@ export async function preparePageControls(root, tab) {
         }
         if (auto) { auto.checked = prefs.auto; }
         if (ball) { ball.checked = prefs.ball; }
+        if (ballRestore) {
+            const hiddenHere = Boolean(host && prefs.ballSites[host]?.hidden);
+            ballRestore.hidden = !host || (prefs.ball && !hiddenHere);
+            ballRestore.dataset.restore = String(prefs.ball && hiddenHere);
+            ballRestore.textContent = prefs.ball ? '恢复本站悬浮球' : '悬浮球已关闭 · 去设置开启';
+            ballRestore.href = prefs.ball ? '#' : '/settings.html#page-ball';
+        }
         if (site) {
             site.checked = prefs.sites.includes(host);
             site.disabled = !host;
@@ -659,6 +668,18 @@ export async function preparePageControls(root, tab) {
     });
     mode?.addEventListener('change', () => { void writePagePrefs({mode: /** @type {PagePrefs['mode']} */ (mode.value)}); });
     ball?.addEventListener('change', () => { void writePagePrefs({ball: ball.checked}); });
+    ballRestore?.addEventListener('click', (event) => {
+        if (ballRestore.dataset.restore !== 'true') { return; }
+        event.preventDefault();
+        void readPagePrefs().then((current) => {
+            const siteState = current.ballSites[host];
+            if (!siteState) { return; }
+            // Keep the dragged position; only the per-site hiding mark goes away.
+            const rest = {...siteState};
+            delete rest.hidden;
+            return writePagePrefs({ballSites: {...current.ballSites, [host]: rest}});
+        });
+    });
     auto?.addEventListener('change', () => { void writePagePrefs({auto: auto.checked}); });
     site?.addEventListener('change', () => { void readPagePrefs().then((p) => writePagePrefs({sites: [...p.sites.filter((s) => s !== host), ...(site.checked ? [host] : [])]})); });
     sites?.addEventListener('change', () => { void writePagePrefs({sites: sites.value.split(/\s+/).filter(Boolean)}); });
