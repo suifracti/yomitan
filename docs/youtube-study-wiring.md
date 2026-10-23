@@ -276,3 +276,19 @@
 - **PASS**：`#study-yt-reader` 显示“英语（美国） · 444 句”；首句 `This quote has been living in my head rent free for the past year.`；时间按钮“回听 0:00”。属性为 `data-caption-source="capture"`、`data-caption-track="en-US|"`。这证明本次成功会话使用了截取正文，而不是 refetch；证据取自 Yomitan 自身，不取其他字幕扩展。
 - 截图：本机 `/tmp/yomitan-video2-english-capture-pass.png`。没有启动翻译，页面显示已翻译 0/444。
 - 更新结论：此前“本轮无截取路径实机通过证据”已有这一英语场景补充。影片 2 在用户选回英语并刷新后截取载入通过；之前阿拉伯语状态下的失败仍保留，不能推断任意轨道均已修复，也不据此断定先前失败的唯一根因。仅补充文档并推送，继续停下等审查。
+
+## 其他网站字幕实测（2026-10-23）
+
+- 环境：Chrome for Testing 1228 加载日常扩展目录（`~/backup/english-study-extensions/yomitan`），临时 Profile。「视频字幕学习」保持默认开启（阅读器随页面挂载，未改设置）。没有读 cookie、存储、浏览记录或其他标签页，没有登录任何站点，没有改翻译服务；只记录现场，未改 `web-video-site.js`、`subtitle-formats.js` 或加兜底。
+- 结果总表：
+
+| 站点 | 视频 | 自动载入 | 句数 | 第一句 / 时间 | 页面上看到的提示 |
+| --- | --- | --- | --- | --- | --- |
+| B 站 | `https://www.bilibili.com/video/BV1m6WEz3EJL/` | 否 | 0 | —— | `没有找到字幕，可导入字幕文件。`（旁边有「导入字幕」按钮） |
+| TED | Sir Ken Robinson: Do schools kill creativity? | 是，但语言不对 | 149 | 库尔德语 `بەیانیتان باش…` / 0:03 | 没有错误提示；状态是 `full.vtt（页面字幕文件） · 149 句` |
+| Vimeo | The New Vimeo Player（`https://player.vimeo.com/video/76979871`） | 是 | 6 | `Here at Vimeo, there's always one thing on our minds: how to` / 0:05 | 无；状态是 `English（播放器字幕） · 6 句` |
+
+- B 站：视频页自身带 `en-US / English(US)` 字幕信息，视频正常播放（`readyState 4`）。但播放器的字幕菜单只显示「字幕 登录可享 字幕设置……」，未登录时不提供语言选择，页面也没有发出 `bfs/subtitle` 或 `bfs/ai_subtitle` 请求（performance 里 0 条），扩展没有可复用的字幕文件，于是给出上面的提示。这一条需要在已登录的主 Chrome 里复验，本轮不算通过。
+- TED：播放器实际有 64 条字幕轨（含 `English`）。扩展自动载入的是页面预取的 `full.vtt`，状态只显示文件名、没有语言；149 句的首句是库尔德语，说明选中的是预取文件里最后请求的一份，不是播放器的英语轨。另一个 TED 演讲同样显示 `full.vtt（页面字幕文件） · 195 句`，而且播放时视频上方没有出现字幕行；句数超过 150 时侧栏是懒加载的，折叠状态下读不到行。以上均按现象记录，没有改选择逻辑。对照：同一页面不加载扩展、手动把 `English` 轨设为 hidden，能读到 `Good morning. How are you?`，起始 5.65 秒，说明英语轨本身可读。
+- Vimeo：主站页面 `https://vimeo.com/76979871` 在测试环境触发人机验证（“Verify to continue”），改用同一视频的独立播放器页。播放器提供 de / es / en / fr 四条字幕轨，扩展自动选中 English 轨并显示 6 句；视频未播放时也能读取轨道。这一条通过。
+- 结论：三站都是真实页面。B 站失败是登录门槛，不是解析错误；TED 能载入但选错了预取文件（且播放时没有显示字幕行）；Vimeo 正常。没有新增测试；本轮没有代码改动，也没有同步日常目录。
