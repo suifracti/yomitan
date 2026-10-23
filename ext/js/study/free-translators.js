@@ -129,15 +129,16 @@ export async function microsoftTranslate(texts, {source = 'en', target = 'zh', s
 const builtIn = new Map();
 
 /**
- * Whether Chrome's on-device Translator can run in this page.
+ * Whether Chrome's on-device Translator can run in this page for this language pair.
  * @param {string} [source]
+ * @param {string} [target]
  * @returns {Promise<'available'|'downloadable'|'downloading'|'unavailable'>}
  */
-export async function chromeTranslatorStatus(source = 'en') {
+export async function chromeTranslatorStatus(source = 'en', target = 'zh') {
     const api = /** @type {{availability?: (o: {sourceLanguage: string, targetLanguage: string}) => Promise<string>}|undefined} */ (/** @type {Record<string, unknown>} */ (globalThis).Translator);
     if (!api?.availability) { return 'unavailable'; }
     try {
-        const status = await api.availability({sourceLanguage: source, targetLanguage: 'zh'});
+        const status = await api.availability({sourceLanguage: source, targetLanguage: target});
         return /** @type {'available'|'downloadable'|'downloading'|'unavailable'} */ (['available', 'downloadable', 'downloading'].includes(status) ? status : 'unavailable');
     } catch {
         return 'unavailable';

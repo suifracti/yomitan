@@ -62,10 +62,10 @@ async function translateText(text, {language, target = 'zh'} = {}) {
     for (let offset = 0; offset < text.length; offset += 2200) {
         const part = text.slice(offset, offset + 2200);
         if (prefs.engine === 'chrome') {
-            const status = await chromeTranslatorStatus(language);
+            const status = await chromeTranslatorStatus(language, target);
             if (status !== 'available') {
                 throw new Error(status === 'unavailable' ?
-                    '这个 Chrome 版本没有内置翻译，请换用 Google 免费翻译。' :
+                    'Chrome 内置翻译现在翻不了这段，可以换用 Google 免费翻译或其他服务。' :
                     'Chrome 内置翻译还没下载语言包，请先到设置里点「测试所选服务」完成下载，或换用 Google 免费翻译。');
             }
             result.push((await chromeTranslate([part], {source: language, target}))[0]);

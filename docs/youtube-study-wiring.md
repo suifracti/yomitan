@@ -10,8 +10,7 @@
   - 实机同一页面选 Chrome：提示「Chrome 内置翻译还没下载语言包，请先到设置里点「测试所选服务」完成下载，或换用 Google 免费翻译。」，不再空白。没有实际下载语言包，所以 Chrome 翻译成功的那条路径仍未验收。
 - `b3e291e5`：悬浮球隐藏后，扩展弹窗底部出现「恢复本站悬浮球」；只清当前站点的隐藏标记，保留拖动位置，刷新后仍在原位置。全局开关关闭时同一位置显示「悬浮球已关闭 · 去设置开启」，跳到设置页对应开关。
   - 实机：Brick 页面把球拖到 top 292px，用球上的菜单隐藏，弹窗点恢复后立即出现，刷新后仍在 292px；另一站点照常显示；关闭全局开关后文案和跳转正确。只用了现有 `ball` 与 `ballSites`。
-- YouTube 自动字幕：被登录验证拦住，本轮未通过。两个公开视频（`arj7oStGLkU`、`jNQXAC9IVRw`）都返回 `playabilityStatus.status = LOGIN_REQUIRED`（「请登录，以便我们确认你不是聊天机器人」），`captionTracks` 为空，video 的 `readyState` 为 0、没有 `src`，点播放无反应；换成常规 Chrome 标识并关闭 automation 特征后结果相同。所以自动载入、换轨、点句跳转三项没有证据；字幕获取代码、现有真实请求 URL 和凭证参数都没有改动。
-  - 只算导入、不算自动字幕的替代验证：同一页面导入三行英文 SRT，字幕栏显示 3 行、语言 en、时间 0:01 / 0:04 / 0:07；在字幕栏菜单选 Google 后点「翻译全文」，3 行都得到中文，状态「已译 3/3 · Google 翻译」，译文与当前轨逐行对应。
+- YouTube 自动字幕：本次页面返回 LOGIN_REQUIRED，没有下发字幕轨，播放器未启动，因此无法验收自动载入、切换语言和跳转。手动导入字幕及翻译通过，但不能据此证明自动字幕获取、请求或解析逻辑没有问题。
 - 测试与静态检查：两个新测试（四个服务与 Microsoft 保留、悬浮球恢复）单独通过。`study-youtube-overlay` 与 `study-youtube-reader` 合计 9 项失败是既有问题：在 `4753a8a0` 的干净副本上同样 9 项失败，原因是测试环境没有 `chrome` 全局，而阅读器 `_mount` 直接读 `chrome.storage.onChanged`；本轮没改那一行，也没顺手修。ESLint：两个新文件、`page-translate.js`、`subtitle-settings.js` 为 0；`youtube-overlay.js` 40、`youtube-reader.js` 64，均不高于此前记录，改动行没有报错。`tsc` 仍为 195。
 - 边界：只加载日常扩展目录和临时 Profile，没有登录任何账号；没有调用付费模型，没有写正式笔记/卡片/排程，未读 Obsidian；没有新开分支或 PR，未触碰 `companion-app/`。
 

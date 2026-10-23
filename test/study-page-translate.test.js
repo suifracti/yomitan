@@ -67,3 +67,43 @@ test('translates visible blocks and restores the exact original nodes in both mo
         await env.teardown(global);
     }
 });
+
+test('checks and runs Chrome translation in the language direction the caller asked for', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<!DOCTYPE html><html lang="zh-CN"><body></body></html>', url: 'https://example.test/article'}});
+    /** @type {string[]} */
+    const checked = [];
+    /** @type {string[]} */
+    const created = [];
+    vi.stubGlobal('Translator', {
+        /**
+         * @param {{sourceLanguage: string, targetLanguage: string}} pair
+         * @returns {Promise<string>}
+         */
+        availability: async ({sourceLanguage, targetLanguage}) => {
+            checked.push(`${sourceLanguage}->${targetLanguage}`);
+            return sourceLanguage === 'zh' && targetLanguage === 'en' ? 'available' : 'unavailable';
+        },
+        /**
+         * @param {{sourceLanguage: string, targetLanguage: string}} pair
+         * @returns {Promise<{translate: () => Promise<string>}>}
+         */
+        create: async ({sourceLanguage, targetLanguage}) => {
+            created.push(`${sourceLanguage}->${targetLanguage}`);
+            return {translate: async () => 'The bricks dry in the sun.'};
+        },
+    });
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage: async () => ({ok: true, value: {model: 'fixture', effort: 'low'}})},
+        storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'chrome'}}), set: async () => {}}, onChanged: {addListener() {}}},
+    });
+    try {
+        const {translateText} = await import('../ext/js/study/page-translate.js');
+        const translated = await translateText('砖块在阳光下晒干。', {language: 'zh', target: 'en'});
+        expect(translated).toBe('The bricks dry in the sun.');
+        expect(checked).toEqual(['zh->en']);
+        expect(created).toEqual(['zh->en']);
+    } finally {
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
