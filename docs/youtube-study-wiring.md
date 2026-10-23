@@ -220,3 +220,12 @@
 - **FAIL — 第二个候选视频自动载入**：同一标签页导航 `https://www.youtube.com/watch?v=XqS7kIWMIDE` 后，Yomitan 字幕栏显示 `YouTube 没有返回字幕内容（HTTP 200）；可关掉 CC 再打开后重试。`，产品语言选择为空、没有字幕行。没有重试、修代码或启用探针来改变结果。截图 `/tmp/yomitan-youtube-empty-response.png`。
 - **未完成 — 仅自动生成字幕的视频**：为核对上述候选是否符合条件，查看 YouTube 原生字幕菜单；有“英语（美国）”和“英语 (自动生成)”以及多个其他自动生成语言，因此不能称它为只含自动字幕的视频。当前原生选项为“阿拉伯语 (自动生成)”。已有具体产品失败后依用户规则停止，未继续找另一条纯自动字幕视频，也不将这个候选失败偷换成已验证纯自动字幕失败。
 - 结论：首个视频现有路径能自动载入、换轨并免费翻译；第二个候选实际复现 HTTP 200 无正文。原因尚未定位，也未证明截获在同一失败请求上一定成功。保留具体失败供 Claude 决定是否做该案例的定向研究或接入截获；本轮不批准替换，不写“全部通过／暂不采用”的结论。调研标签页保留等待审查；未改产品代码或同步生产目录。
+
+
+## 2026-10-23 视频 2 的 A/B 定向诊断（均未确认，停止）
+
+- 范围：主 Chrome 保留的唯一调研标签页，视频 `XqS7kIWMIDE`。只在页面内读取 resource performance entries 和播放器 videoId；不读取 cookie、存储、其他标签页或账号，不输出签名参数值，不重发请求，不改服务设置。原有 Google 选项保持，未启动翻译。
+- **检查 1／A 未确认**：刷新前按 `/api/timedtext` 和 `v=XqS7kIWMIDE` 筛选，performance 缓冲区实际只有 1 条匹配项。参数名为 `v, ei, caps, opi, exp, xoaf, xowf, xospf, hl, ip, ipbits, expire, sparams, signature, key, kind, lang, variant, potc, pot, fmt, xorb, xobt, xovt, cbrand, cbr, cbrver, c, cver, cplayer, cos, cosver, cplatform`；允许输出的值仅 `lang=ar, kind=asr, tlang=null, fmt=json3`，`hasPot=true`。没有观察到本视频不带 pot 的条目，因此不能确认“最近一次选中了其他扩展的不带 pot 请求”。这仅是当前 performance 缓冲区，不代表所有历史请求，也没有给扩展内部 `_seen` 做逐项归因。
+- **检查 2／B 未确认**：刷新前 `document.querySelector('#movie_player').getPlayerResponse().videoDetails.videoId` 实际为 `XqS7kIWMIDE`，不是上一个视频。这个采样不能排除最初加载瞬间曾短暂返回旧数据，但没有证据确认该竞态。
+- **检查 3／直接刷新仍 FAIL**：对当前同一 URL 执行 reload，没有从视频 1 切换；加载后 Yomitan `#study-yt-reader` 仍显示 `YouTube 没有返回字幕内容（HTTP 200）；可关掉 CC 再打开后重试。`，没有字幕行。刷新后补取一次同范围 CDP 数据被工具的 paused document response 状态阻止，未取得新的请求列表/videoId，不复用刷新前结果冒充刷新后数据。
+- 结论：A/B 均未确认；直接刷新仍失败。按用户指令只提交诊断记录，停止给 Claude 审查。未加 pot 过滤、未加 videoId 重试、未写截获代码，也未展开其他诊断或再次运行三项回归。调研页保留，翻译服务未改。
