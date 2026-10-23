@@ -161,8 +161,10 @@ export class YoutubeReader extends EventTarget {
         this._loadController = null;
         /** @type {string[]} Caption requests made by the player itself (they carry its own tokens). */
         this._seen = [];
-        /** @type {{url: URL, body: string}|null} */
-        this._capturedCaption = null;
+        /** @type {Map<string, {url: URL, body: string}>} */
+        this._capturedCaptions = new Map();
+        /** @type {string|null} */
+        this._captionVideoId = null;
         /** @type {() => void} */
         this._timeListener = () => this._onTime();
         /** @type {{id: string, start: number, end: number, video: HTMLVideoElement}|null} */
@@ -187,7 +189,14 @@ export class YoutubeReader extends EventTarget {
                 if (event.source !== window || event.origin !== location.origin || data?.type !== 'yomitan-caption-response' || typeof data.url !== 'string' || typeof data.body !== 'string') { return; }
                 const url = captionUrl(data.url, youtubeVideoId(location.href));
                 if (url && data.body.trim()) {
-                    this._capturedCaption = {url, body: data.body};
+                    const videoId = url.searchParams.get('v');
+                    if (this._captionVideoId !== videoId) {
+                        this._capturedCaptions.clear(); this._captionVideoId = videoId;
+                    }
+                    const key = ['lang', 'kind', 'tlang'].map((part) => url.searchParams.get(part) || '').join('|');
+                    this._capturedCaptions.delete(key);
+                    this._capturedCaptions.set(key, {url, body: data.body});
+                    if (this._capturedCaptions.size > 10) { this._capturedCaptions.delete(this._capturedCaptions.keys().next().value); }
                     this.rememberRequest(url.href);
                 }
             });
@@ -635,6 +644,9 @@ export class YoutubeReader extends EventTarget {
         this._reset();
         this._mediaKey = key;
         this._videoId = key?.startsWith('youtube:') ? key.slice(8) : null;
+        if (this._captionVideoId !== this._videoId) {
+            this._capturedCaptions.clear(); this._captionVideoId = this._videoId;
+        }
         if (key !== null) { void this._mount(++this._generation); }
     }
 
@@ -1079,7 +1091,7 @@ export class YoutubeReader extends EventTarget {
             /** @type {(typeof available)[number]|undefined} */
             let chosen = available.find((t) => captionTrackId(t) === requested) || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
             const captured = await this._findCaptionUrl(videoId, generation);
-            const url = captured || (chosen ? captionUrl(chosen.baseUrl, videoId) : null);
+            let url = captured || (chosen ? captionUrl(chosen.baseUrl, videoId) : null);
             if (captured && chosen && requested) {
                 // Keep the player's signed URL and proof token; change only the track identity.
                 const trackUrl = new URL(chosen.baseUrl, location.href);
@@ -1111,9 +1123,16 @@ export class YoutubeReader extends EventTarget {
                 timedOut = true;
                 controller.abort();
             }, WAIT_MS);
-            const capturedBody = this._capturedCaption;
-            const matches = capturedBody && ['v', 'lang', 'kind', 'name', 'tlang'].every((key) => capturedBody.url.searchParams.get(key) === url.searchParams.get(key));
-            const response = matches ? new Response(capturedBody.body) : await fetch(url.href, {credentials: 'include', signal: controller.signal});
+            const track = ['lang', 'kind', 'tlang'].map((part) => url.searchParams.get(part) || '').join('|');
+            const capturedBody = this._capturedCaptions.get(track) || [...this._capturedCaptions.values()].find(({url: candidate}) => /^en/i.test(candidate.searchParams.get('lang') || '') && !candidate.searchParams.get('tlang'));
+            if (capturedBody) {
+                url = capturedBody.url;
+                chosen = available.find((entry) => {
+                    const candidate = new URL(entry.baseUrl);
+                    return ['lang', 'kind', 'name'].every((part) => candidate.searchParams.get(part) === url.searchParams.get(part));
+                });
+            }
+            const response = capturedBody ? new Response(capturedBody.body) : await fetch(url.href, {credentials: 'include', signal: controller.signal});
             const text = response.ok ? await response.text() : '';
             if (generation !== this._generation) { return; }
             if (!text.trim()) {
@@ -1137,6 +1156,8 @@ export class YoutubeReader extends EventTarget {
             this._fileTranslations = new Map();
             this._offsetMs = 0;
             this._present(session);
+            view.root.dataset.captionSource = capturedBody ? 'capture' : 'refetch';
+            view.root.dataset.captionTrack = `${language}|${kind}`;
             void this._restoreVideoState(session);
             if (this._prefs.aiSegment) { void this._runSegmentation(); }
         } catch (error) {

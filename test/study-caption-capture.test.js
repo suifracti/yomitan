@@ -21,7 +21,7 @@
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 
-test('uses the captured current track without fetching and retains refetch for another track', async () => {
+test('selects captured tracks before English fallback and finally refetch', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk'}});
     vi.stubGlobal('chrome', {storage: {local: {get: async () => ({})}}});
     const fetcher = vi.fn(async () => ({ok: true, status: 200, text: async () => body}));
@@ -31,18 +31,30 @@ test('uses the captured current track without fetching and retains refetch for a
         const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
         const reader = new YoutubeReader({prefs: {merge: false, aiSegment: false}, call: async () => []});
         reader._videoId = 'abcdefghijk';
-        reader._view = {load: document.createElement('button')};
-        reader._capturedCaption = {url: new URL('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&kind=asr'), body};
-        vi.spyOn(reader, '_findCaptionUrl').mockResolvedValue(new URL(reader._capturedCaption.url));
+        reader._view = {load: document.createElement('button'), root: document.createElement('div')};
+        const english = new URL('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&kind=asr');
+        const french = new URL(english); french.searchParams.set('lang', 'fr');
+        reader._capturedCaptions.set('en|asr|', {url: english, body});
+        reader._capturedCaptions.set('fr|asr|', {url: french, body: body.replace('So in college,', 'À l’université,')});
+        const find = vi.spyOn(reader, '_findCaptionUrl').mockImplementation(async () => new URL(french));
         vi.spyOn(reader, '_status').mockImplementation(() => {});
         vi.spyOn(reader, '_present').mockImplementation(() => {});
         vi.spyOn(reader, '_restoreVideoState').mockResolvedValue();
         await reader._load(0);
         expect(fetcher).not.toHaveBeenCalled();
+        expect(reader._rawSession.cues[0].text).toBe('À l’université,');
+        expect(reader._view.root.dataset).toMatchObject({captionSource: 'capture', captionTrack: 'fr|asr'});
+        const arabic = new URL(english); arabic.searchParams.set('lang', 'ar');
+        find.mockImplementation(async () => new URL(arabic));
+        await reader._load(0);
+        expect(fetcher).not.toHaveBeenCalled();
         expect(reader._rawSession.cues[0].text).toBe('So in college,');
-        reader._capturedCaption.url.searchParams.set('lang', 'ar');
+        expect(reader._rawSession.source.language).toBe('en');
+        expect(reader._view.root.dataset).toMatchObject({captionSource: 'capture', captionTrack: 'en|asr'});
+        reader._capturedCaptions.clear();
         await reader._load(0);
         expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(reader._view.root.dataset).toMatchObject({captionSource: 'refetch', captionTrack: 'ar|asr'});
     } finally {
         vi.unstubAllGlobals();
         await env.teardown(global);
