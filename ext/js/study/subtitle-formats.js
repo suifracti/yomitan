@@ -271,6 +271,7 @@ export function splitBilingual(cues) {
 
 /**
  * Best guess at the language of cues with no label: Chinese, Japanese, Korean or English.
+ * Returns '' for scripts it does not know (Arabic, Cyrillic, Thai…) rather than calling them English.
  * @param {{text: string}[]} cues
  * @returns {string}
  */
@@ -284,5 +285,5 @@ export function guessLanguage(cues) {
     if (kana > latin / 4 && kana > 10) { return 'ja'; }
     if (hangul > latin / 4 && hangul > 10) { return 'ko'; }
     if (han > latin / 4 && han > 10) { return 'zh'; }
-    return 'en';
+    return latin > count(/\p{L}/gu) / 2 ? 'en' : '';
 }

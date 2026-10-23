@@ -225,8 +225,14 @@ export class WebVideoSite {
         for (const url of [...this._seen].reverse()) {
             if (video && [...video.querySelectorAll('track')].some((item) => item.src === url)) { continue; }
             let name = url;
-            try { name = decodeURIComponent(new URL(url).pathname.split('/').pop() || url); } catch { /* keep the URL */ }
-            const language = languageHint(new URL(url, location.href).searchParams.get('lang') ?? '') || languageHint(name);
+            let hint = '';
+            try {
+                const parsed = new URL(url, location.href);
+                // Some players keep the language in the path, e.g. /subtitles/en/full.vtt.
+                hint = languageHint(`${parsed.pathname}${parsed.search}`);
+                name = decodeURIComponent(parsed.pathname.split('/').pop() || url);
+            } catch { /* keep the URL */ }
+            const language = hint || languageHint(name);
             sources.push({id: `url:${url}`, label: `${name.slice(0, 60)}（页面字幕文件）`, language, read: (signal) => fetchSubtitle(url, signal)});
         }
         const rank = (/** @type {WebSource} */ source) => (source.language === learning ? 0 : (source.language ? 2 : 1));

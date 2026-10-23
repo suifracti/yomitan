@@ -17,7 +17,7 @@
 
 
 import {expect, test} from 'vitest';
-import {parseSubtitles, SUBTITLE_URL} from '../ext/js/study/subtitle-formats.js';
+import {guessLanguage, parseSubtitles, SUBTITLE_URL} from '../ext/js/study/subtitle-formats.js';
 
 const rows = (/** @type {{cues: {startMs: number, endMs: number, text: string}[]}} */ {cues}) => cues.map(({startMs, endMs, text}) => [startMs, endMs, text]);
 
@@ -72,6 +72,12 @@ test('unknown text, broken JSON and files without timed lines are refused', () =
     expect(() => parseSubtitles('{broken')).toThrow('JSON');
     expect(() => parseSubtitles(JSON.stringify({hello: 1}))).toThrow('不认识');
     expect(() => parseSubtitles('WEBVTT\n\n00:05.000 --> 00:01.000\nbackwards')).toThrow('没有读到');
+});
+
+test('language guess calls only Latin-majority cues English', () => {
+    expect(guessLanguage([{text: 'Good morning. How are you?'}])).toBe('en');
+    expect(guessLanguage([{text: 'بەیانیتان باش، چۆنن؟'}])).toBe('');
+    expect(guessLanguage([{text: '你好，今天过得怎么样？我很好，谢谢你来看我。'}])).toBe('zh');
 });
 
 test('subtitle URLs are recognised without matching ordinary pages', () => {

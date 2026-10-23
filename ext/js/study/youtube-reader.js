@@ -1017,7 +1017,8 @@ export class YoutubeReader extends EventTarget {
         if (!key) { return; }
         const bilingual = splitBilingual(input);
         const cues = bilingual?.cues ?? input;
-        const language = meta.language || guessLanguage(cues);
+        // A session always needs a language; "und" is the standard code for an unknown one.
+        const language = meta.language || guessLanguage(cues) || 'und';
         const session = new SubtitleSession({
             mediaKey: key,
             trackKey: meta.trackKey,
