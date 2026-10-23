@@ -1,6 +1,19 @@
-# 当前交接：外语学习界面与字幕接入（2026-10-20）
+# 当前交接：外语学习界面与字幕接入（2026-10-23）
 
-> 最新分工：GPT/Codex 实现前后端；Claude 出方案、定 UI、检查提交。固定 UI、接口与本轮状态见 `docs/roadmap-2026-10.md`；较早的视频整合历史见 `docs/video-study-progress.md`。
+> 分工：WorkBuddy 实现前后端；Claude 出方案、定 UI、检查提交。固定 UI、接口与本轮状态见 `docs/roadmap-2026-10.md`；较早的视频整合历史见 `docs/video-study-progress.md`。
+
+## 2026-10-23 翻译菜单、悬浮球恢复与 YouTube 实机验收
+
+- `96d4e256`：扩展弹窗、设置页、视频字幕栏、划词卡片的翻译菜单改用同一份选项（`ext/js/study/translation-engines.js`）。Google 注明「需要联网」，Chrome 注明「首次使用需要下载语言包」，Apple 与 AI 模型照旧；已保存的 Microsoft 作为第五项显示并保持选中。没有新增配置，不改变打开页面时的引擎，失败也不自动换服务。
+  - 实机：Chrome for Testing 1228 加载日常扩展目录，英文维基百科 Brick 条目。弹窗菜单显示四项，选 Google 后设置页同步显示 Google；单句划词得到中文，整页翻译得到 7 段中文，控制台 0 报错。全程只用界面操作，没有手改存储。
+- `5835e5aa`：Chrome 内置翻译在语言包未就绪或版本不支持时不再一直转圈，划词和整页都直接说明原因并建议换 Google。
+  - 实机同一页面选 Chrome：提示「Chrome 内置翻译还没下载语言包，请先到设置里点「测试所选服务」完成下载，或换用 Google 免费翻译。」，不再空白。没有实际下载语言包，所以 Chrome 翻译成功的那条路径仍未验收。
+- `b3e291e5`：悬浮球隐藏后，扩展弹窗底部出现「恢复本站悬浮球」；只清当前站点的隐藏标记，保留拖动位置，刷新后仍在原位置。全局开关关闭时同一位置显示「悬浮球已关闭 · 去设置开启」，跳到设置页对应开关。
+  - 实机：Brick 页面把球拖到 top 292px，用球上的菜单隐藏，弹窗点恢复后立即出现，刷新后仍在 292px；另一站点照常显示；关闭全局开关后文案和跳转正确。只用了现有 `ball` 与 `ballSites`。
+- YouTube 自动字幕：被登录验证拦住，本轮未通过。两个公开视频（`arj7oStGLkU`、`jNQXAC9IVRw`）都返回 `playabilityStatus.status = LOGIN_REQUIRED`（「请登录，以便我们确认你不是聊天机器人」），`captionTracks` 为空，video 的 `readyState` 为 0、没有 `src`，点播放无反应；换成常规 Chrome 标识并关闭 automation 特征后结果相同。所以自动载入、换轨、点句跳转三项没有证据；字幕获取代码、现有真实请求 URL 和凭证参数都没有改动。
+  - 只算导入、不算自动字幕的替代验证：同一页面导入三行英文 SRT，字幕栏显示 3 行、语言 en、时间 0:01 / 0:04 / 0:07；在字幕栏菜单选 Google 后点「翻译全文」，3 行都得到中文，状态「已译 3/3 · Google 翻译」，译文与当前轨逐行对应。
+- 测试与静态检查：两个新测试（四个服务与 Microsoft 保留、悬浮球恢复）单独通过。`study-youtube-overlay` 与 `study-youtube-reader` 合计 9 项失败是既有问题：在 `4753a8a0` 的干净副本上同样 9 项失败，原因是测试环境没有 `chrome` 全局，而阅读器 `_mount` 直接读 `chrome.storage.onChanged`；本轮没改那一行，也没顺手修。ESLint：两个新文件、`page-translate.js`、`subtitle-settings.js` 为 0；`youtube-overlay.js` 40、`youtube-reader.js` 64，均不高于此前记录，改动行没有报错。`tsc` 仍为 195。
+- 边界：只加载日常扩展目录和临时 Profile，没有登录任何账号；没有调用付费模型，没有写正式笔记/卡片/排程，未读 Obsidian；没有新开分支或 PR，未触碰 `companion-app/`。
 
 ## 2026-10-21 审查修正及批 4–6 完成
 
