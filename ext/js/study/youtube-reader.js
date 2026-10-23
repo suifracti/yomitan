@@ -161,6 +161,8 @@ export class YoutubeReader extends EventTarget {
         this._loadController = null;
         /** @type {string[]} Caption requests made by the player itself (they carry its own tokens). */
         this._seen = [];
+        /** @type {{url: URL, body: string}|null} */
+        this._capturedCaption = null;
         /** @type {() => void} */
         this._timeListener = () => this._onTime();
         /** @type {{id: string, start: number, end: number, video: HTMLVideoElement}|null} */
@@ -179,6 +181,18 @@ export class YoutubeReader extends EventTarget {
 
     /** */
     start() {
+        if (this._site.kind === 'youtube') {
+            window.addEventListener('message', (/** @type {MessageEvent<{type?: string, url?: string, body?: string}|null>} */ event) => {
+                const data = event.data;
+                if (event.source !== window || event.origin !== location.origin || data?.type !== 'yomitan-caption-response' || typeof data.url !== 'string' || typeof data.body !== 'string') { return; }
+                const url = captionUrl(data.url, youtubeVideoId(location.href));
+                if (url && data.body.trim()) {
+                    this._capturedCaption = {url, body: data.body};
+                    this.rememberRequest(url.href);
+                }
+            });
+            window.postMessage({type: 'yomitan-caption-response', ready: true}, location.origin);
+        }
         try {
             const observer = new PerformanceObserver((list) => {
                 for (const entry of list.getEntries()) { this.rememberRequest(entry.name); }
@@ -1097,7 +1111,9 @@ export class YoutubeReader extends EventTarget {
                 timedOut = true;
                 controller.abort();
             }, WAIT_MS);
-            const response = await fetch(url.href, {credentials: 'include', signal: controller.signal});
+            const capturedBody = this._capturedCaption;
+            const matches = capturedBody && ['v', 'lang', 'kind', 'name', 'tlang'].every((key) => capturedBody.url.searchParams.get(key) === url.searchParams.get(key));
+            const response = matches ? new Response(capturedBody.body) : await fetch(url.href, {credentials: 'include', signal: controller.signal});
             const text = response.ok ? await response.text() : '';
             if (generation !== this._generation) { return; }
             if (!text.trim()) {

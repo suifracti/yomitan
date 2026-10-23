@@ -1159,6 +1159,20 @@ export class StudyService {
 export function prepareStudyService(lookupDictionary = null) {
     if (preparedRuntimes.has(chrome.runtime)) { return; }
     preparedRuntimes.add(chrome.runtime);
+    if (chrome.scripting?.registerContentScripts) {
+        const id = 'study-youtube-caption-capture';
+        const update = async () => {
+            const stored = await chrome.storage.local.get('studySubtitlePrefs');
+            const enabled = stored.studySubtitlePrefs?.enabled !== false;
+            const registered = (await chrome.scripting.getRegisteredContentScripts({ids: [id]})).length > 0;
+            if (enabled && !registered) { await chrome.scripting.registerContentScripts([{id, js: ['js/study/youtube-caption-capture.js'], matches: ['https://www.youtube.com/*'], world: 'MAIN', runAt: 'document_start'}]); }
+            if (!enabled && registered) { await chrome.scripting.unregisterContentScripts({ids: [id]}); }
+        };
+        let pending = update().catch((error) => log.error(error));
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes.studySubtitlePrefs) { pending = pending.then(update).catch((error) => log.error(error)); }
+        });
+    }
     const service = new StudyService(chrome.storage.local);
     const companionOpen = prepareStudyCompanion(service, lookupDictionary);
     // Near-real-time Obsidian↔Anki sync while the browser runs; each pass only touches what changed.
