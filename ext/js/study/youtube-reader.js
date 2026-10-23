@@ -1136,7 +1136,7 @@ export class YoutubeReader extends EventTarget {
             const text = response.ok ? await response.text() : '';
             if (generation !== this._generation) { return; }
             if (!text.trim()) {
-                this._status(`YouTube 没有返回字幕内容（HTTP ${response.status}）；可关掉 CC 再打开后重试。`);
+                this._status(`YouTube 没有返回字幕内容（HTTP ${response.status}）；请在播放器的字幕设置里选择英语，然后刷新页面。`);
                 return;
             }
             const language = url.searchParams.get('lang') ?? '';
