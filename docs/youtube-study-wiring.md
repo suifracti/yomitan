@@ -268,3 +268,11 @@
 - 影片 1 初次刷新沿用了上轮法语选择，自动载入 169 句、refetch/fr；选回英语载入后再刷新，得到表中英语结果，随后才切法语翻译。没有强行改变影片 2 的播放器语言。
 - 截图保存在本机 `/tmp/yomitan-track-video2.png`、`/tmp/yomitan-track-french.png`，不提交图片。另一个双语字幕扩展的画面不作为原生播放器或 Yomitan 成功证据。
 - **结论：小修和可观察属性已落地，但本轮真实成功样本均是 refetch，影片 2 仍失败，截取路径没有获得本轮实机通过证据。** 不再根据先前 739241 字符的回复推定轨道不匹配就是唯一原因；本轮未扩大诊断或加补丁。提交当前小修和实际结果，停下等审查，保留影片 2 调研页。未触碰 companion-app、正式笔记/卡片或付费模型。
+
+
+## 2026-10-23 影片 2 切回英语后的补充验收：capture 命中
+
+- 在 `b424fa2b` 版本，用户亲自把影片 2（`XqS7kIWMIDE`）的 YouTube 字幕切回英语并刷新。随后仅读取同一调研页的 Yomitan DOM，没有再操作轨道、重发请求、读 cookie/存储或修改代码。
+- **PASS**：`#study-yt-reader` 显示“英语（美国） · 444 句”；首句 `This quote has been living in my head rent free for the past year.`；时间按钮“回听 0:00”。属性为 `data-caption-source="capture"`、`data-caption-track="en-US|"`。这证明本次成功会话使用了截取正文，而不是 refetch；证据取自 Yomitan 自身，不取其他字幕扩展。
+- 截图：本机 `/tmp/yomitan-video2-english-capture-pass.png`。没有启动翻译，页面显示已翻译 0/444。
+- 更新结论：此前“本轮无截取路径实机通过证据”已有这一英语场景补充。影片 2 在用户选回英语并刷新后截取载入通过；之前阿拉伯语状态下的失败仍保留，不能推断任意轨道均已修复，也不据此断定先前失败的唯一根因。仅补充文档并推送，继续停下等审查。
