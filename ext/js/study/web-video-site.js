@@ -23,6 +23,7 @@
  * way until asked: a small launcher appears only while the pointer is over the video,
  * and the caption list lives in a floating panel that is closed by default.
  */
+import {readResponseJson} from '../core/json.js';
 import {mediaKeyOf} from './media-key.js';
 import {SUBTITLE_URL, cuesFromRows, guessLanguage, parseSubtitles} from './subtitle-formats.js';
 
@@ -64,6 +65,13 @@ html.${WEB_CAPTIONS_CLASS} :is(${NATIVE_CAPTIONS}){visibility:hidden!important}
  * @property {string} label
  * @property {string} language '' when unknown.
  * @property {(signal: AbortSignal) => Promise<import('./subtitle-session.js').SubtitleCue[]>} read
+ */
+
+/**
+ * @typedef {object} BilibiliSubtitle
+ * @property {string} lan
+ * @property {string} [lan_doc]
+ * @property {string} [subtitle_url]
  */
 
 /**
@@ -114,6 +122,36 @@ async function fetchSubtitle(url, signal) {
     const text = await response.text();
     if (text.length > FETCH_LIMIT) { throw new Error('字幕文件过大'); }
     return parseSubtitles(text, url).cues;
+}
+
+/**
+ * Subtitles Bilibili lists for the video. Its player paints captions itself and never
+ * requests the file, so the network log alone cannot find them.
+ * @returns {Promise<WebSource[]>} Empty on every other site.
+ */
+async function bilibiliSources() {
+    if (!/(^|\.)bilibili\.com$/.test(location.hostname)) { return []; }
+    const bvid = (location.pathname.match(/BV[0-9A-Za-z]+/) ?? [])[0];
+    if (!bvid) { return []; }
+    /**
+     * @param {string} url
+     * @returns {Promise<unknown>}
+     */
+    const get = async (url) => {
+        const response = await fetch(url, {credentials: 'include'}).catch(() => null);
+        return response?.ok ? await readResponseJson(response).catch(() => null) : null;
+    };
+    const pages = /** @type {{data?: {cid?: number}[]}|null} */ (await get(`https://api.bilibili.com/x/player/pagelist?bvid=${bvid}`));
+    const cid = pages?.data?.[0]?.cid;
+    if (!cid) { return []; }
+    const info = /** @type {{data?: {subtitle?: {subtitles?: BilibiliSubtitle[]}}}|null} */ (await get(`https://api.bilibili.com/x/player/wbi/v2?bvid=${bvid}&cid=${cid}`));
+    const subtitles = info?.data?.subtitle?.subtitles ?? [];
+    return subtitles.filter((item) => item.subtitle_url).map((item, index) => ({
+        id: `bili:${index}`,
+        label: `${item.lan_doc || item.lan}（B 站字幕）`,
+        language: item.lan.replace(/^ai-/, '').split('-')[0],
+        read: (signal) => fetchSubtitle(/** @type {string} */ (item.subtitle_url), signal),
+    }));
 }
 
 /**
@@ -198,12 +236,12 @@ export class WebVideoSite {
     /**
      * Every subtitle the page offers for the main video, best guesses first.
      * @param {string} learning Learning language, e.g. 'en'.
-     * @returns {WebSource[]}
+     * @returns {Promise<WebSource[]>}
      */
-    sources(learning = 'en') {
+    async sources(learning = 'en') {
         const video = mainVideo();
         /** @type {WebSource[]} */
-        const sources = [];
+        const sources = [...await bilibiliSources()];
         if (video) {
             const elements = [...video.querySelectorAll('track')];
             for (const [index, track] of [...video.textTracks].entries()) {
@@ -245,7 +283,7 @@ export class WebVideoSite {
      * @returns {Promise<{cues: import('./subtitle-session.js').SubtitleCue[], language: string, label: string, id: string, all: {id: string, label: string}[]}|null>}
      */
     async load({signal, sourceId, learning = 'en'}) {
-        const sources = this.sources(learning);
+        const sources = await this.sources(learning);
         const all = sources.map(({id, label}) => ({id, label}));
         const ordered = sourceId ? sources.filter((source) => source.id === sourceId) : sources;
         for (const source of ordered) {

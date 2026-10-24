@@ -1189,7 +1189,7 @@ export class YoutubeReader extends EventTarget {
         try {
             const found = await site.load({signal: controller.signal, sourceId, learning: 'en'});
             if (generation !== this._generation) { return; }
-            this._sources = found?.all ?? site.sources('en').map(({id, label}) => ({id, label}));
+            this._sources = found?.all ?? (await site.sources('en')).map(({id, label}) => ({id, label}));
             if (!found) {
                 this._status(controller.signal.aborted ? '字幕读取超时，可在「⋯」里重新载入，或导入字幕。' : '没有找到字幕，可导入字幕文件。');
                 view.status.append(this._button('导入字幕', () => this.pickFile()));
