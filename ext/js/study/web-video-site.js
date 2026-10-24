@@ -177,7 +177,7 @@ export class WebVideoSite {
     remember(name) {
         if (!SUBTITLE_URL.test(name) || this._seen.includes(name)) { return; }
         this._seen.push(name);
-        if (this._seen.length > 30) { this._seen.shift(); }
+        if (this._seen.length > 100) { this._seen.shift(); }
     }
 
     /** @param {() => void} onChange */
