@@ -16,6 +16,7 @@
 2. **测试要少而准**：
    - 每项功能一个正常路径测试，加一个"后端缺失时能退回"的测试。
    - 不写组合矩阵，不为同一行为重复测试。
+   - tsc 基线 **202** 个错误（2026-10-24 实测，`npx tsc --noEmit --project jsconfig.json`）。比 2026-10-21 的 195 多出的 7 个来自 2026-10-23 的两次提交：`d58079bc`（+4，`study-service.js` 1、`youtube-caption-capture.js` 2、`youtube-reader.js` 1）和 `b424fa2b`（+3，全在 `youtube-reader.js`）。要求是不增加，不专门去修。
 3. **范围**：
    - 只做本文写明的东西。
    - 不新增配置项、抽象层或兼容分支，除非本文写了。
@@ -49,7 +50,7 @@
 | 5 | `youtube-reader.js` 1500 行、`study-service.js` 1240 行、`study_library_core.py` 1140 行 | F1 / B 项各自顺手 |
 | 6 | 字幕列表一次渲染全部行，长视频会卡 | F2 |
 | 7 | 读不到本地视频（`file://`）和跨域 iframe 里的播放器 | F5 |
-| 8 | 测试债：工作区浏览器测试抖动；`test_study_video` 有一项失败；`test-study-library-flow.mjs` 留着旧的自动择卡断言；tsc 基线 195 个错误（2026-10-21 实测，`npx tsc --noEmit --project jsconfig.json`） | B6 / F8 |
+| 8 | 测试债：工作区浏览器测试抖动；`test_study_video` 有一项失败；`test-study-library-flow.mjs` 留着旧的自动择卡断言；tsc 基线 202 个错误（2026-10-24 实测，来源见「工作方式」第 2 条） | B6 / F8 |
 | 9 | 旧 ASB 受保护 cue 记录不能制卡、不能同步，和新阅读器是两套路径 | B5 |
 | 10 | **"认识这个词，却看不懂这句"没有被记录**：掌握度按词汇总，新义项、搭配、句子结构、一时没认出这几种卡点都会漏掉 | B8 / F9 |
 
