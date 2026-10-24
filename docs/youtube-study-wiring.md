@@ -327,3 +327,12 @@
 - 修复后验收：TED-1 连跑四轮，全部是「广告先播、字幕在广告期间载入」，播放到 12.9–14.4 秒时覆盖层都出现英语行（`I've been blown away by the whole thing.`），侧栏都有 1 行当前句；TED-2 播放到 18.9 秒时同样有字幕行与当前句。同一 TED 页面在播放第 8 秒和第 20 秒各数一次监听器，播放元素上都是 7 个（TED 自己的 6 个 + 我们的 1 个），没有叠加。
 - Vimeo 仍自动载入 `English（播放器字幕） · 6 句`；这个环境里 Vimeo 播放器起不来（`readyState 0`、`currentTime` 一直是 0），不加载扩展的对照也一样，所以播放时的字幕行没法在这里验证。YouTube 影片 1（`arj7oStGLkU`）仍停在「请登录，以便我们确认你不是聊天机器人」，没有可播放环境。
 - TED-2 只跑到「字幕载入 258 句、播放器未开始播放」就结束，没有拿到可对比的失败样本；上一条的结论以 TED-1 的七次为准。
+
+### B 站字幕：播放器自己画字幕，拿不到文件 URL（2026-10-24）
+
+- 环境：用户已登录的主 Chrome（真实账号），只新建一个调研标签页，未读取 cookie、存储或浏览记录。前一轮「B 站需要登录」的说法要修正：登录后页面确实能显示字幕，问题不在登录。
+- 现象：视频在播、播放器自己显示英文行，扩展却停在 `没有找到字幕，可导入字幕文件。`。`performance.getEntriesByType('resource')` 里 `bfs/subtitle` 与 `bfs/ai_subtitle` 都是 0 条；`<video>` 的 `textTracks` 为 0——B 站不用 `<track>`，字幕由播放器自己的 DOM（`bili-subtitle-x-subtitle-panel`）绘制。
+- 接口：`x/player/v2` 返回 `zh-Hans` 与 `ai-zh`；`x/player/wbi/v2`（未签名，`code` 仍为 0）返回 `en-US`。字幕文件在 `i0.hdslb.com/bfs/subtitle/*.json`，匿名可读（200，`body` 107 段），带凭据的请求反而被 CORS 拒绝——现有的 `fetchSubtitle` 先试 `credentials: 'omit'`，正好走通。
+- 改动：`sources()` 改成 async；只在 `bilibili.com` 上追加来源——先用 `pagelist` 取 cid，再用 `wbi/v2` 的字幕列表，每轨一个来源，语言取 `lan`（AI 轨是 `ai-en` / `ai-zh`，比较前去掉 `ai-` 前缀），读取复用 `fetchSubtitle` 与已有的 B 站 JSON 解析。其他站点直接返回空数组。
+- 验收：`BV1m6WEz3EJL` 自动载入 `English(US)（B 站字幕） · 69 句`，首句 `Imagine your brain as a Wi-Fi router` / 0:00（107 段解析后并成 69 句）。只有 AI 中文字幕的 `BV1xrnz6gEVD` 载入 `中文（B 站字幕） · 144 句`。同时有 AI 中文与 AI 英文的 `BV1w6ZEYrEsb` 在来源菜单里列出 `English（B 站字幕）` 与 `中文（B 站字幕）`，默认英语 103 句，切到中文后变成 74 句。
+- 回归：TED 仍是 `full.vtt（页面字幕文件） · 271 句`，Vimeo 仍是 `English（播放器字幕） · 6 句`。
