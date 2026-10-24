@@ -142,7 +142,7 @@ async function bilibiliSources() {
         return response?.ok ? await readResponseJson(response).catch(() => null) : null;
     };
     const pages = /** @type {{data?: {cid?: number}[]}|null} */ (await get(`https://api.bilibili.com/x/player/pagelist?bvid=${bvid}`));
-    const cid = pages?.data?.[0]?.cid;
+    const cid = pages?.data?.[(Number(new URLSearchParams(location.search).get('p')) || 1) - 1]?.cid;
     if (!cid) { return []; }
     const info = /** @type {{data?: {subtitle?: {subtitles?: BilibiliSubtitle[]}}}|null} */ (await get(`https://api.bilibili.com/x/player/wbi/v2?bvid=${bvid}&cid=${cid}`));
     const subtitles = info?.data?.subtitle?.subtitles ?? [];
