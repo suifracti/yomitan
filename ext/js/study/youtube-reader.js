@@ -209,6 +209,8 @@ export class YoutubeReader extends EventTarget {
             observer.observe({type: 'resource', buffered: true});
         } catch { /* Without resource timing the user still gets an explicit failure message. */ }
         this._site.watch(() => this._sync());
+        // A player can hand playback to another <video> without changing the media key.
+        window.setInterval(() => this._rebindVideo(), 1500);
         window.addEventListener('resize', () => this._place());
         if (!this._fixedPrefs) {
             void readSubtitlePrefs().then((prefs) => this.setPrefs(prefs));
@@ -652,9 +654,9 @@ export class YoutubeReader extends EventTarget {
 
     /** Players that rebuild their <video> keep the same captions; follow the new element. */
     _rebindVideo() {
-        if (!this._session || this._video?.isConnected) { return; }
+        if (!this._session) { return; }
         const video = this._site.video();
-        if (!video) { return; }
+        if (!video || video === this._video) { return; }
         this._restoreReplay?.();
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._video = video;
