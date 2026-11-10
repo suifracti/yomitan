@@ -278,14 +278,17 @@ export class WebVideoSite {
     }
 
     /**
-     * Reads the chosen (or best) source; unreadable ones are skipped with a note.
-     * @param {{signal: AbortSignal, sourceId?: string, learning?: string}} options
+     * Reads an explicit choice, or the remembered source before trying the best available one.
+     * @param {{signal: AbortSignal, sourceId?: string, preferredId?: string, learning?: string}} options
      * @returns {Promise<{cues: import('./subtitle-session.js').SubtitleCue[], language: string, label: string, id: string, all: {id: string, label: string}[]}|null>}
      */
-    async load({signal, sourceId, learning = 'en'}) {
+    async load({signal, sourceId, preferredId, learning = 'en'}) {
         const sources = await this.sources(learning);
         const all = sources.map(({id, label}) => ({id, label}));
-        const ordered = sourceId ? sources.filter((source) => source.id === sourceId) : sources;
+        const preferred = sources.find((source) => source.id === preferredId);
+        const ordered = sourceId ?
+            sources.filter((source) => source.id === sourceId) :
+            (preferred ? [preferred, ...sources.filter((source) => source !== preferred)] : sources);
         for (const source of ordered) {
             if (signal.aborted) { return null; }
             try {
@@ -293,7 +296,7 @@ export class WebVideoSite {
                 if (cues.length === 0) { continue; }
                 const language = source.language || guessLanguage(cues);
                 // Without a chosen source, skip a track in another language when the learning language may follow.
-                if (!sourceId && language !== learning && sources.some((other) => other !== source && other.language === learning)) { continue; }
+                if (!sourceId && source !== preferred && language !== learning && sources.some((other) => other !== source && other.language === learning)) { continue; }
                 return {cues, language, label: source.label, id: source.id, all};
             } catch { /* try the next one */ }
         }

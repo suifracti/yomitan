@@ -90,6 +90,8 @@ export class YoutubeReader extends EventTarget {
         this._savedAt = 0;
         /** @type {number} Resume point offered for this video, or -1. */
         this._resumeMs = -1;
+        /** @type {boolean} Keep initial rendering from replacing the saved resume position. */
+        this._restoringVideoState = false;
         /** @type {import('./subtitle-prefs.js').SubtitlePrefs} */
         this._prefs = normalizeSubtitlePrefs({...DEFAULT_SUBTITLE_PREFS, ...prefs});
         /** @type {boolean} Tests pass fixed preferences instead of reading storage. */
@@ -402,7 +404,11 @@ export class YoutubeReader extends EventTarget {
         const key = this._mediaKey;
         if (!key) { return; }
         const state = await readVideoState(key);
-        if (!state || this._rawSession !== raw) { return; }
+        if (this._rawSession !== raw) { return; }
+        if (!state) {
+            this._restoringVideoState = false;
+            return;
+        }
         if (typeof state.offsetMs === 'number' && state.offsetMs !== 0 && state.trackKey === raw.source.trackKey) { this.setOffset(state.offsetMs); }
         const at = state.resumeMs;
         const now = (this._video?.currentTime ?? 0) * 1000;
@@ -412,6 +418,7 @@ export class YoutubeReader extends EventTarget {
             this._view.resume.hidden = false;
             this._emit('resume', {ms: at});
         }
+        this._restoringVideoState = false;
     }
 
     /** Starts or stops the shadowing check with the preference. */
@@ -467,7 +474,7 @@ export class YoutubeReader extends EventTarget {
      */
     _saveProgress(playbackMs) {
         const key = this._mediaKey;
-        if (!key || !this._video || this._video.paused || Date.now() - this._savedAt < 5000) { return; }
+        if (!key || this._restoringVideoState || !this._video || this._video.paused || Date.now() - this._savedAt < 5000) { return; }
         this._savedAt = Date.now();
         void writeVideoState(key, {resumeMs: Math.max(0, Math.round(playbackMs))});
         if (this._resumeMs >= 0 && Math.abs(playbackMs - this._resumeMs) < 15000) { this._clearResume(); }
@@ -681,6 +688,7 @@ export class YoutubeReader extends EventTarget {
         this._session = null;
         this._cardContexts = []; this._recommendationItems = [];
         this._rawSession = null;
+        this._restoringVideoState = false;
         this._aiGroups = null;
         this._fileTranslations = new Map();
         this._sources = [];
@@ -858,7 +866,7 @@ export class YoutubeReader extends EventTarget {
         menu.append(shortcutHint);
         const difficulty = document.createElement('small');
         difficulty.className = 'r-difficulty';
-        head.append(title, difficulty);
+        head.append(title, difficulty, resume);
         const toolbar = document.createElement('div'); toolbar.className = 'r-toolbar';
         toolbar.append(translate, progress, cancel, follow, more);
         const list = document.createElement('div');
@@ -1031,6 +1039,7 @@ export class YoutubeReader extends EventTarget {
             trackName: meta.label,
         }, cues);
         this._rawSession = session;
+        this._restoringVideoState = true;
         this._aiGroups = null;
         /** @type {Map<string, string>} */
         const translations = bilingual?.translations ?? new Map();
@@ -1155,6 +1164,7 @@ export class YoutubeReader extends EventTarget {
             }, cuesFromTimedText(text));
             if (chosen) { await writeVideoState(`youtube:${videoId}`,{selectedTrackKey:captionTrackId(chosen)}); }
             this._rawSession = session;
+            this._restoringVideoState = true;
             this._aiGroups = null;
             this._fileTranslations = new Map();
             this._offsetMs = 0;
@@ -1181,13 +1191,16 @@ export class YoutubeReader extends EventTarget {
         const view = this._view;
         const site = this._site;
         if (!view || !this._mediaKey || generation !== this._generation || this._loadController || site.kind !== 'web') { return; }
+        const key = this._mediaKey;
         const controller = new AbortController();
         this._loadController = controller;
         const timeout = setTimeout(() => controller.abort(), WAIT_MS);
         view.load.disabled = true;
         this._status('正在查找这个视频的字幕…');
         try {
-            const found = await site.load({signal: controller.signal, sourceId, learning: 'en'});
+            const state = sourceId ? null : await readVideoState(key);
+            if (generation !== this._generation || controller.signal.aborted) { return; }
+            const found = await site.load({signal: controller.signal, sourceId, preferredId: state?.selectedTrackKey, learning: 'en'});
             if (generation !== this._generation) { return; }
             this._sources = found?.all ?? (await site.sources('en')).map(({id, label}) => ({id, label}));
             if (!found) {
@@ -1197,6 +1210,7 @@ export class YoutubeReader extends EventTarget {
                 return;
             }
             this._useCues(found.cues, {trackKey: found.id, label: found.label, language: found.language, acquisition: 'provider'});
+            await writeVideoState(key, {selectedTrackKey: found.id});
         } catch (error) {
             if (generation === this._generation) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {

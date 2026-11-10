@@ -31,6 +31,8 @@ vi.stubGlobal('ResizeObserver', class {
 const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
 const {YoutubeOverlay} = await import('../ext/js/study/youtube-overlay.js');
 const {mediaKeyOf, timedUrl} = await import('../ext/js/study/media-key.js');
+const {WebVideoSite} = await import('../ext/js/study/web-video-site.js');
+const {writeVideoState} = await import('../ext/js/study/subtitle-prefs.js');
 
 test('media keys and time links match the bridge rules', () => {
     expect(mediaKeyOf('https://youtu.be/abcdefghijk?t=3')).toBe('youtube:abcdefghijk');
@@ -182,7 +184,7 @@ test('shadowing pauses after each sentence (after the chosen repeats); offset an
         reader.setOffset(1200);
         expect(reader.session?.offsetMs).toBe(1200);
         expect(reader.rowInfo('1')?.start).toBe(3.2);
-        expect(document.querySelector('#study-yt-reader output[data-offset]')?.textContent).toBe('+1.2 秒');
+        // Offset controls live in the video panel; verify the shared timing and saved state here.
         await vi.waitFor(() => expect(store.studyVideoState).toMatchObject({'web:course.example.org/watch?id=7': {offsetMs: 1200, trackKey: 'track:0'}}));
 
         resume.click();
@@ -220,4 +222,73 @@ test('the words tab writes a study summary only on a real click', async () => {
     await reader.writeSummary();
     expect(calls).toContainEqual(['libraryVideoSummary', {mediaKey: 'web:course.example.org/watch?id=7', title: document.title}]);
     expect(document.querySelector('#study-yt-reader .r-summary [role=status]')?.textContent).toContain('已写入 1 个词');
+});
+
+
+test('web captions restore the chosen track and its learning position, with default fallback when unavailable', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    const key = mediaKeyOf(location.href);
+    /** @type {Record<string, unknown>} */
+    const store = {studyVideoState: {[key]: {selectedTrackKey: 'track:1', trackKey: 'track:1', offsetMs: 1200, resumeMs: 95000, at: 1}}};
+    vi.stubGlobal('chrome', {storage: {
+        local: {
+            get: async (/** @type {string} */ name) => ({[name]: store[name]}),
+            set: async (/** @type {Record<string, unknown>} */ values) => { Object.assign(store, values); },
+        },
+        onChanged: {addListener() {}, removeListener() {}},
+    }});
+    try {
+        const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+        Object.defineProperty(video, 'currentTime', {configurable: true, writable: true, value: 0});
+        Object.defineProperty(video, 'paused', {configurable: true, value: false});
+        const cues = [{id: '0', sourceIndex: 0, startMs: 0, endMs: 2000, text: 'Keep going.'}];
+        const sources = [
+            {id: 'track:0', label: 'English', language: 'en', read: async () => cues},
+            {id: 'track:1', label: '中文', language: 'zh', read: async () => [{...cues[0], text: '继续学习。'}]},
+        ];
+        const site = fakeSite(null);
+        site.sources = async () => sources;
+        site.load = (/** @type {Parameters<import('../ext/js/study/web-video-site.js').WebVideoSite['load']>[0]} */ options) => WebVideoSite.prototype.load.call(/** @type {never} */ (site), options);
+        const reader = new YoutubeReader({prefs: {merge: false, resume: true}, site: /** @type {never} */ (site), call: async () => ({items: []})});
+        reader.start();
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('zh'));
+        await vi.waitFor(() => expect(reader.session?.offsetMs).toBe(1200));
+        expect(reader.resumeMs).toBe(95000);
+        expect(video.currentTime).toBe(0);
+        expect(store.studyVideoState).toMatchObject({[key]: {resumeMs: 95000}});
+        const resume = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader button[title="回到上次学到的句子"]'));
+        expect(resume.isConnected).toBe(true);
+        expect(resume.hidden).toBe(false);
+        expect(resume.textContent).toBe('从 1:35 继续');
+
+        const language = /** @type {HTMLSelectElement} */ (document.querySelector('#study-yt-reader select[data-source]'));
+        language.value = 'track:0';
+        language.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('en'));
+        await vi.waitFor(() => expect(store.studyVideoState).toMatchObject({[key]: {selectedTrackKey: 'track:0', resumeMs: 95000}}));
+        expect(reader.session?.offsetMs).toBe(0);
+
+        // A missing saved track must not hide other available captions on reopening.
+        store.studyVideoState = {[key]: {selectedTrackKey: 'removed-track', at: 1}};
+        const before = reader.session;
+        reader.loadCaptions();
+        await vi.waitFor(() => expect(reader.session).not.toBe(before));
+        expect(reader.session?.source.language).toBe('en');
+        expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('English');
+
+        // Progress, track choice and offset can be saved together from the same video.
+        await Promise.all([
+            writeVideoState(key, {selectedTrackKey: 'track:1'}),
+            writeVideoState(key, {resumeMs: 120000}),
+            writeVideoState(key, {offsetMs: 500, trackKey: 'track:1'}),
+        ]);
+        expect(store.studyVideoState).toMatchObject({[key]: {selectedTrackKey: 'track:1', resumeMs: 120000, offsetMs: 500}});
+        reader.loadCaptions();
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('zh'));
+        await vi.waitFor(() => expect(reader.session?.offsetMs).toBe(500));
+        expect(reader.resumeMs).toBe(120000);
+        expect(video.currentTime).toBe(0);
+    } finally {
+        vi.unstubAllGlobals();
+    }
 });

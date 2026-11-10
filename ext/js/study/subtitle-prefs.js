@@ -151,6 +151,7 @@ export function onSubtitlePrefsChanged(callback) {
 export const VIDEO_STATE_KEY = 'studyVideoState';
 
 const VIDEO_STATE_LIMIT = 300;
+let videoStateWrites = Promise.resolve();
 
 /** @typedef {{resumeMs?: number, offsetMs?: number, trackKey?: string, selectedTrackKey?: string, at: number}} VideoState */
 
@@ -162,6 +163,7 @@ export async function readVideoState(mediaKey) {
     const area = storageArea();
     if (!area || !mediaKey) { return null; }
     try {
+        await videoStateWrites;
         const stored = /** @type {Record<string, unknown>} */ (await area.get(VIDEO_STATE_KEY));
         const all = /** @type {Record<string, VideoState>} */ (stored[VIDEO_STATE_KEY] && typeof stored[VIDEO_STATE_KEY] === 'object' ? stored[VIDEO_STATE_KEY] : {});
         const row = all[mediaKey];
@@ -179,14 +181,18 @@ export async function readVideoState(mediaKey) {
 export async function writeVideoState(mediaKey, patch) {
     const area = storageArea();
     if (!area || !mediaKey) { return; }
-    try {
-        const stored = /** @type {Record<string, unknown>} */ (await area.get(VIDEO_STATE_KEY));
-        const all = /** @type {Record<string, VideoState>} */ ({...(stored[VIDEO_STATE_KEY] && typeof stored[VIDEO_STATE_KEY] === 'object' ? stored[VIDEO_STATE_KEY] : {})});
-        all[mediaKey] = {...all[mediaKey], ...patch, at: Date.now()};
-        const keys = Object.keys(all);
-        if (keys.length > VIDEO_STATE_LIMIT) {
-            for (const key of keys.sort((a, b) => all[a].at - all[b].at).slice(0, keys.length - VIDEO_STATE_LIMIT)) { delete all[key]; }
-        }
-        await area.set({[VIDEO_STATE_KEY]: all});
-    } catch { /* Memory is a convenience; studying continues without it. */ }
+    // Track choice, offset and playback progress share this read-modify-write record.
+    videoStateWrites = videoStateWrites.then(async () => {
+        try {
+            const stored = /** @type {Record<string, unknown>} */ (await area.get(VIDEO_STATE_KEY));
+            const all = /** @type {Record<string, VideoState>} */ ({...(stored[VIDEO_STATE_KEY] && typeof stored[VIDEO_STATE_KEY] === 'object' ? stored[VIDEO_STATE_KEY] : {})});
+            all[mediaKey] = {...all[mediaKey], ...patch, at: Date.now()};
+            const keys = Object.keys(all);
+            if (keys.length > VIDEO_STATE_LIMIT) {
+                for (const key of keys.sort((a, b) => all[a].at - all[b].at).slice(0, keys.length - VIDEO_STATE_LIMIT)) { delete all[key]; }
+            }
+            await area.set({[VIDEO_STATE_KEY]: all});
+        } catch { /* Memory is a convenience; studying continues without it. */ }
+    });
+    await videoStateWrites;
 }
