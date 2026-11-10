@@ -69,6 +69,36 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('keeps a pending-filter click made while the previous page is loading', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const pending = {id: 'a'.repeat(32),
+            entry: {word: 'brick', sentence: 'A brick wall.', url: '', title: ''},
+            vaultSaved: true,
+            syncState: 'missing',
+            ankiState: 'pending'};
+        /** @type {() => void} */
+        let release = () => {};
+        const first = new Promise((resolve) => { release = () => resolve({items: [], total: 0}); });
+        mocks.studyCall.mockImplementation(async (action, value) => {
+            if (action === 'syncPending' || action === 'saved') { return []; }
+            if (action === 'libraryList') { return value.scope === 'pending' ? {items: [pending], total: 1, needsAttention: 1} : first; }
+            if (action === 'libraryReconcile') { return pending; }
+            if (action === 'ankiToday') { return {paused: true}; }
+            throw new Error(`Unexpected call: ${action}`);
+        });
+        await import('../ext/js/pages/study-library.js');
+        await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryList', expect.objectContaining({scope: 'all'})));
+        document.querySelector('[data-library-category="pending"]').click();
+        release();
+        await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryList', expect.objectContaining({scope: 'pending'})));
+        await vi.waitFor(() => expect(document.querySelector('[data-record-id] h2')?.textContent).toBe('brick'));
+        expect(document.querySelector('[data-library-category="pending"]').getAttribute('aria-pressed')).toBe('true');
+        expect(document.querySelector('[data-library-category="pending"]').textContent).toBe('需处理 1');
+    });
+
     test('an open favorites view follows local stars without calling a model or reloading all records', async () => {
         vi.resetModules();
         makePageDom();
@@ -248,9 +278,10 @@ describe('study library page', () => {
 
         await import('../ext/js/pages/study-library.js');
         await vi.waitFor(() => expect(document.querySelector('.study-library-conflicts')).not.toBeNull());
-        expect(calls.slice(0, 4).map((call) => call.action)).toEqual(['syncPending', 'saved', 'libraryList', 'libraryReconcile']);
-        expect(calls[2].payload).toMatchObject({scope: 'all', offset: 0, language: 'en'});
-        expect(calls[3].payload).toMatchObject({id: 'native-record-id', language: 'en'});
+        const initialCalls = calls.filter((call) => call.action !== 'ankiToday');
+        expect(initialCalls.slice(0, 4).map((call) => call.action)).toEqual(['syncPending', 'saved', 'libraryList', 'libraryReconcile']);
+        expect(initialCalls[2].payload).toMatchObject({scope: 'all', offset: 0, language: 'en'});
+        expect(initialCalls[3].payload).toMatchObject({id: 'native-record-id', language: 'en'});
         expect(document.querySelector('.study-library-conflicts')).not.toBeNull();
 
         document.querySelector('[data-library-category="favorites"]').click();

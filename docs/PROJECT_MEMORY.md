@@ -9,7 +9,7 @@
 | 用户说法或本次触及范围 | 到哪里找 |
 |---|---|
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
-| 记笔记、制卡、保存/同步、人工卡片和排程；只在Anki、重建后记录消失 | L-002；study_sync.orphan_action、test_study_repair.py；docs/youtube-study-wiring.md |
+| 记笔记、制卡、保存/同步、人工卡片和排程；只在Anki、重建后记录消失、点需处理没反应 | L-002；study_sync.orphan_action、test_study_repair.py；docs/youtube-study-wiring.md |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
@@ -50,6 +50,8 @@
 “只在Anki／重建笔记／恢复后记录消失”：orphan_action 原先每次无条件追加同一张卡，若上次回复丢失而缓存孤卡行仍在，再点恢复会重复同一card ID；同步区拒读重复卡，增量索引因此看不到刚恢复的记录。现按noteId保留单一关联，重试不重复追加；卡型用原有 study_kind:: 标签，保留原来无标签时的语境卡行为，不把所有新恢复卡硬写成context。test_study_repair原有连贯场景扩展了重复恢复与meaning卡型断言，两个缺口均先失败再通过，且确认无Anki写入/删除/移动/排程。复用旧库和标签，没有新增协议、配置或同步器；对应交接“2026-11-11 重建笔记的重试与原卡型”。
 
 “卡已恢复却一直提示被删除”：自动同步原先只在记录还不是missing时比较ID是否消失；处于missing的记录即使同一Anki ID重新出现也不会核对，且mod未变时edited:1无法补触发。现复用每轮已有的带学习标签ID清单，关联ID缺失状态与记录missing状态不一致时才reconcile；恢复后安静轮次不再重复核对。新增临时删除→同ID/同mod返回→清除missing→安静一轮用例通过，原2000卡notesInfo只读当日编辑与候选用例也通过。没有实测Anki撤销按钮，不把替身情景冒充正式库行为；未新增扫描或改变排程。
+
+“点需处理没反应／切分类后空白”：学习库loadPage在loading时直接return，分类按钮先改category，因此前一次列表慢响应时会丢失新分类查询。现仅记住一个待刷新请求，旧列表返回后不提交过期快照，完成后读取当前所选分类；不加计时器或并发拉取。study-library-page.test.js新增慢列表期间切pending的DOM场景通过，原收藏/同步/冲突选择场景也通过；旧用例最初把已有ankiToday调用算进固定四次流程，现只从该断言排除今日条，保留原四步与载荷断言。JS及测试lint均0，未实测Chrome。
 
 ## L-003 YouTube：HTTP 200、非空截取与实际用上是三件事
 

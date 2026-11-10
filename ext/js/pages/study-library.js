@@ -378,6 +378,7 @@ async function initializePage() {
         let needsAttention = 0;
         let offset = 0;
         let loading = false;
+        let reloadRequested = false;
         let loaded = false;
         let category = 'all';
 
@@ -795,7 +796,10 @@ async function initializePage() {
 
         /** @param {boolean} reset */
         async function loadPage(reset) {
-            if (loading) { return; }
+            if (loading) {
+                if (reset) { reloadRequested = true; }
+                return;
+            }
             loading = true;
             if (reset && category !== 'manual-known') { void refreshToday(); }
             more.disabled = true;
@@ -814,6 +818,7 @@ async function initializePage() {
             await refreshSavedWords();
             try {
                 const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope: ['pending', 'anki-only', 'manual-known'].includes(category) ? category : 'all', offset: start});
+                if (reloadRequested) { return; }
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
                 if (reset) { records.clear(); }
                 for (const record of page) {
@@ -857,6 +862,10 @@ async function initializePage() {
             } finally {
                 loading = false;
                 render();
+                if (reloadRequested) {
+                    reloadRequested = false;
+                    void loadPage(true);
+                }
             }
         }
 
