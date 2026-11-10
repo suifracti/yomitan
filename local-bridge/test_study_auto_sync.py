@@ -141,6 +141,32 @@ class AutoSyncTests(unittest.TestCase):
         self.assertEqual([r['noteId'] for r in state['orphans']], [candidate])
         self.assertEqual(state['mastery']['notes']['1000'][0]['iv'], 30)
 
+    def test_restored_card_clears_missing_without_an_edit_timestamp_change(self):
+        import copy
+        ident = self.make_card()
+        note_id = next(iter(self.notes))
+        saved_note = copy.deepcopy(self.notes[note_id])
+        anki = self.library.anki
+        def readable_notes(action, params):
+            if action == 'notesInfo':
+                params = {'notes': [n for n in params['notes'] if n in self.notes]}
+            return anki(action, params)
+        self.library.anki = readable_notes
+        self.library.handle({'action': 'libraryAutoSync'})
+        del self.notes[note_id]
+        self.library.handle({'action': 'libraryAutoSync'})
+        self.assertEqual(self.library.handle({'action': 'libraryRead', 'ids': [ident]})['items'][0]['record']['syncState'], 'missing')
+
+        self.notes[note_id] = saved_note  # Same ID and mod, absent from edited:1.
+        self.calls.clear()
+        restored = self.library.handle({'action': 'libraryAutoSync'})
+        self.assertEqual(restored['synced'], 1)
+        record = self.library.handle({'action': 'libraryRead', 'ids': [ident]})['items'][0]['record']
+        self.assertEqual(record['syncState'], 'synced')
+        self.assertEqual([c['noteId'] for c in record['cards']], [note_id])
+        self.assertEqual(self.library.handle({'action': 'libraryAutoSync'})['synced'], 0)
+        self.assertFalse(any(a in self.calls for a in ('addNote', 'updateNoteFields', 'deleteNotes', 'setDueDate', 'changeDeck')))
+
     def test_rejects_extra_fields(self):
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryAutoSync', 'all': True})

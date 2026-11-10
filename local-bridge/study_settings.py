@@ -356,7 +356,8 @@ class YomitanLibrary:
                                     and not any(t in owner for t in n.get('tags', []))
                                     and any(re.fullmatch(r'study(?:card)?_[a-f0-9]{32}', t) for t in n.get('tags', []))]
                 for ident, (lib, _path, r) in records.items():
-                    if r.get('syncState') != 'missing' and any(n not in live for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n):
+                    missing = any(n not in live for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n)
+                    if (r.get('syncState') == 'missing') != missing:
                         changed.append((lib.target_id, ident))
                 for note in info if isinstance(info, list) else []:
                     nid, mod = str(note.get('noteId')), note.get('mod')
