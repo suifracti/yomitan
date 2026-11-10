@@ -339,11 +339,14 @@ test('translation UI saves the completed original Q&A without card selection or 
     assert.equal(h.nativeCalls.some((call) => call.action === 'libraryDraftCommit'), false);
 });
 
-test('reopening a saved context without the local journal preserves its learning text and permits new answers', async (t) => {
+test('reopening a saved context isolates older history and keeps new auto-synced answers', async (t) => {
     const h = await createHarness(t);
     const entry = {word: 'just', language: 'en', sentence: SENTENCE, context: 'The judge explains the decision.',
         url: ARTICLE_URL, title: 'Synthetic article', videoTime: 72,
-        meaning: MEANING, translation: TRANSLATION, notes: ANSWER, explanationSource: 'AI 辅助解释（非词典原文）'};
+        meaning: '原来保存的含义', translation: '原来保存的译文', notes: '原来保存的学习提示', explanationSource: 'AI 辅助解释（非词典原文）'};
+    // A rebuilt note can have no turnIds while older saved history remains locally.
+    await h.service.journal.append(entry, {meaning: '过期的本机解释', translation: '过期的本机译文', notes: '过期的提示'});
+    await h.service.journal.acknowledge(await h.service.journal.get(entry));
     const seeded = await h.native({action: 'librarySave', entry, makeCard: false}).promise;
     assert.equal(seeded.ok, true, seeded.error);
     const id = seeded.library.id;
@@ -351,7 +354,7 @@ test('reopening a saved context without the local journal preserves its learning
     const source = {...saved.entry, recordId: id, savedTurnIds: saved.turnIds ?? [], contextSelected: true};
     const {dom, container, view} = mountUi(SENTENCE, source);
     t.after(() => { view.cancel(); dom.window.close(); });
-    await waitFor(() => container.querySelector('[data-study-save="note"]'), 'restored learning controls');
+    await waitFor(() => container.querySelector('[data-study-translate="explain"]') && !container.querySelector('[data-study-translate="explain"]').disabled, 'restored learning controls');
     container.querySelector('[data-study-save="note"]').click();
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'restored save receipt');
     let read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
@@ -360,18 +363,20 @@ test('reopening a saved context without the local journal preserves its learning
     }
     container.querySelector('[data-study-add-card]').click();
     container.querySelector('[data-study-card-choice="context"]').click();
-    assert.ok(container.querySelector('[data-study-card-back]')?.value.includes(MEANING), 'context card uses the saved explanation');
+    assert.ok(container.querySelector('[data-study-card-back]')?.value.includes(entry.meaning), 'context card uses the saved explanation');
     assert.equal(h.modelCalls.length, 0, 'readback and a manual card preview do not invoke a model');
 
-    const answer = {meaning: '新解释：这句是在说决定公正。', translation: '新译文：这个决定是公正的。', notes: '新的学习提示。'};
-    await h.service.journal.append(entry, answer);
-    await h.service.sync.flush();
+    const sendMessage = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = async (message) => {
+        const response = await sendMessage(message);
+        if (message.studyAction === 'generate') { await h.service.sync.flush(); }
+        return response;
+    };
+    const answer = {meaning: MEANING, translation: TRANSLATION, notes: ANSWER};
+    container.querySelector('.study-followup').value = QUESTION;
+    container.querySelector('[data-study-translate="explain"]').click();
+    await waitFor(() => container.querySelector('.study-request-status')?.textContent.includes('点“记住它”'), 'new answer after fast automatic acknowledgement');
     assert.equal((await h.service.journal.conversation(entry)).every((turn) => turn.saved), true);
-    view.cancel();
-    container.replaceChildren();
-    view.render(container, SENTENCE, 'just', {url: ARTICLE_URL, title: entry.title, ...source});
-    await waitFor(() => container.querySelector('[data-study-save="note"]'), 'controls after new answer');
-    await waitFor(() => container.querySelector('.study-conversation-turn'), 'new answer readback');
     container.querySelector('[data-study-save="note"]').click();
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'new answer save');
     read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
@@ -396,6 +401,8 @@ test('reopening a saved context without the local journal preserves its learning
     const state = await latestState(h.bridge);
     assert.equal(state.markdownFiles.length, 1);
     assert.deepEqual(state.notes, {});
+    assert.equal(h.modelCalls.filter((call) => call.action === 'explain').length, 1);
+    assert.equal(h.modelCalls.some((call) => call.action === 'cards'), false);
     view.cancel();
     await waitFor(() => h.bridge.pending.size === 0, 'outstanding readback before closing the temporary bridge');
 });

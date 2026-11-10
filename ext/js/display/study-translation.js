@@ -327,12 +327,13 @@ export function prepareStudyTranslation() {
             const isCurrent = () => version === generation;
             const d = container.ownerDocument;
             const restoredTurnIds = new Set(source.savedTurnIds ?? []);
+            let historyInitialized = false;
             // Automatic sync can acknowledge a new answer before this view paints it.
             /**
              * @param {import('study').LearningTurn} turn
              * @returns {boolean}
              */
-            const currentAnswer = (turn) => !source.recordId || (source.savedTurnIds ? !restoredTurnIds.has(turn.id) : !turn.saved);
+            const currentAnswer = (turn) => !source.recordId || !restoredTurnIds.has(turn.id);
             delete container.dataset.studyRecordId;
             if (source.subtitleSnapshot) {
                 // Subtitle UI carries only a session reference; every action is authorized by private backend state.
@@ -677,6 +678,12 @@ export function prepareStudyTranslation() {
                 const translationCount = turns.filter((turn) => turn.mode === 'translate').length;
                 const questionCount = turns.length - translationCount;
                 historyLabel.textContent = `学习历史 · 问答 ${questionCount} 轮 · 原句翻译 ${translationCount} 次`;
+                if (!historyInitialized) {
+                    for (const turn of turns) {
+                        if (turn.saved) { restoredTurnIds.add(turn.id); }
+                    }
+                    historyInitialized = true;
+                }
                 const currentTurns = turns.filter(currentAnswer);
                 latest = currentTurns.at(-1) ?? null;
                 latestExplanation = [...currentTurns].reverse().find((turn) => turn.mode !== 'translate' && (turn.meaning?.trim() || turn.notes?.trim())) ?? null;
@@ -823,6 +830,8 @@ export function prepareStudyTranslation() {
                 lock(true);
                 status.textContent = mode === 'translate' ? '正在翻译当前原句…' : '正在连接本机 AI…已有回答保留在下方。';
                 void (sentenceTranslation !== void 0 ? Promise.resolve(true) : chrome.permissions.request({permissions: ['nativeMessaging']})).then(async (allowed) => {
+                    await initialHistoryReady;
+                    if (!isCurrent() || id !== requestId) { return; }
                     // Drop a dictionary translation that is holding the single native lock.
                     await studyCall('cancel', payload);
                     if (!isCurrent() || id !== requestId) { return; }
@@ -970,6 +979,6 @@ export function prepareStudyTranslation() {
             for (const control of container.querySelectorAll('button, input, textarea, select, summary')) {
                 control.classList.add('scan-disable');
             }
-            void restore();
+            const initialHistoryReady = restore();
         }};
 }
