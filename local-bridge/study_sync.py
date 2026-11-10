@@ -561,7 +561,10 @@ def orphan_action(library, p):
         front = _plain(info[0]['fields']['Word']['value'])
         back = parse_definition(info[0]['fields']['Definition']['value'], {})['answer']
         card_id = hashlib.sha256(('restored:' + str(p['noteId'])).encode()).hexdigest()[:32]
-        r.setdefault('cards', []).append({'id': card_id, 'front': front, 'back': back, 'noteId': p['noteId'], 'linkedExisting': True, 'state': 'synced', 'kind': 'context'})
+        kind = next((tag.removeprefix('study_kind::') for tag in info[0].get('tags', [])
+                     if tag.startswith('study_kind::') and tag.removeprefix('study_kind::') in CARD_STAGES), 'context')
+        if not any(c.get('noteId') == p['noteId'] for c in r.get('cards', [])):
+            r.setdefault('cards', []).append({'id': card_id, 'front': front, 'back': back, 'noteId': p['noteId'], 'linkedExisting': True, 'state': 'synced', 'kind': kind})
         r.update({'ankiState': 'synced', 'syncState': 'synced'})
         values = local_fields(r, body)
         values['cards'] = [{'id': c['id'], 'front': c['front'], 'back': c['back']} for c in r['cards']]

@@ -37,7 +37,11 @@ class RepairTests(unittest.TestCase):
         h.calls.clear()
         h.notes[2000]['fields']['Definition'] = '新的解释'
         h.library.handle({'action': 'libraryOrphan', 'noteId': 2000, 'choice': 'restore'})
+        # The first reply can be lost while the orphan list is still cached.
+        h.library.handle({'action': 'libraryOrphan', 'noteId': 2000, 'choice': 'restore'})
         restored = h.library.handle({'action': 'libraryList', 'scope': 'all'})['items'][0]
         self.assertTrue(restored['vaultSaved'])
         self.assertEqual(restored['entry']['meaning'], '新的解释')
+        self.assertEqual([c['noteId'] for c in restored['cards']], [2000])
+        self.assertEqual(restored['cards'][0]['kind'], 'meaning')
         self.assertFalse(any(a in h.calls for a in ('addNote', 'updateNoteFields', 'deleteNotes', 'setDueDate', 'changeDeck')))

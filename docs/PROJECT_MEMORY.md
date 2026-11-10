@@ -9,7 +9,7 @@
 | 用户说法或本次触及范围 | 到哪里找 |
 |---|---|
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
-| 记笔记、制卡、保存/同步、人工卡片和排程 | L-002；docs/youtube-study-wiring.md |
+| 记笔记、制卡、保存/同步、人工卡片和排程；只在Anki、重建后记录消失 | L-002；study_sync.orphan_action、test_study_repair.py；docs/youtube-study-wiring.md |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
@@ -45,7 +45,9 @@
 
 依据：既有 Vault 阶段反馈和当前项目保护约定。笔记保存不能隐式覆盖用户手工卡片或复习排程；同词不同原句/来源不能误归属。临时 Vault/FakeAnki、模拟字幕与真实 Profile 分层记录，图片或视频网址不能代替原声音频证据。
 
-下次：先查当前产品规格和保存链，而不是重新增加一个同步系统。保留具体版本、对象 ID 与冲突/删除语义；缺真实证据写未知。此条为要求与历史证据边界，不是本轮功能运行通过。
+下次：先查当前产品规格和保存链，而不是重新增加一个同步系统。保留具体版本、对象 ID 与冲突/删除语义；缺真实证据写未知。此前仅为要求与历史证据边界，2026-11-11以下新增临时链证据不代表正式库通过。
+
+“只在Anki／重建笔记／恢复后记录消失”：orphan_action 原先每次无条件追加同一张卡，若上次回复丢失而缓存孤卡行仍在，再点恢复会重复同一card ID；同步区拒读重复卡，增量索引因此看不到刚恢复的记录。现按noteId保留单一关联，重试不重复追加；卡型用原有 study_kind:: 标签，保留原来无标签时的语境卡行为，不把所有新恢复卡硬写成context。test_study_repair原有连贯场景扩展了重复恢复与meaning卡型断言，两个缺口均先失败再通过，且确认无Anki写入/删除/移动/排程。复用旧库和标签，没有新增协议、配置或同步器；对应交接“2026-11-11 重建笔记的重试与原卡型”。
 
 ## L-003 YouTube：HTTP 200、非空截取与实际用上是三件事
 
