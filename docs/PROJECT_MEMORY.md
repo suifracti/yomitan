@@ -10,6 +10,9 @@
 |---|---|
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
 | 记笔记、制卡、保存/同步、人工卡片和排程 | L-002；docs/youtube-study-wiring.md |
+| YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
+| TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
+| TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 
 ## 默认自动执行：不等用户提醒
 
@@ -19,13 +22,21 @@
 
 网页字幕来源从 `ext/js/study/web-video-site.js` 查起；共用翻译选项在 `ext/js/study/translation-engines.js`。词卡、笔记与 Anki 保存行为沿现行交接定位，不因“有一个按钮”就推断正式持久化链已通过。部署沿 `dev/sync-local.py`，不能绕过拒绝。旧 App/asbplayer 相关资料只作为沿革，不重新开发已放弃路线。
 
+| 触发与入口 | 处理与状态位置 | 输出与身份 |
+|---|---|---|
+| YouTube timedtext 响应 → 动态 MAIN 脚本 | study-service.js 注册；youtube-caption-capture.js 发固定消息；reader 按视频/轨道保留最多 10 份内存正文 | _load → SubtitleSession；DOM captionSource / captionTrack 表示成功会话来源，不是持久缓存 |
+| 网页视频字幕 → WebVideoSite.sources | B站按 bvid/p/cid 查来源；其他来源复用 TextTrack 或已发现的字幕 URL、fetchSubtitle 与 parseSubtitles | 共用阅读器、原文与时间；B站 p 属于来源身份，不按第一个 cid 猜选集 |
+| 播放器替换视频元素 → _rebindVideo | 取 site.video，移除旧 timeupdate 后绑定新元素；现行检查周期 1500 ms | 沿用同一字幕会话，更新覆盖层与侧栏当前句 |
+
 ## L-001 B站多P：有字幕不等于当前选集正确
 
 触发：修改站点字幕发现、选集、URL 解析或来源缓存。
 
 证据：[716e48a](https://github.com/suifracti/yomitan/commit/716e48aefb1e1546216c4f4c8d485ec3012b8df3) 的真实 diff。`bilibiliSources()` 先按 bvid 查询 pagelist；旧实现固定 `pages.data[0].cid`，所以第二 P 仍选第一 P。修复按 URL 的 p（默认1）选对应 cid，再查该 cid 的字幕列表。不是登录状态问题，也不需要重造字幕解析器。
 
-保留：默认第一P与显式第二P要对应正在播放内容；缺 cid 返回无可用来源，不猜内容。下次优先复用已有站点读取/解析链，检查受影响选集场景。提交 diff 只证明这处实现改变，不证明所有 URL 边界或浏览器实测；后续主 Chrome 记录存在于 `f496f4524edc6c4e0e35f1f1fd1405dbdba0147b`，本轮只看其提交元数据，未将其正文当已复验。
+保留：默认第一P与显式第二P要对应正在播放内容；缺 cid 返回无可用来源，不猜内容。B站即使 textTracks 和字幕资源请求为空，仍可能由播放器 DOM 绘字；现行来源链复用 pagelist → 当前 cid 的 wbi/v2 → fetchSubtitle → B站 JSON 解析（25f5f7fb、716e48ae）。字幕文件先匿名请求，失败才带凭据，保留现有下载行为；不要因旧的一次未登录失败就断言登录是唯一根因。
+
+实际结果：[第2P可见面板验收](youtube-study-wiring.md#b-站第-2-p-最后验收2026-10-24gpt-接续)，记录提交 f496f452。2026-10-24 主 Chrome 的 BV1xWnM6HEUU?p=2 列出英语/中文两轨，默认英语 240 句，首句 `Hello my wonderful English learners!`，0:00；该次没有另测中文切轨或保存制卡。2026-11-11 已读该段正文与对应实现，复用其有日期的实机证据，本轮没有重跑。
 
 ## L-002 记笔记、选择制卡与真实同步是不同动作
 
@@ -33,7 +44,35 @@
 
 下次：先查当前产品规格和保存链，而不是重新增加一个同步系统。保留具体版本、对象 ID 与冲突/删除语义；缺真实证据写未知。此条为要求与历史证据边界，不是本轮功能运行通过。
 
+## L-003 YouTube：HTTP 200、非空截取与实际用上是三件事
+
+触发：修改 timedtext 获取、默认/手动选轨、截取缓存，或复现“播放器有字幕，学习栏却是空”。
+
+可用结论：保留已采用的截取方案和重发路径，不重新进行探针装卸。d58079bc 动态注册 MAIN/document_start 脚本，只复制 timedtext 的 fetch/文本 XHR 正文；ready 消息可索取脚本最近一份非空响应。reader 另按本视频的 lang|kind|tlang 存最多 10 份，换视频清空。b424fa2b 的顺序为当前轨道截取 → 无 tlang 的英语截取 → 原重发；会话按实际采用的轨道建立。两层缓存职责不同，不把 MAIN 的“最近一份”说成它也保留了全部轨道。
+
+证据与限制：[切回英语后 capture 命中](youtube-study-wiring.md#2026-10-23-影片-2-切回英语后的补充验收capture-命中)，记录提交 359756ae。2026-10-23 影片 XqS7kIWMIDE 在用户选回英语并刷新后载入 444 句，首句 `This quote has been living in my head rent free for the past year.`，0:00；DOM data-caption-source=capture、data-caption-track=en-US|。影片 arj7oStGLkU 英语 168 句、法语翻译 169/169 的成功记录是 refetch，不能拼接成两个视频或所有轨道截取通过。
+
+原因边界：之前 739241 字符的缓存回复只证明有非空内容；没有核到那份的 v/轨道/请求发起者，不能认定轨道不匹配是唯一根因。另一个双语字幕扩展画出的内容不是原生播放器或本产品成功证据。阿拉伯语状态的失败仍保留；LOGIN_REQUIRED 下的手动 SRT 导入只证明导入。adb01af3 的空正文提示已改为选择英语再刷新。下次先读成功会话的两个 DOM 属性；不要仅凭 HTTP 状态、截图或缓存长度宣布获取修复。测试位置 test/study-caption-capture.test.js；本轮只读，未重跑。
+
+## L-004 TED 选错语言：英语预取文件被有限窗口挤掉
+
+触发：页面预取大量字幕、英语来源消失、自动载入库尔德语或未知语言。
+
+确定原因及方案：[TED 英语轨定位过程](youtube-study-wiring.md#ted-的英语播放器轨为什么没被选上同日复查)。页面一次预取 64 轨，英语在前，旧 remember 窗口只留 30 条；挂载时最新的 ckb 仍在而英语已丢失。英语 TextTrack 在隐藏视频元素上，也不会被当时可见主视频的来源枚举读到。延长 3 秒读取等待解决不了来源已丢的问题。临时 300 条对照曾成功，但最终提交 d3c0132b 将窗口设为 **100 条**；不要把实验值 300 当生产参数。
+
+保留：de635ac3 的 languageHint 从 /subtitles/en/ 等路径识别语言；guessLanguage 不再把未知文字一律叫英语，会话未知语言用 und。保留来源选择、下载和解析链，不扩大为新识别系统。后续 2026-10-24 记录的 TED-1 英语载入为 271 句；`Good morning. How are you?` / 0:05 来自此前 300 条窗口的对照记录，不另称修复后的首句重测。这与下一条“有数据但播放不出行”是两个根因。本轮核 diff 和现行实现，未重新访问 TED。
+
+## L-005 TED 广告后字幕不走：旧 video 仍连接不代表还在播放
+
+触发：已载入字幕但覆盖层无行、侧栏无当前句；广告与正片使用不同 video，媒体 key 没变。
+
+确定原因及方案：[广告元素绑定案例](youtube-study-wiring.md#ted-播放时没有字幕行阅读器绑在了广告元素上2026-10-24)。会话在广告期绑到广告元素；广告结束后它缩成 0×0 但仍在 DOM，旧 isConnected 守卫阻止改绑，watch 也不因相同媒体 key 重跑。432f0d88 改成比较 site.video() 与已绑定对象，并在 start 以 **1500 毫秒**检查改绑；移除旧 timeupdate 再绑定新的。根因不在 mainVideo 选中了错误的可见元素，不保留“隐藏视频正在播放”的猜测为事实。
+
+结果与保留：2026-10-24 记录 TED-1 修复后四轮广告交接都出现英语字幕及侧栏当前句，监听器数量未叠加。旧案例对 TED-2 有“18.9 秒出现字幕”和“仅载入、未播放”的不同表述，未取得可区分轮次的证据，本次不据此扩大通过范围。Vimeo 只确认英语 6 句载入；当时播放器在无扩展对照也无法播放，播放联动仍未证。下次分别核字幕会话与当前绑定 video，不因字幕载入成功推断播放联动成功。本轮核 diff 和现行实现，没有操作真实浏览器。
+
 ## 增量与覆盖
+
+2026-11-11 本次定向归并：固定读取截点为 main@4b12ef9147380bd3568f7a953c38b00e57c7569d。完整读取现行 PROJECT_MEMORY、AGENTS 及 Vault 项目 README/项目总览；交接读取前90行和末段 YouTube/TED/B站案例，不称交接全文。核 d58079bc、b424fa2b、de635ac3、d3c0132b、432f0d88、716e48ae 的相关产品 diff，现行 WebVideoSite、reader 的有关实现，以及字幕截取测试正文；补 L-001 与 L-003—L-005，更新交接顶部和 Vault 阅读摘要。没有运行扩展/模型、测试或正式学习链，没有建立全历史处理游标；较早未覆盖内容仍是缺口。本次文档提交不代表 2026-10-24 之后有新的产品验收。
 
 同一问题持续更新；保存现象、证据、原因确定程度、实际试过方案和淘汰理由、实现/测试位置、真实反馈、下一次触发和替代关系。别把提交条数当经验条数。
 
