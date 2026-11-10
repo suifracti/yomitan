@@ -61,4 +61,46 @@ test('selects captured tracks before English fallback and finally refetch', asyn
     }
 });
 
+test('does not publish an old video after its track preference finishes saving', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk'}});
+    /** @type {() => void} */
+    let release = () => {};
+    /** @type {() => void} */
+    let saving = () => {};
+    const gate = new Promise((resolve) => { release = () => resolve(void 0); });
+    const started = new Promise((resolve) => { saving = () => resolve(void 0); });
+    vi.stubGlobal('chrome', {storage: {local: {get: async () => ({}), set: async () => {
+        saving();
+        await gate;
+    }}}});
+    const url = new URL('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
+    const body = JSON.stringify({events: [{tStartMs: 0, dDurationMs: 1000, segs: [{utf8: 'The old video sentence.'}]}]});
+    vi.stubGlobal('fetch', async () => new Response(body));
+    const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
+    const reader = new YoutubeReader({prefs: {merge: false, aiSegment: false}, call: async () => [{baseUrl: url.href, languageCode: 'en', vssId: '.en'}]});
+    reader._videoId = 'abcdefghijk';
+    reader._view = {load: document.createElement('button'), root: document.createElement('div')};
+    vi.spyOn(reader, '_findCaptionUrl').mockResolvedValue(url);
+    vi.spyOn(reader, '_status').mockImplementation(() => {});
+    const present = vi.spyOn(reader, '_present').mockImplementation(() => {});
+    vi.spyOn(reader, '_restoreVideoState').mockResolvedValue();
+    try {
+        const loading = reader._load(0);
+        await started;
+        reader._reset();
+        reader._videoId = 'zyxwvutsrqp';
+        reader._view = {load: document.createElement('button'), root: document.createElement('div')};
+        release();
+        await loading;
+        expect(reader._rawSession).toBeNull();
+        expect(present).not.toHaveBeenCalled();
+        expect(reader._view.root.dataset.captionSource).toBeUndefined();
+    } finally {
+        release();
+        reader._reset();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 /* eslint-enable no-underscore-dangle */

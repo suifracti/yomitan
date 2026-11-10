@@ -1095,6 +1095,7 @@ export class YoutubeReader extends EventTarget {
         view.load.disabled = true;
         try {
             const tracks = await this._call('youtubeCaptionTracks').catch(() => []);
+            if (generation !== this._generation) { return; }
             const available = /** @type {{baseUrl: string, languageCode: string, vssId?: string, kind?: string, name?: {simpleText?: string, runs?: {text: string}[]}}[]} */ ((Array.isArray(tracks) ? tracks : []).filter((track) => captionUrl(track.baseUrl, videoId)));
             available.sort((a,b) => Number(a.kind === 'asr') - Number(b.kind === 'asr'));
             this._sources = available.map((track) => ({id:captionTrackId(track),label:`${track.name?.simpleText || track.name?.runs?.map((r) => r.text).join('') || track.languageCode}${track.kind === 'asr' ? ' · 自动' : ''}`}));
@@ -1163,6 +1164,7 @@ export class YoutubeReader extends EventTarget {
                 trackName: chosen ? this._sources.find((s) => s.id === captionTrackId(chosen)).label : (kind === 'asr' ? `${language} 自动字幕` : language),
             }, cuesFromTimedText(text));
             if (chosen) { await writeVideoState(`youtube:${videoId}`,{selectedTrackKey:captionTrackId(chosen)}); }
+            if (generation !== this._generation) { return; }
             this._rawSession = session;
             this._restoringVideoState = true;
             this._aiGroups = null;
@@ -1202,7 +1204,9 @@ export class YoutubeReader extends EventTarget {
             if (generation !== this._generation || controller.signal.aborted) { return; }
             const found = await site.load({signal: controller.signal, sourceId, preferredId: state?.selectedTrackKey, learning: 'en'});
             if (generation !== this._generation) { return; }
-            this._sources = found?.all ?? (await site.sources('en')).map(({id, label}) => ({id, label}));
+            const sources = found?.all ?? (await site.sources('en')).map(({id, label}) => ({id, label}));
+            if (generation !== this._generation) { return; }
+            this._sources = sources;
             if (!found) {
                 this._status(controller.signal.aborted ? '字幕读取超时，可在「⋯」里重新载入，或导入字幕。' : '没有找到字幕，可导入字幕文件。');
                 view.status.append(this._button('导入字幕', () => this.pickFile()));

@@ -15,6 +15,7 @@
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
 | 视频已记词点制卡后丢来源/时间；重开后旧解释变空；恢复已保存记录 | L-007；openStudyRecord、study-data.createResumeUrl、search-main.js / study-translation.js |
+| 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 
 ## 默认自动执行：不等用户提醒
 
@@ -91,6 +92,16 @@
 处理：后台按已校验的记录ID调用现有 libraryRead，采用原记录而不是网页传来的元数据；复用移入既有 study-data.js 的恢复函数。搜索页再按ID读当前记录，把保存内容交给原词卡控制器，仍复用恢复网址的旧文章JSON兼容；原记录已选语境直接恢复，新查词仍不默认发送邻句。读不到则说明回学习库重试，不开空内容补卡。已保存的本机历史只显示为历史，不用旧缓存覆盖当前读回的笔记；新增未保存回答仍优先，保存确认后更新本卡基线。没有新配置、数据格式、字幕授权或保存系统。
 
 证据：test/study-translation-controls.test.js 单个新增场景验证来源URL（含B站p）、标题、上下文、视频秒数、语言、原句、记录ID及制卡开关，并覆盖读取失败不开新页；学习库原有两个相关场景继续通过。test-localization/test-study-library-flow.mjs 新增一条连续场景使用临时Python库/Anki替身，确认无本机journal的恢复/再次保存不丢文本、语境卡预览采用保存解释、追加新回答和重复保存后仍保留在同一笔记；原笔记保存用例也通过。没有创建卡片、实际模型调用或正式库验收。结果见交接“2026-11-11 已记词补卡来源恢复 / 恢复笔记的学习内容”。下次保持L-002的显式制卡与同词不同来源身份，不为恢复入口再增加存储。
+
+## L-008 换视频时旧字幕回来：最后一次await也要核视频身份
+
+适用：改字幕载入、轨道保存或网页来源枚举。已有 _generation / _reset 是会话身份主机制，不增加另一套锁或版本号。
+
+确定根因：YouTube _load 在取完正文后核过generation，却在后续 await writeVideoState 之后直接 _present。切视频会_reset递增generation并清空会话，但不能撤销已经开始的存储写入；旧写入一完成，旧session就被挂到新视频视图。一个延迟选轨保存的临时用例已实际复现旧session在reset后回来。
+
+处理与保留：在既有代次机制上补齐YouTube轨道列表返回、选轨保存完成，以及网页异步来源枚举后的检查；先用局部sources收结果，身份有效再写当前字段。仍允许旧视频的选轨写入完成，不删除记忆、不取消用户已经确认的设置，不更动capture/refetch顺序、签名URL或新视频的控制器。
+
+证据：test/study-caption-capture.test.js新增一个“保存中换视频”的用例，旧代码失败、修正后与原截取优先/英语退回/重发用例共2项通过；reader lint仍64、该测试0，无新增诊断。本轮未操作真实Chrome，不把异步夹具说成实机已复现。交接见“2026-11-11 换视频异步载入身份”。
 
 ## 增量与覆盖
 
