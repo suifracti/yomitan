@@ -20,7 +20,7 @@ import {mediaKeyOf, timedUrl} from './media-key.js';
 import {StudySync} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
-import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
+import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
 import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
@@ -1268,12 +1268,15 @@ export function prepareStudyService(lookupDictionary = null) {
             if (!/^[a-f0-9]{32}$/.test(row.id || '') || !row.word || row.word.length > 128 || !row.sentence || row.sentence.length > 2400) {
                 reply({ok: false, error: '这条记录没有读完整，请重新打开这个页签。'}); return false;
             }
-            const params = new URLSearchParams({query: row.word,
-                full: row.sentence,
-                studyRecordId: row.id,
-                studyResume: '1',
-                studyAddCard: '1'});
-            void chrome.tabs.create({url: chrome.runtime.getURL('search.html') + '?' + params.toString()}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '词卡没有打开，请从学习库里点「制卡」。'}));
+            void (async () => {
+                const materials = /** @type {{items?: import('study').LearningMaterial[]}} */ (await service.handle('libraryRead', {ids: [row.id], language: 'en'}));
+                const record = materials.items?.find((item) => item.id === row.id)?.record;
+                if (!record?.entry || record.id !== row.id) { throw new Error('这条记录暂时没读到，请在学习库里重新打开。'); }
+                const url = new URL(createResumeUrl(record, chrome.runtime.getURL('search.html')));
+                url.searchParams.set('studyAddCard', '1');
+                await chrome.tabs.create({url: url.href});
+                return true;
+            })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '词卡没有打开，请从学习库里点「制卡」。'}));
             return true;
         }
         // Content scripts get only the explicit reader's read/translate/cancel path. The one write is

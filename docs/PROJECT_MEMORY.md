@@ -14,6 +14,7 @@
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
+| 视频已记词点制卡后丢来源/时间；恢复已保存记录 | L-007；openStudyRecord、study-data.createResumeUrl、search-main.js |
 
 ## 默认自动执行：不等用户提醒
 
@@ -80,6 +81,16 @@
 现行做法：复用 selectedTrackKey，WebVideoSite.load 区分显式 sourceId 与自动恢复 preferredId，自动恢复的轨道失效/读不到时试原有可用来源，显式选择仍不悄悄换语言。恢复前阻止初始进度写入，恢复后继续原节流；标题区挂回现成 resume 按钮，仍只在点击时跳转。字幕选择、偏移、进度在同一页面内串行合并，读回先等待本页已排队写入；跨标签页的全局原子性没有因此获得保证。原字段、每视频身份与300条上限保留，不引入设置或迁移旧笔记。
 
 证据：test/study-web-reader.test.js 中新增一个连续场景，先复现错误默认英语，再覆盖恢复中文/偏移与继续入口、显式切英语、旧轨失效退回、并发三种保存后再次载入；原跟读/偏移用例也通过。旧用例查侧栏的 offset output 已与“偏移只放视频面板”的现行UI不符，移除该过时位置断言，实际会话时间和持久偏移断言保留。测试使用临时DOM和内存storage，无真实站点、模型、Vault或Anki调用；源码安装与用户浏览器重载另记交接。
+
+## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
+
+适用：视频里的已记词找不到当前字幕行，`_openSavedWord` 改走后台 `openStudyRecord`。学习库原有 `createResumeUrl` 已保留来源上下文，不需要再造一套网址参数。
+
+确定缺口：旧后台只传 query/full/recordId；search-main 对缺失的来源URL、标题、上下文和时间使用空值。定向测试先复现生成网址缺字段；本轮没有执行正式保存，不能把可能的覆盖风险说成已经复现了数据丢失。
+
+处理：后台按已校验的记录ID调用现有 libraryRead，采用原记录而不是网页传来的元数据；复用移入既有 study-data.js 的恢复函数。学习库保持原导出入口及旧文章定位JSON兼容，仍不伪造字幕授权。读取失败就说明没读到并留在原处，不打开一张来源为空的补卡。
+
+证据：test/study-translation-controls.test.js 的单个新增场景验证来源URL（含B站p）、标题、上下文、视频秒数、语言、原句、记录ID及制卡开关，并覆盖读取失败不开新页；学习库原有两个相关场景继续通过。仅使用合成记录/后台替身，不证明真实笔记、卡片或排程闭环。结果见交接“2026-11-11 已记词补卡来源恢复”。下次保持L-002的显式制卡与同词不同来源身份，不为恢复入口再增加存储。
 
 ## 增量与覆盖
 

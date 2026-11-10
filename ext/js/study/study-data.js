@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {parseJson} from '../core/json.js';
+
 export const SETTINGS_KEY = 'studySettingsV2';
 
 export const CACHE_KEY = 'studyCacheV2';
@@ -209,3 +211,45 @@ export function detailSource(value) {
 
 // Shared with the native direct-card controls; no learning data is stored here.
 export const SAVE_TARGETS_KEY = 'studySaveTargetsV1';
+
+/**
+ * Recognizes the old article locator stored as JSON in the context field.
+ * @param {unknown} value
+ * @returns {?Record<string, unknown>}
+ */
+export function parseLegacySourceLocator(value) {
+    if (typeof value !== 'string') { return null; }
+    let parsed;
+    try {
+        parsed = parseJson(value);
+    } catch {
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return null; }
+    const locator = /** @type {Record<string, unknown>} */ (parsed);
+    if (locator.kind !== 'article' || typeof locator.title !== 'string' || !Object.prototype.hasOwnProperty.call(locator, 'locator') || !Object.prototype.hasOwnProperty.call(locator, 'position')) { return null; }
+    return locator;
+}
+
+/**
+ * Build a regular dictionary lookup while retaining the saved source context.
+ * This deliberately restores ordinary source metadata only; it does not create subtitle authorization.
+ * @param {{id?: string, entry?: {word?: string, sentence?: string, context?: string, url?: string, title?: string, videoTime?: number, language?: string}}} record
+ * @param {string} searchUrl
+ * @returns {string}
+ */
+export function createResumeUrl(record, searchUrl) {
+    const entry = record.entry ?? {};
+    const word = entry.word ?? '';
+    const sentence = entry.sentence ?? word;
+    const params = new URLSearchParams({type: 'terms', query: word, full: sentence, offset: `${Math.max(0, sentence.toLocaleLowerCase().indexOf(word.toLocaleLowerCase()))}`, studyResume: '1'});
+    params.set('studySourceUrl', entry.url ?? '');
+    const legacySource = parseLegacySourceLocator(entry.context);
+    const sourceTitle = entry.title?.trim() || (typeof legacySource?.title === 'string' ? legacySource.title.trim() : '');
+    params.set('studySourceTitle', sourceTitle);
+    params.set('studyContext', legacySource ? '' : (entry.context ?? ''));
+    params.set('studyLanguage', entry.language ?? 'en');
+    if (record.id) { params.set('studyRecordId', record.id); }
+    if (typeof entry.videoTime === 'number' && Number.isFinite(entry.videoTime)) { params.set('studyVideoTime', `${entry.videoTime}`); }
+    return `${searchUrl}?${params.toString()}`;
+}

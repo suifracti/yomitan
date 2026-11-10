@@ -22,11 +22,12 @@ import {PopupFactory} from '../app/popup-factory.js';
 import {ThemeController} from '../app/theme-controller.js';
 import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {studyCall} from '../study/study-client.js';
-import {parseJson} from '../core/json.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl} from '../study/media-key.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
+
+export {createResumeUrl} from '../study/study-data.js';
 
 /** @type {Set<string>} Records whose earlier cards are mature enough for stage-3 cards. */
 let upgradeIds = new Set();
@@ -82,25 +83,6 @@ function plainText(value) {
 }
 
 /**
- * Recognizes the old article locator stored as JSON in the context field.
- * @param {unknown} value
- * @returns {?Record<string, unknown>}
- */
-function parseLegacySourceLocator(value) {
-    if (typeof value !== 'string') { return null; }
-    let parsed;
-    try {
-        parsed = parseJson(value);
-    } catch {
-        return null;
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return null; }
-    const locator = /** @type {Record<string, unknown>} */ (parsed);
-    if (locator.kind !== 'article' || typeof locator.title !== 'string' || !Object.prototype.hasOwnProperty.call(locator, 'locator') || !Object.prototype.hasOwnProperty.call(locator, 'position')) { return null; }
-    return locator;
-}
-
-/**
  * @param {{url?: string, videoTime?: number}} entry
  * @param {string} title
  * @returns {HTMLElement | null}
@@ -134,29 +116,6 @@ export function createSourceLine(entry, title) {
     }
     line.append(text);
     return line;
-}
-
-/**
- * Build a regular dictionary lookup while retaining the saved source context.
- * This deliberately restores ordinary source metadata only; it does not create subtitle authorization.
- * @param {{id?: string, entry?: {word?: string, sentence?: string, context?: string, url?: string, title?: string, videoTime?: number, language?: string}}} record
- * @param {string} searchUrl
- * @returns {string}
- */
-export function createResumeUrl(record, searchUrl) {
-    const entry = record.entry ?? {};
-    const word = entry.word ?? '';
-    const sentence = entry.sentence ?? word;
-    const params = new URLSearchParams({type: 'terms', query: word, full: sentence, offset: `${Math.max(0, sentence.toLocaleLowerCase().indexOf(word.toLocaleLowerCase()))}`, studyResume: '1'});
-    params.set('studySourceUrl', entry.url ?? '');
-    const legacySource = parseLegacySourceLocator(entry.context);
-    const sourceTitle = entry.title?.trim() || (typeof legacySource?.title === 'string' ? legacySource.title.trim() : '');
-    params.set('studySourceTitle', sourceTitle);
-    params.set('studyContext', legacySource ? '' : (entry.context ?? ''));
-    params.set('studyLanguage', entry.language ?? 'en');
-    if (record.id) { params.set('studyRecordId', record.id); }
-    if (typeof entry.videoTime === 'number' && Number.isFinite(entry.videoTime)) { params.set('studyVideoTime', `${entry.videoTime}`); }
-    return `${searchUrl}?${params.toString()}`;
 }
 
 /**

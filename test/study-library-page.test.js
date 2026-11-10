@@ -52,6 +52,8 @@ function makePageDom() {
     document.body.innerHTML = `
         <main>
             <p id="study-library-status"></p>
+            <p id="study-library-today"></p>
+            <button id="study-library-open-anki"></button>
             <button data-library-category="all" aria-pressed="true">全部</button>
             <button data-library-category="favorites" aria-pressed="false">收藏</button>
             <button data-library-category="saved" aria-pressed="false">已保存</button>
@@ -160,6 +162,7 @@ describe('study library page', () => {
         expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['syncPending', 'saved', 'libraryList']);
     });
     test('filters actual save state and keeps favorite-only rows out of learned saves', async () => {
+        makePageDom();
         vi.resetModules();
         const {matchesCategory, createResumeUrl} = await import('../ext/js/pages/study-library.js');
         const record = {favorite: true, vaultSaved: true, ankiState: 'linked', cards: [{noteId: 12}], entry: {word: 'arrive'}};
