@@ -304,7 +304,7 @@ export function updateStudySourcePreview(target, text) {
 }
 
 /**
- * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, meaning?: string}) => void}}
+ * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, meaning?: string, notes?: string, explanationSource?: string}) => void}}
  */
 export function prepareStudyTranslation() {
     let generation = 0;
@@ -557,7 +557,7 @@ export function prepareStudyTranslation() {
             /** @param {import('study').LearningTurn[]} turns */
             const paintSentenceTranslation = (turns) => {
                 if (!sentenceChinese || !translateSentence) { return; }
-                const answer = [...turns].reverse().find((turn) => turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
+                const answer = [...turns].reverse().find((turn) => (!source.recordId || !turn.saved) && turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
                 const text = answer?.translation?.trim() || (editor.value.trim() === sentence.trim() ? source.translation || '' : '');
                 sentenceChinese.textContent = text;
                 const parallel = sourceBox?.querySelector('.sf-parallel-sentence');
@@ -619,7 +619,7 @@ export function prepareStudyTranslation() {
             // Only show answers already completed for this exact source. The
             // learner can read the answer next to the sentence without scrolling
             // past unrelated dictionary details or spending another model call.
-            /** @param {import('study').LearningTurn|null} turn */
+            /** @param {Partial<import('study').LearningTurn>|null} turn */
             const updatePinnedExplanation = (turn) => {
                 const pinned = /** @type {?HTMLElement} */ (d.querySelector('.study-reading-ai-context'));
                 if (!pinned) { return; }
@@ -670,11 +670,12 @@ export function prepareStudyTranslation() {
                 const translationCount = turns.filter((turn) => turn.mode === 'translate').length;
                 const questionCount = turns.length - translationCount;
                 historyLabel.textContent = `学习历史 · 问答 ${questionCount} 轮 · 原句翻译 ${translationCount} 次`;
-                latest = turns.at(-1) ?? null;
-                latestExplanation = [...turns].reverse().find((turn) => turn.mode !== 'translate' && (turn.meaning?.trim() || turn.notes?.trim())) ?? null;
+                const currentTurns = source.recordId ? turns.filter((turn) => !turn.saved) : turns;
+                latest = currentTurns.at(-1) ?? null;
+                latestExplanation = [...currentTurns].reverse().find((turn) => turn.mode !== 'translate' && (turn.meaning?.trim() || turn.notes?.trim())) ?? null;
                 latestSource = identity();
                 paintSentenceTranslation(turns);
-                updatePinnedExplanation(latestExplanation);
+                updatePinnedExplanation(latestExplanation ?? (source.recordId && source.explanationSource?.includes('AI 辅助解释') ? {meaning: source.meaning, notes: source.notes} : null));
                 for (const [index, turn] of turns.entries()) {
                     const panel = d.createElement('details');
                     panel.className = 'study-conversation-turn';
@@ -901,6 +902,14 @@ export function prepareStudyTranslation() {
             });
             const onSaved = () => {
                 if (isCurrent()) {
+                    if (source.recordId) {
+                        if (latestExplanation) {
+                            source.meaning = latestExplanation.meaning;
+                            source.notes = latestExplanation.notes;
+                            source.explanationSource = 'AI 辅助解释（非词典原文）';
+                        }
+                        if (latest?.translation) { source.translation = latest.translation; }
+                    }
                     void refresh().catch(() => {});
                     if (!globalButton.disabled && globalBody.textContent) {
                         globalButton.click();
@@ -940,7 +949,7 @@ export function prepareStudyTranslation() {
                 const translated = english?.querySelector('[data-study-translated=true]')?.textContent;
                 const dictionaryTranslation = translated ? `词典英文：${english?.querySelector('.study-english-original')?.textContent ?? ''}\nAI 辅助中文：${translated}` : '';
 
-                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: (sourceBox?.dataset.studySegmentSentence === editor.value.trim() ? sourceBox.dataset.studySegmentTranslation : '') || current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
+                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: (sourceBox?.dataset.studySegmentSentence === editor.value.trim() ? sourceBox.dataset.studySegmentTranslation : '') || current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? source.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : source.explanationSource ?? '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
             }, isCurrent, {capture: source.capture,
                 cancelCapture: source.cancelCapture,
                 range: source.mediaRange,

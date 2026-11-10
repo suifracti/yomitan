@@ -247,11 +247,11 @@ async function createHarness(t, {cards = [], loseSaveReply = false} = {}) {
     };
 }
 
-function mountUi(sentence = SENTENCE) {
+function mountUi(sentence = SENTENCE, source = {}) {
     const dom = new JSDOM(`<!doctype html><main><article class="study-entry"><p>${sentence}</p><section id="translation"></section></article></main>`, {url: ARTICLE_URL});
     const container = dom.window.document.querySelector('#translation');
     const view = prepareStudyTranslation();
-    view.render(container, sentence, 'just', {url: ARTICLE_URL, title: 'Synthetic article'});
+    view.render(container, sentence, 'just', {url: ARTICLE_URL, title: 'Synthetic article', ...source});
     return {dom, container, view};
 }
 
@@ -337,6 +337,53 @@ test('translation UI saves the completed original Q&A without card selection or 
     assert.equal(state.calls.some((call) => call.action === 'addNote'), false);
     assert.equal(h.nativeCalls.some((call) => call.action === 'libraryDraftSave'), false);
     assert.equal(h.nativeCalls.some((call) => call.action === 'libraryDraftCommit'), false);
+});
+
+test('reopening a saved context without the local journal preserves its learning text and permits new answers', async (t) => {
+    const h = await createHarness(t);
+    const entry = {word: 'just', language: 'en', sentence: SENTENCE, context: 'The judge explains the decision.',
+        url: ARTICLE_URL, title: 'Synthetic article', videoTime: 72,
+        meaning: MEANING, translation: TRANSLATION, notes: ANSWER, explanationSource: 'AI 辅助解释（非词典原文）'};
+    const seeded = await h.native({action: 'librarySave', entry, makeCard: false}).promise;
+    assert.equal(seeded.ok, true, seeded.error);
+    const id = seeded.library.id;
+    const saved = (await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise).library.items[0].record.entry;
+    const source = {...saved, recordId: id, contextSelected: true};
+    const {dom, container, view} = mountUi(SENTENCE, source);
+    t.after(() => { view.cancel(); dom.window.close(); });
+    await waitFor(() => container.querySelector('[data-study-save="note"]'), 'restored learning controls');
+    container.querySelector('[data-study-save="note"]').click();
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'restored save receipt');
+    let read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
+    for (const key of ['meaning', 'translation', 'notes', 'context', 'url', 'title', 'videoTime']) {
+        assert.equal(read.library.items[0].record.entry[key], entry[key], `preserve saved ${key}`);
+    }
+    container.querySelector('[data-study-add-card]').click();
+    container.querySelector('[data-study-card-choice="context"]').click();
+    assert.ok(container.querySelector('[data-study-card-back]')?.value.includes(MEANING), 'context card uses the saved explanation');
+    assert.equal(h.modelCalls.length, 0, 'readback and a manual card preview do not invoke a model');
+
+    const answer = {meaning: '新解释：这句是在说决定公正。', translation: '新译文：这个决定是公正的。', notes: '新的学习提示。'};
+    await h.service.journal.append(entry, answer);
+    view.cancel();
+    container.replaceChildren();
+    view.render(container, SENTENCE, 'just', {url: ARTICLE_URL, title: entry.title, ...source});
+    await waitFor(() => container.querySelector('[data-study-save="note"]'), 'controls after new answer');
+    await waitFor(() => container.querySelector('.study-conversation-turn'), 'new answer readback');
+    container.querySelector('[data-study-save="note"]').click();
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'new answer save');
+    read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
+    for (const key of ['meaning', 'translation', 'notes']) { assert.equal(read.library.items[0].record.entry[key], answer[key]); }
+    await waitFor(() => !container.querySelector('[data-study-save="note"]').disabled, 'save control ready');
+    container.querySelector('[data-study-save="note"]').click();
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存') && !container.querySelector('[data-study-save="note"]').disabled, 'repeat save after journal acknowledgement');
+    read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
+    assert.equal(read.library.items[0].record.entry.notes, answer.notes);
+    const state = await latestState(h.bridge);
+    assert.equal(state.markdownFiles.length, 1);
+    assert.deepEqual(state.notes, {});
+    view.cancel();
+    await waitFor(() => h.bridge.pending.size === 0, 'outstanding readback before closing the temporary bridge');
 });
 
 test('lost librarySave response retries the note without touching an existing Anki card', async (t) => {

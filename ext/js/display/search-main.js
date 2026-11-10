@@ -30,6 +30,7 @@ import {SearchDisplayController} from './search-display-controller.js';
 import {prepareStudyCard} from './study-card.js';
 import {prepareStudyFocus} from './study-focus.js';
 import {studyCall} from '../study/study-client.js';
+import {createResumeUrl} from '../study/study-data.js';
 import {SearchPersistentStateController} from './search-persistent-state-controller.js';
 
 await Application.main(true, async (application) => {
@@ -111,26 +112,44 @@ await Application.main(true, async (application) => {
     } else {
         const resumeParams = new URLSearchParams(location.search);
         if (resumeParams.get('studyResume') === '1') {
-            const query = resumeParams.get('query') ?? '';
-            const sentence = resumeParams.get('full') ?? query;
-            const offsetValue = Number.parseInt(resumeParams.get('offset') ?? '0', 10);
-            const offset = Number.isFinite(offsetValue) ? Math.max(0, Math.min(sentence.length, offsetValue)) : 0;
-            const sourceUrl = resumeParams.get('studySourceUrl') ?? '';
-            const videoTimeValue = Number(resumeParams.get('studyVideoTime'));
             const savedRecordId = resumeParams.get('studyRecordId') ?? '';
+            /** @type {import('study').LibraryEntry|undefined} */
+            let savedRecordEntry;
+            if (savedRecordId) {
+                try {
+                    const read = /** @type {{items: import('study').LearningMaterial[]}} */ (await studyCall('libraryRead', {ids: [savedRecordId], language: resumeParams.get('studyLanguage') ?? 'en'}));
+                    savedRecordEntry = read.items.find((item) => item.record?.id === savedRecordId)?.record?.entry;
+                    if (!savedRecordEntry) { throw new Error('这条笔记没读到，请回学习库重新打开。'); }
+                } catch (error) {
+                    const heading = document.querySelector('#study-detail-heading');
+                    if (heading instanceof HTMLElement) {
+                        heading.hidden = false;
+                        heading.textContent = error instanceof Error ? error.message : '这条笔记没读到，请回学习库重新打开。';
+                    }
+                    return;
+                }
+            }
+            const lookupParams = savedRecordEntry ? new URL(createResumeUrl({id: savedRecordId, entry: savedRecordEntry}, chrome.runtime.getURL('search.html'))).searchParams : resumeParams;
+            const query = lookupParams.get('query') ?? '';
+            const sentence = lookupParams.get('full') ?? query;
+            const offsetValue = Number.parseInt(lookupParams.get('offset') ?? '0', 10);
+            const offset = Number.isFinite(offsetValue) ? Math.max(0, Math.min(sentence.length, offsetValue)) : 0;
+            const sourceUrl = lookupParams.get('studySourceUrl') ?? '';
+            const videoTimeValue = lookupParams.has('studyVideoTime') ? Number(lookupParams.get('studyVideoTime')) : Number.NaN;
             display.setContent({focus: false,
                 historyMode: 'overwrite',
                 params: {type: 'terms', query, full: sentence, offset: `${offset}`},
                 state: {focusEntry: 0,
                     optionsContext: display.getOptionsContext(),
-                    sentence: {text: sentence, offset, adjacent: resumeParams.get('studyContext') ?? '', recordId: savedRecordId},
+                    sentence: {text: sentence, offset, adjacent: lookupParams.get('studyContext') ?? '', recordId: savedRecordId},
                     url: sourceUrl,
-                    documentTitle: resumeParams.get('studySourceTitle') ?? '',
-                    ...(Number.isFinite(videoTimeValue) && resumeParams.has('studyVideoTime') ? {videoTime: videoTimeValue} : {}),
+                    documentTitle: lookupParams.get('studySourceTitle') ?? '',
+                    ...(Number.isFinite(videoTimeValue) ? {videoTime: videoTimeValue} : {}),
                     savedRecordId,
+                    savedRecordEntry,
                     savedRecordWord: query,
                     studyAddCard: resumeParams.get('studyAddCard') === '1',
-                    studyLanguage: resumeParams.get('studyLanguage') ?? 'en'},
+                    studyLanguage: lookupParams.get('studyLanguage') ?? 'en'},
                 content: {}});
         } else {
             display.initializeState();

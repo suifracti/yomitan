@@ -14,7 +14,7 @@
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
-| 视频已记词点制卡后丢来源/时间；恢复已保存记录 | L-007；openStudyRecord、study-data.createResumeUrl、search-main.js |
+| 视频已记词点制卡后丢来源/时间；重开后旧解释变空；恢复已保存记录 | L-007；openStudyRecord、study-data.createResumeUrl、search-main.js / study-translation.js |
 
 ## 默认自动执行：不等用户提醒
 
@@ -86,11 +86,11 @@
 
 适用：视频里的已记词找不到当前字幕行，`_openSavedWord` 改走后台 `openStudyRecord`。学习库原有 `createResumeUrl` 已保留来源上下文，不需要再造一套网址参数。
 
-确定缺口：旧后台只传 query/full/recordId；search-main 对缺失的来源URL、标题、上下文和时间使用空值。定向测试先复现生成网址缺字段；本轮没有执行正式保存，不能把可能的覆盖风险说成已经复现了数据丢失。
+确定缺口与先后证据：第一批先复现旧后台只传 query/full/recordId，search-main 对缺失的来源URL、标题、上下文和时间使用空值；当时未执行保存，只确认入口缺字段。继续核对发现恢复页还没有读回保存的解释、译文、学习提示；本机journal缺失时，临时真实Python保存链已复现旧解释被词典简释覆盖。补充语境也会因默认未勾“带上邻句”变空。后者已有临时笔记持久化证据，不是正式库损坏报告。
 
-处理：后台按已校验的记录ID调用现有 libraryRead，采用原记录而不是网页传来的元数据；复用移入既有 study-data.js 的恢复函数。学习库保持原导出入口及旧文章定位JSON兼容，仍不伪造字幕授权。读取失败就说明没读到并留在原处，不打开一张来源为空的补卡。
+处理：后台按已校验的记录ID调用现有 libraryRead，采用原记录而不是网页传来的元数据；复用移入既有 study-data.js 的恢复函数。搜索页再按ID读当前记录，把保存内容交给原词卡控制器，仍复用恢复网址的旧文章JSON兼容；原记录已选语境直接恢复，新查词仍不默认发送邻句。读不到则说明回学习库重试，不开空内容补卡。已保存的本机历史只显示为历史，不用旧缓存覆盖当前读回的笔记；新增未保存回答仍优先，保存确认后更新本卡基线。没有新配置、数据格式、字幕授权或保存系统。
 
-证据：test/study-translation-controls.test.js 的单个新增场景验证来源URL（含B站p）、标题、上下文、视频秒数、语言、原句、记录ID及制卡开关，并覆盖读取失败不开新页；学习库原有两个相关场景继续通过。仅使用合成记录/后台替身，不证明真实笔记、卡片或排程闭环。结果见交接“2026-11-11 已记词补卡来源恢复”。下次保持L-002的显式制卡与同词不同来源身份，不为恢复入口再增加存储。
+证据：test/study-translation-controls.test.js 单个新增场景验证来源URL（含B站p）、标题、上下文、视频秒数、语言、原句、记录ID及制卡开关，并覆盖读取失败不开新页；学习库原有两个相关场景继续通过。test-localization/test-study-library-flow.mjs 新增一条连续场景使用临时Python库/Anki替身，确认无本机journal的恢复/再次保存不丢文本、语境卡预览采用保存解释、追加新回答和重复保存后仍保留在同一笔记；原笔记保存用例也通过。没有创建卡片、实际模型调用或正式库验收。结果见交接“2026-11-11 已记词补卡来源恢复 / 恢复笔记的学习内容”。下次保持L-002的显式制卡与同词不同来源身份，不为恢复入口再增加存储。
 
 ## 增量与覆盖
 
