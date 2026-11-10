@@ -115,10 +115,14 @@ await Application.main(true, async (application) => {
             const savedRecordId = resumeParams.get('studyRecordId') ?? '';
             /** @type {import('study').LibraryEntry|undefined} */
             let savedRecordEntry;
+            /** @type {string[]|undefined} */
+            let savedRecordTurnIds;
             if (savedRecordId) {
                 try {
                     const read = /** @type {{items: import('study').LearningMaterial[]}} */ (await studyCall('libraryRead', {ids: [savedRecordId], language: resumeParams.get('studyLanguage') ?? 'en'}));
-                    savedRecordEntry = read.items.find((item) => item.record?.id === savedRecordId)?.record?.entry;
+                    const record = read.items.find((item) => item.record?.id === savedRecordId)?.record;
+                    savedRecordEntry = record?.entry;
+                    savedRecordTurnIds = record?.turnIds ?? [];
                     if (!savedRecordEntry) { throw new Error('这条笔记没读到，请回学习库重新打开。'); }
                 } catch (error) {
                     const heading = document.querySelector('#study-detail-heading');
@@ -147,6 +151,7 @@ await Application.main(true, async (application) => {
                     ...(Number.isFinite(videoTimeValue) ? {videoTime: videoTimeValue} : {}),
                     savedRecordId,
                     savedRecordEntry,
+                    savedRecordTurnIds,
                     savedRecordWord: query,
                     studyAddCard: resumeParams.get('studyAddCard') === '1',
                     studyLanguage: lookupParams.get('studyLanguage') ?? 'en'},

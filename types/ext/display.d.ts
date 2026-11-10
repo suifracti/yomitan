@@ -81,6 +81,7 @@ export type HistoryParams = {
 export type HistoryState = {
     savedRecordId?: string;
     savedRecordEntry?: import('study').LibraryEntry;
+    savedRecordTurnIds?: string[];
     savedRecordWord?: string;
     studyLanguage?: string;
     /** Playback position only when source is a recognized subtitle and exactly one visible video exists. */

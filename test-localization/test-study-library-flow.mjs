@@ -347,8 +347,8 @@ test('reopening a saved context without the local journal preserves its learning
     const seeded = await h.native({action: 'librarySave', entry, makeCard: false}).promise;
     assert.equal(seeded.ok, true, seeded.error);
     const id = seeded.library.id;
-    const saved = (await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise).library.items[0].record.entry;
-    const source = {...saved, recordId: id, contextSelected: true};
+    const saved = (await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise).library.items[0].record;
+    const source = {...saved.entry, recordId: id, savedTurnIds: saved.turnIds ?? [], contextSelected: true};
     const {dom, container, view} = mountUi(SENTENCE, source);
     t.after(() => { view.cancel(); dom.window.close(); });
     await waitFor(() => container.querySelector('[data-study-save="note"]'), 'restored learning controls');
@@ -365,6 +365,8 @@ test('reopening a saved context without the local journal preserves its learning
 
     const answer = {meaning: '新解释：这句是在说决定公正。', translation: '新译文：这个决定是公正的。', notes: '新的学习提示。'};
     await h.service.journal.append(entry, answer);
+    await h.service.sync.flush();
+    assert.equal((await h.service.journal.conversation(entry)).every((turn) => turn.saved), true);
     view.cancel();
     container.replaceChildren();
     view.render(container, SENTENCE, 'just', {url: ARTICLE_URL, title: entry.title, ...source});
@@ -379,6 +381,18 @@ test('reopening a saved context without the local journal preserves its learning
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存') && !container.querySelector('[data-study-save="note"]').disabled, 'repeat save after journal acknowledgement');
     read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
     assert.equal(read.library.items[0].record.entry.notes, answer.notes);
+
+    const manual = '笔记里后来核对过的含义。';
+    await h.native({action: 'libraryUpdate', id, entry: {meaning: manual}}).promise;
+    const current = (await h.native({action: 'libraryRead', ids: [id]}).promise).library.items[0].record;
+    view.cancel();
+    container.replaceChildren();
+    view.render(container, SENTENCE, 'just', {...current.entry, recordId: id, savedTurnIds: current.turnIds, contextSelected: true});
+    await waitFor(() => container.querySelector('.study-conversation-turn'), 'old saved history beside the fresh note snapshot');
+    container.querySelector('[data-study-save="note"]').click();
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存') && !container.querySelector('[data-study-save="note"]').disabled, 'save without reverting to the old cached answer');
+    read = await h.native({action: 'libraryRead', ids: [id]}).promise;
+    assert.equal(read.library.items[0].record.entry.meaning, manual);
     const state = await latestState(h.bridge);
     assert.equal(state.markdownFiles.length, 1);
     assert.deepEqual(state.notes, {});

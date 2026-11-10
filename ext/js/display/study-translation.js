@@ -304,7 +304,7 @@ export function updateStudySourcePreview(target, text) {
 }
 
 /**
- * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, meaning?: string, notes?: string, explanationSource?: string}) => void}}
+ * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, savedTurnIds?: string[], meaning?: string, notes?: string, explanationSource?: string}) => void}}
  */
 export function prepareStudyTranslation() {
     let generation = 0;
@@ -326,6 +326,13 @@ export function prepareStudyTranslation() {
             const version = generation;
             const isCurrent = () => version === generation;
             const d = container.ownerDocument;
+            const restoredTurnIds = new Set(source.savedTurnIds ?? []);
+            // Automatic sync can acknowledge a new answer before this view paints it.
+            /**
+             * @param {import('study').LearningTurn} turn
+             * @returns {boolean}
+             */
+            const currentAnswer = (turn) => !source.recordId || (source.savedTurnIds ? !restoredTurnIds.has(turn.id) : !turn.saved);
             delete container.dataset.studyRecordId;
             if (source.subtitleSnapshot) {
                 // Subtitle UI carries only a session reference; every action is authorized by private backend state.
@@ -557,7 +564,7 @@ export function prepareStudyTranslation() {
             /** @param {import('study').LearningTurn[]} turns */
             const paintSentenceTranslation = (turns) => {
                 if (!sentenceChinese || !translateSentence) { return; }
-                const answer = [...turns].reverse().find((turn) => (!source.recordId || !turn.saved) && turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
+                const answer = [...turns].reverse().find((turn) => currentAnswer(turn) && turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
                 const text = answer?.translation?.trim() || (editor.value.trim() === sentence.trim() ? source.translation || '' : '');
                 sentenceChinese.textContent = text;
                 const parallel = sourceBox?.querySelector('.sf-parallel-sentence');
@@ -670,7 +677,7 @@ export function prepareStudyTranslation() {
                 const translationCount = turns.filter((turn) => turn.mode === 'translate').length;
                 const questionCount = turns.length - translationCount;
                 historyLabel.textContent = `学习历史 · 问答 ${questionCount} 轮 · 原句翻译 ${translationCount} 次`;
-                const currentTurns = source.recordId ? turns.filter((turn) => !turn.saved) : turns;
+                const currentTurns = turns.filter(currentAnswer);
                 latest = currentTurns.at(-1) ?? null;
                 latestExplanation = [...currentTurns].reverse().find((turn) => turn.mode !== 'translate' && (turn.meaning?.trim() || turn.notes?.trim())) ?? null;
                 latestSource = identity();
