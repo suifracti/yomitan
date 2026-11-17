@@ -6,8 +6,11 @@ Default is read-only. --apply requires the exact fingerprint from a prior check.
 Templates and CSS are backed up locally before any explicit view update.
 """
 import argparse, datetime, hashlib, json, os, pathlib, sys, urllib.request
-FIELDS=['Word','Sentence','Definition','Source','URL','Audio','Image']
-ASSETS=pathlib.Path(__file__).resolve().parents[1]/'assets'/'study-review'
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'local-bridge'))
+from study_cards import REVIEW_FIELDS as FIELDS, read_review_view, review_view_state
+from study_review_view import FRONT, BACK, CSS
+ASSETS=ROOT/'assets'/'study-review'
 
 def request(action,params):
     data=json.dumps({'action':action,'version':6,'params':params}).encode()
@@ -24,8 +27,7 @@ def fingerprint(value):
 def inspect(model,api=request):
     fields=api('modelFieldNames',{'modelName':model})
     if fields!=FIELDS:raise ValueError('该类型不是原英语七字段；停止，不改变字段或卡片。')
-    return {'model':model,'fields':fields,'templates':api('modelTemplates',{'modelName':model}),
-            'styling':api('modelStyling',{'modelName':model})}
+    return {'model':model,'fields':fields,**read_review_view(api,model)}
 
 def apply_view(model,template,expected,backup_dir,api=request):
     old=inspect(model,api)
@@ -35,6 +37,9 @@ def apply_view(model,template,expected,backup_dir,api=request):
     if not template:
         template=next(iter(old['templates']))
     if template not in old['templates']:raise ValueError('指定卡模板不存在；不创建新卡型。')
+    state=review_view_state(old)
+    if state=='unknown':raise ValueError('没能读全原题面和样式；未作修改。')
+    if state=='current':return {'updatedViewOnly':False,'model':model,'template':template,'fingerprint':expected}
     backup_dir=pathlib.Path(backup_dir).expanduser()
     if any(p.is_symlink() for p in [backup_dir,*backup_dir.parents]):raise ValueError('备份位置不能是符号链接。')
     backup_dir.mkdir(parents=True,exist_ok=True)
@@ -42,12 +47,11 @@ def apply_view(model,template,expected,backup_dir,api=request):
     backup=backup_dir/name
     with os.fdopen(os.open(backup,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w') as stream:
         json.dump(old,stream,ensure_ascii=False,indent=2)
-    front=(ASSETS/'front.html').read_text();back=(ASSETS/'back.html').read_text();css=(ASSETS/'card.css').read_text()
     # No addNote/updateNoteFields/deleteNotes/answerCards calls are used.
-    api('updateModelTemplates',{'model':{'name':model,'templates':{template:{'Front':front,'Back':back}}}})
-    api('updateModelStyling',{'model':{'name':model,'css':css}})
+    api('updateModelTemplates',{'model':{'name':model,'templates':{template:{'Front':FRONT,'Back':BACK}}}})
+    api('updateModelStyling',{'model':{'name':model,'css':CSS}})
     new=inspect(model,api)
-    if new['templates'][template]!= {'Front':front,'Back':back} or new['styling'].get('css')!=css:
+    if template not in new['templates'] or review_view_state(new)!='current':
         raise ValueError('模板读回未一致；备份在 '+str(backup)+'。不要反复应用，先核对当前状态。')
     return {'updatedViewOnly':True,'model':model,'template':template,'backup':str(backup),'fingerprint':fingerprint(new)}
 
@@ -62,7 +66,7 @@ def main():
         result=apply_view(args.model,args.template,args.expected,args.backup_dir)
     else:
         state=inspect(args.model)
-        result={'mode':'read-only','model':args.model,'templates':list(state['templates']),'fingerprint':fingerprint(state),
+        result={'mode':'read-only','model':args.model,'reviewView':review_view_state(state),'templates':list(state['templates']),'fingerprint':fingerprint(state),
                 'next':'Use --apply --expected <fingerprint> only after explicitly deciding to update this existing template.'}
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=='__main__':

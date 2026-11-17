@@ -11,10 +11,9 @@ import subprocess
 import tempfile
 
 from study_protocol import SETTINGS_ACTIONS
-from study_cards import card_progress, linked_note_ids, with_card_progress
+from study_cards import REVIEW_FIELDS as FIELDS, card_progress, linked_note_ids, read_review_view, review_view_state, with_card_progress
 from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, normalize_entry, normalize_request, text
 
-FIELDS = ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
 EDITABLE = {'ankiEnabled', 'vault', 'directory', 'deck', 'model'}
 
 
@@ -155,7 +154,7 @@ class YomitanLibrary:
             raise ValueError('不同目录有相同学习编号，请先人工确认；没有自动覆盖。')
         return found[0] if found else None
 
-    def check(self):
+    def check(self, include_view=True):
         result = self.settings()
         vault = pathlib.Path(result['vault'])
         status = {'vaultExists': vault.is_absolute() and vault.is_dir(), 'directoryExists': vault.is_absolute() and (vault / result['directory']).is_dir(),
@@ -185,12 +184,17 @@ class YomitanLibrary:
                 status['modelCompatible'] = self.anki('modelFieldNames', {'modelName': result['model']}) == FIELDS
         except Exception:
             result['error'] = 'Anki 未连接或未能读取设置；没有创建牌组、类型或卡片。'
+        if include_view and status['modelCompatible']:
+            try:
+                status['reviewView'] = review_view_state(read_review_view(self.anki, result['model']))
+            except (ValueError, OSError):
+                status['reviewView'] = 'unknown'
         status['missing'] = [k for k in ('vaultExists', 'directoryExists', 'deckExists', 'modelExists') if not status[k]]
         if status['modelExists'] and not status['modelCompatible']: status['missing'].append('modelCompatible')
         return result
 
     def prepare(self, p):
-        checked = self.check()
+        checked = self.check(include_view=False)
         s = checked['status']
         if not s['ankiConnected']:
             raise ValueError(checked['error'])

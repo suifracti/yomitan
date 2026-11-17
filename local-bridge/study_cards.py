@@ -3,6 +3,29 @@
 import hashlib
 from typing import NamedTuple, Optional
 
+REVIEW_FIELDS = ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
+
+
+def read_review_view(anki, model):
+    params = {'modelName': model}
+    return {'templates': anki('modelTemplates', params), 'styling': anki('modelStyling', params)}
+
+
+def review_view_state(view):
+    """Compare only the named model's layouts and CSS, not a learner's cards."""
+    from study_review_view import FRONT, BACK, CSS
+    templates, styling = view['templates'], view['styling']
+    if not isinstance(templates, dict) or not templates:
+        return 'unknown'
+    if len(templates) > 1:
+        return 'multiple'
+    sides = next(iter(templates.values()))
+    if not isinstance(sides, dict) or not {'Front', 'Back'} <= sides.keys() or not isinstance(styling, dict) or 'css' not in styling:
+        return 'unknown'
+    if (sides['Front'], sides['Back']) != (FRONT, BACK):
+        return 'different'
+    return 'current' if styling['css'] == CSS else 'custom-style'
+
 
 def card_key(record_id, front):
     return hashlib.sha256((record_id + '\n' + front.strip()).encode()).hexdigest()[:32]

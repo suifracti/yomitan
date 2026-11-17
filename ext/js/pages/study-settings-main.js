@@ -199,7 +199,7 @@ async function initializeStudySettings(root) {
     });
 
     /** @typedef {{vault: string, directory: string, ankiEnabled: boolean, deck: string, model: string, deckByKind: Record<string, string>}} LibraryTarget */
-    /** @typedef {LibraryTarget & {decks?: string[], deckByKind?: Record<string, string>, message?: string, error?: string, status?: {vaultExists?: boolean, directoryExists?: boolean, saveAvailable?: boolean, saveMessage?: string, ankiConnected?: boolean, deckExists?: boolean, modelExists?: boolean, modelCompatible?: boolean}}} LibrarySettingsResult */
+    /** @typedef {LibraryTarget & {decks?: string[], deckByKind?: Record<string, string>, message?: string, error?: string, status?: {vaultExists?: boolean, directoryExists?: boolean, saveAvailable?: boolean, saveMessage?: string, ankiConnected?: boolean, deckExists?: boolean, modelExists?: boolean, modelCompatible?: boolean, reviewView?: 'current'|'custom-style'|'different'|'multiple'|'unknown'}}} LibrarySettingsResult */
     const libraryStatus = /** @type {HTMLElement} */ (root.querySelector('#library-status'));
     const libraryDeck = /** @type {HTMLSelectElement} */ (root.querySelector('#library-deck'));
     const libraryKinds = [...new Set(CARD_CATALOG.map(({deck}) => deck))];
@@ -301,7 +301,7 @@ async function initializeStudySettings(root) {
         let modelState = '未核对';
         if (state.ankiConnected) {
             modelState = state.modelExists ? '不兼容；不会覆盖，请到高级设置检查' : '缺失；可单独点击创建';
-            if (state.modelCompatible) { modelState = '兼容'; }
+            if (state.modelCompatible) { modelState = '制卡需要的字段都在'; }
         }
         const lines = [
             `Vault：${state.vaultExists ? '存在' : '不存在或不可用'} · ${result.vault}`,
@@ -311,6 +311,16 @@ async function initializeStudySettings(root) {
             `牌组：${result.deck} · ${state.ankiConnected ? (state.deckExists ? '存在' : '缺失；可单独点击创建') : '未核对'}`,
             `模板：${result.model} · ${modelState}`,
         ];
+        if (state.modelCompatible) {
+            const descriptions = {
+                'current': '正在用学习版，正面、背面和样式都一致。',
+                'custom-style': '正面和背面都是学习版，样式不同。可以保持原样。',
+                'different': '现在用的是另一套题面。可以继续用；想换学习版，请看「保存位置与兼容说明」。',
+                'multiple': '这个笔记类型有多套题面，逐张用哪套请在 Anki 里看。这里不会替换。',
+                'unknown': '这次没读到题面。可在 Anki 的「工具 → 管理笔记类型 → 卡片」里查看。',
+            };
+            lines.push(`复习题面：${descriptions[state.reviewView ?? 'unknown']}`);
+        }
         for (const kind of ['meaning', 'context', 'listening']) {
             const deck = result.deckByKind?.[kind];
             if (deck) { lines.push(`子牌组：${deck} · ${!state.ankiConnected ? '未核对' : (result.decks?.includes(deck) ? '存在' : '缺失；点击创建缺少的牌组')}`); }

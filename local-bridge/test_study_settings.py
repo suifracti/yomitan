@@ -20,6 +20,8 @@ class SettingsTests(unittest.TestCase):
         self.decks = ['外语::英语语境']
         self.models = ['外语语境卡']
         self.fields = ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
+        self.templates = {'卡片 1': {'Front': '{{Word}} {{Sentence}}', 'Back': '{{Definition}}'}}
+        self.styling = {'css': '.card {color: green;}'}
         self.library = YomitanLibrary(self.config, anki=self.anki)
 
     def tearDown(self):
@@ -30,8 +32,14 @@ class SettingsTests(unittest.TestCase):
         if action == 'deckNames': return list(self.decks)
         if action == 'modelNames': return list(self.models)
         if action == 'modelFieldNames': return list(self.fields)
+        if action == 'modelTemplates': return self.templates
+        if action == 'modelStyling': return self.styling
         if action == 'createDeck': self.decks.append(params['deck']); return 1
-        if action == 'createModel': self.models.append(params['modelName']); return 1
+        if action == 'createModel':
+            self.models.append(params['modelName'])
+            self.templates = {t['Name']: {'Front': t['Front'], 'Back': t['Back']} for t in params['cardTemplates']}
+            self.styling = {'css': params['css']}
+            return 1
         raise AssertionError('Unexpected Anki call: ' + action)
 
     def settings(self, **changes):
@@ -127,6 +135,22 @@ class SettingsTests(unittest.TestCase):
         created = [p['deck'] for a, p in self.calls if a == 'createDeck']
         self.assertEqual(set(created), {routes['context'], routes['listening']})
         self.assertFalse(any(a in ('addNote', 'updateNoteFields', 'changeDeck') for a, _ in self.calls))
+
+    def test_compatible_fields_do_not_mean_the_learning_view_is_installed(self):
+        def check():
+            self.calls.clear()
+            result = self.library.handle({'action': 'librarySettingsCheck'})
+            self.assertTrue(result['status']['modelCompatible'])
+            self.assertCountEqual([a for a, _ in self.calls], ['deckNames', 'modelNames', 'modelFieldNames', 'modelTemplates', 'modelStyling'])
+            self.assertNotIn('templates', result)
+            return result['status']['reviewView']
+
+        self.assertEqual(check(), 'different')
+        self.models.clear()
+        created = self.library.handle({'action': 'librarySettingsPrepare', 'createDeck': False, 'createModel': True})
+        self.assertEqual(created['status']['reviewView'], 'current')
+        self.styling['css'] += '\n.card { color: purple; }'
+        self.assertEqual(check(), 'custom-style')
 
     def test_model_or_deck_edit_in_same_directory_keeps_original_target(self):
         first = self.save()

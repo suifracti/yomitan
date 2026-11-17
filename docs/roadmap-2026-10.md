@@ -25,7 +25,7 @@
 | 要改的事 | 统一到哪里；什么仍分开 |
 |---|---|
 | 卡型、阶段、需要的素材、默认子牌组 | 改 `local-bridge/study_cards.py`。词卡、学习库、类型和 Python 保存链读同源目录；题面模板仍在 `study-card-kinds.js`。保留手选语法卡、AI 原有选型范围和个人指定的牌组。 |
-| 在 Anki 实际看到的题目 | 改 `assets/study-review/`，运行 `dev/sync-local.py --manifest-only` 打包到桥。新建英语模型与可选更新工具共用该视图；不借部署批量改已有模型。对新听力题，正面手动回听，翻面再对照完整原句。 |
+| 在 Anki 实际看到的题目 | 改 `assets/study-review/`，运行 `dev/sync-local.py --manifest-only` 打包到桥。新建英语模型、设置页只读检查和自愿更换外观的工具用同一份正面、背面和样式；字段相符不代表已采用学习版。检查只读模板，不读卡片；不借部署更换已有模板。对新听力题，正面手动回听，翻面再对照完整原句。 |
 | 保存和制卡的结果 | `study_cards.card_progress` 从笔记里的回执算已确认、未确认和阶段；词卡/学习库由 `study-data.js:cardReceipt` 显示，视频栏和学习小结也用同一笔数。笔记已存不等于卡已送达，重试沿用原记录 ID。 |
 | 消息、设置与界面 | 普通本机动作在 `local-bridge/study_protocol.py` 登记，`studyCall → StudyService → native` 转发。特权来源和参数仍在各自边界校验。翻译服务改 `translation-engines.js`，设置写入走 `writeSubtitlePrefs`；保留学习版控件和主题，不复制网页设置。 |
 | 字幕与来源身份 | 视频分组参数/站点表改 `local-bridge/study_sources.py`（生成浏览器的 `media-rules.js`）；网页端用 `mediaKeyOf` 分组、`timedUrl` 打开出处。分组键、笔记 ID 与跳转链接不可互换。播放进度/字幕轨/偏移的小改动由 `writeVideoState` 交后台按视频写入，站点取轨和媒体授权仍分开。 |
