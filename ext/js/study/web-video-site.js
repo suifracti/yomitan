@@ -25,6 +25,7 @@
  */
 import {readResponseJson} from '../core/json.js';
 import {mediaKeyOf} from './media-key.js';
+import {FILE_DURATION_KEY} from './media-rules.js';
 import {SUBTITLE_URL, cuesFromRows, guessLanguage, parseSubtitles} from './subtitle-formats.js';
 
 const DOCK_ID = 'study-web-dock';
@@ -207,7 +208,7 @@ export class WebVideoSite {
         const video = this.video();
         if (location.protocol !== 'file:' || !video) { return location.href.split('#')[0]; }
         const url = new URL(video.currentSrc || video.src || location.href);
-        url.hash = `study-duration=${Math.round(Number.isFinite(video.duration) ? video.duration : 0)}`;
+        url.hash = `${FILE_DURATION_KEY}=${Math.round(Number.isFinite(video.duration) ? video.duration : 0)}`;
         return url.href;
     }
 

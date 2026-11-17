@@ -72,7 +72,7 @@ class RecordIndex:
         return files, changed or files.keys() != previous.keys()
 
     def parse(self, path):
-        from study_library_core import media_key_of
+        from study_sources import media_key_of
         from study_sync import CARD_STAGES
         lib = self.library
         content = lib.file_content(path)

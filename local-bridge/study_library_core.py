@@ -18,6 +18,7 @@ import urllib.request
 
 from study_cards import MASTERY_LABELS
 from study_protocol import SETTINGS_ACTIONS
+from study_sources import media_key_of, source_link, time_link
 
 RELATIVE = pathlib.Path('01-高考2027/05-英语（Larry）/语境词库')
 JAPANESE_RELATIVE = pathlib.Path('02-个人与生活/语言学习/日语/语境词库')
@@ -416,60 +417,6 @@ def anki_call(action, params, timeout=5):
     return result['result']
 
 
-YOUTUBE_HOSTS = ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be')
-VIDEO_QUERY_KEYS = ('v', 'p', 'id', 'vid', 'ep', 'episode', 'video', 'list', 'index')
-
-
-def media_key_of(url):
-    """Identity of a watched video; mirrors ext/js/study/media-key.js mediaKeyOf."""
-    try:
-        parsed = urllib.parse.urlsplit(url or '')
-    except ValueError:
-        return ''
-    if parsed.scheme == 'file':
-        duration = urllib.parse.parse_qs(parsed.fragment).get('study-duration', [''])[0]
-        return 'file:' + urllib.parse.unquote(parsed.path.rsplit('/', 1)[-1]) + '|' + duration if duration.isdigit() else ''
-    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
-        return ''
-    host = parsed.hostname.lower()
-    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-    if host in YOUTUBE_HOSTS:
-        if host == 'youtu.be':
-            video = parsed.path[1:12]
-        elif parsed.path.startswith(('/shorts/', '/embed/')):
-            video = (parsed.path.split('/') + [''])[2]
-        else:
-            video = query.get('v', [''])[0]
-        return 'youtube:' + video if re.fullmatch(r'[\w-]{11}', video or '') else ''
-    picked = '&'.join(f'{key}={query[key][0]}' for key in VIDEO_QUERY_KEYS if key in query)
-    path = parsed.path.rstrip('/') or '/'
-    return ('web:' + host + path + ('?' + picked if picked else ''))[:400]
-
-
-def time_link(url, seconds, label=None):
-    """A clickable moment for notes, e.g. [36:02](https://youtu.be/…&t=2162s).
-    Only YouTube and Bilibili understand t=; other pages get a plain link next to the time."""
-    whole = max(0, int(seconds))
-    hours, rest = divmod(whole, 3600)
-    label = label or (f'{hours}:{rest // 60:02d}:{rest % 60:02d}' if hours else f'{rest // 60}:{rest % 60:02d}')
-    try:
-        parsed = urllib.parse.urlsplit(url or '')
-    except ValueError:
-        return f'{label}（{whole} 秒）'
-    if parsed.scheme not in ('http', 'https'):
-        return f'{label}（{whole} 秒）'
-    host = (parsed.hostname or '').lower()
-    if host in YOUTUBE_HOSTS:
-        stamp = f'{whole}s'
-    elif host == 'bilibili.com' or host.endswith('.bilibili.com'):
-        stamp = str(whole)
-    else:
-        return f'[{label}]({urllib.parse.urlunsplit(parsed._replace(fragment="")).replace(")", "%29")})'
-    query = [(k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if k != 't'] + [('t', stamp)]
-    link = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), ''))
-    return f'[{label}]({link.replace(")", "%29")})'
-
-
 def safe_markdown(s):
     # Keep source material literal, not executable HTML, wikilinks or Markdown embeds.
     s = html.escape(s, quote=False)
@@ -481,7 +428,7 @@ def source_line(entry):
     parsed = urllib.parse.urlsplit(url)
     title = safe_markdown(entry.get('title') or url)
     if parsed.scheme in ('http', 'https'):
-        source = time_link(url, entry.get('videoTime', 0), title)
+        source = time_link(url, entry['videoTime'], title) if 'videoTime' in entry else source_link(title, url)
     elif parsed.scheme == 'file':
         source = safe_markdown(urllib.parse.unquote(parsed.path.rsplit('/', 1)[-1]))
     else:

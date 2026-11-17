@@ -16,12 +16,7 @@
  */
 
 
-// One identity per watched video, shared by the reader, the background check and
-// the local bridge (study_settings.media_key_of mirrors this): YouTube by video ID,
-// other sites by host, path and the few query keys that choose a video.
-
-const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be']);
-const VIDEO_QUERY_KEYS = ['v', 'p', 'id', 'vid', 'ep', 'episode', 'video', 'list', 'index'];
+import {YOUTUBE_HOSTS, VIDEO_QUERY_KEYS, BILIBILI_HOST, FILE_DURATION_KEY} from './media-rules.js';
 
 /**
  * @param {string} url
@@ -44,8 +39,8 @@ export function mediaKeyOf(url) {
     const parsed = parse(url);
     if (!parsed) { return ''; }
     if (parsed.protocol === 'file:') {
-        const duration = new URLSearchParams(parsed.hash.slice(1)).get('study-duration');
-        return duration !== null ? `file:${decodeURIComponent(parsed.pathname.split('/').pop())}|${Math.round(Number(duration))}` : '';
+        const duration = new URLSearchParams(parsed.hash.slice(1)).get(FILE_DURATION_KEY);
+        return duration && /^\d+$/.test(duration) ? `file:${decodeURIComponent(parsed.pathname.split('/').pop())}|${duration}` : '';
     }
     const host = parsed.hostname.toLowerCase();
     if (YOUTUBE_HOSTS.has(host)) {
@@ -71,10 +66,11 @@ export function timedUrl(url, seconds) {
     const whole = Math.floor(seconds);
     if (YOUTUBE_HOSTS.has(host)) {
         parsed.searchParams.set('t', `${whole}s`);
-    } else if (host === 'bilibili.com' || host.endsWith('.bilibili.com')) {
+    } else if (host === BILIBILI_HOST || host.endsWith(`.${BILIBILI_HOST}`)) {
         parsed.searchParams.set('t', String(whole));
     } else {
         return {url: parsed.href, timed: false};
     }
+    if (parsed.hash.startsWith('#t=')) { parsed.hash = ''; }
     return {url: parsed.href, timed: true};
 }

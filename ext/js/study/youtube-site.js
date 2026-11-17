@@ -18,7 +18,7 @@
 
 // Where the caption reader lives on a YouTube watch page. Other sites use WebVideoSite;
 // the reader and the in-video captions only talk to one of these.
-import {youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
+import {mediaKeyOf} from './media-key.js';
 
 const ACTIVE_CLASS = 'study-captions-on';
 
@@ -30,8 +30,7 @@ export class YoutubeSite {
 
     /** @returns {string|null} */
     mediaKey() {
-        const id = location.pathname === '/watch' ? youtubeVideoId(location.href) : null;
-        return id ? `youtube:${id}` : null;
+        return location.pathname === '/watch' ? mediaKeyOf(location.href) || null : null;
     }
 
     /** @returns {HTMLVideoElement|null} */

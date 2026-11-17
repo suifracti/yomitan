@@ -14,7 +14,7 @@
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
-| 视频已记词点制卡后丢来源/时间；重复台词跳到第一次；重开后旧解释变空 | L-007；YoutubeReader._openSavedWord、openStudyRecord、Display._setContentTermsOrKanji、studyResumeParams |
+| 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
@@ -96,6 +96,8 @@
 证据：test/study-web-reader.test.js 中新增一个连续场景，先复现错误默认英语，再覆盖恢复中文/偏移与继续入口、显式切英语、旧轨失效退回、并发三种保存后再次载入；原跟读/偏移用例也通过。旧用例查侧栏的 offset output 已与“偏移只放视频面板”的现行UI不符，移除该过时位置断言，实际会话时间和持久偏移断言保留。测试使用临时DOM和内存storage，无真实站点、模型、Vault或Anki调用；源码安装与用户浏览器重载另记交接。
 
 ## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
+
+**来源链接和记录编号不是同一回事。** 改视频分组键时看 `study_sources.py`（浏览器站点表由同一文件生成）；不能因此改 `entry_id` 或归档笔记的编号。没有实际播放时间就保留原链接：曾将分享地址的 83 秒写成 0 秒，也会把普通页面的章节锚点丢掉。只有确实知道时间，才为 YouTube/B站生成跳时链接；普通网页不加时间参数，本地文件在来源行只显示文件名。见[临时笔记复现](youtube-study-wiring.md#2026-11-18-来源链接不再从零秒开始)。
 
 适用：视频里的已记词找不到当前字幕行，`_openSavedWord` 改走后台 `openStudyRecord`。学习库原有 `createResumeUrl` 已保留来源上下文，不需要再造一套网址参数。
 

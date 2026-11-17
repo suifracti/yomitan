@@ -80,9 +80,13 @@ class VideoMediaTests(unittest.TestCase):
 
     def test_time_links_only_add_t_where_sites_understand_it(self):
         from study_library_core import time_link
+        url = 'https://www.youtube.com/watch?v=abcdefghijk&t=83s'
+        row = self.library.handle({'action': 'librarySave', 'entry': {
+            'word': 'brick', 'sentence': 'A brick wall.', 'title': 'Building', 'url': url}, 'makeCard': False})
+        self.assertIn(f'来源：[Building]({url})', (self.vault / row['path']).read_text())
         self.assertEqual(time_link('https://www.youtube.com/watch?v=abcdefghijk', 72), '[1:12](https://www.youtube.com/watch?v=abcdefghijk&t=72s)')
         self.assertEqual(time_link('https://www.bilibili.com/video/BV1xx411c7mD?p=2', 72), '[1:12](https://www.bilibili.com/video/BV1xx411c7mD?p=2&t=72)')
-        self.assertEqual(time_link('https://course.example.org/watch?id=7#frag', 72), '[1:12](https://course.example.org/watch?id=7)')
+        self.assertEqual(time_link('https://course.example.org/watch?id=7#chapter-2', 72), '[1:12](https://course.example.org/watch?id=7#chapter-2)')
 
     def test_study_summary_goes_into_one_marked_block_of_the_video_note(self):
         url = 'https://www.youtube.com/watch?v=abcdefghijk'

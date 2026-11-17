@@ -24,6 +24,7 @@ import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl} from '../study/media-key.js';
+import {YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
 import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, cardReceipt, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
 
@@ -96,7 +97,7 @@ export function createSourceLine(entry, title) {
             name = decodeURIComponent(url.pathname.split('/').pop());
         } else if (['http:', 'https:'].includes(url.protocol)) {
             const host = url.hostname.replace(/^www\./, '');
-            const platform = host === 'youtu.be' || host === 'youtube.com' || host === 'm.youtube.com' ? 'YouTube' : host;
+            const platform = YOUTUBE_HOSTS.has(url.hostname) ? 'YouTube' : host;
             name = name ? `${platform} · ${name}` : platform;
             href = timedUrl(url.href, entry.videoTime).url;
             if (Number.isFinite(entry.videoTime) && entry.videoTime >= 0) {

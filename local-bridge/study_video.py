@@ -12,6 +12,7 @@ import re
 import tempfile
 import urllib.parse
 from study_library import text, source_url, safe_markdown, paragraph
+from study_sources import BILIBILI_HOST, YOUTUBE_HOSTS, time_link
 
 ROOT = pathlib.Path('02-个人与生活/阅读与观影/观影/视频记录')
 PROMPT_VERSION = 1
@@ -32,11 +33,11 @@ def canonical_url(value):
     u = urllib.parse.urlsplit(source_url(value))
     host = (u.hostname or '').lower()
     q = urllib.parse.parse_qs(u.query)
-    if host in ('youtu.be', 'www.youtube.com', 'youtube.com', 'm.youtube.com'):
+    if host in YOUTUBE_HOSTS:
         ident = u.path.strip('/').split('/')[-1] if host == 'youtu.be' or u.path.startswith(('/shorts/', '/embed/')) else q.get('v', [''])[0]
         if re.fullmatch(r'[A-Za-z0-9_-]{1,80}', ident):
             return 'https://www.youtube.com/watch?v=' + ident
-    if host in ('www.bilibili.com', 'bilibili.com') and re.fullmatch(r'/video/[A-Za-z0-9]+/?', u.path):
+    if host in (BILIBILI_HOST, 'www.' + BILIBILI_HOST) and re.fullmatch(r'/video/[A-Za-z0-9]+/?', u.path):
         part = q.get('p', ['1'])[0]
         if not part.isdigit():
             raise ValueError('B站分P编号无效。')
@@ -246,7 +247,6 @@ class VideoLibrary:
     def write_summary(self, url, title, rows, links=None, now=None):
         """Writes (or refreshes) one marked study-summary block in the video note.
         Only the block between the markers is ours; everything else in the note is kept."""
-        from study_library_core import time_link
         from study_sync import MASTERY_LABELS, STAGE_NAMES
         url = canonical_url(url)
         title = text(title or '视频', 300, True)

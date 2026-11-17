@@ -77,6 +77,13 @@ def web_contracts(repo):
         routes = runpy.run_path(str(protocol))['DIRECT_ROUTES']
         emit('native-routes.js', protocol, ['export const NATIVE_ROUTES = /** @type {const} */ ({',
                                             *(f"    {action}: {route!r}," for action, route in routes.items()), '});'])
+    sources = bridge / 'study_sources.py'
+    if sources.is_file():
+        data = runpy.run_path(str(sources))
+        declarations = [f"export const YOUTUBE_HOSTS = new Set({list(data['YOUTUBE_HOSTS'])!r});",
+                        f"export const VIDEO_QUERY_KEYS = {list(data['VIDEO_QUERY_KEYS'])!r};",
+                        *(f"export const {key} = {data[key]!r};" for key in ('BILIBILI_HOST', 'FILE_DURATION_KEY'))]
+        emit('media-rules.js', sources, ['\n\n'.join(declarations)])
     return modules
 
 

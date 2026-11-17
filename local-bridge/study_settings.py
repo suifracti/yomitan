@@ -419,7 +419,7 @@ class YomitanLibrary:
 
     def video_words(self, media_key):
         """Saved words from one video (any site, see media_key_of), oldest position first; read-only."""
-        from study_library_core import media_key_of
+        from study_sources import media_key_of
         from study_sync import CARD_STAGES
 
         rows = []
