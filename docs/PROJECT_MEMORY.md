@@ -11,6 +11,7 @@
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
+| 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
@@ -72,6 +73,8 @@
 **设置说“兼容”但复习时还是旧画面**：制卡字段和题面是两个检查。设置和自愿更换工具共用 `study_cards.read_review_view / review_view_state`，只读所选类型的正背面和 CSS，不查笔记或排程。正背面相同但只改过样式也能认出，不按模板名或扩展版本猜已采用。没有返回外观的旧桥仍能检查保存目标。见[临时 Anki 集合和设置页](youtube-study-wiring.md#2026-11-18-看清已有-anki-卡现在用哪套题面)。
 
 **换回自己原本的卡面**：原工具的单份备份留下正背面和 CSS，新备份另记账户/类型的校验值，以及当时所换内容的指纹。还原只需同一份备份，不把当前版本的模板当成过去装过的版本。手改、新同名类型和无从证实来源的老备份不替人覆盖。见[还原与中途断开](youtube-study-wiring.md#2026-11-18-试过学习版后换回原题面)。
+
+**学习库说今天已完成，但子牌组还有卡**：`ankiToday` 先按已选完整路径缩小范围，父子不重复；`getDeckStats` 返回键是编号，其 name 可能只是「单词」这样的末级显示名。不要按完整路径二次查 name，也不要用短名字典合并不同课程。只加这次请求返回的各编号，缺失的仍计零。「已复习」是同范围内当天答过的不同卡片数，另查，不等于这次的到期数。见[临时调度器复现](youtube-study-wiring.md#2026-11-18-有两张到期学习库却说今天已完成)。
 
 ## L-003 YouTube：HTTP 200、非空截取与实际用上是三件事
 

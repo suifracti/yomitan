@@ -30,13 +30,15 @@ class TodayTests(unittest.TestCase):
     def test_real_deck_id_stats_allow_an_unreadable_deck(self):
         from study_stats import anki_today
         def anki(action, params):
-            if action == 'deckNames': return ['外语::单词', '外语::语境']
+            if action == 'deckNames': return ['课程甲::单词', '课程乙::单词', '外语::语境', '日语']
             if action == 'getDeckStats':
-                return {'1723456789000': {'name': '外语::单词', 'new_count': 2, 'learn_count': 1, 'review_count': 4}}
+                self.assertEqual(set(params['decks']), {'课程甲::单词', '课程乙::单词', '外语::语境'})
+                return {'1723456789000': {'name': '单词', 'new_count': 2, 'learn_count': 1, 'review_count': 4},
+                        '1723456789555': {'name': '单词', 'new_count': 1, 'learn_count': 0, 'review_count': 1}}
             if action == 'findCards': return [123]
             self.fail(action)
-        library = SimpleNamespace(settings=lambda: {'deck': '外语::单词', 'deckByKind': {'context': '外语::语境'}}, anki=anki)
-        self.assertEqual(anki_today(library), {'due': 5, 'reviewed': 1, 'newDue': 2, 'decks': ['外语::单词', '外语::语境']})
+        library = SimpleNamespace(settings=lambda: {'deck': '课程甲::单词', 'deckByKind': {'meaning': '课程乙::单词', 'context': '外语::语境'}}, anki=anki)
+        self.assertEqual(anki_today(library), {'due': 6, 'reviewed': 1, 'newDue': 3, 'decks': sorted(['课程甲::单词', '课程乙::单词', '外语::语境'])})
 
     def test_closed_or_disabled_anki_reports_paused(self):
         from study_stats import anki_today

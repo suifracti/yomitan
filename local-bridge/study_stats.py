@@ -23,11 +23,12 @@ def anki_today(library):
         stats = library.anki('getDeckStats', {'decks': decks})
         if not isinstance(stats, dict):
             raise ValueError('Anki 今日统计读取未完成。')
-        rows = {row.get('name'): row for row in stats.values() if isinstance(row, dict)}
+        # Anki returns only the requested deck IDs; a child's display name may omit its parent.
+        rows = [row for row in stats.values() if isinstance(row, dict)]
         reviewed = library.anki('findCards', {'query': '(' + ' OR '.join(quoted_deck(d) for d in decks) + ') rated:1'})
         if not isinstance(reviewed, list) or any(type(c) is not int for c in reviewed):
             raise ValueError('Anki 今日已复习数量读取未完成。')
-        return {'due': sum(rows.get(d, {}).get('learn_count', 0) + rows.get(d, {}).get('review_count', 0) for d in decks),
-                'reviewed': len(set(reviewed)), 'newDue': sum(rows.get(d, {}).get('new_count', 0) for d in decks), 'decks': decks}
+        return {'due': sum(row.get('learn_count', 0) + row.get('review_count', 0) for row in rows),
+                'reviewed': len(set(reviewed)), 'newDue': sum(row.get('new_count', 0) for row in rows), 'decks': decks}
     except (OSError, TimeoutError):
         return {'paused': True}
