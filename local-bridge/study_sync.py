@@ -162,11 +162,11 @@ SOURCE_TIME = re.compile(r'<br\s*/?>视频位置：([0-9]{1,6}) 秒\s*$', re.I)
 def note_origin(raw):
     link = NOTE_LINK.search(raw)
     if not link: return {}
-    attrs = {k.lower(): html.unescape(v) for k, _, v in re.findall(r"""\s(href|data-study-word|data-study-target)\s*=\s*(["'])(.*?)\2""", link[1], re.I | re.S)}
+    attrs = {k.lower(): html.unescape(v) for k, _, v in re.findall(r"""\s(href|data-study-(?:word|target|record|sense|gloss|lemma))\s*=\s*(["'])(.*?)\2""", link[1], re.I | re.S)}
     href = attrs.get('href', '')
     if not href.startswith('obsidian://open?'): return {}
     query = urllib.parse.parse_qs(href.partition('?')[2])
-    return {'word': attrs.get('data-study-word', ''), 'target': attrs.get('data-study-target', ''),
+    return {**{k.removeprefix('data-study-'): v for k, v in attrs.items() if k != 'href'},
             'vault': query.get('vault', [''])[0], 'file': query.get('file', [''])[0]}
 
 
@@ -175,7 +175,11 @@ def source_field(lib, record, values, previous=None):
     attrs = ''
     if lib.language == 'en':
         # Only new cards get new markers; reconciling an old card is not a migration.
-        for key, value in [('word', record['entry']['word']), ('target', lib.target_id)]:
+        entry = record['entry']
+        markers = {'word': entry['word'], 'target': lib.target_id, 'record': record['id']}
+        if entry.get('sense'):
+            markers.update(sense=entry['sense']['key'], gloss=entry['sense']['gloss'], lemma=entry.get('lemma'))
+        for key, value in markers.items():
             if value and (previous is None or previous.get(key)):
                 attrs += f' data-study-{key}="{html.escape(value, quote=True)}"'
     source += '<br><a href="' + html.escape(lib.open_url(record['id']), quote=True) + '"' + attrs + '>学习过程笔记</a>'
@@ -600,6 +604,9 @@ def orphan_record(library, note, supplied_word=''):
     if timestamp:
         entry['videoTime'] = int(timestamp[1])
     origin = note_origin(raw)
+    if origin.get('sense') and origin['sense'] != 'new':
+        entry['sense'] = {'key': origin['sense'], 'gloss': origin.get('gloss', '')}
+        if origin.get('lemma'): entry['lemma'] = origin['lemma']
     group = re.fullmatch(r'(.+)--w([a-f0-9]{32})\.md', pathlib.PurePosixPath(origin.get('file', '')).name)
     tags = note.get('tags', [])
     marked_word = origin.get('word', '')
@@ -621,6 +628,7 @@ def orphan_record(library, note, supplied_word=''):
         entry['word'] = supplied_word
     target = orphan_target(library, origin)
     return {'id': 'anki-' + str(note['noteId']), 'noteId': note['noteId'], 'entry': entry, **({'targetId': target} if target else {}),
+            **({'sourceRecordId': origin['record']} if re.fullmatch(r'[a-f0-9]{32}', origin.get('record', '')) else {}),
             'vaultSaved': False, 'syncState': 'anki-only', 'ankiState': 'linked', 'created': ''}
 
 
@@ -647,20 +655,23 @@ def orphan_action(library, p):
             raise ValueError('保存位置已变，请刷新学习库后再点重建。')
         target = target or library.active_id
         ident = entry_id(entry)
+        front = _plain(info[0]['fields']['Word']['value'])
+        tags = info[0].get('tags', [])
+        card_id = card_key(ident, front)
         lib = library.locate(ident)
         if lib is None:
             lib = library.library_for(target)
             lib.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'turns': []})
         elif (str(lib.vault), str(lib.relative)) != (library.targets[target]['vault'], library.targets[target]['directory']):
             raise ValueError('这条笔记已经在另一个文件夹里，请先核对；没有覆盖。')
+        elif fresh.get('sourceRecordId') != ident and 'study_' + ident not in tags and 'studycard_' + card_id not in tags:
+            raise ValueError('已经有同词同句的笔记，但这张旧卡不能确认是同一个意思。没有合并，请点「Anki 查看」对照原卡。')
         r, body, version = lib.read(ident)
-        front = _plain(info[0]['fields']['Word']['value'])
         back = parse_definition(info[0]['fields']['Definition']['value'], {})['answer']
-        kind = next((tag.removeprefix('study_kind::') for tag in info[0].get('tags', [])
+        kind = next((tag.removeprefix('study_kind::') for tag in tags
                      if tag.startswith('study_kind::') and tag.removeprefix('study_kind::') in CARD_STAGES), 'context')
         if not any(c.get('noteId') == p['noteId'] for c in r.get('cards', [])):
-            card_id = card_key(r['id'], front)
-            if 'studycard_' + card_id not in info[0].get('tags', []) or any(c['id'] == card_id for c in r.get('cards', [])):
+            if 'studycard_' + card_id not in tags or any(c['id'] == card_id for c in r.get('cards', [])):
                 card_id = hashlib.sha256(('restored:' + str(p['noteId'])).encode()).hexdigest()[:32]
             r.setdefault('cards', []).append({'id': card_id, 'front': front, 'back': back, 'noteId': p['noteId'], 'linkedExisting': True, 'state': 'synced', 'kind': kind})
         r.update({'ankiState': 'synced', 'syncState': 'synced'})

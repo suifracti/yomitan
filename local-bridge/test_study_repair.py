@@ -6,6 +6,26 @@ import test_study_auto_sync as fixture
 
 
 class RepairTests(unittest.TestCase):
+    def test_recover_the_two_saved_senses_of_the_same_word_in_one_sentence(self):
+        h = fixture.AutoSyncTests(); h.setUp()
+        self.addCleanup(h.tearDown)
+        originals = {}
+        for gloss in ('指控', '费用'):
+            entry = {'word': 'charges', 'lemma': 'charge', 'sentence': 'They discussed the charges.',
+                     'meaning': gloss, 'sense': {'key': 'new', 'gloss': gloss}}
+            record = h.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'targetId': h.library.active_id})
+            card = {'kind': 'context', 'front': '这句里的 charges 是什么？（' + gloss + '）', 'back': gloss}
+            sent = h.library.handle({'action': 'libraryCardsAdd', 'id': record['id'], 'cards': [card]})
+            self.assertEqual(sent['ankiState'], 'synced')
+            originals[gloss] = (record['id'], sent['cards'][0]['noteId'])
+        h.library.locate(record['id']).path(record['id']).unlink()
+        h.library.handle({'action': 'libraryAutoSync'})
+        for _, note_id in originals.values():
+            h.library.handle({'action': 'libraryOrphan', 'noteId': note_id, 'choice': 'restore'})
+        senses = h.library.handle({'action': 'libraryWordSenses', 'word': 'charge'})['senses']
+        self.assertCountEqual([(s['gloss'], s['key'], s['recordIds'], s['cards']) for s in senses],
+                              [('指控', 'charge#2', [originals['指控'][0]], 1), ('费用', 'charge#3', [originals['费用'][0]], 1)])
+
     def test_orphan_restores_to_its_folder_without_overwriting_a_later_edit_on_retry(self):
         h = fixture.AutoSyncTests(); h.setUp()
         self.addCleanup(h.tearDown)

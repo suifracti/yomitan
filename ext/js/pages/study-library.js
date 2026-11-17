@@ -484,6 +484,7 @@ async function initializePage() {
             top.className = 'study-library-record-heading';
             const title = document.createElement('h2');
             title.textContent = record.entry?.word || (record.syncState === 'anki-only' ? '这张卡没有留下原词' : '(未命名记录)');
+            if (record.entry?.sense?.gloss) { title.append(` · ${record.entry.sense.gloss}`); }
             const state = document.createElement('p');
             state.className = 'study-library-state';
             state.textContent = stateSummary(record) + (upgradeIds.has(record.id) ? ' · 之前的卡已熟，可以加“会用”卡' : '');
