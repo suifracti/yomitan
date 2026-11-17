@@ -1,6 +1,7 @@
 <article class="sr-card" data-side="front">
   <div class="sr-eyebrow">语境回忆 · 先想意思，再看答案</div>
   <h1 class="sr-question">{{Word}}</h1>
+  <template class="sr-tags">{{Tags}}</template>
   {{#Sentence}}<section class="sr-context" hidden><div class="sr-label">原句</div><div class="sr-sentence">{{Sentence}}</div></section>{{/Sentence}}
   <p class="sr-hint">这个词或表达，在这句话里是什么意思？</p>
 </article>
@@ -10,15 +11,28 @@
   var card = cards[cards.length - 1];
   if (!card || card.dataset.ready) return;
   card.dataset.ready = 'true';
-  var source = card.querySelector('.sr-question [data-study-clip]');
+  var question = card.querySelector('.sr-question');
+  var source = question.querySelector('[data-study-clip]');
   var context = card.querySelector('.sr-context');
+  var heading = card.querySelector('.sr-eyebrow');
   if (!source) {
-    if (context) context.hidden = false;
+    var tag = card.querySelector('.sr-tags').content.textContent.match(/(?:^|\s)study_kind::([a-z-]+)(?=\s|$)/i);
+    var kind = tag ? tag[1].toLowerCase() : '';
+    if (kind) {
+      heading.textContent = kind === 'meaning' ? '回想词义' : '先作答，再看答案';
+      card.querySelector('.sr-hint').remove();
+    }
+    if (context) {
+      var sentence = context.querySelector('.sr-sentence').textContent.replace(/\s+/g, '');
+      var alreadyInQuestion = kind && sentence && question.textContent.replace(/\s+/g, '').includes(sentence);
+      var standalone = /^(meaning|cloze|produce|form-recognize|form-produce|make-sentence)$/.test(kind);
+      if (standalone || alreadyInQuestion) context.remove();
+      else context.hidden = false;
+    }
     return;
   }
   if (context) context.remove();
   card.querySelector('.sr-hint').remove();
-  var heading = card.querySelector('.sr-eyebrow');
   var filename = source.getAttribute('data-study-clip');
   if (!filename) {
     heading.textContent = '这张卡缺少原声，可以先翻面看原句。';

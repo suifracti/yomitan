@@ -13,6 +13,20 @@ def render_text(text,data):
 def render(name,data):
  return render_text((assets/(name+'.html')).read_text(),data)
 
+def check_written_questions(page):
+ sentence='They built a brick bridge.'
+ def question(kind, prompt):
+  note={**fields,'Tags':'english_study study_kind::'+kind,'Word':prompt,'Sentence':sentence}
+  page.set_content(render('front',note))
+  return page.locator('body').inner_text()
+ assert sentence not in question('meaning','brick'), 'a word-only question still displays the example'
+ blank=question('cloze','填空：They built a […] bridge.')
+ assert '[…]' in blank and sentence not in blank, 'the blank is immediately answered by the transcript'
+ translate=question('produce','用英语说：他们建了一座砖桥。')
+ assert '他们建了一座砖桥' in translate and sentence not in translate
+ assert question('context','这里的 brick 指什么？').count(sentence)==1
+ assert question('context','这里的 brick 指什么？<br>'+sentence).count(sentence)==1
+
 def check_listening(page):
  """One temporary recording, a spelling card and a normal card made from the same note."""
  study=library_fixture.LibraryTests();study.setUp()
@@ -34,7 +48,8 @@ def check_listening(page):
   listening,text_card=(n['fields'] for n in study.cards.values())
   def show(side,values):
    file=study.vault/'review.html'
-   file.write_text('<meta charset="utf-8"><style>'+model['css']+'</style>'+render_text(template[side],values))
+   tags=next(n['tags'] for n in study.cards.values() if n['fields'] is values)
+   file.write_text('<meta charset="utf-8"><style>'+model['css']+'</style>'+render_text(template[side],{**values,'Tags':' '.join(tags)}))
    page.goto(file.as_uri())
   show('Front',listening)
   assert listening['Sentence'] not in page.locator('body').inner_text(), 'unflipped listening card gives away the subtitle'
@@ -79,6 +94,8 @@ with sync_playwright() as p:
  page.screenshot(path=str(OUTPUT/'previews'/'anki-quick-back.png'))
  check_listening(page)
  checks.append('new model: selected WAV finishes before reveal, transcript on back, no playback on a text card')
+ check_written_questions(page)
+ checks.append('word-only and production prompts do not expose the original; context keeps it exactly once')
  assert not errors
  (OUTPUT/'anki-render-results.json').write_text(json.dumps({'checks':checks,'passed':len(checks),'scope':'Chromium rendering of real template files with fixture fields; not the Anki app'},ensure_ascii=False,indent=2))
  print(json.dumps({'passed':len(checks),'errors':errors}));browser.close()

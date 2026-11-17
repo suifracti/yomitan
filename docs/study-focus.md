@@ -48,6 +48,8 @@ python3 tools/reformat-study-note.py --vault '/实际/Vault' --file '语境目�
 
 已有模型不会因更新代码而静默改模板：
 
+正面按既有卡型出题。纯词义不附例句；挖空、中→英、词形练习和造句不把答案所在的英文原句另外列出来。语境题需要原句，但题干里已有就不重复；自己写的短问题仍会带上原句。没有学习卡型标签的原生词典卡保留原有上下文。
+
 ```sh
 python3 tools/apply-study-card-view.py --model '外语语境卡'
 ```
