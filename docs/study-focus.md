@@ -60,6 +60,8 @@ python3 tools/apply-study-card-view.py --model '外语语境卡'
 
 默认仅检查。决定让**使用该笔记类型的所有卡**都换成学习版时，才在同一条命令后加 `--apply --expected <检查所得fingerprint>`。工具先在本机保留一份原样式和题面，再更换并读回确认；若已经一样，不写入也不重复备份。拒绝字段不符、检查后又有改动或包含多个模板的笔记类型。不会改题目、答案、制卡字段或复习时间。
 
+**想换回去**：打开当初使用的 Anki 账户，在同一个项目目录运行 `python3 tools/apply-study-card-view.py --model '外语语境卡' --restore '更换时显示的备份文件路径'`。只还原原来那一个笔记类型的正面、背面和样式。若后来又手改过、类型被删后重建，工具就停下，不会覆盖。老备份或无法辨认账户的旧 AnkiConnect（`canAutoRestore: false`）只能手动还原：打开备份 JSON，对照其中的 Front、Back、css，在 Anki「工具 → 管理笔记类型 → 卡片」里取回需要的部分。
+
 ## 本机接入
 
 保留当前工作树和用户配置，接入本次 main 的两个入口、`study-focus.js` 与 `study-focus.css`，不要用旧安装包覆盖。Python 原生桥需要一起更新 wrapper、core、note-view、sync、settings 与 translator；安装器清单已包含新模块。只复制一个 wrapper 会造成模块缺失。未授权时不改真实模板、旧笔记或系统权限。

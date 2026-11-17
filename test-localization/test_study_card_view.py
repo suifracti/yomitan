@@ -5,11 +5,14 @@ spec=importlib.util.spec_from_file_location('view',ROOT/'tools'/'apply-study-car
 class ViewTests(unittest.TestCase):
  def setUp(self):
   self.templates={'语境回忆':{'Front':'OLD FRONT','Back':'OLD BACK'}};self.css={'css':'old'};self.calls=[];self.fields=list(view.FIELDS)
+  self.profile='test';self.model_id=42
  def api(self,action,params):
   self.calls.append(action)
   if action=='modelFieldNames':return self.fields.copy()
   if action=='modelTemplates':return copy.deepcopy(self.templates)
   if action=='modelStyling':return self.css.copy()
+  if action=='getActiveProfile':return self.profile
+  if action=='modelNamesAndIds':return {'外语语境卡':self.model_id}
   if action=='updateModelTemplates':self.templates.update(copy.deepcopy(params['model']['templates']));return None
   if action=='updateModelStyling':self.css={'css':params['model']['css']};return None
   raise AssertionError('Unexpected operation: '+action)
@@ -21,7 +24,8 @@ class ViewTests(unittest.TestCase):
   # successful-write fixture without weakening the backup path guard.
   with tempfile.TemporaryDirectory(prefix='study-card-view-test-',dir=pathlib.Path.home()) as temp:
    result=view.apply_view('外语语境卡',None,token,temp,self.api)
-   self.assertEqual(json.loads(pathlib.Path(result['backup']).read_text()),old)
+   backup=json.loads(pathlib.Path(result['backup']).read_text())
+   self.assertEqual({key:backup[key] for key in old},old)
    self.assertEqual(self.fields,view.FIELDS)
    self.assertNotIn('addNote',self.calls);self.assertNotIn('answerCards',self.calls)
    self.assertIn('sr-question',self.templates['语境回忆']['Front'])
@@ -33,6 +37,26 @@ class ViewTests(unittest.TestCase):
  def test_wrong_schema_refused(self):
   self.fields+=['Extra']
   with self.assertRaisesRegex(ValueError,'七字段'):view.inspect('外语语境卡',self.api)
+ def test_undo_partial_application_preserves_later_edits(self):
+  model='外语语境卡';old=view.inspect(model,self.api)
+  def interrupted(action,params):
+   if action=='updateModelStyling':raise OSError('Anki closed')
+   return self.api(action,params)
+  with tempfile.TemporaryDirectory(dir=pathlib.Path.home()) as temp:
+   with self.assertRaisesRegex(ValueError,'备份'):view.apply_view(model,None,view.fingerprint(old),temp,interrupted)
+   backup,=pathlib.Path(temp).iterdir()
+   self.assertNotEqual(self.templates,old['templates']);self.assertEqual(self.css,old['styling'])
+   self.css={'css':'my later edit'};self.calls.clear()
+   with self.assertRaisesRegex(ValueError,'改过'):view.restore_view(model,backup,self.api)
+   self.assertFalse(any(a.startswith('update') for a in self.calls))
+   self.css=old['styling'];self.model_id+=1
+   with self.assertRaisesRegex(ValueError,'不是'):view.restore_view(model,backup,self.api)
+   self.model_id-=1;self.calls.clear()
+   self.assertTrue(view.restore_view(model,backup,self.api)['restoredViewOnly'])
+   self.assertEqual(view.inspect(model,self.api),old)
+   self.assertEqual([a for a in self.calls if a.startswith('update')],['updateModelTemplates'])
+   self.assertFalse(view.restore_view(model,backup,self.api)['restoredViewOnly'])
+   self.assertEqual(list(pathlib.Path(temp).iterdir()),[backup])
  def test_multiple_templates_are_not_restyled(self):
   self.templates['其他卡型']={'Front':'OTHER','Back':'OTHER'};token=view.fingerprint(view.inspect('外语语境卡',self.api))
   with tempfile.TemporaryDirectory() as temp:

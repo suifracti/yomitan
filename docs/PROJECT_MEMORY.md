@@ -10,6 +10,7 @@
 |---|---|
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
+| 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
@@ -69,6 +70,8 @@
 **听写正面没声音，或者还没想就看见字幕**：题面的文字在 `study-card-kinds.js`，真正复习的正背面在 `assets/study-review/`；改草稿不等于改了 Anki 画面。新制听力卡在题面 HTML 末尾带不显示的 `data-study-clip`，文件名取自这一张卡实际的 Audio；双向同步比较的是题目正文，不把文件名写进笔记问题，换录音后按 Audio 更新引用。普通文字卡不会因为同一条笔记附了录音就播放。七字段和旧卡保留；已有模型只有用户主动采用新视图才改变。见[临时 Anki 渲染与原声验证](youtube-study-wiring.md#2026-11-18-听写可以先听再翻面)。
 
 **设置说“兼容”但复习时还是旧画面**：制卡字段和题面是两个检查。设置和自愿更换工具共用 `study_cards.read_review_view / review_view_state`，只读所选类型的正背面和 CSS，不查笔记或排程。正背面相同但只改过样式也能认出，不按模板名或扩展版本猜已采用。没有返回外观的旧桥仍能检查保存目标。见[临时 Anki 集合和设置页](youtube-study-wiring.md#2026-11-18-看清已有-anki-卡现在用哪套题面)。
+
+**换回自己原本的卡面**：原工具的单份备份留下正背面和 CSS，新备份另记账户/类型的校验值，以及当时所换内容的指纹。还原只需同一份备份，不把当前版本的模板当成过去装过的版本。手改、新同名类型和无从证实来源的老备份不替人覆盖。见[还原与中途断开](youtube-study-wiring.md#2026-11-18-试过学习版后换回原题面)。
 
 ## L-003 YouTube：HTTP 200、非空截取与实际用上是三件事
 
