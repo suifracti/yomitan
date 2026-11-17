@@ -15,6 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {escapeRegExp} from '../core/utilities.js';
 import {CARD_CATALOG} from '../study/card-catalog.js';
 
 export {MASTERY_LABELS, STAGE_LABELS} from '../study/card-catalog.js';
@@ -83,13 +84,16 @@ export function recommendedKinds(mastery, facts) {
 }
 
 /**
- * @param {string} sentence
- * @param {string} word
+ * @param {CardFacts} facts
  * @returns {string}
  */
-function blank(sentence, word) {
-    const at = sentence.toLocaleLowerCase().indexOf(word.toLocaleLowerCase());
-    return at < 0 ? sentence : `${sentence.slice(0, at)}[…]${sentence.slice(at + word.length)}`;
+function blank({sentence, word, forms}) {
+    const alternatives = [word, ...forms.map(({form}) => form)]
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length)
+        .map(escapeRegExp)
+        .join('|');
+    return alternatives ? sentence.replace(new RegExp(`(?<!\\w)(?:${alternatives})(?!\\w)`, 'gi'), '[…]') : sentence;
 }
 
 /**
@@ -107,9 +111,13 @@ export function cardDrafts(kind, facts) {
         case 'form-recognize': return facts.forms.slice(0, 3).map(({form, kind: name}) => ({front: `${form} 是哪个词的什么形式？`, back: `${word} 的${name}`}));
         case 'context': return [{front: `“${word}”在这句话中是什么意思？\n${sentence}`, back: contextMeaning}];
         case 'sentence': return [{front: `翻译这句话：\n${sentence}`, back: translation}];
-        case 'listening': return [{front: `听原声，补全并理解“${word}”：\n${blank(sentence, word)}`, back: [sentence, translation].filter(Boolean).join('\n')}];
+        case 'listening': {
+            const masked = blank(facts);
+            const front = masked !== sentence ? `听原声，补全这句话：\n${masked}` : '听原声，写下你听到的内容。';
+            return [{front, back: [sentence || word, translation].filter(Boolean).join('\n')}];
+        }
         case 'produce': return [{front: `用英文说出这句话（提示：${word}）：\n${translation}`, back: sentence}];
-        case 'cloze': return [{front: `填空（${contextMeaning || meaning}）：\n${blank(sentence, word)}`, back: `${word}\n${sentence}`}];
+        case 'cloze': return [{front: `填空（${contextMeaning || meaning}）：\n${blank(facts)}`, back: `${word}\n${sentence}`}];
         case 'form-produce': return facts.forms.slice(0, 3).map(({form, kind: name}) => ({front: `${word} 的${name}是？`, back: form}));
         case 'make-sentence': return [{front: `用「${word}」（${contextMeaning || meaning}）造一个句子。`, back: sentence ? `参考：${sentence}` : ''}];
         case 'expression': return [{front: `“${word}”的常见搭配或表达？`, back: ''}];

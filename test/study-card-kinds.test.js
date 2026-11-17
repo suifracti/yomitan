@@ -42,6 +42,12 @@ test('drafts use the card facts and never borrow a general sense for the context
     expect(cardDrafts('produce', facts)[0]).toEqual({front: '用英文说出这句话（提示：brick）：\n我开了一家实体店。', back: 'I opened a brick and mortar shop.'});
     expect(cardDrafts('form-recognize', facts)).toEqual([{front: 'bricks 是哪个词的什么形式？', back: 'brick 的复数'}]);
     expect(cardDrafts('context', {...facts, contextMeaning: ''})[0].back).toBe('');
+    const clip = {...facts, word: 'play', sentence: 'The display shows how she played and how I play.', translation: '屏幕上是她和我的打法。', forms: [{label: '过去式', form: 'played', kind: '过去式'}]};
+    expect(cardDrafts('listening', clip)[0]).toEqual({
+        front: '听原声，补全这句话：\nThe display shows how she […] and how I […].',
+        back: clip.sentence + '\n' + clip.translation,
+    });
+    expect(cardDrafts('listening', {...clip, sentence: 'Look at this display.'})[0].front).toBe('听原声，写下你听到的内容。');
 });
 
 test('missing prerequisites explain themselves', () => {
