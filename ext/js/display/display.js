@@ -35,6 +35,8 @@ import {TextSourceGenerator} from '../dom/text-source-generator.js';
 import {HotkeyHelpController} from '../input/hotkey-help-controller.js';
 import {TextScanner} from '../language/text-scanner.js';
 import {checkPopupPreviewURL} from '../pages/settings/popup-preview-controller.js';
+import {readStudyRecord} from '../study/study-client.js';
+import {studyResumeParams} from '../study/study-data.js';
 import {DisplayContentManager} from './display-content-manager.js';
 import {DisplayGenerator} from './display-generator.js';
 import {DisplayHistory} from './display-history.js';
@@ -1415,6 +1417,36 @@ export class Display extends EventDispatcher {
         if (!(typeof state === 'object' && state !== null)) {
             state = {};
             changeHistory = true;
+        }
+
+        // An editor opened from a saved subtitle owns the saved note, but only the
+        // verified live cue grants playback/capture. A normal scan needs no note read.
+        if (state.savedRecordId && state.studyMediaToken && !state.savedRecordEntry && state.sentence) {
+            this._container.textContent = '正在打开这条笔记…';
+            try {
+                const record = await readStudyRecord(state.savedRecordId, 'en');
+                if (this._setContentToken !== token) { return; }
+                const {entry} = record;
+                const normalize = (/** @type {string} */ text) => text.trim().replace(/\s+/g, ' ').toLowerCase();
+                if (normalize(entry.word) !== normalize(query) || normalize(entry.sentence) !== normalize(state.sentence.text) ||
+                (typeof entry.videoTime === 'number' && entry.videoTime !== Math.floor(state.videoTime ?? -1))) {
+                    throw new Error('这条笔记和当前字幕已不一样，请从学习库重新打开。');
+                }
+                const params = studyResumeParams(record);
+                const offset = entry.sentence === state.sentence.text ? state.sentence.offset : Number(params.get('offset'));
+                state.sentence = {text: entry.sentence, offset, adjacent: params.get('studyContext') || ''};
+                state.url = entry.url;
+                state.documentTitle = params.get('studySourceTitle') || '';
+                state.videoTime = entry.videoTime;
+                state.savedRecordWord = entry.word;
+                state.savedRecordEntry = entry;
+                state.savedRecordTurnIds = record.turnIds ?? [];
+                state.studySentenceTranslation = entry.translation || state.studySentenceTranslation;
+                changeHistory = true;
+            } catch (error) {
+                if (this._setContentToken === token) { this._container.textContent = error instanceof Error ? error.message : '请从学习库重新打开这条笔记。'; }
+                return;
+            }
         }
 
         let {focusEntry, scrollX, scrollY, optionsContext} = state;

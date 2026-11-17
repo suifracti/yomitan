@@ -29,8 +29,8 @@ import {SearchActionPopupController} from './search-action-popup-controller.js';
 import {SearchDisplayController} from './search-display-controller.js';
 import {prepareStudyCard} from './study-card.js';
 import {prepareStudyFocus} from './study-focus.js';
-import {studyCall} from '../study/study-client.js';
-import {createResumeUrl} from '../study/study-data.js';
+import {readStudyRecord, studyCall} from '../study/study-client.js';
+import {studyResumeParams} from '../study/study-data.js';
 import {SearchPersistentStateController} from './search-persistent-state-controller.js';
 
 await Application.main(true, async (application) => {
@@ -119,11 +119,9 @@ await Application.main(true, async (application) => {
             let savedRecordTurnIds;
             if (savedRecordId) {
                 try {
-                    const read = /** @type {{items: import('study').LearningMaterial[]}} */ (await studyCall('libraryRead', {ids: [savedRecordId], language: resumeParams.get('studyLanguage') ?? 'en'}));
-                    const record = read.items.find((item) => item.record?.id === savedRecordId)?.record;
-                    savedRecordEntry = record?.entry;
-                    savedRecordTurnIds = record?.turnIds ?? [];
-                    if (!savedRecordEntry) { throw new Error('这条笔记没读到，请回学习库重新打开。'); }
+                    const record = await readStudyRecord(savedRecordId, resumeParams.get('studyLanguage') ?? 'en');
+                    savedRecordEntry = record.entry;
+                    savedRecordTurnIds = record.turnIds ?? [];
                 } catch (error) {
                     const heading = document.querySelector('#study-detail-heading');
                     if (heading instanceof HTMLElement) {
@@ -133,7 +131,7 @@ await Application.main(true, async (application) => {
                     return;
                 }
             }
-            const lookupParams = savedRecordEntry ? new URL(createResumeUrl({id: savedRecordId, entry: savedRecordEntry}, chrome.runtime.getURL('search.html'))).searchParams : resumeParams;
+            const lookupParams = savedRecordEntry ? studyResumeParams({id: savedRecordId, entry: savedRecordEntry}) : resumeParams;
             const query = lookupParams.get('query') ?? '';
             const sentence = lookupParams.get('full') ?? query;
             const offsetValue = Number.parseInt(lookupParams.get('offset') ?? '0', 10);

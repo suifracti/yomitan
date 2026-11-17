@@ -256,8 +256,8 @@ export class SubtitleTextScanner extends TextScanner {
 export class Frontend {
     /** @type {{source: import('text-source').TextSource, query: number, snapshot: StudySubtitle}|null} */
     _studyCueCurrent = null;
-    /** @type {WeakSet<import('text-source').TextSource>} */
-    _studyCardSources = new WeakSet();
+    /** @type {WeakMap<import('text-source').TextSource, string>} An empty ID opens the ordinary, unsaved card editor. */
+    _studyCardSources = new WeakMap();
     /** @type {import('text-source').TextSource|null} */
     _studyLastLookupSource = null;
     /** @type {number} */
@@ -404,9 +404,9 @@ export class Frontend {
         this._textScanner.on('selectionShortcut', this._onSelectionShortcut.bind(this));
         this._textScanner.prepare();
         if (this._pageType === 'web') {
-            youtubeStudyContext.openCard = async (range, openPanel = true) => {
+            youtubeStudyContext.openCard = async (range, openPanel = true, recordId = '') => {
                 const source = TextSourceRange.createLazy(range);
-                if (openPanel) { this._studyCardSources.add(source); }
+                if (openPanel) { this._studyCardSources.set(source, recordId); }
                 this._textScanner.setCurrentTextSource(null);
                 await this._textScanner.search(source, {focus: true, restoreSelection: true}, true);
             };
@@ -1234,6 +1234,8 @@ export class Frontend {
             detailsState.url = youtube.url;
             detailsState.videoTime = youtube.videoTime;
             detailsState.studyOpenCard = this._studyCardSources.has(textSource);
+            const recordId = this._studyCardSources.get(textSource);
+            if (recordId) { detailsState.savedRecordId = recordId; }
             detailsState.studyMediaToken = youtube.token;
             detailsState.studyMediaRange = youtube.mediaRange;
             detailsState.studySentenceTranslation = youtube.translation;

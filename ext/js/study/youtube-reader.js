@@ -612,9 +612,10 @@ export class YoutubeReader extends EventTarget {
      * @param {string} id
      * @param {string} [word]
      * @param {boolean} [openPanel]
+     * @param {string} [recordId]
      * @returns {Promise<boolean|undefined>}
      */
-    async lookupCaption(id, word = '', openPanel = false) {
+    async lookupCaption(id, word = '', openPanel = false, recordId = '') {
         const text = this._list.ensure(id)?.querySelector('.r-text');
         const info = this._rowInfo.get(id);
         if (!/^en(?:-|$)/i.test(this._session?.source.language || '')) { return false; }
@@ -623,10 +624,10 @@ export class YoutubeReader extends EventTarget {
             return;
         }
         const range = document.createRange();
-        const match = word ? [...info.text.matchAll(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)].find((m) => wordForms(m[0]).includes(word.toLowerCase())) : null;
+        const match = word ? [...info.text.matchAll(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)].find((m) => (recordId ? m[0].toLowerCase() === word.toLowerCase() : wordForms(m[0]).includes(word.toLowerCase()))) : null;
         if (word && !match) { return false; }
         range.setStart(text.firstChild, match?.index ?? 0); range.setEnd(text.firstChild, match ? match.index + match[0].length : info.text.length);
-        await youtubeStudyContext.openCard(range, openPanel); return true;
+        await youtubeStudyContext.openCard(range, openPanel, recordId); return true;
     }
 
     /**
@@ -1678,11 +1679,13 @@ export class YoutubeReader extends EventTarget {
         return section;
     }
 
-    /** @param {{id: string, word: string, sentence: string}} item */
+    /** @param {{id: string, word: string, sentence: string, videoTime: number|null}} item */
     async _openSavedWord(item) {
-        const normalize = (text) => text.replaceAll(/\s+/g, ' ').trim().toLowerCase();
-        const cue = this._session?.cues.find((row) => normalize(row.text) === normalize(item.sentence));
-        if (cue && await this.lookupCaption(cue.id, item.word, true)) { return; }
+        const normalize = (/** @type {string} */ text) => text.replaceAll(/\s+/g, ' ').trim().toLowerCase();
+        const sentence = normalize(item.sentence);
+        const cues = [...this._rowInfo].filter(([, row]) => normalize(row.text) === sentence &&
+        (item.videoTime === null || Math.floor(row.start) === item.videoTime));
+        if (cues.length === 1 && await this.lookupCaption(cues[0][0], item.word, true, item.id)) { return; }
         await this._call('openStudyRecord', {id: item.id, word: item.word, sentence: item.sentence});
     }
 

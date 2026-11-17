@@ -235,10 +235,9 @@ export function parseLegacySourceLocator(value) {
  * Build a regular dictionary lookup while retaining the saved source context.
  * This deliberately restores ordinary source metadata only; it does not create subtitle authorization.
  * @param {{id?: string, entry?: {word?: string, sentence?: string, context?: string, url?: string, title?: string, videoTime?: number, language?: string}}} record
- * @param {string} searchUrl
- * @returns {string}
+ * @returns {URLSearchParams}
  */
-export function createResumeUrl(record, searchUrl) {
+export function studyResumeParams(record) {
     const entry = record.entry ?? {};
     const word = entry.word ?? '';
     const sentence = entry.sentence ?? word;
@@ -251,5 +250,14 @@ export function createResumeUrl(record, searchUrl) {
     params.set('studyLanguage', entry.language ?? 'en');
     if (record.id) { params.set('studyRecordId', record.id); }
     if (typeof entry.videoTime === 'number' && Number.isFinite(entry.videoTime)) { params.set('studyVideoTime', `${entry.videoTime}`); }
-    return `${searchUrl}?${params.toString()}`;
+    return params;
+}
+
+/**
+ * @param {Parameters<typeof studyResumeParams>[0]} record
+ * @param {string} searchUrl
+ * @returns {string}
+ */
+export function createResumeUrl(record, searchUrl) {
+    return `${searchUrl}?${studyResumeParams(record).toString()}`;
 }

@@ -30,6 +30,20 @@ export async function studyCall(action, data = {}) {
     return response.value;
 }
 
+/**
+ * Read one saved context in the extension UI, never its first same-word neighbour.
+ * @param {string} id
+ * @param {string} language
+ * @returns {Promise<import('study').LibraryRecord>}
+ * @throws {Error}
+ */
+export async function readStudyRecord(id, language) {
+    const read = /** @type {{items: import('study').LearningMaterial[]}} */ (await studyCall('libraryRead', {ids: [id], language}));
+    const record = read.items.find((item) => item.record?.id === id)?.record;
+    if (!record?.entry) { throw new Error('这条笔记没读到，请回学习库重新打开。'); }
+    return record;
+}
+
 /** @type {import('study').NativeCall} */
 export function nativeStudyCall(payload) {
     if (typeof chrome.runtime.connectNative !== 'function') {
