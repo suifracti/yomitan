@@ -222,14 +222,15 @@ export function cardReceipt(record) {
     const cards = Array.isArray(record.cards) ? record.cards : [];
     const state = typeof record.syncState === 'string' ? record.syncState : record.syncState?.status;
     const late = record.ankiState === 'pending' || state === 'pending';
-    const previouslyLinked = record.ankiState === 'linked' || record.ankiState === 'synced';
-    const verified = cards.filter((c) => {
-        const cardState = c.syncState ?? c.state;
-        return c.noteId && (cardState === 'synced' || (!cardState && previouslyLinked));
-    });
-    const ids = new Set(verified.map((c) => c.noteId));
-    if (cards.length === 0 && record.noteId && !late && previouslyLinked) { ids.add(record.noteId); }
-    const waiting = cards.filter((c) => (c.syncState ?? c.state) === 'pending' || (!c.noteId && late)).length;
+    let progress = record.cardProgress;
+    if (!progress) { // Snapshots from before the bridge supplied its receipt counts.
+        const linked = record.ankiState === 'linked' || record.ankiState === 'synced';
+        const verified = cards.filter((c) => c.noteId && ((c.syncState ?? c.state) === 'synced' || (!(c.syncState ?? c.state) && linked)));
+        const ids = new Set(verified.map((c) => c.noteId));
+        if (cards.length === 0 && record.noteId && !late && linked) { ids.add(record.noteId); }
+        progress = {confirmed: ids.size, waiting: cards.filter((c) => (c.syncState ?? c.state) === 'pending' || (!c.noteId && late)).length};
+    }
+    const {confirmed, waiting} = progress;
     const problems = {missing: 'Anki 里的卡已被删除',
         ambiguous: `Anki 里有 ${record.candidates?.length ?? 0} 张卡对应这条记录`,
         conflict: '笔记和 Anki 的改动不一样，请在学习库选择保留哪份',
@@ -243,11 +244,11 @@ export function cardReceipt(record) {
     } else if (record.ankiEnabled === false) {
         text = '复习卡已关闭';
     } else if (waiting > 0) {
-        text = [ids.size > 0 ? `已确认 ${ids.size} 张` : '', `${waiting} 张未确认`].filter(Boolean).join('，');
+        text = [confirmed > 0 ? `已确认 ${confirmed} 张` : '', `${waiting} 张未确认`].filter(Boolean).join('，');
     } else if (needsAttention) {
         text = 'Anki 还没确认这次更新';
-    } else if (ids.size > 0) {
-        text = `已确认 ${ids.size} 张卡`;
+    } else if (confirmed > 0) {
+        text = `已确认 ${confirmed} 张卡`;
     } else {
         text = record.noteId || cards.length > 0 ? '已有关联，尚未核实' : '尚未制卡';
     }

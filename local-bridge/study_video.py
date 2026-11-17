@@ -254,12 +254,17 @@ class VideoLibrary:
         links = links or {}
         when = (now or datetime.datetime.now().astimezone()).strftime('%Y-%m-%d %H:%M')
         cards = sum(r.get('cards', 0) for r in rows)
+        unsettled = sum(bool(r.get('cardHint')) for r in rows)
         lines = [SUMMARY_BEGIN, f'## 学习小结（{when} 更新）', '',
-                 f'在这个视频里记住了 {len(rows)} 个词，做了 {cards} 张卡。点时间回到原句。', '']
+                 f'在这个视频里记住了 {len(rows)} 个词，已确认 {cards} 张卡。' +
+                 (f'还有 {unsettled} 条记录需要核对。' if unsettled else '') + '点时间回到原句。', '']
         for r in rows:
             moment = time_link(url, r['videoTime']) if isinstance(r.get('videoTime'), (int, float)) else '—'
             facts = [MASTERY_LABELS.get(r.get('mastery', ''), '')]
-            facts.append(f"{r['cards']} 张卡" + (f"（到{STAGE_NAMES.get(r.get('stage'), '')}）" if r.get('stage') in STAGE_NAMES else '') if r.get('cards') else '只记了笔记')
+            if r.get('cards'):
+                facts.append(f"{r['cards']} 张卡" + (f"（到{STAGE_NAMES[r['stage']]}）" if r.get('stage') in STAGE_NAMES else ''))
+            if r.get('cardHint') or not r.get('cards'):
+                facts.append(r.get('cardHint') or '只记了笔记')
             note = f" · [[{links[r['id']]}|笔记]]" if r.get('id') in links else ''
             lines.append(f"- {moment} **{safe_markdown(r['word'])}** · {' · '.join(x for x in facts if x)}{note}")
             if r.get('sentence'):

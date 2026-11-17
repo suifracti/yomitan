@@ -16,7 +16,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from study_cards import MASTERY_LABELS
+from study_cards import MASTERY_LABELS, with_card_progress
 from study_protocol import SETTINGS_ACTIONS
 from study_sources import media_key_of, source_link, time_link
 
@@ -736,7 +736,7 @@ class StudyLibrary:
     def result(self, ident):
         path = self.path(ident)
         r, body, version = self.read_file(path, ident)
-        return self.result_from(r, body, version, path)
+        return with_card_progress(self.result_from(r, body, version, path))
 
     def indexed_files(self):
         from study_index import RecordIndex
@@ -1156,7 +1156,7 @@ class StudyLibrary:
                         rows.append(r)
                 rows.sort(key=lambda r: r['created'], reverse=True)
                 offset = p.get('offset', 0)
-                return {'items': rows[offset:offset + 10], 'total': len(rows), 'target': {'deck': self.deck, 'model': self.model}}
+                return {'items': [with_card_progress(r) for r in rows[offset:offset + 10]], 'total': len(rows), 'target': {'deck': self.deck, 'model': self.model}}
             if p['action'] == 'librarySync':
                 return {'items': [self.sync(i) for i in p['ids']]}
             staged = []

@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 from study_protocol import SETTINGS_ACTIONS
+from study_cards import card_progress, with_card_progress
 from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, normalize_entry, normalize_request, text
 
 FIELDS = ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
@@ -420,18 +421,23 @@ class YomitanLibrary:
     def video_words(self, media_key):
         """Saved words from one video (any site, see media_key_of), oldest position first; read-only."""
         from study_sources import media_key_of
-        from study_sync import CARD_STAGES
 
         rows = []
         for lib, _path, row in self.indexed()[1].values():
             entry = row['entry']
             if media_key_of(entry.get('url')) != media_key:
                 continue
-            stages = [CARD_STAGES.get(card.get('kind'), 0) for card in row.get('cards', [])]
+            progress = card_progress(row)
+            hint = {'missing': '有卡片已被删除，请到学习库处理', 'ambiguous': '有卡片对应不上，请到学习库核对',
+                    'conflict': '笔记和卡片内容不同，请到学习库核对'}.get(row.get('syncState'))
+            if not hint and progress['waiting']:
+                hint = f"{progress['waiting']} 张还在等 Anki 确认"
+            elif not hint and row.get('ankiState') == 'pending':
+                hint = 'Anki 还没确认这次更新，可到学习库查看'
             rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', ''),
                          'path': row.get('path', ''), 'vault': str(lib.vault),
                          'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
-                         'cards': sum(1 for c in row.get('cards', []) if c.get('noteId')) or int(bool(row.get('noteId'))), 'stage': max(stages, default=0)})
+                         'cards': progress['confirmed'], 'stage': progress['stage'], **({'cardHint': hint} if hint else {})})
         rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
         return rows
 
@@ -493,7 +499,7 @@ class YomitanLibrary:
         if action == 'libraryVideoWords':
             items = self.video_words(p['mediaKey'])
             return {'items': [{k: v for k, v in r.items() if k not in ('path', 'vault')} for r in items[:300]],
-                    'cardContexts': [{'word': r['word'], 'sentence': r['sentence']} for r in items if r['cards']]}
+                    'cardContexts': [{'word': r['word'], 'sentence': r['sentence']} for r in items if r['cards'] or r.get('cardHint')]}
         if action == 'libraryVideoSummary':
             from study_video import VideoLibrary
             rows = self.video_words(p['mediaKey'])[:300]
@@ -536,7 +542,7 @@ class YomitanLibrary:
             elif scope != 'all': rows = [r for r in rows if r['entry']['url'] == p['url'] and (p['url'] or r['entry']['title'] == p['title'])]
             rows.sort(key=lambda row: row['created'], reverse=True)
             offset = p.get('offset', 0)
-            return {'items': rows[offset:offset + 10], 'total': len(rows), 'needsAttention': needs, 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
+            return {'items': [with_card_progress(r) for r in rows[offset:offset + 10]], 'total': len(rows), 'needsAttention': needs, 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
         ids = p.get('ids', []) or [r['id'] for r in p.get('items', [])] or ([p['id']] if p.get('id') else [])
         if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite','libraryRepair'):
             # Split mixed destinations while preserving caller ordering and per-record versions.

@@ -1705,7 +1705,7 @@ export class YoutubeReader extends EventTarget {
         view.words.replaceChildren(note, recommended, saved);
         saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
-            const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
+            const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, cardHint?: string, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
             if (generation !== this._generation) { return; }
             const items = result.items ?? [];
             this._cardContexts = result.cardContexts ?? items.filter((item) => item.cards > 0);
@@ -1750,8 +1750,9 @@ export class YoutubeReader extends EventTarget {
                 meta.className = 'r-word-meta';
                 // With sense-level records (roadmap B8) each sense is its own row.
                 const sense = typeof item.sense?.gloss === 'string' && item.sense.gloss ? `义项「${item.sense.gloss.slice(0, 20)}」 · ` : '';
-                meta.textContent = sense + (item.cards > 0 ? `已制 ${item.cards} 张卡` : '还没制卡');
-                if (item.cards === 0) {
+                const status = item.cards > 0 ? `已制 ${item.cards} 张卡` : '';
+                meta.textContent = sense + ([status, item.cardHint].filter(Boolean).join(' · ') || '还没制卡');
+                if (item.cards === 0 && !item.cardHint) {
                     const card = this._button('制卡', () => { void this._openSavedWord(item).catch(() => this._status('词卡没有打开，请再试一次。')); });
                     card.dataset.savedCard = ''; meta.append(' ', card);
                 }

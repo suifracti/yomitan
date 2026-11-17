@@ -25,6 +25,16 @@ class RepairTests(unittest.TestCase):
         other = next(c['noteId'] for c in h.library.locate(ident).read(ident)[0]['cards'] if c['noteId'] != 1000)
         del h.notes[1000]
         self.assertEqual(h.library.handle({'action': 'libraryReconcile', 'id': ident})['syncState'], 'missing')
+        video = h.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'web:example.com/a'})
+        self.assertEqual(video['items'][0]['cards'], 1)  # The missing card still has its old noteId.
+        self.assertIn('已被删除', video['items'][0]['cardHint'])
+        record = h.library.handle({'action': 'libraryRead', 'ids': [ident]})['items'][0]['record']
+        self.assertEqual(record['cardProgress']['confirmed'], video['items'][0]['cards'])
+        summary = h.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'web:example.com/a',
+                                    'url': 'https://example.com/a', 'title': 'Lesson'})
+        body = (h.vault / summary['path']).read_text()
+        self.assertIn('已确认 1 张卡', body)
+        self.assertIn(video['items'][0]['cardHint'], body)
         recreated = h.library.handle({'action': 'libraryRepair', 'id': ident, 'choice': 'recreate'})
         self.assertEqual([c['noteId'] for c in recreated['cards']], [other])
         cleared = h.library.handle({'action': 'libraryRepair', 'id': ident, 'choice': 'unlink'})

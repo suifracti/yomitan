@@ -31,3 +31,30 @@ AI_KINDS = ('meaning', 'context', 'expression', 'grammar', 'sentence', 'listenin
 CARD_STAGES = {kind: c.stage for kind, c in CARDS.items()}
 KIND_LABELS = {kind: c.label for kind, c in CARDS.items()}
 AUDIO_KINDS = frozenset(kind for kind, c in CARDS.items() if c.needs == 'audio')
+
+
+def card_progress(row):
+    """Count last acknowledged cards, not drafts or an ID whose link just failed."""
+    cards = row.get('cards', [])
+    state = row.get('syncState')
+    uncertain = state in ('missing', 'ambiguous')
+    late = row.get('ankiState') == 'pending' or state == 'pending'
+    linked = row.get('ankiState') in ('synced', 'linked')
+    seen, waiting, stage = set(), 0, 0
+    for c in cards:
+        if uncertain and (not row.get('repairCardId') or c['id'] == row['repairCardId']):
+            continue
+        ident, receipt = c.get('noteId'), c.get('syncState') or c.get('state')
+        if ident and (receipt == 'synced' or (not receipt and linked)):
+            seen.add(ident)
+            stage = max(stage, CARD_STAGES.get(c.get('kind'), 0))
+        elif receipt == 'pending' or (not ident and late):
+            waiting += 1
+    if not cards and row.get('noteId') and linked and not late and not uncertain:
+        seen.add(row['noteId'])
+    return {'confirmed': len(seen), 'waiting': waiting, 'stage': stage}
+
+
+def with_card_progress(row):
+    # A response field, never persisted in note metadata or the disposable index.
+    return {**row, 'cardProgress': card_progress(row)}
