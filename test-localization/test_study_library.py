@@ -243,6 +243,29 @@ class LibraryTests(unittest.TestCase):
             self.lib.handle(media)
         self.assertEqual((self.vault / filename).read_bytes(), b'\x89PNG\r\n\x1a\nfixture')
 
+    def test_spelling_cards_keep_the_selected_recording_even_when_the_prompt_and_answer_repeat(self):
+        def recorded(sentence, second):
+            saved = self.save({**ENTRY, 'sentence': sentence, 'videoTime': second})
+            return self.lib.handle({'action': 'libraryMedia', 'id': saved['id'], 'version': saved['version'],
+                                    'start': second, 'end': second + 2, 'origin': 'import',
+                                    'assets': [{'kind': 'audio', 'mime': 'audio/ogg',
+                                                'data': base64.b64encode(b'OggS' + bytes([second]) * 16).decode()}]})
+
+        earlier = recorded('It is a just decision.', 12)
+        later = recorded('The ruling was just.', 27)
+        spelling = [{'kind': 'spelling', 'front': '听原声，拼写这个词。', 'back': 'just'}]
+        first = self.lib.handle({'action': 'libraryCardsAdd', 'id': earlier['id'], 'cards': spelling})
+        self.ambiguous = True  # The later clip is written, but its first acknowledgement is lost.
+        second = self.lib.handle({'action': 'libraryCardsAdd', 'id': later['id'], 'cards': spelling})
+        self.assertEqual(second['ankiState'], 'pending')
+        second = self.lib.handle({'action': 'librarySync', 'ids': [later['id']]})['items'][0]
+        self.assertEqual(second['ankiState'], 'synced')
+        self.assertEqual(len(self.cards), 2)
+        for source, row in [(earlier, first), (later, second)]:
+            fields = self.cards[row['cards'][0]['noteId']]['fields']
+            self.assertEqual(fields['Audio'], '[sound:' + source['media']['audio']['name'] + ']')
+            self.assertEqual(fields['Sentence'], source['entry']['sentence'])
+
     def test_languages_are_isolated_and_english_identity_is_stable(self):
         en = self.save()
         self.assertEqual(en['id'], self.save({**ENTRY, 'language': 'en'})['id'])

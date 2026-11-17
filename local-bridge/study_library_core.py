@@ -931,13 +931,16 @@ class StudyLibrary:
                           'Source': study_sync.source_field(self, r, source_values),
                           'URL': html.escape(source_values['url']), 'Audio': '', 'Image': ''}
                 self.language_fields(fields, r['entry'], card['front'])
-                if not found:
+                # For a listening exercise the selected recording is the question.
+                # Its own studycard tag recovers a retry; equal text cannot identify the clip.
+                reuse_text = card['kind'] not in study_sync.AUDIO_KINDS
+                if not found and reuse_text:
                     from study_memory import duplicate
                     existing = duplicate(self, fields, r['entry'])
                     if existing is not None:
                         found = [existing]
                         card['linkedExisting'] = True
-                if not found:
+                if not found and reuse_text:
                     from study_memory import duplicate_point
                     existing = duplicate_point(self, r['entry'], card['front'], card['back'], fields)
                     if existing is not None:
