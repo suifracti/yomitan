@@ -8,7 +8,7 @@
 
 - 当前交接：[youtube-study-wiring](docs/youtube-study-wiring.md)。
 - 产品范围：[roadmap-2026-10](docs/roadmap-2026-10.md)。
-- 技术经验：[PROJECT_MEMORY](docs/PROJECT_MEMORY.md)。
+- 开工先读的项目记忆：[PROJECT_MEMORY](docs/PROJECT_MEMORY.md)（Vault 总规则 1.1「继承与阅读」）。
 - Vault 项目 README 导航，《项目总览》承接规划、经验与当前接续摘要；Handoff/Decisions 留阶段材料。
 
 ## 2 项目访问与数据补充
