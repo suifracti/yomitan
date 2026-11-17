@@ -360,10 +360,11 @@ export class YoutubeReader extends EventTarget {
     get offsetMs() { return this._offsetMs; }
 
     /**
-     * Shifts the captions against the video (positive = later) and remembers it for this video.
+     * Shifts the captions against the video (positive = later).
      * @param {number} ms
+     * @param {boolean} [remember] A restored shift isn't a new learner edit.
      */
-    setOffset(ms) {
+    setOffset(ms, remember = true) {
         const value = Math.max(-600000, Math.min(600000, Math.round(ms / 50) * 50));
         this._offsetMs = value;
         for (const target of new Set([this._rawSession, this._session])) {
@@ -374,7 +375,7 @@ export class YoutubeReader extends EventTarget {
         this._onTime();
         this._syncMenu();
         this._emit('offset', {ms: value});
-        if (this._mediaKey && this._rawSession) { void writeVideoState(this._mediaKey, {offsetMs: value, trackKey: this._rawSession.source.trackKey}); }
+        if (remember && this._mediaKey && this._rawSession) { void writeVideoState(this._mediaKey, {offsetMs: value, trackKey: this._rawSession.source.trackKey}); }
     }
 
     /** Jumps to the offered resume point. */
@@ -409,7 +410,7 @@ export class YoutubeReader extends EventTarget {
             this._restoringVideoState = false;
             return;
         }
-        if (typeof state.offsetMs === 'number' && state.offsetMs !== 0 && state.trackKey === raw.source.trackKey) { this.setOffset(state.offsetMs); }
+        if (typeof state.offsetMs === 'number' && state.offsetMs !== 0 && state.trackKey === raw.source.trackKey) { this.setOffset(state.offsetMs, false); }
         const at = state.resumeMs;
         const now = (this._video?.currentTime ?? 0) * 1000;
         if (this._prefs.resume && typeof at === 'number' && at > 30000 && Math.abs(at - now) > 15000 && this._view) {
@@ -1164,7 +1165,9 @@ export class YoutubeReader extends EventTarget {
                 url: `https://www.youtube.com/watch?v=${videoId}`,
                 trackName: chosen ? this._sources.find((s) => s.id === captionTrackId(chosen)).label : (kind === 'asr' ? `${language} 自动字幕` : language),
             }, cuesFromTimedText(text));
-            if (chosen) { await writeVideoState(`youtube:${videoId}`,{selectedTrackKey:captionTrackId(chosen)}); }
+            if (chosen) {
+                await writeVideoState(`youtube:${videoId}`, {selectedTrackKey: captionTrackId(chosen), ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
+            }
             if (generation !== this._generation) { return; }
             this._rawSession = session;
             this._restoringVideoState = true;
@@ -1215,7 +1218,7 @@ export class YoutubeReader extends EventTarget {
                 return;
             }
             this._useCues(found.cues, {trackKey: found.id, label: found.label, language: found.language, acquisition: 'provider'});
-            await writeVideoState(key, {selectedTrackKey: found.id});
+            await writeVideoState(key, {selectedTrackKey: found.id, ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
         } catch (error) {
             if (generation === this._generation) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {

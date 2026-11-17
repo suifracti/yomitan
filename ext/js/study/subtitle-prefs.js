@@ -191,6 +191,34 @@ let videoStateWrites = Promise.resolve();
 
 /** @typedef {{resumeMs?: number, offsetMs?: number, trackKey?: string, selectedTrackKey?: string, at: number}} VideoState */
 
+/** @typedef {Partial<Omit<VideoState, 'at'>> & {ifSelected?: string|null}} VideoStatePatch */
+
+/**
+ * Apply a player's change to the worker's latest snapshot, not a tab's copy.
+ * @param {unknown} stored
+ * @param {string} mediaKey
+ * @param {VideoStatePatch} patch
+ * @returns {Record<string, VideoState>}
+ */
+export function mergeVideoState(stored, mediaKey, patch) {
+    const all = /** @type {Record<string, VideoState>} */ ({...(stored && typeof stored === 'object' ? stored : {})});
+    // An automatic fallback remembers its track only if nobody chose another one while it loaded.
+    if (patch.ifSelected !== void 0 && (all[mediaKey]?.selectedTrackKey ?? null) !== patch.ifSelected) { return all; }
+    const row = {...all[mediaKey], at: Date.now()};
+    if (Number.isFinite(patch.resumeMs)) { row.resumeMs = patch.resumeMs; }
+    if (typeof patch.selectedTrackKey === 'string') { row.selectedTrackKey = patch.selectedTrackKey; }
+    if (Number.isFinite(patch.offsetMs) && typeof patch.trackKey === 'string') {
+        row.offsetMs = patch.offsetMs;
+        row.trackKey = patch.trackKey;
+    }
+    all[mediaKey] = row;
+    const keys = Object.keys(all);
+    if (keys.length > VIDEO_STATE_LIMIT) {
+        for (const key of keys.sort((a, b) => all[a].at - all[b].at).slice(0, keys.length - VIDEO_STATE_LIMIT)) { delete all[key]; }
+    }
+    return all;
+}
+
 /**
  * @param {string} mediaKey
  * @returns {Promise<VideoState|null>}
@@ -212,23 +240,13 @@ export async function readVideoState(mediaKey) {
 /**
  * Merges a change for one video; the oldest videos are forgotten past the limit.
  * @param {string} mediaKey
- * @param {Partial<VideoState>} patch
+ * @param {VideoStatePatch} patch
  */
 export async function writeVideoState(mediaKey, patch) {
-    const area = storageArea();
-    if (!area || !mediaKey) { return; }
-    // Track choice, offset and playback progress share this read-modify-write record.
-    videoStateWrites = videoStateWrites.then(async () => {
-        try {
-            const stored = /** @type {Record<string, unknown>} */ (await area.get(VIDEO_STATE_KEY));
-            const all = /** @type {Record<string, VideoState>} */ ({...(stored[VIDEO_STATE_KEY] && typeof stored[VIDEO_STATE_KEY] === 'object' ? stored[VIDEO_STATE_KEY] : {})});
-            all[mediaKey] = {...all[mediaKey], ...patch, at: Date.now()};
-            const keys = Object.keys(all);
-            if (keys.length > VIDEO_STATE_LIMIT) {
-                for (const key of keys.sort((a, b) => all[a].at - all[b].at).slice(0, keys.length - VIDEO_STATE_LIMIT)) { delete all[key]; }
-            }
-            await area.set({[VIDEO_STATE_KEY]: all});
-        } catch { /* Memory is a convenience; studying continues without it. */ }
-    });
+    if (!mediaKey || (typeof patch.selectedTrackKey === 'string' && patch.selectedTrackKey === patch.ifSelected)) { return; }
+    // Send now while this frame still has the video's URL. A same-page read waits
+    // for its own acknowledgements; the worker orders writes from *all* players.
+    const sent = studyCall('videoStateUpdate', {mediaKey, patch}).catch(() => {});
+    videoStateWrites = Promise.all([videoStateWrites, sent]).then(() => {});
     await videoStateWrites;
 }

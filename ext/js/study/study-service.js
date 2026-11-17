@@ -26,7 +26,7 @@ import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
 import {NATIVE_ROUTES} from './native-routes.js';
-import {storeSubtitlePatch, subtitlePrefsFrom, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY} from './subtitle-prefs.js';
+import {mergeVideoState, storeSubtitlePatch, subtitlePrefsFrom, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY, VIDEO_STATE_KEY} from './subtitle-prefs.js';
 
 /** @type {WeakSet<object>} */
 const preparedRuntimes = new WeakSet();
@@ -1292,19 +1292,25 @@ export function prepareStudyService(lookupDictionary = null) {
             })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '词卡没有打开，请从学习库里点「制卡」。'}));
             return true;
         }
-        // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
-        // the video study summary, built from the learner's own saved words for the sender's video.
-        // Readers run inside their own web frame, or a top-level local file page.
-        if (['subtitlePrefsUpdate', 'subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
+        // Readers run in their own web frame or a top-level local file. Remembering
+        // playback is local to the extension; writing a video note is a separate action.
+        if (['videoStateUpdate', 'subtitlePrefsUpdate', 'subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
         (/^https?:\/\//.test(sender.url || '') || (sender.frameId === 0 && /^file:\/\//.test(sender.url || '')))) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
             void (async () => {
-                // A page may read back only the words saved from its own video.
-                if (studyAction === 'libraryVideoWords') {
+                // A reader may remember progress or look up words for its own video only.
+                if (studyAction === 'libraryVideoWords' || studyAction === 'videoStateUpdate') {
                     const asked = /** @type {{mediaKey?: unknown}} */ (data ?? {}).mediaKey;
                     const own = sender.url?.startsWith('file:') && typeof asked === 'string' && /^file:.+\|[0-9]+$/.test(asked) ? asked : mediaKeyOf(/** @type {string} */ (sender.url));
-                    if (!own || asked !== own || Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
+                    if (!own || asked !== own) { throw new Error(studyAction === 'videoStateUpdate' ? '只能记住当前视频的进度。' : '只能读取当前视频的生词。'); }
+                    if (studyAction === 'videoStateUpdate') {
+                        const {patch} = /** @type {{patch?: import('./subtitle-prefs.js').VideoStatePatch}} */ (data);
+                        if (!patch || typeof patch !== 'object') { throw new Error('没能记住这次进度。'); }
+                        await service.write(VIDEO_STATE_KEY, (stored) => mergeVideoState(stored, own, patch));
+                        return true;
+                    }
+                    if (Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
                 }
                 // The summary's video URL comes from the sender, never from the page's message.
                 /** @type {Record<string, unknown>} */

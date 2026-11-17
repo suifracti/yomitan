@@ -20,6 +20,7 @@
 
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {installReaderStorage} from './mocks/study-reader-storage.js';
 
 test('selects captured tracks before English fallback and finally refetch', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk'}});
@@ -69,11 +70,11 @@ test('does not publish an old video after its track preference finishes saving',
     let saving = () => {};
     const gate = new Promise((resolve) => { release = () => resolve(void 0); });
     const started = new Promise((resolve) => { saving = () => resolve(void 0); });
-    vi.stubGlobal('chrome', {storage: {local: {get: async () => ({}),
+    installReaderStorage({get: async () => ({}),
         set: async () => {
             saving();
             await gate;
-        }}}});
+        }});
     const url = new URL('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
     const body = JSON.stringify({events: [{tStartMs: 0, dDurationMs: 1000, segs: [{utf8: 'The old video sentence.'}]}]});
     vi.stubGlobal('fetch', async () => new Response(body));

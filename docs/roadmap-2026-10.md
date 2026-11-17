@@ -27,7 +27,7 @@
 | 卡型、阶段、需要的素材、默认子牌组 | 改 `local-bridge/study_cards.py`。词卡、学习库、类型和 Python 保存链读同源目录；题面模板仍在 `study-card-kinds.js`。保留手选语法卡、AI 原有选型范围和个人指定的牌组。 |
 | 保存和制卡的结果 | `study_cards.card_progress` 从笔记里的回执算已确认、未确认和阶段；词卡/学习库由 `study-data.js:cardReceipt` 显示，视频栏和学习小结也用同一笔数。笔记已存不等于卡已送达，重试沿用原记录 ID。 |
 | 消息、设置与界面 | 普通本机动作在 `local-bridge/study_protocol.py` 登记，`studyCall → StudyService → native` 转发。特权来源和参数仍在各自边界校验。翻译服务改 `translation-engines.js`，设置写入走 `writeSubtitlePrefs`；保留学习版控件和主题，不复制网页设置。 |
-| 字幕与来源身份 | 视频分组参数/站点表改 `local-bridge/study_sources.py`（生成浏览器的 `media-rules.js`）；网页端用 `mediaKeyOf` 分组、`timedUrl` 打开出处。分组键、某条笔记的 ID 和跳转链接不可互换；保留各站取轨适配器及媒体授权。 |
+| 字幕与来源身份 | 视频分组参数/站点表改 `local-bridge/study_sources.py`（生成浏览器的 `media-rules.js`）；网页端用 `mediaKeyOf` 分组、`timedUrl` 打开出处。分组键、笔记 ID 与跳转链接不可互换。播放进度/字幕轨/偏移的小改动由 `writeVideoState` 交后台按视频写入，站点取轨和媒体授权仍分开。 |
 | 测试、部署与交接 | 场景跟着实际入口验证。桥运行文件由 `bridge_files.py` 决定，安装、健康检查和 `dev/sync-local.py` 共用。同步只认 Git 版本，可重复执行。项目记忆找行为，当前交接找证据和下一步，不设第二套任务表。 |
 
 卡型、本机动作或来源规则表修改后运行 `python3 -B dev/sync-local.py --manifest-only`，将生成的 ES 模块与桥哈希一起提交；平时不需要启动构建器。设置返回配置快照，普通学习接口返回记录/查询结果；后台私有的保存、目标解析、自动同步、词状态刷新不在通用转发表中。给新动作开放网页、设置页或特定字幕能力是单独的设计决定，不能从它“有一个名字”推导。

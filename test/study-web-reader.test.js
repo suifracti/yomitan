@@ -17,6 +17,7 @@
 
 import {afterAll, expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {installReaderStorage} from './mocks/study-reader-storage.js';
 
 const html = '<!DOCTYPE html><html><head></head><body><main><video></video></main><div id="dock"></div><div id="layer"></div></body></html>';
 const environment = await builtinEnvironments.jsdom.setup(global, {jsdom: {html, url: 'https://course.example.org/watch?id=7&utm=x'}});
@@ -32,7 +33,7 @@ const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
 const {YoutubeOverlay} = await import('../ext/js/study/youtube-overlay.js');
 const {mediaKeyOf, timedUrl} = await import('../ext/js/study/media-key.js');
 const {WebVideoSite} = await import('../ext/js/study/web-video-site.js');
-const {writeVideoState} = await import('../ext/js/study/subtitle-prefs.js');
+const {readVideoState, writeVideoState} = await import('../ext/js/study/subtitle-prefs.js');
 
 test('media keys and time links match the bridge rules', () => {
     expect(mediaKeyOf('https://youtu.be/abcdefghijk?t=3')).toBe('youtube:abcdefghijk');
@@ -134,13 +135,10 @@ test('shadowing pauses after each sentence (after the chosen repeats); offset an
     document.querySelector('#study-yt-reader')?.remove();
     /** @type {Record<string, unknown>} */
     const store = {studyVideoState: {'web:course.example.org/watch?id=7': {resumeMs: 95000, at: 1}}};
-    vi.stubGlobal('chrome', {storage: {
-        local: {
-            get: async (/** @type {string} */ key) => ({[key]: store[key]}),
-            set: async (/** @type {Record<string, unknown>} */ values) => { Object.assign(store, values); },
-        },
-        onChanged: {addListener() {}, removeListener() {}},
-    }});
+    installReaderStorage({
+        get: async (key) => ({[key]: store[key]}),
+        set: async (values) => { Object.assign(store, values); },
+    });
     try {
         const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
         let current = 0;
@@ -230,20 +228,28 @@ test('web captions restore the chosen track and its learning position, with defa
     const key = mediaKeyOf(location.href);
     /** @type {Record<string, unknown>} */
     const store = {studyVideoState: {[key]: {selectedTrackKey: 'track:1', trackKey: 'track:1', offsetMs: 1200, resumeMs: 95000, at: 1}}};
-    vi.stubGlobal('chrome', {storage: {
-        local: {
-            get: async (/** @type {string} */ name) => ({[name]: store[name]}),
-            set: async (/** @type {Record<string, unknown>} */ values) => { Object.assign(store, values); },
-        },
-        onChanged: {addListener() {}, removeListener() {}},
-    }});
+    let sourceUrl = location.href;
+    installReaderStorage({
+        get: async (name) => ({[name]: store[name]}),
+        set: async (values) => { Object.assign(store, values); },
+    }, () => sourceUrl);
     try {
         const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
         Object.defineProperty(video, 'currentTime', {configurable: true, writable: true, value: 0});
         Object.defineProperty(video, 'paused', {configurable: true, value: false});
         const cues = [{id: '0', sourceIndex: 0, startMs: 0, endMs: 2000, text: 'Keep going.'}];
+        // An independent reader instance like a second tab, sharing only the worker/storage.
+        vi.resetModules();
+        const secondTab = await import('../ext/js/study/subtitle-prefs.js');
+        let chooseChineseWhileLoading = false;
         const sources = [
-            {id: 'track:0', label: 'English', language: 'en', read: async () => cues},
+            {id: 'track:0',
+                label: 'English',
+                language: 'en',
+                read: async () => {
+                    if (chooseChineseWhileLoading) { await secondTab.writeVideoState(key, {selectedTrackKey: 'track:1'}); }
+                    return cues;
+                }},
             {id: 'track:1', label: '中文', language: 'zh', read: async () => [{...cues[0], text: '继续学习。'}]},
         ];
         const site = fakeSite(null);
@@ -260,6 +266,7 @@ test('web captions restore the chosen track and its learning position, with defa
         expect(resume.isConnected).toBe(true);
         expect(resume.hidden).toBe(false);
         expect(resume.textContent).toBe('从 1:35 继续');
+        expect((await readVideoState(key))?.at).toBe(1); // Restoring a saved choice/offset is not a new edit.
 
         const language = /** @type {HTMLSelectElement} */ (document.querySelector('#study-yt-reader select[data-source]'));
         language.value = 'track:0';
@@ -268,21 +275,30 @@ test('web captions restore the chosen track and its learning position, with defa
         await vi.waitFor(() => expect(store.studyVideoState).toMatchObject({[key]: {selectedTrackKey: 'track:0', resumeMs: 95000}}));
         expect(reader.session?.offsetMs).toBe(0);
 
-        // A missing saved track must not hide other available captions on reopening.
+        // A fallback may play here, but it must not undo a newer choice in the other tab.
         store.studyVideoState = {[key]: {selectedTrackKey: 'removed-track', at: 1}};
+        chooseChineseWhileLoading = true;
         const before = reader.session;
         reader.loadCaptions();
         await vi.waitFor(() => expect(reader.session).not.toBe(before));
         expect(reader.session?.source.language).toBe('en');
         expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('English');
+        expect((await readVideoState(key))?.selectedTrackKey).toBe('track:1');
+        chooseChineseWhileLoading = false;
 
-        // Progress, track choice and offset can be saved together from the same video.
+        // Concurrent edits to two videos, including different parts of one saved position.
+        const firstChoice = writeVideoState(key, {selectedTrackKey: 'track:1'});
+        sourceUrl = 'https://course.example.org/watch?id=8';
+        const secondKey = mediaKeyOf(sourceUrl);
+        const otherProgress = secondTab.writeVideoState(secondKey, {resumeMs: 45000});
+        sourceUrl = location.href;
         await Promise.all([
-            writeVideoState(key, {selectedTrackKey: 'track:1'}),
-            writeVideoState(key, {resumeMs: 120000}),
+            firstChoice,
+            otherProgress,
+            secondTab.writeVideoState(key, {resumeMs: 120000}),
             writeVideoState(key, {offsetMs: 500, trackKey: 'track:1'}),
         ]);
-        expect(store.studyVideoState).toMatchObject({[key]: {selectedTrackKey: 'track:1', resumeMs: 120000, offsetMs: 500}});
+        expect(store.studyVideoState).toMatchObject({[key]: {selectedTrackKey: 'track:1', resumeMs: 120000, offsetMs: 500}, [secondKey]: {resumeMs: 45000}});
         reader.loadCaptions();
         await vi.waitFor(() => expect(reader.session?.source.language).toBe('zh'));
         await vi.waitFor(() => expect(reader.session?.offsetMs).toBe(500));
