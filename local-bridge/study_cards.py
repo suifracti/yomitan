@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Learning-card catalogue. The browser copy is prepared by dev/sync-local.py --manifest-only."""
+import hashlib
 from typing import NamedTuple, Optional
+
+
+def card_key(record_id, front):
+    return hashlib.sha256((record_id + '\n' + front.strip()).encode()).hexdigest()[:32]
 
 
 class Card(NamedTuple):

@@ -483,7 +483,7 @@ async function initializePage() {
             const top = document.createElement('div');
             top.className = 'study-library-record-heading';
             const title = document.createElement('h2');
-            title.textContent = record.entry?.word || '(未命名记录)';
+            title.textContent = record.entry?.word || (record.syncState === 'anki-only' ? '这张卡没有留下原词' : '(未命名记录)');
             const state = document.createElement('p');
             state.className = 'study-library-state';
             state.textContent = stateSummary(record) + (upgradeIds.has(record.id) ? ' · 之前的卡已熟，可以加“会用”卡' : '');
@@ -590,6 +590,12 @@ async function initializePage() {
                 const url = new URL(createResumeUrl(record, chrome.runtime.getURL('/search.html')));
                 url.searchParams.set('studyAddCard', '1'); window.open(url.href, '_blank');
             };
+            const originalWord = record.syncState === 'anki-only' && !record.entry?.word ? document.createElement('input') : null;
+            if (originalWord) {
+                originalWord.placeholder = '填入原来学的词'; originalWord.setAttribute('aria-label', originalWord.placeholder);
+                originalWord.required = true; originalWord.maxLength = 128;
+                actions.append(originalWord);
+            }
             /**
              * @param {string} label
              * @param {'unlink'|'recreate'|'select'|'restore'|'ignore'} choice
@@ -599,16 +605,18 @@ async function initializePage() {
                 const button = document.createElement('button'); button.type = 'button';
                 button.textContent = label;
                 button.onclick = () => {
+                    if (choice === 'restore' && originalWord && !originalWord.reportValidity()) { return; }
                     button.disabled = true;
+                    const word = choice === 'restore' && originalWord ? {word: originalWord.value.trim()} : {};
                     void studyCall(
                         record.syncState === 'anki-only' ? 'libraryOrphan' : 'libraryRepair',
-                        record.syncState === 'anki-only' ? {noteId, choice} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
+                        record.syncState === 'anki-only' ? {noteId, choice, ...word} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
                     )
                         .then(async () => {
                             if (label === '重新制卡') { createCard(); }
                             await loadPage(true);
                         })
-                        .catch(() => { setStatus('还没处理成功。请打开 Anki，刷新列表后再试。'); button.disabled = false; });
+                        .catch((error) => { setStatus(error instanceof Error ? error.message : '还没处理成功。请打开 Anki，刷新列表后再试。'); button.disabled = false; });
                 };
                 actions.append(button);
             };

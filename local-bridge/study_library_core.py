@@ -16,7 +16,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from study_cards import MASTERY_LABELS, with_card_progress
+from study_cards import MASTERY_LABELS, card_key, with_card_progress
 from study_protocol import SETTINGS_ACTIONS
 from study_sources import media_key_of, source_link, time_link
 
@@ -292,9 +292,12 @@ def _normalize_request(p):
         if not ID_RE.fullmatch(str(p.get('id', ''))) or p.get('choice') not in ('unlink', 'recreate', 'select') or (p['choice'] == 'select' and (type(p.get('noteId')) is not int or p['noteId'] <= 0)):
             raise ValueError('请选择要处理的记录和卡片。')
         return p
-    if action == 'libraryOrphan' and set(p) == {'action', 'noteId', 'choice'}:
+    if action == 'libraryOrphan' and set(p) in ({'action', 'noteId', 'choice'}, {'action', 'noteId', 'choice', 'word'}):
         if p['choice'] not in ('restore', 'ignore') or type(p['noteId']) is not int or p['noteId'] <= 0:
             raise ValueError('请选择要处理的卡片。')
+        if 'word' in p:
+            if p['choice'] != 'restore': raise ValueError('只有重建笔记时才需要填原词。')
+            return {**p, 'word': text(p['word'], 128, True)}
         return p
     if action == 'libraryReconcile' and set(p) in ({'action', 'id'}, {'action', 'id', 'resolutions'}):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
@@ -404,6 +407,10 @@ def entry_id(e):
     if e.get('sense'):
         identity.extend(['sense', e['sense']['key']])
     return hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()[:32]
+
+
+def word_group_id(lang, word):
+    return hashlib.sha256(json.dumps([lang, word.casefold()], ensure_ascii=False).encode()).hexdigest()[:32]
 
 
 def anki_call(action, params, timeout=5):
@@ -520,7 +527,7 @@ class StudyLibrary:
         return p
 
     def word_id(self, entry):
-        return hashlib.sha256(json.dumps([self.language, entry['word'].casefold()], ensure_ascii=False).encode()).hexdigest()[:32]
+        return word_group_id(self.language, entry['word'])
 
     def metadata(self, record):
         return json.dumps(record, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
@@ -1039,7 +1046,7 @@ class StudyLibrary:
                         candidates = item['cards']
                     cards = r.setdefault('cards', [])
                     for c in candidates:
-                        card_id = hashlib.sha256((r['id'] + '\n' + c['front'].strip()).encode()).hexdigest()[:32]
+                        card_id = card_key(r['id'], c['front'])
                         old = next((x for x in cards if x['id'] == card_id), None)
                         if old:
                             if old['back'] != c['back'].strip():

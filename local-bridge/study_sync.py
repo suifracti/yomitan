@@ -8,8 +8,9 @@ import html
 import json
 import pathlib
 import re
+import urllib.parse
 
-from study_cards import AUDIO_KINDS, CARDS, CARD_STAGES, KIND_LABELS, MASTERY_LABELS, STAGE_NAMES
+from study_cards import AUDIO_KINDS, CARDS, CARD_STAGES, KIND_LABELS, MASTERY_LABELS, STAGE_NAMES, card_key
 
 SYNC_KEYS = ('sentence', 'meaning', 'translation', 'title', 'url')
 BLOCK_START = '<!-- study-sync-fields:start -->'
@@ -154,9 +155,14 @@ def question_field(question, audio=None):
     return value + '<span data-study-clip="' + (html.escape(clip[1], quote=True) if clip else '') + '"></span>'
 
 
-def source_field(lib, record, values):
+NOTE_LINK = re.compile(r'<a href="obsidian://open\?([^"]+)"(?: data-study-word="([^"]*)")?>学习过程笔记</a>')
+SOURCE_TIME = re.compile(r'<br\s*/?>视频位置：([0-9]{1,6}) 秒\s*$', re.I)
+
+
+def source_field(lib, record, values, *, keep_word=True):
     source = _field_html(values.get('title', ''))
-    source += '<br><a href="' + html.escape(lib.open_url(record['id']), quote=True) + '">学习过程笔记</a>'
+    word = ' data-study-word="' + html.escape(record['entry']['word'], quote=True) + '"' if keep_word and lib.language == 'en' else ''
+    source += '<br><a href="' + html.escape(lib.open_url(record['id']), quote=True) + '"' + word + '>学习过程笔记</a>'
     if 'videoTime' in record['entry']:
         source += f'<br>视频位置：{record["entry"]["videoTime"]} 秒'
     return source
@@ -172,7 +178,7 @@ def parse_source(value, fallback):
             raise ValueError('Anki 来源字段的同步标记损坏；未覆盖。') from None
         if not isinstance(meta, dict) or set(meta) != {'meaning', 'translation'} or any(not isinstance(v, str) for v in meta.values()):
             raise ValueError('Anki 来源字段的同步标记无效；未覆盖。')
-    no_link = re.sub(r'(?is)<a\b[^>]*>.*?</a>', '', value or '')
+    no_link = re.sub(r'(?is)<a\b[^>]*>.*?</a>', '', SOURCE_TIME.sub('', value or ''))
     no_link = ANNOTATION.sub('', no_link)
     title = _plain(no_link).split('\n')[0]
     return {'title': title,
@@ -312,7 +318,7 @@ def add_cards(lib, p):
         r['mastery'] = p['mastery']
         body += '\n## 掌握程度\n\n' + MASTERY_LABELS[p['mastery']] + '（制卡时自评，不代表已掌握）\n'
     for proposed in p['cards']:
-        cid = hashlib.sha256((r['id'] + '\n' + proposed['front']).encode()).hexdigest()[:32]
+        cid = card_key(r['id'], proposed['front'])
         old = next((c for c in cards if c['id'] == cid), None)
         if old:
             if old['back'] != proposed['back']:
@@ -481,7 +487,7 @@ def reconcile(lib, p):
         wanted = {'Word':question_field(merged_cards[(card['id'], 'front')], question_audio),
                   'Definition':definition_field(merged_cards[(card['id'], 'back')], common if card.get('reviewOnly') else merged),
                   'Sentence':_field_html(merged['sentence']),
-                  'Source':source_field(lib, r, merged), 'URL':html.escape(merged['url'])}
+                  'Source':source_field(lib, r, merged, keep_word=' data-study-word="' in (raw.get('Source') or '')), 'URL':html.escape(merged['url'])}
         if card.get('reviewOnly'):
             wanted = {k:v for k,v in wanted.items() if k in ('Word', 'Definition')}
         changed = {k:v for k,v in wanted.items() if raw.get(k) != v}
@@ -552,13 +558,39 @@ def repair_link(lib, p):
     return lib.result(r['id'])
 
 
-def orphan_record(note):
+def orphan_record(note, supplied_word=''):
+    from study_library import entry_id, word_group_id
     fields = {k: v.get('value', '') for k, v in note['fields'].items()}
-    source = parse_source(fields.get('Source', ''), {})
+    raw = fields.get('Source', '')
+    source = parse_source(raw, {})
     meaning = parse_definition(fields.get('Definition', ''), source)
-    entry = {'word': _plain(fields.get('Expression') or fields.get('Word', ''))[:128],
-             'sentence': _plain(fields.get('Sentence') or fields.get('Word', '')), 'meaning': meaning['meaning'] or meaning['answer'],
+    front = _plain(fields.get('Word', ''))
+    entry = {'word': '', 'sentence': _plain(fields.get('Sentence', '')) or front, 'meaning': meaning['meaning'] or meaning['answer'],
              'translation': meaning['translation'], 'title': source['title'], 'url': _plain(fields.get('URL', ''))}
+    timestamp = SOURCE_TIME.search(raw)
+    if timestamp:
+        entry['videoTime'] = int(timestamp[1])
+    link = NOTE_LINK.search(raw)
+    filename = urllib.parse.parse_qs(html.unescape(link[1])).get('file', [''])[0] if link else ''
+    group = re.fullmatch(r'(.+)--w([a-f0-9]{32})\.md', pathlib.PurePosixPath(filename).name)
+    tags = note.get('tags', [])
+    marked_word = html.unescape(link[2]) if link and link[2] else ''
+    if marked_word and (not group or word_group_id('en', marked_word) == group[2]):
+        entry['word'] = marked_word
+    else:
+        # A question or an answer alone isn't a word. Only trust a match to this note's identity.
+        candidates = [_plain(fields.get('Expression', '')), front, meaning['answer'], group[1] if group else '']
+        for candidate in candidates:
+            if not candidate or len(candidate) > 128: continue
+            ident = entry_id({**entry, 'word': candidate})
+            if ((group and word_group_id('en', candidate) == group[2]) or 'study_' + ident in tags
+                    or 'studycard_' + card_key(ident, front) in tags):
+                entry['word'] = candidate
+                break
+    if not entry['word'] and supplied_word:
+        if group and word_group_id('en', supplied_word) != group[2]:
+            raise ValueError('这个词与原笔记对不上，请核对拼写。')
+        entry['word'] = supplied_word
     return {'id': 'anki-' + str(note['noteId']), 'noteId': note['noteId'], 'entry': entry,
             'vaultSaved': False, 'syncState': 'anki-only', 'ankiState': 'linked', 'created': ''}
 
@@ -572,16 +604,20 @@ def orphan_action(library, p):
         from study_library import normalize_entry
         info = library.anki('notesInfo', {'notes': [p['noteId']]})
         if not info: raise ValueError('Anki 里的卡已被删除，请刷新列表。')
-        entry = normalize_entry(orphan_record(info[0])['entry'])
+        entry = orphan_record(info[0], p.get('word', ''))['entry']
+        if not entry['word']: raise ValueError('卡片里找不到原词。请在学习库填入原词，再重建笔记。')
+        entry = normalize_entry(entry)
         saved = library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'turns': [], 'targetId': library.active_id})
         lib = library.locate(saved['id'])
         r, body, version = lib.read(saved['id'])
         front = _plain(info[0]['fields']['Word']['value'])
         back = parse_definition(info[0]['fields']['Definition']['value'], {})['answer']
-        card_id = hashlib.sha256(('restored:' + str(p['noteId'])).encode()).hexdigest()[:32]
         kind = next((tag.removeprefix('study_kind::') for tag in info[0].get('tags', [])
                      if tag.startswith('study_kind::') and tag.removeprefix('study_kind::') in CARD_STAGES), 'context')
         if not any(c.get('noteId') == p['noteId'] for c in r.get('cards', [])):
+            card_id = card_key(r['id'], front)
+            if 'studycard_' + card_id not in info[0].get('tags', []) or any(c['id'] == card_id for c in r.get('cards', [])):
+                card_id = hashlib.sha256(('restored:' + str(p['noteId'])).encode()).hexdigest()[:32]
             r.setdefault('cards', []).append({'id': card_id, 'front': front, 'back': back, 'noteId': p['noteId'], 'linkedExisting': True, 'state': 'synced', 'kind': kind})
         r.update({'ankiState': 'synced', 'syncState': 'synced'})
         values = local_fields(r, body)

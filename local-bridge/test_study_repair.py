@@ -1,9 +1,47 @@
+import base64
 import copy
+import re
 import unittest
 import test_study_auto_sync as fixture
 
 
 class RepairTests(unittest.TestCase):
+    def test_restore_two_listening_cards_to_their_original_video_occurrences(self):
+        h = fixture.AutoSyncTests(); h.setUp()
+        self.addCleanup(h.tearDown)
+        original = h.library.anki
+        h.library.anki = lambda a, p: p['filename'] if a == 'storeMediaFile' else original(a, p)
+        card = {'kind': 'spelling', 'front': '听原声，拼写这个词。', 'back': 'Just — 公正的'}
+        originals = {}
+        for sec in (12, 27):
+            entry = {'word': 'Just', 'sentence': 'It is a just decision.', 'meaning': '公正的',
+                     'url': 'https://example.com/lesson?t=83', 'title': 'Lesson', 'videoTime': sec}
+            saved = h.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})
+            h.library.handle({'action': 'libraryMedia', 'id': saved['id'], 'version': saved['version'],
+                              'start': sec, 'end': sec + 1, 'origin': 'import', 'assets': [{
+                                  'kind': 'audio', 'mime': 'audio/ogg', 'data': base64.b64encode(b'OggS' + bytes([sec]) * 8).decode()}]})
+            result = h.library.handle({'action': 'libraryCardsAdd', 'id': saved['id'], 'cards': [card.copy()]})
+            self.assertEqual(result['ankiState'], 'synced')
+            originals[sec] = saved['id'], result['cards'][0]['id'], result['cards'][0]['noteId']
+        # An older copy has only the original grouped note link and its recorded seconds.
+        old = h.notes[originals[12][2]]['fields']
+        old['Source'] = re.sub(r' data-study-word="[^"]*"', '', old['Source'])
+        h.library.locate(saved['id']).path(saved['id']).unlink()
+        h.library.handle({'action': 'libraryAutoSync'})
+        rows = h.library.handle({'action': 'libraryList', 'scope': 'anki-only', 'url': '', 'title': ''})['items']
+        self.assertCountEqual([(row['entry']['word'], row['entry'].get('videoTime')) for row in rows],
+                              [('just', 12), ('Just', 27)])
+        h.calls.clear()
+        for _, _, note_id in originals.values():
+            h.library.handle({'action': 'libraryOrphan', 'noteId': note_id, 'choice': 'restore'})
+        for sec, (ident, card_id, note_id) in originals.items():
+            record = h.library.locate(ident).read(ident)[0]
+            self.assertEqual(record['entry']['videoTime'], sec)
+            self.assertEqual([(c['id'], c['noteId']) for c in record['cards']], [(card_id, note_id)])
+            again = h.library.handle({'action': 'libraryCardsAdd', 'id': ident, 'cards': [card.copy()]})
+            self.assertEqual([c['noteId'] for c in again['cards']], [note_id])
+        self.assertFalse(set(h.calls) & {'addNote', 'deleteNotes', 'updateNoteFields', 'changeDeck', 'setDueDate'})
+
     def test_repair_duplicate_then_deleted_card_and_recover_an_orphan_without_anki_writes(self):
         h = fixture.AutoSyncTests(); h.setUp()
         self.addCleanup(h.tearDown)
