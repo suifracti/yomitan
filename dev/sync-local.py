@@ -20,7 +20,7 @@ RUNTIME = pathlib.Path.home() / 'Library/Application Support/EnglishStudyTransla
 FROZEN = (pathlib.Path('/Users/apple/backup/english-study-extensions/local-bridge'),
           pathlib.Path('/Users/apple/backup/english-study-extensions/asbplayer'))
 MANIFEST = pathlib.Path('ext/js/study/bridge-manifest.json')
-WEB_CATALOG = pathlib.Path('ext/js/study/card-catalog.js')
+WEB_DIR = pathlib.Path('ext/js/study')
 
 
 def git(repo, *args):
@@ -31,20 +31,11 @@ def generate_manifest(repo=REPO):
     path = pathlib.Path(repo) / MANIFEST
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(hashes(runtime_sources(pathlib.Path(repo) / 'local-bridge')), ensure_ascii=False, indent=4) + '\n')
-    if (catalog := web_catalog(repo)) is not None:
-        (pathlib.Path(repo) / WEB_CATALOG).write_text(catalog)
+    for name, source in web_contracts(repo).items():
+        (pathlib.Path(repo) / WEB_DIR / name).write_text(source)
 
 
-def web_catalog(repo):
-    """Static ES module: no network request or cross-world import on lookup."""
-    source = pathlib.Path(repo) / 'local-bridge/study_cards.py'
-    if not source.is_file():
-        return None
-    data = runpy.run_path(str(source))
-    rows = [f"    {{kind: {kind!r}, label: {c.label!r}, stage: {c.stage}, "
-            f"needs: {repr(c.needs) if c.needs else 'null'}, deck: {c.deck!r}}},"
-            for kind, c in data['CARDS'].items()]
-    lines = ['''/*
+LICENSE_HEADER = '''/*
  * Copyright (C) 2023-2026  Yomitan Authors
  *
  * This program is free software: you can redistribute it and/or modify
@@ -59,14 +50,34 @@ def web_catalog(repo):
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */''', '',
-             '// Generated from local-bridge/study_cards.py by dev/sync-local.py --manifest-only.',
-             'export const CARD_CATALOG = /** @type {const} */ ([', *rows, ']);']
-    for js, py in [('STAGE_LABELS', 'STAGE_NAMES'), ('MASTERY_LABELS', 'MASTERY_LABELS')]:
-        fields = ', '.join(f'{k}: {v!r}' for k, v in data[py].items())
-        lines.append('')
-        lines.append('export const ' + js + ' = /** @type {const} */ ({' + fields + '});')
-    return '\n'.join(lines) + '\n'
+ */'''
+
+
+def web_contracts(repo):
+    """Small static ES modules. Extension pages never fetch or parse a schema at runtime."""
+    modules = {}
+    def emit(filename, source, lines):
+        head = LICENSE_HEADER + f'\n\n// Generated from local-bridge/{source.name} by dev/sync-local.py --manifest-only.\n'
+        modules[filename] = head + '\n'.join(lines) + '\n'
+
+    bridge = pathlib.Path(repo) / 'local-bridge'
+    cards = bridge / 'study_cards.py'
+    if cards.is_file():
+        data = runpy.run_path(str(cards))
+        rows = [f"    {{kind: {k!r}, label: {c.label!r}, stage: {c.stage}, "
+                f"needs: {repr(c.needs) if c.needs else 'null'}, deck: {c.deck!r}}},"
+                for k, c in data['CARDS'].items()]
+        lines = ['export const CARD_CATALOG = /** @type {const} */ ([', *rows, ']);']
+        for js, py in [('STAGE_LABELS', 'STAGE_NAMES'), ('MASTERY_LABELS', 'MASTERY_LABELS')]:
+            fields = ', '.join(f'{k}: {v!r}' for k, v in data[py].items())
+            lines.extend(['', 'export const ' + js + ' = /** @type {const} */ ({' + fields + '});'])
+        emit('card-catalog.js', cards, lines)
+    protocol = bridge / 'study_protocol.py'
+    if protocol.is_file():
+        routes = runpy.run_path(str(protocol))['DIRECT_ROUTES']
+        emit('native-routes.js', protocol, ['export const NATIVE_ROUTES = /** @type {const} */ ({',
+                                            *(f"    {action}: {route!r}," for action, route in routes.items()), '});'])
+    return modules
 
 
 def tracked(repo, ref, directory):
@@ -98,8 +109,9 @@ def sync(repo=REPO, base='HEAD^', dry_run=False):
     expected = hashes(modules)
     if json.loads((repo / MANIFEST).read_text()) != expected:
         raise ValueError('bridge-manifest 已过期，请先运行 --manifest-only 并提交。')
-    if (catalog := web_catalog(repo)) is not None and (repo / WEB_CATALOG).read_text() != catalog:
-        raise ValueError('学习卡目录已过期，请先运行 --manifest-only 并提交。')
+    for name, source in web_contracts(repo).items():
+        if (repo / WEB_DIR / name).read_text() != source:
+            raise ValueError(name + ' 已过期，请先运行 --manifest-only 并提交。')
     baseline = {pathlib.Path(path).name: git(repo, 'show', base + ':' + path)
                 for path in tracked(repo, base, 'local-bridge')
                 if (pathlib.Path(path).name.startswith('study_') and path.endswith('.py')) or pathlib.Path(path).name == 'bridge_files.py'}
@@ -157,12 +169,12 @@ def sync(repo=REPO, base='HEAD^', dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--manifest-only', action='store_true', help='只更新源码中的桥哈希清单，不写安装目录')
+    parser.add_argument('--manifest-only', action='store_true', help='只更新源码中的桥清单和前端共用定义，不写安装目录')
     parser.add_argument('--dry-run', action='store_true', help='只检查并列出拟同步文件')
     args = parser.parse_args()
     if args.manifest_only:
         generate_manifest()
-        print('桥清单和学习卡目录已更新；请随代码提交。')
+        print('桥清单和前端共用定义已更新；请随代码提交。')
     else:
         paths = sync(dry_run=args.dry_run)
         print(('拟同步' if args.dry_run else '已按字节同步并读回') + f' {len(paths)} 个文件；未触碰配置、学习数据和冻结发行包。')

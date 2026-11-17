@@ -14,6 +14,7 @@ import threading
 import time
 
 from study_cards import AI_KINDS
+from study_protocol import LIBRARY_ACTIONS
 
 ORIGIN = 'chrome-extension://fdibnlkfllnojcmhcghkmdlceeegmhpf/'
 ASB_ORIGIN = 'chrome-extension://bnbpbghlnjpkcjbabdmjllpcfbibjbap/'
@@ -172,7 +173,7 @@ def _normalize_request(value):
     if str(value.get('action', '')).startswith('video'):
         from study_video import normalize_request as video_request
         return video_request(value)
-    if str(value.get('action', '')).startswith('library') or value.get('action') == 'knownWords':
+    if str(value.get('action', '')) in LIBRARY_ACTIONS:
         from study_library import normalize_request as library_request
         return library_request(value)
     if value.get('action') == 'cards':
@@ -701,7 +702,7 @@ def main():
                 result = library.handle(payload)
             write_frame(sys.stdout.buffer, {'ok': True, 'result': result})
             return 0
-        if payload['action'].startswith('library') or payload['action'] == 'knownWords':
+        if payload['action'] in LIBRARY_ACTIONS:
             from study_settings import YomitanLibrary
             result = YomitanLibrary(pathlib.Path(__file__).parent / 'bridge-config.json',
                                    cache_dir=pathlib.Path(__file__).parent / 'learning-cache').handle(payload)

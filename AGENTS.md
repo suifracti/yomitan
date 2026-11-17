@@ -7,7 +7,7 @@
 仓库 `suifracti/yomitan`，协作分支 main。当前工程沿 Yomitan/IINA、StudyService 与 Python 保存链；独立 App 已停止，asbplayer 定制 fork 于 2026-10-21 删除，旧路线只供追溯。
 
 - 当前交接：[youtube-study-wiring](docs/youtube-study-wiring.md)。
-- 产品范围：[roadmap-2026-10](docs/roadmap-2026-10.md)。
+- 产品范围：[roadmap-2026-10](docs/roadmap-2026-10.md)；[改哪一处才能各端一起生效](docs/roadmap-2026-10.md#study-contracts)。
 - 开工先读的项目记忆：[PROJECT_MEMORY](docs/PROJECT_MEMORY.md)（Vault 总规则 1.1「继承与阅读」）。
 - Vault 项目 README 导航，《项目总览》承接规划、经验与当前接续摘要；Handoff/Decisions 留阶段材料。
 

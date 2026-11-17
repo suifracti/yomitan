@@ -17,6 +17,7 @@ import urllib.parse
 import urllib.request
 
 from study_cards import MASTERY_LABELS
+from study_protocol import SETTINGS_ACTIONS
 
 RELATIVE = pathlib.Path('01-高考2027/05-英语（Larry）/语境词库')
 JAPANESE_RELATIVE = pathlib.Path('02-个人与生活/语言学习/日语/语境词库')
@@ -168,7 +169,7 @@ def _normalize_request(p):
     if not isinstance(p, dict):
         raise ValueError('学习库请求无效。')
     action = p.get('action')
-    if action in ('librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck', 'librarySettingsPrepare', 'librarySettingsOpen', 'libraryTargetResolve', 'librarySettingsDetect', 'librarySettingsPick'):
+    if isinstance(action, str) and action in SETTINGS_ACTIONS:
         from study_settings import normalize_settings_request
         return normalize_settings_request(p)
     if 'targetId' in p:

@@ -25,6 +25,7 @@ import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
+import {NATIVE_ROUTES} from './native-routes.js';
 import {storeSubtitlePatch, subtitlePrefsFrom, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY} from './subtitle-prefs.js';
 
 /** @type {WeakSet<object>} */
@@ -820,7 +821,8 @@ export class StudyService {
             if (typeof makeCard !== 'boolean') { throw new Error('保存方式无效。'); }
             return await this.journal.save(entry, makeCard, void 0, await this.resolveSaveTarget(entry));
         }
-        if (['librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck', 'librarySettingsPrepare', 'librarySettingsOpen'].includes(action)) {
+        const route = Object.hasOwn(NATIVE_ROUTES, action) ? NATIVE_ROUTES[/** @type {keyof typeof NATIVE_ROUTES} */ (action)] : null;
+        if (route === 'target') {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('保存设置参数无效。'); }
             const response = await this.native({...value, action}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '本机保存设置暂不可读。'); }
@@ -840,7 +842,7 @@ export class StudyService {
         if (action === 'practiceCheck' && !studyConfig(await this.read(SETTINGS_KEY)).practiceEnabled) {
             throw new Error('练习批改未开启；请先在 AI 设置中明确开启。');
         }
-        if (['libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich', 'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit', 'libraryReconcile', 'libraryRepair', 'libraryOrphan', 'libraryCardsAdd', 'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses', 'libraryContextMiss', 'libraryMarkKnown', 'knownWords', 'senseMatch', 'ankiToday', 'ankiOpen', 'bridgeHealth', 'practiceCheck'].includes(action)) {
+        if (route === 'library') {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
             if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;

@@ -10,13 +10,11 @@ import re
 import subprocess
 import tempfile
 
+from study_protocol import SETTINGS_ACTIONS
 from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, normalize_entry, normalize_request, text
 
 FIELDS = ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
 EDITABLE = {'ankiEnabled', 'vault', 'directory', 'deck', 'model'}
-SETTINGS_ACTIONS = {'librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck',
-                    'librarySettingsPrepare', 'librarySettingsOpen', 'libraryTargetResolve',
-                    'librarySettingsDetect', 'librarySettingsPick'}
 
 
 def normalize_settings_request(p):
