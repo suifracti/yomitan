@@ -17,7 +17,7 @@
  */
 
 import {CARD_CATALOG} from '../study/card-catalog.js';
-import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY} from '../study/study-data.js';
+import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY, cardReceipt} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
 import {explainWordForm} from './study-word-forms.js';
@@ -491,28 +491,13 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         if (addCard.disabled) { addCard.title = 'Anki 制卡尚未启用，请在学习设置的保存与复习中启用。'; }
         renderDraftCards(row?.reviewDraft?.cards);
         ankiRow.hidden = false;
-        const cards = row.cards ?? [];
-        const synced = cards.filter((card) => (card.syncState ?? card.state) === 'synced');
-        const pending = cards.filter((card) => (card.syncState ?? card.state) !== 'synced');
-        retryCurrent.hidden = true;
-        if (row.ankiEnabled === false) {
-            ankiLabel.textContent = 'Anki · 已关闭，本次仅保存笔记';
-        } else if (row.ankiState === 'pending') {
-            ankiLabel.textContent = pending.length > 0 ?
-                `Anki · ${pending.length} 张卡待核对／补交（笔记已保留）` :
-                'Anki · 尚未制卡';
-            retryCurrent.hidden = pending.length === 0 && !row.noteId;
-            retryCurrent.textContent = '重试这条记录的送卡';
-            retryCurrent.title = '只核对／补交已经确认的卡，不自动择卡。';
-        } else if (synced.length > 0) {
-            const linked = synced.every((card) => card.linkedExisting);
-            ankiLabel.textContent = `Anki · ${linked ? '关联已有' : '已同步'} ${synced.length} 张卡${synced[0].noteId ? ` · #${synced[0].noteId}` : ''}`;
-        } else if (row.noteId) {
-            ankiLabel.textContent = `Anki · 已关联卡 #${row.noteId}`;
-        } else {
-            ankiLabel.textContent = 'Anki · 尚未制卡';
-        }
-        ankiRow.title = row.error || pending[0]?.error || row.reviewDraft?.reason || '';
+        const receipt = cardReceipt(row);
+        ankiRow.dataset.delivery = receipt.needsAttention ? 'pending' : 'normal';
+        ankiLabel.textContent = `Anki · ${receipt.text}`;
+        retryCurrent.hidden = !receipt.retry;
+        retryCurrent.textContent = '重新确认';
+        retryCurrent.title = '先打开 Anki，再点这里；只补交这条笔记已选的卡。';
+        ankiRow.title = row.error || row.cards?.find((card) => card.error)?.error || row.reviewDraft?.reason || '';
     };
     container.addEventListener('study-record-current', (event) => {
         if (!isCurrent()) { return; }
@@ -639,7 +624,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         }
     }));
     retryCurrent.addEventListener('click', () => {
-        if (!currentSaved || currentSaved.ankiState !== 'pending') { return; }
+        if (!currentSaved || !cardReceipt(currentSaved).retry) { return; }
         const recordId = currentSaved.id;
         const currentLanguage = currentSaved.entry.language ?? language;
         run(async () => {
@@ -647,12 +632,10 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             // Reuses the existing guarded, idempotent save/Anki protocol.
             const result = /** @type {{items: import('study').LibraryRecord[]}} */ (await studyCall('librarySync', {ids: [recordId], language: currentLanguage}));
             const row = result.items[0];
-            if (!row) { throw new Error('卡片同步未返回确认；笔记已保留。'); }
+            if (row?.id !== recordId) { throw new Error('没有收到这条笔记的制卡结果；笔记已保留。'); }
             if (!isCurrent()) { return; }
             showAnkiStatus(row);
-            status.textContent = row.ankiState === 'pending' ?
-                `本条卡片仍待补交：${row.cards?.find((card) => card.state !== 'synced')?.error || row.error || '可稍后再试'}` :
-                '本条复习已确认；Obsidian 笔记未重复保存。';
+            status.textContent = cardReceipt(row).retry ? '笔记已保存；请先打开 Anki，再点「重新确认」。' : '笔记已保存';
         });
     });
     // "I know this word, but not here": prepare the card panel for where the learner is stuck.
@@ -725,11 +708,16 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 ...(mastery ? {mastery} : {}),
             }));
             if (!isCurrent()) { return; }
-            if (result) { showAnkiStatus(result); }
-            addStatus.textContent = `${cards.length} 张卡已加入这条学习记录。`;
+            if (result?.id !== saved.id || !cards.every((draft) => result.cards?.some((card) => card.front === draft.front && card.back === draft.back))) {
+                throw new Error('还没收到这批卡的保存结果，草稿留在这里。请先到学习库核对。');
+            }
+            showAnkiStatus(result);
+            const receipt = cardReceipt(result);
+            status.textContent = receipt.retry ? '笔记和选好的卡已保存；请先打开 Anki，再点「重新确认」。' : '笔记已保存';
+            addStatus.textContent = '';
             cardPanel.hidden = true;
             container.closest('.study-focus-shell')?.classList.remove('sf-card-editor-open');
-            addCard.textContent = '再加一张卡';
+            addCard.textContent = receipt.needsAttention ? '制卡' : '再加一张卡';
             manualRows.splice(0, manualRows.length);
             draftedKinds.clear();
             manualCards.replaceChildren();

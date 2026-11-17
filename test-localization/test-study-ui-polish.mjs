@@ -105,16 +105,16 @@ test('pending Anki card shows a targeted safe resend without re-saving the learn
  globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async({studyAction,data})=>{
   if(studyAction==='pendingPeek')return {ok:true,value:{count:0}};
   if(studyAction==='rememberEntry'){saves++;return {ok:true,value:pending};}
-  if(studyAction==='remember'){resumes++;assert.deepEqual(data,{id,language:'en'});return {ok:true,value:{...pending,ankiState:'synced',cards:[{...card,noteId:321,state:'synced'}]}};}
+  if(studyAction==='librarySync'){resumes++;assert.deepEqual(data,{ids:[id],language:'en'});return {ok:true,value:{items:[{...pending,ankiState:'synced',cards:[{...card,noteId:321,state:'synced'}]}]}};}
   throw Error('Unexpected action '+studyAction);
  }}};
  const node=document.getElementById('current');
  mountStudyLibrary(node,()=>entry,()=>true);
  node.querySelector('[data-study-save=note]').click();await tick();await tick();
  const anki=node.querySelector('.study-anki-status'),retry=anki.querySelector('button');
- assert.match(anki.textContent,/1 张卡待核对/);assert.equal(retry.hidden,false);
+ assert.match(anki.textContent,/1 张未确认/);assert.equal(retry.hidden,false);
  retry.click();await tick();await tick();assert.equal(saves,1);assert.equal(resumes,1);
- assert.match(anki.textContent,/已同步 1 张卡/);assert.equal(retry.hidden,true);
+ assert.match(anki.textContent,/已确认 1 张卡/);assert.equal(retry.hidden,true);
  dom.window.close();
 });
 

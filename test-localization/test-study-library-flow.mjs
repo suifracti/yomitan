@@ -407,6 +407,30 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     await waitFor(() => h.bridge.pending.size === 0, 'outstanding readback before closing the temporary bridge');
 });
 
+test('a partial Anki receipt can be completed from the card without creating the notes again', async (t) => {
+    const h = await createHarness(t);
+    const {dom, container, view} = mountUi();
+    t.after(() => { view.cancel(); dom.window.close(); });
+    container.querySelector('[data-study-add-card]').click();
+    for (const [kind, answer] of [['meaning', '公正的'], ['context', '这个决定是公正的']]) {
+        container.querySelector(`[data-study-card-choice="${kind}"]`).click();
+        [...container.querySelectorAll('[data-study-card-back]')].at(-1).value = answer;
+    }
+    await h.bridge.fixture('lose_add_reply');
+    container.querySelector('[data-study-cards-submit]').click();
+    const label = container.querySelector('.study-anki-status span');
+    const retry = container.querySelector('.study-anki-status button');
+    await waitFor(() => h.nativeCalls.some((c) => c.action === 'libraryCardsAdd') && !retry.hidden, 'partial receipt and retry');
+    assert.match(label.textContent, /已确认 1 张.*1 张未确认/);
+    retry.click();
+    await waitFor(() => label.textContent.includes('已确认 2 张') && retry.hidden, 'both cards read back');
+    const state = await latestState(h.bridge);
+    assert.equal(state.markdownFiles.length, 1);
+    assert.equal(state.calls.filter((c) => c.action === 'addNote').length, 2);
+    assert.equal(h.nativeCalls.filter((c) => c.action === 'librarySave').length, 1);
+    assert.equal(h.modelCalls.length, 0);
+});
+
 test('lost librarySave response retries the note without touching an existing Anki card', async (t) => {
     const h = await createHarness(t, {cards: [{front: CARD_FRONT, back: CARD_BACK}], loseSaveReply: true});
     const meta = h.bridge.meta;

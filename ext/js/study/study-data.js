@@ -213,6 +213,48 @@ export function detailSource(value) {
 export const SAVE_TARGETS_KEY = 'studySaveTargetsV1';
 
 /**
+ * Read the note's Anki receipt, not the number of drafts submitted. A saved
+ * note and even an addNote attempt are not proof that Anki confirmed a card.
+ * @param {Partial<Omit<import('study').LibraryRecord, 'syncState'>> & {syncState?: string|{status?: string}}} record
+ * @returns {{text: string, retry: boolean, needsAttention: boolean, repair: boolean}}
+ */
+export function cardReceipt(record) {
+    const cards = Array.isArray(record.cards) ? record.cards : [];
+    const state = typeof record.syncState === 'string' ? record.syncState : record.syncState?.status;
+    const late = record.ankiState === 'pending' || state === 'pending';
+    const previouslyLinked = record.ankiState === 'linked' || record.ankiState === 'synced';
+    const verified = cards.filter((c) => {
+        const cardState = c.syncState ?? c.state;
+        return c.noteId && (cardState === 'synced' || (!cardState && previouslyLinked));
+    });
+    const ids = new Set(verified.map((c) => c.noteId));
+    if (cards.length === 0 && record.noteId && !late && previouslyLinked) { ids.add(record.noteId); }
+    const waiting = cards.filter((c) => (c.syncState ?? c.state) === 'pending' || (!c.noteId && late)).length;
+    const problems = {missing: 'Anki 里的卡已被删除',
+        ambiguous: `Anki 里有 ${record.candidates?.length ?? 0} 张卡对应这条记录`,
+        conflict: '笔记和 Anki 的改动不一样，请在学习库选择保留哪份',
+        ['anki-only']: '笔记不见了，Anki 卡还在'};
+    const problem = /** @type {Record<string, string>} */ (problems)[state ?? ''];
+    const retry = !problem && record.ankiEnabled !== false && (waiting > 0 || (late && Boolean(record.noteId || cards.length > 0)));
+    const needsAttention = Boolean(problem || late || waiting || state === 'error' || state === 'failed');
+    let text;
+    if (problem) {
+        text = problem;
+    } else if (record.ankiEnabled === false) {
+        text = '复习卡已关闭';
+    } else if (waiting > 0) {
+        text = [ids.size > 0 ? `已确认 ${ids.size} 张` : '', `${waiting} 张未确认`].filter(Boolean).join('，');
+    } else if (needsAttention) {
+        text = 'Anki 还没确认这次更新';
+    } else if (ids.size > 0) {
+        text = `已确认 ${ids.size} 张卡`;
+    } else {
+        text = record.noteId || cards.length > 0 ? '已有关联，尚未核实' : '尚未制卡';
+    }
+    return {text, retry, needsAttention, repair: Boolean(problem)};
+}
+
+/**
  * Recognizes the old article locator stored as JSON in the context field.
  * @param {unknown} value
  * @returns {?Record<string, unknown>}

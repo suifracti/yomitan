@@ -665,7 +665,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             if (!current()) { return; }
             const note = saveBar.querySelector('.study-library-status');
             const anki = saveBar.querySelector('.study-anki-status');
-            const failed = /失败|未完成|待|错误|异常|拒绝|重试|未确认/.test(note?.textContent || '');
+            const failed = anki?.getAttribute('data-delivery') === 'pending' || /失败|未完成|待|错误|异常|拒绝|重试|未确认/.test(note?.textContent || '');
             summary.dataset.state = failed ? 'pending' : 'normal';
             const text = [note?.textContent, !anki?.hidden ? anki?.querySelector('span')?.textContent : ''].filter(Boolean).join(' · ');
             summary.textContent = text;

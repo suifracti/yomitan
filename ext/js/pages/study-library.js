@@ -25,7 +25,7 @@ import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl} from '../study/media-key.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, cardReceipt, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
 
@@ -55,7 +55,7 @@ function noteIds(value) {
  */
 export function matchesCategory(value, category) {
     if (!value || typeof value !== 'object') { return false; }
-    const record = /** @type {{favorite?: boolean, manualKnown?: boolean, learningState?: string, vaultSaved?: boolean, ankiState?: string, syncState?: string | {status?: string}, cards?: unknown}} */ (value);
+    const record = /** @type {Partial<StudyLibraryRecord>} */ (value);
     const syncState = typeof record.syncState === 'string' ? record.syncState : '';
     switch (category) {
         case 'manual-known': return record.manualKnown === true;
@@ -63,7 +63,7 @@ export function matchesCategory(value, category) {
         case 'saved': return record.vaultSaved === true && record.learningState !== 'favorite-only';
         case 'linked': return noteIds(record).length > 0 || record.ankiState === 'linked';
         case 'anki-only': return syncState === 'anki-only';
-        case 'pending': return ['pending', 'conflict', 'error', 'failed', 'missing', 'ambiguous', 'anki-only'].includes(syncState ?? '') || record.ankiState === 'pending';
+        case 'pending': return cardReceipt(record).needsAttention;
         default: return true;
     }
 }
@@ -166,12 +166,10 @@ function matchesSearch(record, query) {
  * @returns {string}
  */
 function stateSummary(record) {
-    if (record.syncState === 'anki-only') { return '笔记不见了，Anki 卡还在'; }
-    if (record.syncState === 'missing') { return 'Anki 里的卡已被删除'; }
-    if (record.syncState === 'ambiguous') { return `Anki 里有 ${record.candidates?.length || 0} 张卡对应这条记录`; }
-    if (record.vaultSaved && noteIds(record).length === 0 && !record.cards?.length) { return '只存了笔记，还没有复习卡'; }
+    const receipt = cardReceipt(record);
+    if (receipt.repair) { return receipt.text; }
+    if (record.vaultSaved && record.learningState !== 'favorite-only' && !receipt.needsAttention && noteIds(record).length === 0 && !record.cards?.length) { return '只存了笔记，还没有复习卡'; }
     if (record.reconcileState === 'checking') { return '正在确认最近的保存和复习状态…'; }
-    const cards = noteIds(record).length;
     const labels = [];
     const isFavorite = record.learningState === 'favorite-only' && record.favorite !== false;
     switch (isFavorite ? 'favorite' : record.vaultSaved) {
@@ -183,23 +181,8 @@ function stateSummary(record) {
         case false: labels.push('笔记尚未保存'); break;
         default: labels.push('笔记状态待确认'); break;
     }
-    if (record.ankiEnabled === false) {
-        labels.push('复习卡已关闭');
-    } else if (cards > 0) {
-        labels.push(`已有 ${cards} 张复习卡`);
-    } else {
-        const ankiLabels = {pending: '复习卡待同步', missing: '复习卡关联未找到', error: '复习卡同步遇到问题', linked: '复习卡已关联'};
-        labels.push(/** @type {Record<string,string>} */ (ankiLabels)[record.ankiState ?? ''] ?? '尚未关联复习卡');
-    }
-    const syncValue = /** @type {unknown} */ (record.syncState);
-    let syncState = '';
-    if (typeof syncValue === 'string') {
-        syncState = syncValue;
-    } else if (syncValue && typeof syncValue === 'object' && 'status' in syncValue && typeof syncValue.status === 'string') {
-        syncState = syncValue.status;
-    }
-    const syncLabels = {synced: '同步完成', pending: '等待同步', conflict: '有内容需要确认', missing: '关联信息待确认', error: '同步遇到问题', failed: '同步未完成', paused: '同步已暂停', ['local-only']: '仅保存在笔记', saved: '笔记已保存'};
-    if (syncState && syncState !== 'synced') { labels.push(/** @type {Record<string,string>} */ (syncLabels)[syncState] ?? '同步状态待确认'); }
+    labels.push(`Anki · ${receipt.text}`);
+    if (record.syncState === 'paused') { labels.push('同步已暂停'); }
     if (record.reconcileState === 'failed') { labels.push('未核对最新状态'); }
     if (record.error) { labels.push(`需留意：${record.error}`); }
     if (record.reconcileError) { labels.push(record.reconcileError); }
