@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StudyService} from '../ext/js/study/study-service.js';
+import {TRANSLATION_PREFS_KEY} from '../ext/js/study/subtitle-prefs.js';
 import {SETTINGS_KEY,CACHE_KEY} from '../ext/js/study/study-data.js';
-function harness(){const db={[SETTINGS_KEY]:{model:'fixture',effort:'low',cacheEnabled:true}},calls=[];let held;
+function harness(){const db={[TRANSLATION_PREFS_KEY]:{engine:'model'},[SETTINGS_KEY]:{model:'fixture',effort:'low',cacheEnabled:true}},calls=[];let held;
  const service=new StudyService({get:async k=>({[k]:db[k]}),set:async v=>Object.assign(db,v)},p=>{calls.push(p);return {cancel(){},promise:new Promise(resolve=>{held=()=>resolve({ok:true,result:{items:p.items.map(r=>({id:r.id,translation:'译：'+r.text}))}});queueMicrotask(()=>held());})};});
  return {service,db,calls};}
 const request={requestId:'test-run',language:'en',title:'Fixture',config:{model:'fixture',effort:'low'},items:[{id:'line-0',text:'Keep going.',context:'Prior sentence.'},{id:'line-1',text:'Stay curious.',context:''}]};
@@ -24,7 +25,7 @@ test('subtitle batches reject wrong settings, duplicates, and oversized requests
  assert.equal(calls.length,0);
 });
 test('cancellation discards a late subtitle reply and never caches it',async()=>{
- const db={},calls=[];let resolve,cancelled=false;
+ const db={[TRANSLATION_PREFS_KEY]:{engine:'model'}},calls=[];let resolve,cancelled=false;
  const service=new StudyService({get:async k=>({[k]:db[k]}),set:async v=>Object.assign(db,v)},p=>{calls.push(p);return {cancel(){cancelled=true;},promise:new Promise(r=>resolve=r)};});
  const config=await service.handle('settings',{});
  const pending=service.handle('subtitleTranslate',{...request,config:{model:config.model,effort:config.effort}});

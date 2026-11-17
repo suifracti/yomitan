@@ -25,7 +25,7 @@ import {StudyJournal, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
-import {normalizeSubtitlePrefs, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY} from './subtitle-prefs.js';
+import {storeSubtitlePatch, subtitlePrefsFrom, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY} from './subtitle-prefs.js';
 
 /** @type {WeakSet<object>} */
 const preparedRuntimes = new WeakSet();
@@ -516,6 +516,12 @@ export class StudyService {
         return (await this.storage.get(key))[key];
     }
 
+    /** @returns {Promise<import('./subtitle-prefs.js').SubtitlePrefs>} */
+    async subtitlePrefs() {
+        const [video, shared] = await Promise.all([this.read(SUBTITLE_PREFS_KEY), this.read(TRANSLATION_PREFS_KEY)]);
+        return subtitlePrefsFrom(video, shared);
+    }
+
     /**
      *
      * @param {string} key
@@ -733,6 +739,11 @@ export class StudyService {
         }
 
 
+        if (action === 'subtitlePrefsUpdate') {
+            const update = this.writes.then(() => storeSubtitlePatch(this.storage, /** @type {Partial<import('./subtitle-prefs.js').SubtitlePrefs>} */ (value ?? {})));
+            this.writes = update.then(() => {}, () => {});
+            return await update;
+        }
         if (['subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment'].includes(action)) { return await this.subtitles.handle(action, value); }
 
         if (action === 'pendingPeek' || action === 'retryPending') {
@@ -1162,15 +1173,15 @@ export function prepareStudyService(lookupDictionary = null) {
     if (chrome.scripting?.registerContentScripts) {
         const id = 'study-youtube-caption-capture';
         const update = async () => {
-            const stored = await chrome.storage.local.get('studySubtitlePrefs');
-            const enabled = stored.studySubtitlePrefs?.enabled !== false;
+            const stored = await chrome.storage.local.get(SUBTITLE_PREFS_KEY);
+            const enabled = stored[SUBTITLE_PREFS_KEY]?.enabled !== false;
             const registered = (await chrome.scripting.getRegisteredContentScripts({ids: [id]})).length > 0;
             if (enabled && !registered) { await chrome.scripting.registerContentScripts([{id, js: ['js/study/youtube-caption-capture.js'], matches: ['https://www.youtube.com/*'], world: 'MAIN', runAt: 'document_start'}]); }
             if (!enabled && registered) { await chrome.scripting.unregisterContentScripts({ids: [id]}); }
         };
         let pending = update().catch((error) => log.error(error));
         chrome.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && changes.studySubtitlePrefs) { pending = pending.then(update).catch((error) => log.error(error)); }
+            if (area === 'local' && changes[SUBTITLE_PREFS_KEY]) { pending = pending.then(update).catch((error) => log.error(error)); }
         });
     }
     const service = new StudyService(chrome.storage.local);
@@ -1282,7 +1293,7 @@ export function prepareStudyService(lookupDictionary = null) {
         // Content scripts get only the explicit reader's read/translate/cancel path. The one write is
         // the video study summary, built from the learner's own saved words for the sender's video.
         // Readers run inside their own web frame, or a top-level local file page.
-        if (['subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
+        if (['subtitlePrefsUpdate', 'subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
         (/^https?:\/\//.test(sender.url || '') || (sender.frameId === 0 && /^file:\/\//.test(sender.url || '')))) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
@@ -1306,7 +1317,7 @@ export function prepareStudyService(lookupDictionary = null) {
                     forwarded = {mediaKey: own, url: url.slice(0, 2000), title: title.slice(0, 300)};
                 }
                 // Only the model and Apple translation go through the local bridge.
-                const {engine} = normalizeSubtitlePrefs({...await service.read(SUBTITLE_PREFS_KEY), ...await service.read(TRANSLATION_PREFS_KEY)});
+                const {engine} = await service.subtitlePrefs();
                 if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(engine)) || studyAction === 'subtitleSegment' || studyAction.startsWith('library')) && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
                     throw new Error('请先在学习设置中授权本机翻译，再点翻译字幕。');
                 }

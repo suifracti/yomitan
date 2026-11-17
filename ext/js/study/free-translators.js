@@ -178,11 +178,4 @@ export async function chromeTranslate(texts, {source = 'en', target = 'zh', sign
     return checked(rows, texts.length, 'Chrome 内置翻译');
 }
 
-/** @type {Record<import('./subtitle-prefs.js').SubtitleEngine, string>} */
-export const ENGINE_LABELS = {
-    chrome: 'Chrome 内置翻译',
-    apple: 'Apple 翻译',
-    google: 'Google 翻译',
-    microsoft: '微软翻译',
-    model: '你的模型',
-};
+export {ENGINE_LABELS} from './translation-engines.js';

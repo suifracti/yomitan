@@ -19,18 +19,23 @@
 // caption menu and the sentence card. Google and Microsoft work online; Chrome's
 // translator needs a language pack on first use.
 
-/** @typedef {import('./subtitle-prefs.js').SubtitleEngine} SubtitleEngine */
-
-/** @type {ReadonlyArray<{value: SubtitleEngine, label: string}>} */
-export const ENGINE_CHOICES = Object.freeze([
-    Object.freeze({value: 'google', label: 'Google 免费翻译（需要联网）'}),
-    Object.freeze({value: 'chrome', label: 'Chrome 内置翻译（首次使用需要下载语言包）'}),
-    Object.freeze({value: 'apple', label: 'Apple 翻译'}),
-    Object.freeze({value: 'model', label: 'AI 模型'}),
+// Menu copy and compact status text name the same service. Microsoft stays
+// compatible with saved profiles without becoming a new default choice.
+const ENGINES = /** @type {const} */ ([
+    {value: 'google', label: 'Google 免费翻译（需要联网）', name: 'Google 翻译'},
+    {value: 'chrome', label: 'Chrome 内置翻译（首次使用需要下载语言包）', name: 'Chrome 内置翻译'},
+    {value: 'apple', label: 'Apple 翻译', name: 'Apple 翻译'},
+    {value: 'model', label: 'AI 模型', name: '你的模型'},
+    {value: 'microsoft', label: 'Microsoft 免费翻译（需要联网）', name: '微软翻译'},
 ]);
 
-/** An existing Microsoft choice stays visible instead of being shown as Chrome. */
-const MICROSOFT_CHOICE = Object.freeze({value: 'microsoft', label: 'Microsoft 免费翻译（需要联网）'});
+/** @typedef {typeof ENGINES[number]['value']} SubtitleEngine */
+
+export const SUBTITLE_ENGINES = Object.freeze(ENGINES.map(({value}) => value));
+
+export const ENGINE_LABELS = /** @type {Readonly<Record<SubtitleEngine, string>>} */ (Object.freeze(Object.fromEntries(ENGINES.map(({value, name}) => [value, name]))));
+
+export const ENGINE_CHOICES = Object.freeze(ENGINES.filter(({value}) => value !== 'microsoft'));
 
 /**
  * Rebuilds a select from the shared list and selects the saved service.
@@ -38,7 +43,7 @@ const MICROSOFT_CHOICE = Object.freeze({value: 'microsoft', label: 'Microsoft �
  * @param {SubtitleEngine} current
  */
 export function fillEngineSelect(select, current) {
-    const choices = current === 'microsoft' ? [...ENGINE_CHOICES, MICROSOFT_CHOICE] : ENGINE_CHOICES;
+    const choices = current === 'microsoft' ? ENGINES : ENGINE_CHOICES;
     select.replaceChildren(...choices.map(({value, label}) => Object.assign(document.createElement('option'), {value, textContent: label})));
     select.value = current;
     select.dispatchEvent(new Event('study-ui-sync'));

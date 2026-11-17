@@ -17,6 +17,7 @@
 
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {StudyService} from '../ext/js/study/study-service.js';
 import {readSubtitlePrefs, writeSubtitlePrefs} from '../ext/js/study/subtitle-prefs.js';
 import {prepareParallelSentence} from '../ext/js/display/study-translation.js';
 
@@ -24,9 +25,13 @@ test('migrates the old engine once and shares manual sentence translation with a
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk', html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>'}});
     const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
     const store = {studySubtitlePrefs: {engine: 'google', autoTranslate: false}};
-    vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test/${path}`}, storage: {local: {
-        get: async () => ({...store}), set: async (value) => Object.assign(store, value),
-    }, onChanged: {addListener() {}, removeListener() {}}}});
+    const local = {get: async () => ({...store}), set: async (value) => Object.assign(store, value)};
+    const service = new StudyService(local);
+    const sendMessage = async ({studyAction, data}) => {
+        if (studyAction !== 'subtitlePrefsUpdate') { return {ok: false}; }
+        return {ok: true, value: await service.handle('subtitlePrefsUpdate', data)};
+    };
+    vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test/${path}`, sendMessage}, storage: {local, onChanged: {addListener() {}, removeListener() {}}}});
     vi.stubGlobal('fetch', async () => ({ok: true, text: async () => JSON.stringify({events: [{tStartMs: 0, dDurationMs: 3000, segs: [{utf8: 'A sentence for learning.'}]}]})}));
     let reader;
     let dispose;
@@ -35,7 +40,10 @@ test('migrates the old engine once and shares manual sentence translation with a
         expect(store.studyTranslationPrefs).toEqual({engine: 'google', autoTranslate: false});
         store.studySubtitlePrefs.engine = 'apple';
         expect((await readSubtitlePrefs()).engine).toBe('google');
-        await writeSubtitlePrefs({engine: 'microsoft'});
+        // The popup, video controls and settings may all start from the same snapshot.
+        await Promise.all([writeSubtitlePrefs({engine: 'microsoft'}), writeSubtitlePrefs({overlay: false}), writeSubtitlePrefs({autoTranslate: true})]);
+        expect(await readSubtitlePrefs()).toMatchObject({engine: 'microsoft', overlay: false, autoTranslate: true});
+        await writeSubtitlePrefs({autoTranslate: false});
         reader = new YoutubeReader({prefs: {engine: 'microsoft', autoTranslate: false}});
         reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
         reader.start();

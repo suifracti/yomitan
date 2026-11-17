@@ -17,6 +17,7 @@
 | 视频已记词点制卡后丢来源/时间；重复台词跳到第一次；重开后旧解释变空 | L-007；YoutubeReader._openSavedWord、openStudyRecord、Display._setContentTermsOrKanji、studyResumeParams |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
+| 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
 
 ## 默认自动执行：不等用户提醒
 
@@ -121,6 +122,12 @@
 改卡型名称、阶段、素材要求或默认子牌组，编辑 `local-bridge/study_cards.py`，再运行 `python3 -B dev/sync-local.py --manifest-only` 并提交生成物。浏览器使用随扩展打包的 `card-catalog.js`，不在查词时读文件；类型从该目录推断，桥、笔记和学习索引使用同源定义。题面模板仍在 `study-card-kinds.js`。12 个可推荐模板与手工语法卡不是 13 个推荐；自动建议模型仍只准原有 6 种。
 
 没有显式牌组的挖空卡过去从桥直接提交会进大牌组，尽管词卡显示的是“会用”子牌组。现在两端都是手选牌组 → 精确卡型映射 → 卡型所属子牌组 → 当前默认。在设置里保存其他项目，不抹掉未显示的自定义卡型映射。旧 ID、旧映射及自定义的有效卡型键不迁移；已有卡不换牌组。参见[卡型目录验证](youtube-study-wiring.md#2026-11-18-卡型与子牌组统一)。
+
+## L-010 视频外观与翻译服务不能互相写回
+
+翻译服务的名称、菜单文案、紧凑状态及有效键从 `translation-engines.js` 找；Microsoft 仅在原来已选时出现。两份已有配置的分工不变：`studySubtitlePrefs` 持有视频外观/跟读，`studyTranslationPrefs` 持有引擎和自动翻译。窗口只提交改动的字段，后台在现有写队列合并；字幕、查词、整页及权限判断按同一规则读取。仅旧配置实际带翻译选择时才迁移；迁移也从写入时的当前值开始，打开全新页面不为默认值写配置。
+
+实际反例：同一时刻选择 Microsoft、关视频内字幕、开自动翻译，旧写法把前两项还原成 Google 和显示字幕。新写法三项都保留。不增加设置项、轮询或另一个存储，不因为换设置就调用所选服务。见[全局翻译选项验证](youtube-study-wiring.md#2026-11-18-翻译服务与字幕设置统一写入)。
 
 ## 增量与覆盖
 

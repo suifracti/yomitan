@@ -15,6 +15,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {studyCall} from './study-client.js';
+import {SUBTITLE_ENGINES} from './translation-engines.js';
+
 // Viewer preferences shared by the in-video captions, the caption sidebar and the
 // settings page. They only change presentation and which translation service the
 // learner picked; the background re-reads them and never trusts a page's copy.
@@ -23,7 +26,7 @@ export const SUBTITLE_PREFS_KEY = 'studySubtitlePrefs';
 
 export const TRANSLATION_PREFS_KEY = 'studyTranslationPrefs';
 
-/** @typedef {'chrome'|'apple'|'google'|'microsoft'|'model'} SubtitleEngine */
+/** @typedef {import('./translation-engines.js').SubtitleEngine} SubtitleEngine */
 
 /**
  * @typedef {object} SubtitlePrefs
@@ -63,8 +66,7 @@ export const DEFAULT_SUBTITLE_PREFS = Object.freeze({
     resume: true,
 });
 
-/** @type {ReadonlyArray<SubtitleEngine>} */
-export const SUBTITLE_ENGINES = Object.freeze(['chrome', 'apple', 'google', 'microsoft', 'model']);
+export {SUBTITLE_ENGINES} from './translation-engines.js';
 
 /**
  * Keeps only known keys with valid values; anything else falls back to the default.
@@ -96,37 +98,71 @@ function storageArea() {
 }
 
 /**
+ * Video controls own presentation; only the shared key selects the translator.
+ * @param {unknown} video
+ * @param {unknown} shared
+ * @returns {SubtitlePrefs}
+ */
+export function subtitlePrefsFrom(video, shared) {
+    const prefs = normalizeSubtitlePrefs(video);
+    if (!shared) { return prefs; }
+    const {engine, autoTranslate} = normalizeSubtitlePrefs(shared);
+    return {...prefs, engine, autoTranslate};
+}
+
+/**
+ * @param {unknown} video
+ * @returns {boolean}
+ */
+function hasOldTranslation(video) {
+    return Boolean(video && typeof video === 'object' && ('engine' in video || 'autoTranslate' in video));
+}
+
+/**
  * @returns {Promise<SubtitlePrefs>}
  */
 export async function readSubtitlePrefs() {
     const area = storageArea();
     if (!area) { return {...DEFAULT_SUBTITLE_PREFS}; }
-    try {
-        const stored = /** @type {Record<string, unknown>} */ (await area.get([SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY]));
-        const old = normalizeSubtitlePrefs(stored[SUBTITLE_PREFS_KEY]);
-        if (!stored[TRANSLATION_PREFS_KEY]) {
-            await area.set({[TRANSLATION_PREFS_KEY]: {engine: old.engine, autoTranslate: old.autoTranslate}});
-        }
-        const shared = stored[TRANSLATION_PREFS_KEY] ? normalizeSubtitlePrefs(stored[TRANSLATION_PREFS_KEY]) : old;
-        return {...old, engine: shared.engine, autoTranslate: shared.autoTranslate};
-    } catch {
-        return {...DEFAULT_SUBTITLE_PREFS};
+    const stored = /** @type {Record<string, unknown>} */ (await area.get([SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY]).catch(() => ({})));
+    const video = stored[SUBTITLE_PREFS_KEY];
+    const shared = stored[TRANSLATION_PREFS_KEY];
+    if (!shared && hasOldTranslation(video)) {
+        // Ask the writer to migrate its current snapshot, not this tab's old one.
+        return await writeSubtitlePrefs({}).catch(() => subtitlePrefsFrom(video, shared));
     }
+    return subtitlePrefsFrom(video, shared);
 }
 
 /**
- * Merges a change into the stored preferences and returns the result.
+ * Runs inside the service worker's existing write queue, including one-time
+ * migration. The caller supplies a patch, never both tabs' full snapshots.
+ * @param {import('study').Storage} storage
+ * @param {Partial<SubtitlePrefs>} patch
+ * @returns {Promise<SubtitlePrefs>}
+ */
+export async function storeSubtitlePatch(storage, patch) {
+    const [local, global] = await Promise.all([storage.get(SUBTITLE_PREFS_KEY), storage.get(TRANSLATION_PREFS_KEY)]);
+    const old = local[SUBTITLE_PREFS_KEY];
+    const shared = global[TRANSLATION_PREFS_KEY];
+    const next = normalizeSubtitlePrefs({...subtitlePrefsFrom(old, shared), ...patch});
+    const {engine, autoTranslate, ...video} = next;
+    /** @type {Record<string, unknown>} */
+    const changes = {};
+    if (Object.keys(patch).some((key) => Object.hasOwn(video, key))) { changes[SUBTITLE_PREFS_KEY] = video; }
+    if ('engine' in patch || 'autoTranslate' in patch || (!shared && hasOldTranslation(old))) {
+        changes[TRANSLATION_PREFS_KEY] = {engine, autoTranslate};
+    }
+    if (Object.keys(changes).length > 0) { await storage.set(changes); }
+    return next;
+}
+
+/**
  * @param {Partial<SubtitlePrefs>} patch
  * @returns {Promise<SubtitlePrefs>}
  */
 export async function writeSubtitlePrefs(patch) {
-    const next = normalizeSubtitlePrefs({...await readSubtitlePrefs(), ...patch});
-    const area = storageArea();
-    if (area) {
-        const {engine, autoTranslate, ...video} = next;
-        await area.set({[SUBTITLE_PREFS_KEY]: video, [TRANSLATION_PREFS_KEY]: {engine, autoTranslate}});
-    }
-    return next;
+    return /** @type {SubtitlePrefs} */ (await studyCall('subtitlePrefsUpdate', patch));
 }
 
 /**
