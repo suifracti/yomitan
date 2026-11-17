@@ -44,7 +44,7 @@ python3 tools/reformat-study-note.py --vault '/实际/Vault' --file '语境目�
 
 ## Anki：保留七字段与排程
 
-`assets/study-review/` 沿用 `Word / Sentence / Definition / Source / URL / Audio / Image`。正面只放回忆提示和原句；答案、完整词典和媒体在背面分层。现有字段、卡片 ID、笔记类型、音频、图片与排程不删除、不重建。
+`assets/study-review/` 是项目模板的唯一来源；新建英语笔记类型和明确应用学习版外观用同一份。沿用 `Word / Sentence / Definition / Source / URL / Audio / Image`。普通卡正面不播媒体。新制的听原声→意思、视频声音字幕、听音拼写卡在正面可以点播选定的录音，不附上完整字幕；翻面再看原句、答案和来源。旧卡不批量补写，现有媒体和排程不删除、不重建。
 
 已有模型不会因更新代码而静默改模板：
 

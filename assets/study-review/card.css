@@ -7,6 +7,7 @@
 .sr-label { color:#657796; font-size:11px; font-weight:600; margin-bottom:6px; }
 .sr-sentence { font-size:17px; line-height:1.8; }
 .sr-hint { margin-top:22px; font-size:12px; color:#77839a; }
+.sr-card audio { max-width:100%; }
 .sr-answer { border-left:3px solid #5966a8; padding:3px 0 4px 16px; margin:0 0 20px; }
 .sr-definition { font-size:17px; line-height:1.8; overflow-wrap:anywhere; }
 .sr-quick-note { color:#7a8497; font-size:11px; margin-top:8px; }

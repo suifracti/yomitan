@@ -1,6 +1,35 @@
 <article class="sr-card" data-side="front">
   <div class="sr-eyebrow">语境回忆 · 先想意思，再看答案</div>
   <h1 class="sr-question">{{Word}}</h1>
-  {{#Sentence}}<section class="sr-context"><div class="sr-label">原句</div><div class="sr-sentence">{{Sentence}}</div></section>{{/Sentence}}
+  {{#Sentence}}<section class="sr-context" hidden><div class="sr-label">原句</div><div class="sr-sentence">{{Sentence}}</div></section>{{/Sentence}}
   <p class="sr-hint">这个词或表达，在这句话里是什么意思？</p>
 </article>
+<script>
+(function () {
+  var cards = document.querySelectorAll('.sr-card[data-side="front"]');
+  var card = cards[cards.length - 1];
+  if (!card || card.dataset.ready) return;
+  card.dataset.ready = 'true';
+  var source = card.querySelector('.sr-question [data-study-clip]');
+  var context = card.querySelector('.sr-context');
+  if (!source) {
+    if (context) context.hidden = false;
+    return;
+  }
+  if (context) context.remove();
+  card.querySelector('.sr-hint').remove();
+  var heading = card.querySelector('.sr-eyebrow');
+  var filename = source.getAttribute('data-study-clip');
+  if (!filename) {
+    heading.textContent = '这张卡缺少原声，可以先翻面看原句。';
+    return;
+  }
+  heading.textContent = '先听原声，再看答案';
+  var player = document.createElement('audio');
+  player.controls = true;
+  player.preload = 'none';
+  player.src = encodeURIComponent(filename);
+  player.setAttribute('aria-label', '播放这张卡的原声');
+  card.appendChild(player);
+})();
+</script>

@@ -197,10 +197,9 @@ class YomitanLibrary:
         if s['modelExists'] and not s['modelCompatible']:
             raise ValueError('已有同名笔记类型不是英语七字段，未覆盖；请选择兼容类型或新名称。')
         if p['createModel'] and not s['modelExists']:
+            from study_review_view import FRONT, BACK, CSS
             self.anki('createModel', {'modelName': checked['model'], 'inOrderFields': FIELDS,
-                      'css': '.card {font:22px sans-serif;text-align:left;line-height:1.6;padding:20px;} img{max-width:100%;}',
-                      'cardTemplates': [{'Name': '语境理解', 'Front': '{{Word}}<hr>{{Sentence}}{{Audio}}{{Image}}',
-                                         'Back': '{{FrontSide}}<hr id="answer">{{Definition}}<div>{{Source}}</div>'}]})
+                      'css': CSS, 'cardTemplates': [{'Name': '语境理解', 'Front': FRONT, 'Back': BACK}]})
             if self.anki('modelFieldNames', {'modelName': checked['model']}) != FIELDS:
                 raise ValueError('新笔记类型字段读回不同，未继续准备牌组。')
         selected = set(filter(None, [checked['deck'], *checked.get('deckByKind', {}).values()]))

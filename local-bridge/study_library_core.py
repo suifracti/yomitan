@@ -901,6 +901,8 @@ class StudyLibrary:
                     study_sync.require_deck(self, card.get('target', {}).get('deck', self.deck))
                     from study_media import anki_fields
                     fields.update(anki_fields(self, r))
+                    if self.language == 'en' and not reuse_text:
+                        fields['Word'] = study_sync.question_field(card['front'], fields['Audio'])
                 self.language_fields(fields, r['entry'], card['front'])
                 from study_memory import exact_tag, point_id
                 note_id = found[0] if found else self.anki('addNote', {'note': {
@@ -916,8 +918,8 @@ class StudyLibrary:
                 if card.get('linkedByPoint'): keys = tuple(k for k in keys if k != 'Sentence')
                 if not isinstance(info, list) or len(info) != 1 or info[0].get('noteId') != note_id or any(not equal(study_sync.comparable_field(k,info[0].get('fields', {}).get(k, {}).get('value')), study_sync.comparable_field(k,fields[k])) for k in keys):
                     raise ValueError('卡片读回不同，请人工确认，不覆盖已有卡。')
-                if not found and any(info[0]['fields'].get(k, {}).get('value') != fields[k] for k in ('Audio', 'Image')):
-                    raise ValueError('Anki 媒体字段读回不同，请人工确认。')
+                if not found and any(info[0]['fields'].get(k, {}).get('value') != fields[k] for k in ('Word', 'Audio', 'Image')):
+                    raise ValueError('Anki 里的题面或媒体和刚发送的不同，请检查这张卡。')
                 if not found:
                     note = study_sync.schedule_new_card(self, r, card, info[0])
                     if note:

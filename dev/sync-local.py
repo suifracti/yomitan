@@ -30,9 +30,20 @@ def git(repo, *args):
 def generate_manifest(repo=REPO):
     path = pathlib.Path(repo) / MANIFEST
     path.parent.mkdir(parents=True, exist_ok=True)
+    for relative, source in generated_contracts(repo).items():
+        (pathlib.Path(repo) / relative).write_text(source)
     path.write_text(json.dumps(hashes(runtime_sources(pathlib.Path(repo) / 'local-bridge')), ensure_ascii=False, indent=4) + '\n')
-    for name, source in web_contracts(repo).items():
-        (pathlib.Path(repo) / WEB_DIR / name).write_text(source)
+
+
+def generated_contracts(repo):
+    files = {WEB_DIR / name: source for name, source in web_contracts(repo).items()}
+    assets = pathlib.Path(repo) / 'assets/study-review'
+    if assets.is_dir():
+        view = '# Generated from assets/study-review by dev/sync-local.py --manifest-only.\n'
+        for name, filename in [('FRONT', 'front.html'), ('BACK', 'back.html'), ('CSS', 'card.css')]:
+            view += f'{name} = {(assets / filename).read_text()!r}\n'
+        files[pathlib.Path('local-bridge/study_review_view.py')] = view
+    return files
 
 
 LICENSE_HEADER = '''/*
@@ -118,9 +129,9 @@ def sync(repo=REPO, base='HEAD^', dry_run=False):
         raise ValueError('bridge-manifest 已过期，请先运行 --manifest-only 并提交。')
     if json.loads(git(repo, 'show', 'HEAD:' + MANIFEST.as_posix())) != expected:
         raise ValueError('桥清单与当前提交不同，请先提交改动再同步。')
-    for name, source in web_contracts(repo).items():
-        if (repo / WEB_DIR / name).read_text() != source:
-            raise ValueError(name + ' 已过期，请先运行 --manifest-only 并提交。')
+    for relative, source in generated_contracts(repo).items():
+        if (repo / relative).read_text() != source:
+            raise ValueError(str(relative) + ' 已过期，请先运行 --manifest-only 并提交。')
     baseline = {pathlib.Path(path).name: git(repo, 'show', base + ':' + path)
                 for path in tracked(repo, base, 'local-bridge')
                 if is_runtime_source(path.removeprefix('local-bridge/'))}

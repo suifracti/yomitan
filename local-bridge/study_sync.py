@@ -143,6 +143,17 @@ def _plain(value):
     return html.unescape(re.sub(r'<[^>]*>', '', value)).strip()
 
 
+QUESTION_CLIP = re.compile(r'<span data-study-clip="[^"]*"></span>$')
+
+
+def question_field(question, audio=None):
+    value = _field_html(question)
+    if audio is None:
+        return value
+    clip = re.fullmatch(r'\[sound:([^\[\]/\\:\x00-\x1f]+)\]', audio)
+    return value + '<span data-study-clip="' + (html.escape(clip[1], quote=True) if clip else '') + '"></span>'
+
+
 def source_field(lib, record, values):
     source = _field_html(values.get('title', ''))
     source += '<br><a href="' + html.escape(lib.open_url(record['id']), quote=True) + '">学习过程笔记</a>'
@@ -352,7 +363,7 @@ def _note_values(lib, note_id, record, fields, review_only=False):
     if any(not isinstance(row.get('fields', {}).get(key, {}).get('value'), str) for key in required):
         raise ValueError('关联卡的字段或模板已变化；未覆盖，请在学习设置中检查。')
     remote = {}
-    for name in ('Sentence','Definition','Source','URL','Word'):
+    for name in ('Sentence','Definition','Source','URL','Word','Audio'):
         obj = row.get('fields', {}).get(name, {})
         remote[name] = obj.get('value') if isinstance(obj, dict) else None
     return row, remote
@@ -464,7 +475,10 @@ def reconcile(lib, p):
         return {**lib.result(ident), 'syncState':'conflict', 'conflicts':conflicts}
     # Update all linked Anki notes only after every conflict has a user choice.
     for card, note_id, raw, common, front, back, actual_deck, local_card in card_updates:
-        wanted = {'Word':_field_html(merged_cards[(card['id'], 'front')]),
+        # Only maintain the question-side replay on notes made with it; never retrofit old notes.
+        has_replay = card.get('kind') in AUDIO_KINDS and QUESTION_CLIP.search(raw.get('Word') or '')
+        question_audio = (raw.get('Audio') or '') if has_replay else None
+        wanted = {'Word':question_field(merged_cards[(card['id'], 'front')], question_audio),
                   'Definition':definition_field(merged_cards[(card['id'], 'back')], common if card.get('reviewOnly') else merged),
                   'Sentence':_field_html(merged['sentence']),
                   'Source':source_field(lib, r, merged), 'URL':html.escape(merged['url'])}
@@ -595,6 +609,8 @@ def handle(lib, p):
 
 
 def comparable_field(key, value):
+    if key == 'Word' and value:
+        return QUESTION_CLIP.sub('', value)
     return parse_definition(value, {})['answer'] if key == 'Definition' else value
 
 
