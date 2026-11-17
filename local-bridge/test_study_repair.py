@@ -6,6 +6,33 @@ import test_study_auto_sync as fixture
 
 
 class RepairTests(unittest.TestCase):
+    def test_orphan_restores_to_its_folder_without_overwriting_a_later_edit_on_retry(self):
+        h = fixture.AutoSyncTests(); h.setUp()
+        self.addCleanup(h.tearDown)
+        settings = h.library.settings()
+        first = h.library.handle({'action': 'librarySettingsSave', 'settings': {**settings, 'directory': '课程 A'}})
+        entry = {'word': 'brick', 'sentence': 'A brick wall.', 'meaning': '砖', 'url': 'https://example.com/a'}
+        saved = h.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'targetId': first['targetId']})
+        h.library.handle({'action': 'libraryCardsAdd', 'id': saved['id'], 'cards': [{'kind': 'meaning', 'front': 'brick', 'back': '砖'}]})
+        path = h.library.locate(saved['id']).path(saved['id'])
+        path.unlink()
+        h.library.handle({'action': 'librarySettingsSave', 'settings': {**settings, 'directory': '课程 B'}})
+        # Existing cards only have the note link, not a saved target ID.
+        fields = h.notes[1000]['fields']
+        fields['Source'] = re.sub(r' data-study-target="[^"]*"', '', fields['Source'])
+        h.library.handle({'action': 'libraryAutoSync'})
+        restore = {'action': 'libraryOrphan', 'noteId': 1000, 'choice': 'restore'}
+        h.library.handle(restore)
+        self.assertTrue(path.is_file(), 'The note belongs in course A even though B is now selected.')
+        self.assertEqual(h.library.locate(saved['id']).target_id, first['targetId'])
+        h.library.handle({'action': 'librarySave', 'entry': {**entry, 'meaning': '我后来记的：一块砖'}, 'makeCard': False})
+        edited = path.read_bytes()
+        h.calls.clear()
+        h.library.handle(restore)
+        self.assertEqual(path.read_bytes(), edited)
+        self.assertFalse((h.vault / '课程 B').exists())
+        self.assertFalse(set(h.calls) & {'addNote', 'updateNoteFields', 'deleteNotes', 'changeDeck', 'setDueDate'})
+
     def test_restore_two_listening_cards_to_their_original_video_occurrences(self):
         h = fixture.AutoSyncTests(); h.setUp()
         self.addCleanup(h.tearDown)

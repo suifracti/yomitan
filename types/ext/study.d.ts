@@ -79,6 +79,7 @@ export type LibraryRecord = {
     manualKnown?: boolean;
     candidates?: {noteId: number; front: string}[];
     repairCardId?: string;
+    confirmRestoreTo?: {targetId: string; path: string};
     media?: {audio?: {name: string}};
     favorite?: boolean;
     learningState?: string;

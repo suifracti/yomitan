@@ -10,7 +10,7 @@ import pathlib
 import re
 import urllib.parse
 
-from study_cards import AUDIO_KINDS, CARDS, CARD_STAGES, KIND_LABELS, MASTERY_LABELS, STAGE_NAMES, card_key
+from study_cards import AUDIO_KINDS, CARDS, CARD_STAGES, KIND_LABELS, MASTERY_LABELS, STAGE_NAMES, card_key, linked_note_ids
 
 SYNC_KEYS = ('sentence', 'meaning', 'translation', 'title', 'url')
 BLOCK_START = '<!-- study-sync-fields:start -->'
@@ -155,14 +155,30 @@ def question_field(question, audio=None):
     return value + '<span data-study-clip="' + (html.escape(clip[1], quote=True) if clip else '') + '"></span>'
 
 
-NOTE_LINK = re.compile(r'<a href="obsidian://open\?([^"]+)"(?: data-study-word="([^"]*)")?>学习过程笔记</a>')
+NOTE_LINK = re.compile(r'<a\b([^>]+)>\s*学习过程笔记\s*</a>', re.I)
 SOURCE_TIME = re.compile(r'<br\s*/?>视频位置：([0-9]{1,6}) 秒\s*$', re.I)
 
 
-def source_field(lib, record, values, *, keep_word=True):
+def note_origin(raw):
+    link = NOTE_LINK.search(raw)
+    if not link: return {}
+    attrs = {k.lower(): html.unescape(v) for k, _, v in re.findall(r"""\s(href|data-study-word|data-study-target)\s*=\s*(["'])(.*?)\2""", link[1], re.I | re.S)}
+    href = attrs.get('href', '')
+    if not href.startswith('obsidian://open?'): return {}
+    query = urllib.parse.parse_qs(href.partition('?')[2])
+    return {'word': attrs.get('data-study-word', ''), 'target': attrs.get('data-study-target', ''),
+            'vault': query.get('vault', [''])[0], 'file': query.get('file', [''])[0]}
+
+
+def source_field(lib, record, values, previous=None):
     source = _field_html(values.get('title', ''))
-    word = ' data-study-word="' + html.escape(record['entry']['word'], quote=True) + '"' if keep_word and lib.language == 'en' else ''
-    source += '<br><a href="' + html.escape(lib.open_url(record['id']), quote=True) + '"' + word + '>学习过程笔记</a>'
+    attrs = ''
+    if lib.language == 'en':
+        # Only new cards get new markers; reconciling an old card is not a migration.
+        for key, value in [('word', record['entry']['word']), ('target', lib.target_id)]:
+            if value and (previous is None or previous.get(key)):
+                attrs += f' data-study-{key}="{html.escape(value, quote=True)}"'
+    source += '<br><a href="' + html.escape(lib.open_url(record['id']), quote=True) + '"' + attrs + '>学习过程笔记</a>'
     if 'videoTime' in record['entry']:
         source += f'<br>视频位置：{record["entry"]["videoTime"]} 秒'
     return source
@@ -487,7 +503,7 @@ def reconcile(lib, p):
         wanted = {'Word':question_field(merged_cards[(card['id'], 'front')], question_audio),
                   'Definition':definition_field(merged_cards[(card['id'], 'back')], common if card.get('reviewOnly') else merged),
                   'Sentence':_field_html(merged['sentence']),
-                  'Source':source_field(lib, r, merged, keep_word=' data-study-word="' in (raw.get('Source') or '')), 'URL':html.escape(merged['url'])}
+                  'Source':source_field(lib, r, merged, note_origin(raw.get('Source') or '')), 'URL':html.escape(merged['url'])}
         if card.get('reviewOnly'):
             wanted = {k:v for k,v in wanted.items() if k in ('Word', 'Definition')}
         changed = {k:v for k,v in wanted.items() if raw.get(k) != v}
@@ -558,7 +574,20 @@ def repair_link(lib, p):
     return lib.result(r['id'])
 
 
-def orphan_record(note, supplied_word=''):
+def orphan_target(library, origin):
+    # Compare names against configured destinations. Never open the path in the Anki link.
+    folder = pathlib.PurePosixPath(origin.get('file', '')).parent
+    matches = {ident: t for ident, t in library.targets.items()
+               if t['vault'] and pathlib.Path(t['vault']).name == origin.get('vault')
+               and pathlib.PurePosixPath(t['directory']) / '记录' == folder}
+    if origin.get('target'):
+        return origin['target'] if origin['target'] in matches else None
+    if len({(t['vault'], t['directory']) for t in matches.values()}) == 1:
+        return library.active_id if library.active_id in matches else next(iter(matches))
+    return None
+
+
+def orphan_record(library, note, supplied_word=''):
     from study_library import entry_id, word_group_id
     fields = {k: v.get('value', '') for k, v in note['fields'].items()}
     raw = fields.get('Source', '')
@@ -570,11 +599,10 @@ def orphan_record(note, supplied_word=''):
     timestamp = SOURCE_TIME.search(raw)
     if timestamp:
         entry['videoTime'] = int(timestamp[1])
-    link = NOTE_LINK.search(raw)
-    filename = urllib.parse.parse_qs(html.unescape(link[1])).get('file', [''])[0] if link else ''
-    group = re.fullmatch(r'(.+)--w([a-f0-9]{32})\.md', pathlib.PurePosixPath(filename).name)
+    origin = note_origin(raw)
+    group = re.fullmatch(r'(.+)--w([a-f0-9]{32})\.md', pathlib.PurePosixPath(origin.get('file', '')).name)
     tags = note.get('tags', [])
-    marked_word = html.unescape(link[2]) if link and link[2] else ''
+    marked_word = origin.get('word', '')
     if marked_word and (not group or word_group_id('en', marked_word) == group[2]):
         entry['word'] = marked_word
     else:
@@ -591,25 +619,41 @@ def orphan_record(note, supplied_word=''):
         if group and word_group_id('en', supplied_word) != group[2]:
             raise ValueError('这个词与原笔记对不上，请核对拼写。')
         entry['word'] = supplied_word
-    return {'id': 'anki-' + str(note['noteId']), 'noteId': note['noteId'], 'entry': entry,
+    target = orphan_target(library, origin)
+    return {'id': 'anki-' + str(note['noteId']), 'noteId': note['noteId'], 'entry': entry, **({'targetId': target} if target else {}),
             'vaultSaved': False, 'syncState': 'anki-only', 'ankiState': 'linked', 'created': ''}
 
 
 def orphan_action(library, p):
     cache = pathlib.Path(library.cache_dir)
+    if p['choice'] == 'restore' and p['noteId'] in linked_note_ids(r for _, _, r in library.indexed()[1].values()):
+        return {'done': True}
     state = json.loads((cache / 'auto-sync-state.json').read_text())
     row = next((r for r in state.get('orphans', []) if r['noteId'] == p['noteId']), None)
     if row is None: raise ValueError('这张卡已处理，请刷新列表。')
     if p['choice'] == 'restore':
-        from study_library import normalize_entry
+        from study_library import entry_id, normalize_entry
         info = library.anki('notesInfo', {'notes': [p['noteId']]})
         if not info: raise ValueError('Anki 里的卡已被删除，请刷新列表。')
-        entry = orphan_record(info[0], p.get('word', ''))['entry']
+        if 'japanese_study' in info[0].get('tags', []): raise ValueError('这是日语卡，不能重建到英语笔记里。')
+        fresh = orphan_record(library, info[0], p.get('word', ''))
+        entry = fresh['entry']
         if not entry['word']: raise ValueError('卡片里找不到原词。请在学习库填入原词，再重建笔记。')
         entry = normalize_entry(entry)
-        saved = library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'turns': [], 'targetId': library.active_id})
-        lib = library.locate(saved['id'])
-        r, body, version = lib.read(saved['id'])
+        target = fresh.get('targetId')
+        if not target and p.get('targetId') != library.active_id:
+            raise ValueError('找不到原保存位置。请刷新学习库，看清文件夹后再点重建。')
+        if target and p.get('targetId', target) != target:
+            raise ValueError('保存位置已变，请刷新学习库后再点重建。')
+        target = target or library.active_id
+        ident = entry_id(entry)
+        lib = library.locate(ident)
+        if lib is None:
+            lib = library.library_for(target)
+            lib.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False, 'turns': []})
+        elif (str(lib.vault), str(lib.relative)) != (library.targets[target]['vault'], library.targets[target]['directory']):
+            raise ValueError('这条笔记已经在另一个文件夹里，请先核对；没有覆盖。')
+        r, body, version = lib.read(ident)
         front = _plain(info[0]['fields']['Word']['value'])
         back = parse_definition(info[0]['fields']['Definition']['value'], {})['answer']
         kind = next((tag.removeprefix('study_kind::') for tag in info[0].get('tags', [])

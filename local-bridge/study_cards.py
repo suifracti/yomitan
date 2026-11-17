@@ -8,6 +8,10 @@ def card_key(record_id, front):
     return hashlib.sha256((record_id + '\n' + front.strip()).encode()).hexdigest()[:32]
 
 
+def linked_note_ids(records):
+    return {n for r in records for n in [r.get('noteId'), *(c.get('noteId') for c in r.get('cards', []))] if n}
+
+
 class Card(NamedTuple):
     label: str
     stage: int

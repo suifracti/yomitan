@@ -174,7 +174,8 @@ def _normalize_request(p):
         from study_settings import normalize_settings_request
         return normalize_settings_request(p)
     if 'targetId' in p:
-        if action not in ('librarySave', 'libraryCardsAdd', 'libraryReconcile', 'libraryUpdate', 'libraryFavorite') or not isinstance(p['targetId'], str) or not ID_RE.fullmatch(p['targetId']):
+        if (action not in ('librarySave', 'libraryCardsAdd', 'libraryReconcile', 'libraryUpdate', 'libraryFavorite')
+                and not (action == 'libraryOrphan' and p.get('choice') == 'restore')) or not isinstance(p['targetId'], str) or not ID_RE.fullmatch(p['targetId']):
             raise ValueError('保存目的地编号无效。')
         return {**normalize_request({k: v for k, v in p.items() if k != 'targetId'}), 'targetId': p['targetId']}
     if 'cueAuthorization' in p:

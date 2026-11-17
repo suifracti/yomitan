@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 from study_protocol import SETTINGS_ACTIONS
-from study_cards import card_progress, with_card_progress
+from study_cards import card_progress, linked_note_ids, with_card_progress
 from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, normalize_entry, normalize_request, text
 
 FIELDS = ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
@@ -343,14 +343,14 @@ class YomitanLibrary:
                 edited = self.anki('findNotes', {'query': '(tag:english_study OR tag:japanese_study) edited:1'})
                 ignored_path = pathlib.Path(self.cache_dir) / 'anki-ignored.json'
                 ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
-                linked = {c['noteId'] for _, _, r in records.values() for c in r.get('cards', []) if c.get('noteId')}
-                linked.update(r['noteId'] for _, _, r in records.values() if r.get('noteId'))
+                linked = linked_note_ids(r for _, _, r in records.values())
                 live = set(self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'}))
                 candidates = live - linked - set(ignored)
                 requested = sorted(set(edited) | candidates)
                 info = self.anki('notesInfo', {'notes': requested}) if requested else []
-                state['orphans'] = [study_sync.orphan_record(n) for n in info
+                state['orphans'] = [study_sync.orphan_record(self, n) for n in info
                                     if n['noteId'] not in linked and n['noteId'] not in ignored
+                                    and 'japanese_study' not in n.get('tags', [])
                                     and not any(t in owner for t in n.get('tags', []))
                                     and any(re.fullmatch(r'study(?:card)?_[a-f0-9]{32}', t) for t in n.get('tags', []))]
                 for ident, (lib, _path, r) in records.items():
@@ -528,9 +528,12 @@ class YomitanLibrary:
             ignored_path = state_path.with_name('anki-ignored.json')
             ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
             state = json.loads(state_path.read_text()) if state_path.exists() else {}
-            known = {c['noteId'] for row in rows for c in row.get('cards', []) if c.get('noteId')}
-            known.update(row['noteId'] for row in rows if row.get('noteId'))
+            known = linked_note_ids(rows)
             orphans = [r for r in state.get('orphans', []) if r['noteId'] not in ignored and r['noteId'] not in known]
+            for row in orphans:
+                if row.get('targetId') not in self.targets:
+                    target = self.targets[self.active_id]
+                    row['confirmRestoreTo'] = {'targetId': self.active_id, 'path': str(pathlib.Path(target['vault']) / target['directory'])}
             attention = ('pending', 'missing', 'ambiguous', 'conflict', 'error', 'failed', 'anki-only')
             needs = sum(row.get('syncState') in attention or row.get('ankiState') == 'pending' for row in rows) + len(orphans)
             scope = p.get('scope')

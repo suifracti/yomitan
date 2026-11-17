@@ -607,10 +607,13 @@ async function initializePage() {
                 button.onclick = () => {
                     if (choice === 'restore' && originalWord && !originalWord.reportValidity()) { return; }
                     button.disabled = true;
-                    const word = choice === 'restore' && originalWord ? {word: originalWord.value.trim()} : {};
+                    const restore = {
+                        ...(choice === 'restore' && originalWord ? {word: originalWord.value.trim()} : {}),
+                        ...(choice === 'restore' && record.confirmRestoreTo ? {targetId: record.confirmRestoreTo.targetId} : {}),
+                    };
                     void studyCall(
                         record.syncState === 'anki-only' ? 'libraryOrphan' : 'libraryRepair',
-                        record.syncState === 'anki-only' ? {noteId, choice, ...word} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
+                        record.syncState === 'anki-only' ? {noteId, choice, ...restore} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
                     )
                         .then(async () => {
                             if (label === '重新制卡') { createCard(); }
@@ -628,7 +631,13 @@ async function initializePage() {
                     for (const candidate of record.candidates || []) { repair(`关联：${candidate.front}`, 'select', candidate.noteId); }
                     break;
                 case 'anki-only':
-                    repair('用卡片内容重建笔记', 'restore'); repair('忽略', 'ignore');
+                    if (record.confirmRestoreTo) {
+                        const location = document.createElement('p');
+                        location.className = 'study-library-state';
+                        location.textContent = `找不到原保存位置。要存到这里吗？ ${record.confirmRestoreTo.path}`;
+                        article.append(location);
+                    }
+                    repair(record.confirmRestoreTo ? '重建到这个文件夹' : '用卡片内容重建笔记', 'restore'); repair('忽略', 'ignore');
                     break;
                 default:
                     if (noteIds(record).length === 0 && !record.cards?.length) {
