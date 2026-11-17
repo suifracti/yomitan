@@ -9,6 +9,8 @@ import json
 import pathlib
 import re
 
+from study_cards import AUDIO_KINDS, CARDS, CARD_STAGES, KIND_LABELS, MASTERY_LABELS, STAGE_NAMES
+
 SYNC_KEYS = ('sentence', 'meaning', 'translation', 'title', 'url')
 BLOCK_START = '<!-- study-sync-fields:start -->'
 BLOCK_END = '<!-- study-sync-fields:end -->'
@@ -176,7 +178,9 @@ def card_target(lib, card):
     decks = getattr(lib, 'deck_by_kind', {})
     active = getattr(lib, 'new_card_defaults', {})
     decks = active.get('deckByKind', decks)
-    requested = card.get('deck') or decks.get(card.get('kind')) or active.get('deck') or lib.deck
+    kind = card.get('kind')
+    route = CARDS[kind].deck if kind in CARDS else kind
+    requested = card.get('deck') or decks.get(kind) or decks.get(route) or active.get('deck') or lib.deck
     target['deck'] = requested
     target['targetId'] = lib.target_id
     return target
@@ -598,19 +602,6 @@ def require_deck(lib, deck):
     decks = lib.anki('deckNames', {})
     if not isinstance(decks, list) or deck not in decks:
         raise ValueError('目标牌组不存在；请在学习与保存设置中明确创建，不自动补建。')
-
-
-# Learning stage of each card kind: 1 recognise, 2 understand in context, 3 use.
-CARD_STAGES = {'meaning': 1, 'listen-meaning': 1, 'form-recognize': 1,
-               'context': 2, 'sentence': 2, 'listening': 2, 'grammar': 2,
-               'produce': 3, 'cloze': 3, 'form-produce': 3, 'make-sentence': 3, 'expression': 3, 'spelling': 3}
-AUDIO_KINDS = ('listening', 'listen-meaning', 'spelling')
-STAGE_NAMES = {1: '① 认得', 2: '② 理解', 3: '③ 会用'}
-KIND_LABELS = {'meaning': '单词→中文义', 'listen-meaning': '听原声→意思', 'form-recognize': '词形识别',
-               'context': '原句中的意思', 'sentence': '句子英→中', 'listening': '视频声音字幕', 'grammar': '语法',
-               'produce': '中→英', 'cloze': '挖空填词', 'form-produce': '词形变化', 'make-sentence': '用词造句',
-               'expression': '搭配/表达', 'spelling': '听音拼写'}
-MASTERY_LABELS = {'none': '完全不会', 'vague': '有印象/模糊', 'known': '认识但不会用'}
 
 
 def card_tags(record, kind):

@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {CARD_CATALOG} from '../study/card-catalog.js';
 import {readResponseJson} from '../core/json.js';
 import {studyCall} from '../study/study-client.js';
 import {DEFAULTS, SETTINGS_KEY, studyConfig} from '../study/study-data.js';
@@ -201,7 +202,7 @@ async function initializeStudySettings(root) {
     /** @typedef {LibraryTarget & {decks?: string[], deckByKind?: Record<string, string>, message?: string, error?: string, status?: {vaultExists?: boolean, directoryExists?: boolean, saveAvailable?: boolean, saveMessage?: string, ankiConnected?: boolean, deckExists?: boolean, modelExists?: boolean, modelCompatible?: boolean}}} LibrarySettingsResult */
     const libraryStatus = /** @type {HTMLElement} */ (root.querySelector('#library-status'));
     const libraryDeck = /** @type {HTMLSelectElement} */ (root.querySelector('#library-deck'));
-    const libraryKinds = ['meaning', 'context', 'expression', 'grammar', 'sentence', 'listening', 'produce'];
+    const libraryKinds = [...new Set(CARD_CATALOG.map(({deck}) => deck))];
     /** @type {LibraryTarget | null} */
     let librarySaved = null;
     /** @type {string[]} */
@@ -217,7 +218,7 @@ async function initializeStudySettings(root) {
             ankiEnabled: check('library-anki-enabled').checked,
             deck: libraryDeck.value === newDeckValue ? check('library-new-deck').value.trim() : libraryDeck.value,
             model: check('library-model').value,
-            deckByKind};
+            deckByKind: {...librarySaved?.deckByKind, ...deckByKind}};
     }
 
     /** @param {boolean} loaded */
@@ -238,7 +239,7 @@ async function initializeStudySettings(root) {
     /** @param {LibrarySettingsResult} result */
     function fillLibrary(result) {
         const deckByKind = Object.fromEntries(libraryKinds.map((kind) => [kind, result.deckByKind?.[kind] ?? '']));
-        librarySaved = {vault: result.vault, directory: result.directory, ankiEnabled: result.ankiEnabled, deck: result.deck, model: result.model, deckByKind};
+        librarySaved = {vault: result.vault, directory: result.directory, ankiEnabled: result.ankiEnabled, deck: result.deck, model: result.model, deckByKind: {...result.deckByKind, ...deckByKind}};
         check('library-vault').value = result.vault;
         check('library-directory').value = result.directory;
         check('library-anki-enabled').checked = result.ankiEnabled;

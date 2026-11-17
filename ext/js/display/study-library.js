@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {CARD_CATALOG} from '../study/card-catalog.js';
 import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
@@ -82,7 +83,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     cardPanel.hidden = true;
     cardPanel.setAttribute('aria-label', '选择学习内容并制卡');
     /** @type {[string, string][]} */
-    const cardKinds = [...CARD_KINDS.map((info) => /** @type {[string, string]} */ ([info.kind, info.label])), ['grammar', '语法']];
+    const cardKinds = CARD_CATALOG.map(({kind, label}) => [kind, label]);
     const choices = d.createElement('div');
     choices.className = 'study-card-type-choices';
     const choiceHint = d.createElement('p');
@@ -118,15 +119,16 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     };
     /** @type {Set<string>} Kinds already drafted in this panel, so recommendations never duplicate. */
     const draftedKinds = new Set();
+    /**
+     * @param {import('study').CardKind} kind
+     * @returns {string}
+     */
+    const configuredDeck = (kind) => cardSettings?.deckByKind?.[kind] || cardSettings?.deckByKind?.[/** @type {import('study').CardKind} */ (deckKindFor(kind))] || cardSettings?.deck || '';
     /** @param {string} kind */
     const draftKind = (kind) => {
         const facts = cardFacts();
-        const deckKind = deckKindFor(kind);
         for (const draft of cardDrafts(kind, facts)) {
-            addManualRow({kind: /** @type {import('study').CardKind} */ (kind),
-                front: draft.front,
-                back: draft.back,
-                deck: cardSettings?.deckByKind?.[/** @type {import('study').CardKind} */ (kind)] || cardSettings?.deckByKind?.[/** @type {import('study').CardKind} */ (deckKind)] || cardSettings?.deck || ''});
+            addManualRow({kind: /** @type {import('study').CardKind} */ (kind), ...draft});
         }
         draftedKinds.add(kind);
         addStatus.textContent = kind === 'context' && !facts.contextMeaning ? '请在背面填写本句中这个词的意思；不会用词典全部意思冒充。' : '';
@@ -163,12 +165,13 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     }
     /** @type {Map<string, HTMLButtonElement>} */
     const choiceButtons = new Map();
-    for (const stage of /** @type {import('./study-card-kinds.js').CardStage[]} */ ([1, 2, 3])) {
+    for (const [key, label] of Object.entries(STAGE_LABELS)) {
+        const stage = Number(key);
         const group = d.createElement('div');
         group.className = 'study-card-stage';
         const heading = d.createElement('span');
         heading.className = 'study-card-stage-label';
-        heading.textContent = STAGE_LABELS[stage];
+        heading.textContent = label;
         const items = d.createElement('span');
         items.className = 'study-card-stage-items';
         group.append(heading, items);
@@ -270,7 +273,13 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         deck.className = 'scan-disable';
         deck.dataset.studyCardDeck = '';
         deck.maxLength = 200;
-        deck.value = typeof card.deck === 'string' ? card.deck : '';
+        const selectedDeck = () => configuredDeck(/** @type {import('study').CardKind} */ (kind.value));
+        let useDefaultDeck = card.deck === void 0;
+        deck.value = card.deck ?? selectedDeck();
+        deck.addEventListener('input', () => { useDefaultDeck = !deck.value.trim(); });
+        kind.addEventListener('change', () => {
+            if (useDefaultDeck) { deck.value = selectedDeck(); }
+        });
         deckLabel.append(deck);
         const remove = d.createElement('button');
         remove.type = 'button';

@@ -25,7 +25,7 @@ class MasteryCardTests(unittest.TestCase):
 
     def anki(self, action, params):
         self.calls.append((action, params))
-        if action == 'deckNames': return ['外语']
+        if action == 'deckNames': return ['外语', '外语::会用', '我自选']
         if action == 'modelNames': return ['外语语境卡']
         if action == 'modelFieldNames': return ['Word', 'Sentence', 'Definition', 'Source', 'URL', 'Audio', 'Image']
         if action == 'findNotes': return []
@@ -36,7 +36,7 @@ class MasteryCardTests(unittest.TestCase):
         if action == 'notesInfo':
             return [{'noteId': n, 'fields': {k: {'value': v} for k, v in self.notes[n]['fields'].items()}, 'cards': [n * 10]} for n in params['notes']]
         if action == 'cardsInfo':
-            return [{'cardId': c, 'deckName': '外语'} for c in params['cards']]
+            return [{'cardId': c, 'deckName': self.notes[c // 10]['deckName']} for c in params['cards']]
         if action == 'setDueDate': return [True]
         return []
 
@@ -67,6 +67,16 @@ class MasteryCardTests(unittest.TestCase):
             self.library.handle({'action': 'libraryCardsAdd', 'id': record['id'], 'mastery': 'expert', 'cards': [{'front': 'brick', 'back': '砖'}]})
         self.library.handle({'action': 'libraryCardsAdd', 'id': record['id'], 'mastery': 'none', 'cards': [{'front': 'brick', 'back': '砖', 'kind': 'meaning'}]})
         self.assertFalse(any(action == 'setDueDate' for action, _ in self.calls))
+
+    def test_cards_without_a_ui_deck_use_the_same_subdeck_as_the_picker(self):
+        settings = self.library.handle({'action': 'librarySettingsGet'})
+        self.library.handle({'action': 'librarySettingsSave', 'settings': {**settings, 'deckByKind': {'produce': '外语::会用'}}})
+        saved = self.save()
+        self.library.handle({'action': 'libraryCardsAdd', 'id': saved['id'], 'cards': [
+            {'kind': 'cloze', 'front': 'a […] wall', 'back': 'brick'},
+            {'kind': 'make-sentence', 'front': '用 brick 造句', 'back': 'A brick wall.', 'deck': '我自选'},
+        ]})
+        self.assertEqual([note['deckName'] for note in self.notes.values()], ['外语::会用', '我自选'])
 
 
 if __name__ == '__main__':

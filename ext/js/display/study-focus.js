@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+import {CARD_CATALOG} from '../study/card-catalog.js';
 import {timedUrl} from '../study/media-key.js';
 import {studyCall} from '../study/study-client.js';
 import {prepareStudyWorkspace} from './study-workspace.js';
@@ -872,12 +873,11 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 } else { noteRow.append(make('span', '', notesLabel)); }
                 const cardRow = make('div', 'sf-record-destination');
                 if (hasCards && display.application?.api?.viewNotes) {
-                    const kinds = {meaning: '单词词义', context: '语境词义', expression: '表达', grammar: '语法', sentence: '句子', listening: '听力'};
                     for (const noteId of noteIds) {
                         const linked = exactRecords.flatMap((item) => asArray(item.record?.cards).filter((card) => card.noteId === noteId).map((card) => ({card, word: item.record.entry.word})))[0];
                         const remote = cardItems.find((item) => item.noteId === noteId);
                         const front = cleanText(linked?.card?.front || remote?.fields?.Question || remote?.fields?.Word || remote?.fields?.Front).replace(/<[^>]*>/g, ' ').trim();
-                        const kind = kinds[linked?.card?.kind] || '既有卡片';
+                        const kind = CARD_CATALOG.find((item) => item.kind === linked?.card?.kind)?.label ?? '既有卡片';
                         const cardWord = linked?.word || word;
                         const summary = front.length > 56 ? `${front.slice(0, 56)}…` : front;
                         const open = button(`Anki · ${cardWord} · ${kind}\n${summary || '查看卡片'} ↗`, noteIds.length === 1 ? '在 Anki 查看' : `在 Anki 查看卡片 ${noteId}`);

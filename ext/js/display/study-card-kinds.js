@@ -15,12 +15,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import {CARD_CATALOG} from '../study/card-catalog.js';
+
+export {MASTERY_LABELS, STAGE_LABELS} from '../study/card-catalog.js';
+
 // Card types grouped by learning stage: ① recognise, ② understand in context, ③ use.
 // Pure data and text templates; the card panel decides what is available and the
 // learner still confirms every card before anything reaches Anki.
 
-/** @typedef {1|2|3} CardStage */
-/** @typedef {'none'|'vague'|'known'} Mastery */
+/** @typedef {keyof typeof import('../study/card-catalog.js').STAGE_LABELS} CardStage */
+/** @typedef {keyof typeof import('../study/card-catalog.js').MASTERY_LABELS} Mastery */
 
 /**
  * @typedef {object} CardFacts
@@ -33,35 +37,9 @@
  * @property {{label: string, form: string, kind: string}[]} forms Inflected forms with readable names.
  */
 
-/**
- * @typedef {object} CardKindInfo
- * @property {string} kind Stored kind, also the deck-routing key.
- * @property {string} label
- * @property {CardStage} stage
- * @property {'sentence'|'audio'|'forms'|'translation'|null} needs
- */
+/** @typedef {typeof CARD_CATALOG[number]} CardKindInfo */
 
-/** @type {CardKindInfo[]} */
-export const CARD_KINDS = [
-    {kind: 'meaning', label: '单词→中文义', stage: 1, needs: null},
-    {kind: 'listen-meaning', label: '听原声→意思', stage: 1, needs: 'audio'},
-    {kind: 'form-recognize', label: '词形识别', stage: 1, needs: 'forms'},
-    {kind: 'context', label: '原句中的意思', stage: 2, needs: 'sentence'},
-    {kind: 'sentence', label: '句子英→中', stage: 2, needs: 'sentence'},
-    {kind: 'listening', label: '视频声音字幕', stage: 2, needs: 'audio'},
-    {kind: 'produce', label: '中→英（写原句）', stage: 3, needs: 'translation'},
-    {kind: 'cloze', label: '挖空填词', stage: 3, needs: 'sentence'},
-    {kind: 'form-produce', label: '词形变化', stage: 3, needs: 'forms'},
-    {kind: 'make-sentence', label: '用词造句', stage: 3, needs: null},
-    {kind: 'expression', label: '搭配/表达', stage: 3, needs: null},
-    {kind: 'spelling', label: '听音拼写', stage: 3, needs: 'audio'},
-];
-
-/** @type {Record<CardStage, string>} */
-export const STAGE_LABELS = {1: '① 认得', 2: '② 理解', 3: '③ 会用'};
-
-/** @type {Record<Mastery, string>} */
-export const MASTERY_LABELS = {none: '完全不会', vague: '有印象/模糊', known: '认识但不会用'};
+export const CARD_KINDS = CARD_CATALOG.filter(({kind}) => kind !== 'grammar');
 
 /** @type {Record<Mastery, string[]>} */
 const RECOMMENDED = {
@@ -75,7 +53,7 @@ const RECOMMENDED = {
  * @returns {CardKindInfo|undefined}
  */
 export function cardKind(kind) {
-    return CARD_KINDS.find((item) => item.kind === kind);
+    return CARD_CATALOG.find((item) => item.kind === kind);
 }
 
 /**
@@ -146,9 +124,5 @@ export function cardDrafts(kind, facts) {
  * @returns {string}
  */
 export function deckKindFor(kind) {
-    if (['meaning', 'context', 'listening', 'expression', 'grammar', 'sentence'].includes(kind)) { return kind; }
-    const info = cardKind(kind);
-    if (!info) { return kind; }
-    if (info.needs === 'audio' && info.stage < 3) { return 'listening'; }
-    return info.stage === 1 ? 'meaning' : (info.stage === 2 ? 'context' : 'produce');
+    return cardKind(kind)?.deck ?? kind;
 }

@@ -69,7 +69,7 @@ export type StudyTarget = {
     model: string;
 };
 
-export type CardKind = 'meaning' | 'context' | 'expression' | 'grammar' | 'sentence' | 'listening';
+export type CardKind = typeof import('../../ext/js/study/card-catalog.js').CARD_CATALOG[number]['kind'];
 export type SyncConflict = {key: string; local: unknown; remote: unknown};
 export type SaveTargetSettings = {deckByKind?: Partial<Record<CardKind, string>>; ankiEnabled: boolean; targetId: string; vault: string; directory: string; deck: string; model: string};
 

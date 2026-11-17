@@ -16,6 +16,7 @@
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
 | 视频已记词点制卡后丢来源/时间；重复台词跳到第一次；重开后旧解释变空 | L-007；YoutubeReader._openSavedWord、openStudyRecord、Display._setContentTermsOrKanji、studyResumeParams |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
+| 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
 
 ## 默认自动执行：不等用户提醒
 
@@ -112,6 +113,12 @@
 处理与保留：在既有代次机制上补齐YouTube轨道列表返回、选轨保存完成，以及网页异步来源枚举后的检查；先用局部sources收结果，身份有效再写当前字段。仍允许旧视频的选轨写入完成，不删除记忆、不取消用户已经确认的设置，不更动capture/refetch顺序、签名URL或新视频的控制器。
 
 证据：test/study-caption-capture.test.js新增一个“保存中换视频”的用例，旧代码失败、修正后与原截取优先/英语退回/重发用例共2项通过；reader lint仍64、该测试0，无新增诊断。本轮未操作真实Chrome，不把异步夹具说成实机已复现。交接见“2026-11-11 换视频异步载入身份”。
+
+## L-009 学习卡型只定义一次
+
+改卡型名称、阶段、素材要求或默认子牌组，编辑 `local-bridge/study_cards.py`，再运行 `python3 -B dev/sync-local.py --manifest-only` 并提交生成物。浏览器使用随扩展打包的 `card-catalog.js`，不在查词时读文件；类型从该目录推断，桥、笔记和学习索引使用同源定义。题面模板仍在 `study-card-kinds.js`。12 个可推荐模板与手工语法卡不是 13 个推荐；自动建议模型仍只准原有 6 种。
+
+没有显式牌组的挖空卡过去从桥直接提交会进大牌组，尽管词卡显示的是“会用”子牌组。现在两端都是手选牌组 → 精确卡型映射 → 卡型所属子牌组 → 当前默认。在设置里保存其他项目，不抹掉未显示的自定义卡型映射。旧 ID、旧映射及自定义的有效卡型键不迁移；已有卡不换牌组。参见[卡型目录验证](youtube-study-wiring.md#2026-11-18-卡型与子牌组统一)。
 
 ## 增量与覆盖
 

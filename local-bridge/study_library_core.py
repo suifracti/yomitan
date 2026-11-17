@@ -16,6 +16,8 @@ import time
 import urllib.parse
 import urllib.request
 
+from study_cards import MASTERY_LABELS
+
 RELATIVE = pathlib.Path('01-高考2027/05-英语（Larry）/语境词库')
 JAPANESE_RELATIVE = pathlib.Path('02-个人与生活/语言学习/日语/语境词库')
 
@@ -266,7 +268,7 @@ def _normalize_request(p):
             raise ValueError('视频小结请求无效。')
         return p
     if action == 'libraryCardsAdd' and set(p) in ({'action', 'id', 'cards'}, {'action', 'id', 'cards', 'mastery'}):
-        if 'mastery' in p and p['mastery'] not in ('none', 'vague', 'known'):
+        if 'mastery' in p and p['mastery'] not in MASTERY_LABELS:
             raise ValueError('掌握程度无效。')
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']) or not isinstance(p['cards'], list) or not 1 <= len(p['cards']) <= 10:
             raise ValueError('手动卡片请求无效。')

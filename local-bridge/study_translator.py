@@ -13,6 +13,8 @@ import tempfile
 import threading
 import time
 
+from study_cards import AI_KINDS
+
 ORIGIN = 'chrome-extension://fdibnlkfllnojcmhcghkmdlceeegmhpf/'
 ASB_ORIGIN = 'chrome-extension://bnbpbghlnjpkcjbabdmjllpcfbibjbap/'
 HOST_NAME = 'com.suifracti.study_translator'
@@ -51,7 +53,7 @@ CARDS_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['i
  'properties': {'items': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
   'required': ['id', 'cards', 'reason'], 'properties': {'id': {'type': 'string'}, 'reason': {'type': 'string'},
    'cards': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
-    'required': ['front', 'back', 'kind'], 'properties': {'front': {'type': 'string'}, 'back': {'type': 'string'}, 'kind': {'type': 'string', 'enum': ['meaning','context','expression','grammar','sentence','listening']}}}}}}}}}
+    'required': ['front', 'back', 'kind'], 'properties': {'front': {'type': 'string'}, 'back': {'type': 'string'}, 'kind': {'type': 'string', 'enum': list(AI_KINDS)}}}}}}}}}
 SCHEMA = {'type': 'object', 'additionalProperties': False,
           'properties': {k: {'type': 'string'} for k in ('translation', 'meaning', 'notes')},
           'required': ['translation', 'meaning', 'notes']}
@@ -376,7 +378,7 @@ def parse_answer(text, payload=None):
             if not isinstance(row, dict) or set(row) != {'id', 'cards', 'reason'} or row['id'] != source['id'] or not isinstance(row['reason'], str) or not 1 <= len(row['reason']) <= 1200 or not isinstance(row['cards'], list) or len(row['cards']) > 4:
                 raise ValueError('制卡草稿关联无效，未保存。')
             for c in row['cards']:
-                if not isinstance(c, dict) or not {'front', 'back'} <= set(c) or set(c) - {'front', 'back', 'kind'} or c.get('kind', 'context') not in ('meaning','context','expression','grammar','sentence','listening') or any(not isinstance(c[k], str) or not 1 <= len(c[k].strip()) <= lim for k, lim in [('front', 1000), ('back', 2400)]):
+                if not isinstance(c, dict) or not {'front', 'back'} <= set(c) or set(c) - {'front', 'back', 'kind'} or c.get('kind', 'context') not in AI_KINDS or any(not isinstance(c[k], str) or not 1 <= len(c[k].strip()) <= lim for k, lim in [('front', 1000), ('back', 2400)]):
                     raise ValueError('制卡草稿内容无效，未保存。')
         return result
     if payload and payload['action'] == 'segment':

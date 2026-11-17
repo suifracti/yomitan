@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pathlib
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,7 @@ RUNTIME = pathlib.Path.home() / 'Library/Application Support/EnglishStudyTransla
 FROZEN = (pathlib.Path('/Users/apple/backup/english-study-extensions/local-bridge'),
           pathlib.Path('/Users/apple/backup/english-study-extensions/asbplayer'))
 MANIFEST = pathlib.Path('ext/js/study/bridge-manifest.json')
+WEB_CATALOG = pathlib.Path('ext/js/study/card-catalog.js')
 
 
 def git(repo, *args):
@@ -29,6 +31,42 @@ def generate_manifest(repo=REPO):
     path = pathlib.Path(repo) / MANIFEST
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(hashes(runtime_sources(pathlib.Path(repo) / 'local-bridge')), ensure_ascii=False, indent=4) + '\n')
+    if (catalog := web_catalog(repo)) is not None:
+        (pathlib.Path(repo) / WEB_CATALOG).write_text(catalog)
+
+
+def web_catalog(repo):
+    """Static ES module: no network request or cross-world import on lookup."""
+    source = pathlib.Path(repo) / 'local-bridge/study_cards.py'
+    if not source.is_file():
+        return None
+    data = runpy.run_path(str(source))
+    rows = [f"    {{kind: {kind!r}, label: {c.label!r}, stage: {c.stage}, "
+            f"needs: {repr(c.needs) if c.needs else 'null'}, deck: {c.deck!r}}},"
+            for kind, c in data['CARDS'].items()]
+    lines = ['''/*
+ * Copyright (C) 2023-2026  Yomitan Authors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */''', '',
+             '// Generated from local-bridge/study_cards.py by dev/sync-local.py --manifest-only.',
+             'export const CARD_CATALOG = /** @type {const} */ ([', *rows, ']);']
+    for js, py in [('STAGE_LABELS', 'STAGE_NAMES'), ('MASTERY_LABELS', 'MASTERY_LABELS')]:
+        fields = ', '.join(f'{k}: {v!r}' for k, v in data[py].items())
+        lines.append('')
+        lines.append('export const ' + js + ' = /** @type {const} */ ({' + fields + '});')
+    return '\n'.join(lines) + '\n'
 
 
 def tracked(repo, ref, directory):
@@ -60,6 +98,8 @@ def sync(repo=REPO, base='HEAD^', dry_run=False):
     expected = hashes(modules)
     if json.loads((repo / MANIFEST).read_text()) != expected:
         raise ValueError('bridge-manifest 已过期，请先运行 --manifest-only 并提交。')
+    if (catalog := web_catalog(repo)) is not None and (repo / WEB_CATALOG).read_text() != catalog:
+        raise ValueError('学习卡目录已过期，请先运行 --manifest-only 并提交。')
     baseline = {pathlib.Path(path).name: git(repo, 'show', base + ':' + path)
                 for path in tracked(repo, base, 'local-bridge')
                 if (pathlib.Path(path).name.startswith('study_') and path.endswith('.py')) or pathlib.Path(path).name == 'bridge_files.py'}
@@ -122,7 +162,7 @@ def main():
     args = parser.parse_args()
     if args.manifest_only:
         generate_manifest()
-        print('bridge-manifest.json 已更新；请随代码提交。')
+        print('桥清单和学习卡目录已更新；请随代码提交。')
     else:
         paths = sync(dry_run=args.dry_run)
         print(('拟同步' if args.dry_run else '已按字节同步并读回') + f' {len(paths)} 个文件；未触碰配置、学习数据和冻结发行包。')
