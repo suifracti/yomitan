@@ -29,6 +29,9 @@ class LocalSyncTests(unittest.TestCase):
         (self.ext / 'untouched.css').write_bytes(b'local UI change')
         (self.repo / 'local-bridge/study_demo.py').write_bytes(b'old bridge')
         (self.runtime / 'study_demo.py').write_bytes(b'old bridge')
+        example = self.repo / 'local-bridge/fixtures/study_example.py'
+        example.parent.mkdir()
+        example.write_bytes(b'test fixture only')
         self.git('add', '.')
         self.git('commit', '-qm', 'base')
         (self.repo / 'ext/code.js').write_bytes(b'new extension')
@@ -49,11 +52,13 @@ class LocalSyncTests(unittest.TestCase):
         config.write_bytes(b'private config untouched')
         self.run_sync()
         self.assertEqual((self.runtime / 'study_demo.py').read_bytes(), b'new bridge')
+        self.assertFalse((self.runtime / 'study_example.py').exists())
         self.assertEqual((self.ext / 'code.js').read_bytes(), b'new extension')
         self.assertEqual(config.read_bytes(), b'private config untouched')
         self.assertEqual((self.ext / 'untouched.css').read_bytes(), b'local UI change')
         metadata = json.loads((self.runtime / 'install-metadata.json').read_text())
         self.assertIn(str(self.runtime / 'study_demo.py'), metadata['files'])
+        self.assertEqual(self.run_sync(), [])
 
     def test_modified_bridge_refuses_all_destination_writes(self):
         (self.runtime / 'study_demo.py').write_bytes(b'unknown edits')

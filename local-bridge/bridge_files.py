@@ -5,13 +5,15 @@ import hashlib
 import pathlib
 
 
+def is_runtime_source(relative):
+    """A module in the bridge root, never a development fixture in a subfolder."""
+    return '/' not in relative and (relative == 'bridge_files.py' or
+                                     (relative.startswith('study_') and relative.endswith('.py')))
+
+
 def runtime_sources(root):
-    root = pathlib.Path(root)
-    paths = sorted(root.glob('study_*.py'))
-    helper = root / 'bridge_files.py'
-    if helper.is_file():
-        paths.append(helper)
-    return {path.name: path.read_bytes() for path in paths if path.is_file() and not path.is_symlink()}
+    return {p.name: p.read_bytes() for p in sorted(pathlib.Path(root).glob('*'))
+            if is_runtime_source(p.name) and p.is_file() and not p.is_symlink()}
 
 
 def hashes(files):

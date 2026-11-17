@@ -13,7 +13,7 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'local-bridge'))
-from bridge_files import hashes, runtime_sources
+from bridge_files import hashes, is_runtime_source, runtime_sources
 
 EXTENSION = pathlib.Path('/Users/apple/backup/english-study-extensions/yomitan')
 RUNTIME = pathlib.Path.home() / 'Library/Application Support/EnglishStudyTranslator'
@@ -116,16 +116,20 @@ def sync(repo=REPO, base='HEAD^', dry_run=False):
     expected = hashes(modules)
     if json.loads((repo / MANIFEST).read_text()) != expected:
         raise ValueError('bridge-manifest 已过期，请先运行 --manifest-only 并提交。')
+    if json.loads(git(repo, 'show', 'HEAD:' + MANIFEST.as_posix())) != expected:
+        raise ValueError('桥清单与当前提交不同，请先提交改动再同步。')
     for name, source in web_contracts(repo).items():
         if (repo / WEB_DIR / name).read_text() != source:
             raise ValueError(name + ' 已过期，请先运行 --manifest-only 并提交。')
     baseline = {pathlib.Path(path).name: git(repo, 'show', base + ':' + path)
                 for path in tracked(repo, base, 'local-bridge')
-                if (pathlib.Path(path).name.startswith('study_') and path.endswith('.py')) or pathlib.Path(path).name == 'bridge_files.py'}
+                if is_runtime_source(path.removeprefix('local-bridge/'))}
     installed = runtime_sources(RUNTIME)
     for name in set(baseline) | set(installed):
-        if name not in baseline or installed.get(name) != baseline[name]:
-            raise ValueError('运行中的桥不等于上一个提交，未覆盖：' + name)
+        if name in baseline and installed.get(name) == baseline[name]:
+            continue
+        if name not in modules or installed.get(name) != modules[name]:
+            raise ValueError('运行中的桥既不是上一个提交，也不是当前提交，未覆盖：' + name)
     writes = []
     for name, data in modules.items():
         destination = RUNTIME / name
@@ -134,19 +138,21 @@ def sync(repo=REPO, base='HEAD^', dry_run=False):
         if not destination.exists() or destination.read_bytes() != data:
             writes.append((destination, data, 0o600))
     old_ext = {path.removeprefix('ext/'): path for path in tracked(repo, base, 'ext')}
-    changed_ext = set(git(repo, 'diff', '--name-only', base, '--', 'ext').decode().splitlines())
+    changed_ext = set(git(repo, 'diff', '--name-only', base, 'HEAD', '--', 'ext').decode().splitlines())
     # Sync this batch's Git-owned files, leaving unrelated local UI changes and Chrome storage alone.
-    for relative in git(repo, 'ls-files', '--', 'ext').decode().splitlines():
-        if relative not in changed_ext and relative.removeprefix('ext/') in old_ext:
+    for relative in tracked(repo, 'HEAD', 'ext'):
+        if relative not in changed_ext:
             continue
         source = repo / relative
         if not source.is_file() or source.is_symlink():
-            continue
+            raise ValueError('扩展源码缺失或不是普通文件，未覆盖：' + relative)
         short = relative.removeprefix('ext/')
         destination = EXTENSION / short
         if destination.is_symlink():
             raise ValueError('扩展文件含符号链接，未覆盖：' + short)
         data = source.read_bytes()
+        if data != git(repo, 'show', 'HEAD:' + relative):
+            raise ValueError('扩展源码与当前提交不同，请先提交改动：' + short)
         if destination.is_file() and destination.read_bytes() == data:
             continue
         if destination.exists():
@@ -170,7 +176,9 @@ def sync(repo=REPO, base='HEAD^', dry_run=False):
     if binary.is_file():
         files[str(binary)] = hashlib.sha256(binary.read_bytes()).hexdigest()
     metadata['sourceCommit'] = git(repo, 'rev-parse', 'HEAD').decode().strip()
-    atomic_bytes(marker, (json.dumps(metadata, ensure_ascii=False, indent=2) + '\n').encode(), 0o600)
+    data = (json.dumps(metadata, ensure_ascii=False, indent=2) + '\n').encode()
+    if not marker.is_file() or marker.read_bytes() != data:
+        atomic_bytes(marker, data, 0o600)
     return [str(path) for path, _data, _mode in writes]
 
 

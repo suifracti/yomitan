@@ -18,6 +18,7 @@
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
+| 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 
 ## 默认自动执行：不等用户提醒
 
@@ -130,6 +131,10 @@
 翻译服务的名称、菜单文案、紧凑状态及有效键从 `translation-engines.js` 找；Microsoft 仅在原来已选时出现。两份已有配置的分工不变：`studySubtitlePrefs` 持有视频外观/跟读，`studyTranslationPrefs` 持有引擎和自动翻译。窗口只提交改动的字段，后台在现有写队列合并；字幕、查词、整页及权限判断按同一规则读取。仅旧配置实际带翻译选择时才迁移；迁移也从写入时的当前值开始，打开全新页面不为默认值写配置。
 
 实际反例：同一时刻选择 Microsoft、关视频内字幕、开自动翻译，旧写法把前两项还原成 Google 和显示字幕。新写法三项都保留。不增加设置项、轮询或另一个存储，不因为换设置就调用所选服务。见[全局翻译选项验证](youtube-study-wiring.md#2026-11-18-翻译服务与字幕设置统一写入)。
+
+## L-011 同步到日常使用的版本可以原样再跑一次
+
+运行模块只认桥目录第一层的 `study_*.py` 和 `bridge_files.py`；安装、健康检查、清单和同步均按同一规则，不把测试子目录当成要装的模块。用原 `dev/sync-local.py`：已是本次提交的字节就跳过，仍是上版的才更新；两版都不匹配就停止，不能强行跳过或另行复制。未提交的改动不作为安装版本。此前刚同步成功再运行也会被误拦；临时双目录重跑及保留本机修改的验收见[同步记录](youtube-study-wiring.md#2026-11-18-同一版可以重复同步)。
 
 ## 增量与覆盖
 
