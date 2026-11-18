@@ -895,7 +895,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const primary = container.querySelector('.study-translation-actions');
     if (primary) {
         primary.append(actions);
-        primary.after(destination, openNote, status, ankiRow, recovery, addCard, openAudio, cardPanel);
+        primary.after(stuck, destination, openNote, status, ankiRow, recovery, addCard, openAudio, cardPanel);
     } else {
         container.append(stuck, actions, destination, openNote, status, ankiRow, recovery, addCard, openAudio, cardPanel);
     }

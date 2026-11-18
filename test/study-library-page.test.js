@@ -21,6 +21,7 @@ import {Blob} from 'node:buffer';
 import {afterEach, describe, expect, test, vi} from 'vitest';
 import {parseJson} from '../dev/json.js';
 import {deferPromise} from '../ext/js/core/utilities.js';
+import {mountStudyLibrary} from '../ext/js/display/study-library.js';
 import {mountStuckHint} from '../ext/js/display/study-stuck.js';
 import {WORD_STATUS_KEY} from '../ext/js/study/study-data.js';
 
@@ -275,27 +276,29 @@ describe('study library page', () => {
         ];
         /** @type {string|null} */
         let receipt = null;
-        const card = mountStuckHint({
-            doc: document,
-            getEntry: () => first,
-            call: async (action) => {
-                if (action === 'libraryWordSenses') { return {senses: [{key: 'charge#2', gloss: '收费', s: 'shaky'}]}; }
-                return {recallRecordId: receipt};
-            },
-            isCurrent: () => true,
-            onChoice: vi.fn(),
+        mocks.studyCall.mockImplementation(async (action) => {
+            if (action === 'libraryWordSenses') { return {senses: [{key: 'charge#2', gloss: '收费', s: 'shaky'}]}; }
+            if (action === 'libraryContextMiss') { return {recallRecordId: receipt}; }
+            return {};
         });
+        const card = document.createElement('section');
+        const primary = Object.assign(document.createElement('div'), {className: 'study-translation-actions'});
+        card.append(primary);
         document.body.replaceChildren(card);
-        const recall = /** @type {HTMLButtonElement} */ (card.querySelector('[data-stuck="recall"]'));
+        const disposeCard = mountStudyLibrary(card, () => first, () => card.isConnected);
         await vi.waitFor(() => expect(card.textContent).toContain('学过的意思'));
+        const recall = /** @type {HTMLButtonElement} */ (card.querySelector('[data-stuck="recall"]'));
         recall.click();
         await vi.waitFor(() => expect(card.textContent).toContain('这句没有加入复习'));
-        expect(card.querySelector('a')?.textContent).toContain('用旧原句练这个词');
+        expect(card.querySelector('.study-stuck a')?.textContent).toContain('用旧原句练这个词');
         receipt = items[0].id;
         recall.click();
         await vi.waitFor(() => expect(card.textContent).toContain('这句已加入'));
-        const recallUrl = new URL(card.querySelector('a')?.href ?? '');
+        const practiceLink = /** @type {HTMLAnchorElement|null} */ (card.querySelector('.study-stuck a'));
+        const recallUrl = new URL(practiceLink?.href ?? '');
         expect([...recallUrl.searchParams]).toEqual([['recall', items[0].id]]);
+        disposeCard();
+        mocks.studyCall.mockClear();
         makePageDom();
         const openVideo = vi.fn()
             .mockRejectedValueOnce(new Error('视频没打开，可以再试一次。'))

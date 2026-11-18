@@ -630,7 +630,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         editor?.addEventListener('change', onSourceEdit);
         const allContextChildren = [...context.children];
         for (const node of allContextChildren) {
-            if (node === focusAnswer || node === history || node === compose || node.matches('.study-more-actions')) { continue; }
+            if (node === focusAnswer || node === history || node === compose || node.matches('.study-more-actions, .study-stuck')) { continue; }
             move(node, compose);
         }
         if (input && actions) { compose.prepend(input); input.after(actions); }
@@ -654,7 +654,9 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         learningScroll = make('div', 'sf-learning-scroll');
         learningScroll.setAttribute('aria-label', '原句与问答内容');
         context.prepend(learningScroll); owned.push(learningScroll);
-        learningScroll.append(sourcePane, focusAnswer);
+        learningScroll.append(sourcePane);
+        move(context.querySelector('.study-stuck'), learningScroll);
+        learningScroll.append(focusAnswer);
         move(history, learningScroll);
         const cardPanel = context.querySelector('.study-card-add');
         if (cardPanel) { move(cardPanel, learningScroll); }
