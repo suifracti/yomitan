@@ -223,8 +223,8 @@ def _normalize_request(p):
             if not re.fullmatch(r'[a-zA-Z0-9_-]{6,80}', t['id']) or t['feedback'] not in ('unconfirmed', 'understood', 'unclear'):
                 raise ValueError('理解状态只能来自明确的本人反馈。')
         return {**p, 'entry': normalize_entry(p['entry']), 'turns': turns}
-    if action == 'libraryMemory' and {'action', 'word'} <= set(p) and not set(p) - {'action', 'word', 'lemma', 'fresh'}:
-        if 'fresh' in p and type(p['fresh']) is not bool:
+    if action == 'libraryMemory' and {'action', 'word'} <= set(p) and not set(p) - {'action', 'word', 'lemma', 'fresh', 'ankiOnly'}:
+        if any(type(p[k]) is not bool for k in ('fresh', 'ankiOnly') if k in p):
             raise ValueError('历史核对刷新标志无效。')
         return {**p, 'word': text(p['word'], 128, True), **({'lemma': text(p['lemma'], 128, True)} if 'lemma' in p else {})}
     if action == 'knownWords':
@@ -404,12 +404,23 @@ def _normalize_request(p):
                 if 'kind' in card and not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', text(card['kind'], 40, True)):
                     raise ValueError('卡片类型无效。')
         return p
-    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice', 'word'}:
+    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice', 'word', 'focus'}:
         scope = p.get('scope', 'source')
         if 'practice' in p and p['practice'] != 'dictation':
             raise ValueError('练习类型无效。')
         if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'sources', 'word', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall') or ('word' in p) != (scope == 'word'):
             raise ValueError('学习列表范围无效。')
+        if 'focus' in p:
+            focus = p['focus']
+            if scope != 'word' or not isinstance(focus, dict) or not {'word', 'sentence'} <= set(focus) or set(focus) - {'word', 'sentence', 'id', 'videoTime'}:
+                raise ValueError('当前原句格式无效。')
+            if 'id' in focus and (not isinstance(focus['id'], str) or not ID_RE.fullmatch(focus['id'])):
+                raise ValueError('学习记录编号无效。')
+            at = focus.get('videoTime')
+            if 'videoTime' in focus and (type(at) not in (int, float) or not 0 <= at <= 604800):
+                raise ValueError('视频时间无效。')
+            p = {**p, 'focus': {**focus, 'word': text(focus['word'], 128, True), 'sentence': text(focus['sentence'], 2400),
+                                **({'videoTime': int(at)} if at is not None else {})}}
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),
                 **({'query': text(p['query'], 240)} if 'query' in p else {}),
                 **({'word': text(p['word'], 128, True)} if scope == 'word' else {})}
@@ -1055,7 +1066,7 @@ class StudyLibrary:
             return prepare(self.anki)
         if p['action'] == 'libraryMemory':
             from study_memory import memory
-            return memory(self, p['word'], p.get('lemma', ''), p.get('fresh', False))
+            return memory(self, p['word'], p.get('lemma', ''), p.get('fresh', False), anki_only=p.get('ankiOnly', False))
         if p['action'] == 'libraryAudioRead':
             from study_media import read_audio
             return read_audio(self, p['id'])
@@ -1242,8 +1253,10 @@ class StudyLibrary:
                     self.write(old, body, version)
                 return self.sync(ident) if p['makeCard'] else self.result(ident)
             if p['action'] == 'libraryList':
-                rows = ({**item['result'], 'target': self.target_details()} for stamp in self.indexed_files().values() for item in stamp['rows'])
-                return {**indexed_page(rows, p), 'target': {'deck': self.deck, 'model': self.model}}
+                entries = self.indexed_files().values()
+                rows = ({**item['result'], 'target': self.target_details()} for stamp in entries for item in stamp['rows'])
+                return {**indexed_page(rows, p, complete=all(stamp.get('complete', True) for stamp in entries)),
+                        'target': {'deck': self.deck, 'model': self.model}}
             if p['action'] == 'librarySync':
                 return {'items': [self.sync(i) for i in p['ids']]}
             staged = []

@@ -881,11 +881,12 @@ export class StudyService {
         }
         if (route === 'library') {
             if (!value || typeof value !== 'object' || 'action' in value) { throw new Error('学习库参数无效。'); }
-            if (action === 'libraryMemory') { void this.sync.flush(); }
+            const fullMemory = action === 'libraryMemory' && !('ankiOnly' in value && value.ankiOnly === true);
+            if (fullMemory) { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
             if (publishWordStatus && (action === 'libraryMarkKnown' || (action === 'knownWords' && ('known' in value || 'ignored' in value)))) { await this.refreshWordStatus(); }
-            if ((action === 'libraryList' && !('practice' in value) && !('query' in value) && !('scope' in value && ['source', 'sources', 'word', 'recent-recall'].includes(String(value.scope)))) || action === 'libraryMemory') {
+            if ((action === 'libraryList' && !('practice' in value) && !('query' in value) && !('scope' in value && ['source', 'sources', 'word', 'recent-recall'].includes(String(value.scope)))) || fullMemory) {
                 const items = /** @type {{items?: import('study').LibraryRecord[]}} */ (response.library).items;
                 if (Array.isArray(items)) { await this.sync.favoritesFrom(items.filter((r) => r.entry && r.vaultSaved !== false)); }
             }

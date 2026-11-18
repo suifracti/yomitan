@@ -9,7 +9,7 @@ import pathlib
 import re
 import tempfile
 
-from study_cards import linked_note_ids, with_card_progress
+from study_cards import card_receipts, linked_note_ids, with_card_progress
 from study_sources import page_source_key, with_article_href
 from study_media import has_current_audio, with_audio_context
 
@@ -80,7 +80,7 @@ def indexed_sources(rows, query, offset):
             'total': len(found), 'canSearch': True}
 
 
-def indexed_page(rows, p):
+def indexed_page(rows, p, *, complete=True):
     scope = p.get('scope', 'source')
     dictation = p.get('practice') == 'dictation'
     source = page_source_key(p['url']) if scope == 'source' else ''
@@ -91,7 +91,7 @@ def indexed_page(rows, p):
     if scope == 'word':
         from study_senses import canonical, practice_material, word_aliases
         rows = [row for row in rows if saved_record(row) and row['entry'].get('kind') != 'sentence'
-                and row['entry'].get('language', 'en').split('-')[0].lower() == 'en' and row['entry']['sentence']]
+                and row['entry'].get('language', 'en') == p.get('language', 'en') and row['entry']['sentence']]
         word = p['word'].casefold()
         head = word_aliases(row['entry'] for row in rows).get(word) or word
         rows = [row for row in rows if canonical(row['entry']) == head]
@@ -124,13 +124,29 @@ def indexed_page(rows, p):
         # For a single source, follow its video timeline when it has one.
         # The existing recency order still breaks ties and orders untimed notes.
         matches.sort(key=lambda match: match[2]['entry'].get('videoTime', float('inf')))
+    focus_ids = set()
+    if focus := p.get('focus'):
+        origin = page_source_key(p['url']) if p['url'] else ''
+        sentence = ' '.join(focus['sentence'].casefold().split())
+        for _, _, row in matches:
+            e = row['entry']
+            same_source = page_source_key(e['url']) == origin if origin else not e['url'] and bool(p['title']) and e['title'] == p['title']
+            if (sentence and same_source and e['word'].casefold() == focus['word'].casefold()
+                    and ' '.join(e['sentence'].casefold().split()) == sentence and e.get('videoTime') == focus.get('videoTime')):
+                focus_ids.add(row['id'])
+        matches.sort(key=lambda match: (match[2]['id'] != focus.get('id'), match[2]['id'] not in focus_ids))
     if dictation:
         unique = {}
         for match in matches:
             unique.setdefault(match[2]['entry']['sentence'], match)
         matches = list(unique.values())
-    extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not dictation else {}
-    return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for _, _, row in matches[offset:offset + PAGE_SIZE]], 'total': len(matches), 'canSearch': True, **extras}
+    extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not dictation and not focus and p.get('language', 'en') == 'en' else {}
+    page = [row for _, _, row in matches[offset:offset + PAGE_SIZE]]
+    if focus:
+        extras.update(focusIds=[row['id'] for row in page if row['id'] in focus_ids], focusTotal=len(focus_ids),
+                      focusComplete=complete,
+                      ankiNoteIds=sorted({ident for row in page for ident, _ in card_receipts(row) if ident is not None}))
+    return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for row in page], 'total': len(matches), 'canSearch': True, **extras}
 
 
 class RecordIndex:
@@ -182,16 +198,19 @@ class RecordIndex:
                     stamp = file.stat(follow_symlinks=False)
                     old = previous.get(file.name, {})
                     if (isinstance(old, dict) and old.get('mtime') == stamp.st_mtime_ns and
-                            old.get('size') == stamp.st_size and isinstance(old.get('rows'), list)):
+                            old.get('size') == stamp.st_size and isinstance(old.get('rows'), list)
+                            and ('complete' in old or old['rows'])):
                         files[file.name] = old
                         continue
                     changed = True
                     path = pathlib.Path(file.path)
+                    complete = True
                     try:
                         rows = self.parse(path)
                     except (OSError, ValueError, KeyError, TypeError):
                         rows = []  # An invalid changed note must not leave stale learning data behind.
-                    files[file.name] = {'mtime': stamp.st_mtime_ns, 'size': stamp.st_size, 'rows': rows}
+                        complete = False
+                    files[file.name] = {'mtime': stamp.st_mtime_ns, 'size': stamp.st_size, 'rows': rows, 'complete': complete}
         return files, changed or files.keys() != previous.keys()
 
     def parse(self, path):

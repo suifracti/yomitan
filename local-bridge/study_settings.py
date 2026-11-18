@@ -276,14 +276,19 @@ class YomitanLibrary:
 
     def indexed(self):
         """One incremental cache pass over each distinct record folder."""
+        self.index_complete = True
         files, records, seen, libraries = {}, {}, set(), {}
         for target_id, target in self.targets.items():
             folder = (target['vault'], target['directory'])
-            if folder in seen or not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
+            if folder in seen:
+                continue
+            if not pathlib.Path(target['vault']).is_absolute() or not pathlib.Path(target['vault']).is_dir():
+                self.index_complete = False
                 continue
             seen.add(folder)
             lib = self.library_for(target_id)
             for name, stamp in lib.indexed_files().items():
+                self.index_complete &= stamp.get('complete', True)
                 path = lib.records / name
                 files[str(path)] = stamp['mtime']
                 for item in stamp['rows']:
@@ -566,7 +571,7 @@ class YomitanLibrary:
         if action == 'libraryList':
             rows = [row for _lib, _path, row in self.indexed()[1].values()]
             if p.get('practice') == 'dictation' or p.get('scope') in ('sources', 'word'):
-                return indexed_page(rows, p)
+                return indexed_page(rows, p, complete=self.index_complete)
             state_path = pathlib.Path(self.cache_dir or self.config_path.parent) / 'auto-sync-state.json'
             ignored_path = state_path.with_name('anki-ignored.json')
             ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []

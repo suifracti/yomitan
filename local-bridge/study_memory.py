@@ -201,10 +201,14 @@ def related_anki(lib, query):
     return result
 
 
-def memory(lib, word, lemma='', fresh=False):
+def memory(lib, word, lemma='', fresh=False, *, anki_only=False):
+    if anki_only and not lib.anki_enabled:
+        return {'anki': {'status': 'paused', 'items': []}}
     try:
         index=MemoryIndex(lib)
         try:
+            if anki_only:
+                return {'anki': index.anki(word, lemma, fresh)}
             coverage=index.refresh()
             ids,total=index.find(word,lemma)
             items=[]

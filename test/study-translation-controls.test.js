@@ -150,9 +150,11 @@ test('my records opens two senses of the same sentence by their saved IDs', asyn
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html, url}});
     /** @type {Map<string, () => void>} */
     const events = new Map();
+    const viewNotes = vi.fn(async () => {});
     const display = /** @type {import('../ext/js/display/display.js').Display} */ (/** @type {unknown} */ ({
         query: 'charge',
         history: {state: {url, sentence: {text: 'They charged him.'}}},
+        application: {api: {viewNotes}},
         on: (/** @type {string} */ name, /** @type {() => void} */ fn) => events.set(name, fn),
     }));
     const notes = ['收费', '指控'].map((gloss, i) => ({
@@ -160,13 +162,15 @@ test('my records opens two senses of the same sentence by their saved IDs', asyn
         vaultSaved: true,
         entry: {word: 'charge', sentence: 'They charged him.', url, sense: {key: String(i), gloss}},
         openUrl: `obsidian://open?vault=Test&file=charge-${i}`,
+        ...(i === 0 ? {cards: [{noteId: 42, kind: 'context', front: 'How much did they charge?'}]} : {}),
     }));
+    const other = {...notes[0], id: '3'.repeat(32), entry: {...notes[0].entry, word: 'charges', lemma: 'charge', sentence: 'She charges by the hour.'}};
     const call = vi.fn(async (/** @type {string} */ action) => {
-        const [recent, earlier] = notes;
-        if (action === 'libraryMemory') { return {total: 2, items: [{id: recent.id, word: 'charge'}]}; }
-        if (action === 'libraryRead') { return {items: [{record: recent}]}; }
-        if (action === 'libraryList') { return {canSearch: true, total: 2, items: [recent, earlier]}; }
-        return recent;
+        if (action === 'libraryList') {
+            return {canSearch: true, total: 3, items: [...notes, other], focusIds: notes.map(({id}) => id), focusTotal: 2, focusComplete: true, ankiNoteIds: [42]};
+        }
+        if (action === 'libraryMemory') { return {anki: {status: 'complete', total: 1, items: [{noteId: 42, fields: {Word: 'charge'}}]}}; }
+        throw new Error(`Unexpected action: ${action}`);
     });
     vi.stubGlobal('ResizeObserver', class {
         /** Layout is not measured in this DOM fixture. */
@@ -175,21 +179,29 @@ test('my records opens two senses of the same sentence by their saved IDs', asyn
         disconnect() {}
     });
     vi.stubGlobal('chrome', {
-        permissions: {contains: async () => true},
+        permissions: {contains: async () => true, request: async () => true},
         runtime: {getURL: (/** @type {string} */ path) => `chrome-extension://test${path}`},
         storage: {local: {get: async () => ({})}, onChanged: {addListener() {}, removeListener() {}}},
     });
     try {
         prepareStudyFocus(display, {call});
         events.get('contentUpdateComplete')?.();
-        await vi.waitFor(() => expect(document.querySelectorAll('.sf-record-note')).toHaveLength(2));
+        await vi.waitFor(() => expect(document.querySelectorAll('.sf-record-note')).toHaveLength(3));
         const rows = [...document.querySelectorAll('.sf-record-note')];
-        expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual(['charge · 收费', 'charge · 指控']);
+        expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual(['charge · 收费', 'charge · 指控', 'charges · 收费']);
         const links = rows.map((row) => new URL(row.querySelector('a')?.href ?? ''));
-        expect(links.map((link) => link.searchParams.get('studyRecordId'))).toEqual(notes.map(({id}) => id));
+        expect(links.map((link) => link.searchParams.get('studyRecordId'))).toEqual([...notes, other].map(({id}) => id));
         expect(links.every((link) => !link.searchParams.get('full'))).toBe(true);
         expect(document.querySelector('#study-context')?.hasAttribute('data-study-record-id')).toBe(false);
-        expect(call).toHaveBeenCalledWith('libraryList', expect.objectContaining({scope: 'source', url, query: 'charge'}));
+        expect(call.mock.calls.map(([action]) => action)).toEqual(['libraryList']);
+        expect(call).toHaveBeenCalledWith('libraryList', expect.objectContaining({scope: 'word', url, word: 'charge', focus: {word: 'charge', sentence: 'They charged him.'}}));
+        expect(document.querySelector('.sf-record-jump')?.textContent).toContain('已关联，未核实');
+        /** @type {?HTMLButtonElement} */ (document.querySelector('[aria-label="刷新笔记与卡片"]'))?.click();
+        await vi.waitFor(() => expect(document.querySelector('.sf-record-jump')?.textContent).not.toContain('未核实'));
+        expect(call.mock.calls.map(([action]) => action)).toEqual(['libraryList', 'libraryList', 'libraryMemory']);
+        expect(call).toHaveBeenLastCalledWith('libraryMemory', expect.objectContaining({fresh: true, ankiOnly: true}));
+        /** @type {?HTMLButtonElement} */ (document.querySelector('.sf-record-jump'))?.click();
+        expect(viewNotes).toHaveBeenCalledWith([42], 'browse', false);
     } finally {
         events.get('contentClear')?.();
         vi.unstubAllGlobals();
