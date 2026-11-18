@@ -20,14 +20,28 @@ import {builtinEnvironments} from 'vitest/environments';
 
 test('selection translation saves a sentence only on click, while Alt toggles the same sentence renderer', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<p id="source">We learn from real sentences.</p>', url: 'https://example.test/article'}});
-    const send = vi.fn(async (/** @type {{studyAction?: string}} */ message) => ({
-        ok: true,
-        value: message.studyAction === 'pageSentenceSave' ? {vaultSaved: true, localSyncIncomplete: true} : {model: 'fixture', effort: 'low'},
+    /** @typedef {(message: object, sender: object, reply: (value: unknown) => void) => boolean} Receive */
+    /** @type {Receive} */
+    let receive;
+    const originalUrl = location.href;
+    history.replaceState(null, '', '/different#/reading');
+    const currentUrl = location.href;
+    let tabUrl = `${currentUrl}:~:text=sentences`;
+    const send = vi.fn((/** @type {{studyAction: string, data?: object}} */ message) => new Promise((resolve) => {
+        receive(message, {id: 'test', url: originalUrl, frameId: 0, tab: {url: tabUrl, title: 'Article two'}}, resolve);
     }));
-    vi.stubGlobal('chrome', {runtime: {sendMessage: send}, storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'chrome'}})}}});
+    vi.stubGlobal('chrome', {
+        runtime: {id: 'test', sendMessage: send, onMessage: {addListener: (/** @type {Receive} */ listener) => { receive = listener; }}},
+        storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'chrome'}}), set: async () => {}}},
+    });
+    const {prepareStudyService, StudyService} = await import('../ext/js/study/study-service.js');
+    const handle = vi.spyOn(StudyService.prototype, 'handle').mockImplementation(async (action) => {
+        return action === 'librarySave' ? {vaultSaved: true, localSyncIncomplete: true} : {model: 'fixture', effort: 'low'};
+    });
     const {PageTranslate} = await import('../ext/js/study/page-translate.js');
     const controller = new PageTranslate({translate: async () => '我们从真实的句子学习。'});
     try {
+        prepareStudyService();
         Range.prototype.getBoundingClientRect = () => ({left: 10, right: 200, bottom: 20});
         Range.prototype.getClientRects = () => [];
         const original = document.querySelector('#source');
@@ -44,10 +58,23 @@ test('selection translation saves a sentence only on click, while Alt toggles th
         await vi.waitFor(() => expect(save.textContent).toBe('★'));
         expect(save.title).toContain('笔记已保存；扩展未更新本地记录');
         expect(send.mock.calls.some(([m]) => m.studyAction === 'pageSentenceSave')).toBe(true);
+        expect(handle.mock.calls.find(([action]) => action === 'librarySave')?.[1]).toMatchObject({
+            entry: {url: currentUrl, title: 'Article two', kind: 'sentence'}, makeCard: false,
+        });
         expect(original.textContent).toBe('We learn from real sentences.');
         await controller.openSelection('learn from', document.createElement('div'), original);
         expect(document.querySelectorAll('.study-selection-translation')).toHaveLength(1);
         expect(original.nextElementSibling.dataset.original).toBe('learn from');
+        const oldSave = original.nextElementSibling.querySelector('button[title=记住这句]');
+        history.replaceState(null, '', '/different#/later');
+        tabUrl = location.href;
+        const saveCalls = () => handle.mock.calls.filter(([action]) => action === 'librarySave').length;
+        oldSave.click();
+        await vi.waitFor(() => expect(oldSave.title).toContain('请在当前文章重新选中'));
+        expect(send.mock.calls.filter(([m]) => m.studyAction === 'pageSentenceSave')).toHaveLength(1);
+        expect(saveCalls()).toBe(1);
+        await expect(send({studyAction: 'pageSentenceSave', data: {sentence: 'learn from', translation: '学习', source: currentUrl}})).resolves.toMatchObject({ok: false});
+        expect(saveCalls()).toBe(1);
         controller.restore(original);
         window.getSelection().removeAllRanges();
         controller.showSelection();
@@ -59,6 +86,7 @@ test('selection translation saves a sentence only on click, while Alt toggles th
         await vi.waitFor(() => expect(original.nextElementSibling?.classList.contains('study-page-translation')).toBe(true));
     } finally {
         controller.stop();
+        handle.mockRestore();
         vi.unstubAllGlobals();
         await env.teardown(global);
     }

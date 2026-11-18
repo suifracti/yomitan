@@ -46,6 +46,7 @@
 | 没装词典或查不到词，已存笔记却写「暂无中文释义」 | L-007；study-focus 的已保存解释、study-translation 的恢复轮次 |
 | 切换词典配置后，打开旧笔记，追问和保存却用另一种语言 | L-007；study-data.savedStudyLanguage、Display._setContentTermsOrKanji |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
+| 换文章后「记住这句」找不到，或旧卡片保存到了新文章 | L-012；PageTranslate.openSelection、study-service.js 的 pageSentenceSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 换浏览器后旧问答只留在笔记，词卡学习历史看不到 | L-002；readStudyRecord、study_library_core.saved_learning_turns |
 | 只打开已存笔记，却查询相关词或 Anki | L-002；`libraryRead`、`includeRelated` |
@@ -367,6 +368,8 @@
 **词积累多了，网页标色和字幕一起停在旧结果**：6,000 合成词头加真实形态的别名与短语，v2 约 1.34 MB，旧桥整次拒绝。与视频词表共用本机分帧，完整字典才写同一缓存；不裁词形、不改认识状态或原来的刷新周期。相同内容即使返回键顺序不同也不重写，否则每次刷新会让已打开的页重标并让字幕重算推荐。见[大词表验证](youtube-study-wiring.md#2026-11-18-词积累多了标色也能继续更新)。
 
 一篇文章批量保存生词时，逐条等笔记确认，批次结束只取一次标色。中断时保留已确认数量，用户可在原页补存剩余词；整个回执丢失先查「本页记过的原句」，不自动重传。顶部网页历史切换后，Chrome 的发信文档网址可能仍是上一页；批量保存和本页原句共用浏览器给的当前网址，去掉 JS 本来就看不到的文字定位片段，保留普通锚点。标色失败不算未保存，单独切换「认识了」不延迟。见[批量保存中断案例](youtube-study-wiring.md#2026-11-18-记词中断后只补存剩下的词)。
+
+**网页上存整句也沿用当前网址**：保留选中时的地址和原段，译文回来或点保存时不跨到新文章。后台沿批量记词的做法核 Chrome 当前地址，消息的地址只作核对；没收到笔记写入确认不标星。保留 iframe 来源和哈希路由，不移动旧笔记。见[原地换页后的整句保存](youtube-study-wiring.md#2026-11-19-原地换文章后整句存到正确来源)。
 
 重复标相同状态时，以索引读出的当前原形标记为准，不为每个词重写已经相同的笔记。旧拼写的认识或忽略条目仍按真实指令清理；状态文件没有变化才不写。测试覆盖 charges 的真实撤销、旧拼写清理和撤销后再点没有写入。
 

@@ -141,6 +141,8 @@ export class PageTranslate {
          *
          */
         this.selectionText = '';
+        /** Web app navigation can leave the same selection text on another page. */
+        this.selectionSource = '';
         /**
          *
          */
@@ -433,8 +435,10 @@ export class PageTranslate {
         const range = selection.getRangeAt(0);
         const element = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
         if (!element || element.closest(SKIP) || this.editing(selection.anchorNode?.parentElement || null) || this.editing(selection.focusNode?.parentElement || null)) { return; }
-        if (text === this.selectionText && this.selectionUi?.isConnected) { return; }
+        const source = location.href;
+        if (source === this.selectionSource && text === this.selectionText && this.selectionUi?.isConnected) { return; }
         this.selectionText = text;
+        this.selectionSource = source;
         this.selectionUi?.remove();
         const ui = document.createElement('div');
         ui.className = 'study-selection-trigger scan-disable';
@@ -450,7 +454,7 @@ export class PageTranslate {
         trigger.textContent = '译';
         trigger.title = '翻译选中文字';
         trigger.setAttribute('aria-label', trigger.title);
-        trigger.onclick = () => { void this.openSelection(text, ui, original); };
+        trigger.onclick = () => { void this.openSelection(text, ui, original, source); };
         ui.append(trigger);
         if (this.prefs.selection === 'auto') { trigger.click(); }
     }
@@ -468,8 +472,16 @@ export class PageTranslate {
      * @param {string} text
      * @param {HTMLElement} ui
      * @param {Element} original
+     * @param {string} [sourceUrl]
      */
-    async openSelection(text, ui, original) {
+    async openSelection(text, ui, original, sourceUrl = location.href) {
+        const sourceNode = original;
+        const originalText = this.source(sourceNode);
+        const isCurrent = () => sourceUrl === location.href && sourceNode.isConnected && this.source(sourceNode) === originalText;
+        if (!isCurrent()) {
+            ui.remove();
+            return;
+        }
         const existing = this.rows.get(original);
         if (existing && !existing.manual && !existing.node.classList.contains('study-page-error')) {
             existing.node.classList.remove('study-page-flash');
@@ -525,6 +537,14 @@ export class PageTranslate {
         try {
             const translation = await this.requestText(text);
             if (!original.isConnected || this.rows.get(original) !== waiting) { return; }
+            if (!isCurrent()) {
+                if (inline) {
+                    this.restore(original);
+                } else {
+                    this.closeSelectionCard();
+                }
+                return;
+            }
             const node = this.render(original, text, translation, true);
             if (inline) { node.classList.add('study-selection-translation'); }
             const tools = document.createElement('span');
@@ -551,8 +571,10 @@ export class PageTranslate {
                             }
                         }
                         if (label === '记住这句') {
+                            if (!isCurrent()) { throw new Error('页面或原句已经换了，请在当前文章重新选中这句。'); }
                             button.disabled = true;
-                            const row = /** @type {import('study').LibraryRecord} */ (await studyCall('pageSentenceSave', {sentence: text, translation}));
+                            const row = /** @type {import('study').LibraryRecord} */ (await studyCall('pageSentenceSave', {sentence: text, translation, source: sourceUrl}));
+                            if (row?.vaultSaved !== true) { throw new Error('没有收到保存确认，请先到学习库核对。'); }
                             button.textContent = '★';
                             button.title = row?.localSyncIncomplete ? LOCAL_SYNC_INCOMPLETE_TEXT : '已记住';
                             button.setAttribute('aria-label', button.title);
@@ -567,6 +589,7 @@ export class PageTranslate {
                     })().catch((error) => {
                         button.disabled = false;
                         button.title = `没完成：${String(error)}`;
+                        button.setAttribute('aria-label', button.title);
                     });
                 };
                 tools.append(button);

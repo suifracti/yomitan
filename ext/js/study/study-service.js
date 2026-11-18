@@ -1299,7 +1299,12 @@ export function prepareStudyService(lookupDictionary = null) {
             return true;
         }
         if (studyAction === 'pageSentenceSave' && sender.id === chrome.runtime.id && /^https?:/.test(sender.url || '')) {
-            const selected = /** @type {{sentence?:unknown,translation?:unknown}} */ (data || {});
+            const selected = /** @type {{sentence?:unknown,translation?:unknown,source?:string}} */ (data || {});
+            const url = pageUrl(sender);
+            if (selected.source !== url) {
+                reply({ok: false, error: '页面已经换了，请在当前文章重新选中这句。'});
+                return false;
+            }
             if (typeof selected.sentence !== 'string' || !selected.sentence.trim() || selected.sentence.length > 2400 || typeof selected.translation !== 'string' || !selected.translation.trim() || selected.translation.length > 5000) {
                 reply({ok: false, error: '这段太长或译文还没出来，请少选一点再保存。'});
                 return false;
@@ -1311,7 +1316,7 @@ export function prepareStudyService(lookupDictionary = null) {
                 meaning: '',
                 notes: '',
                 context: '',
-                url: sender.url,
+                url,
                 title: sender.tab?.title?.slice(0, 300) || ''};
             void service.handle('librarySave', {entry, makeCard: false}).then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: String(error)}));
             return true;
