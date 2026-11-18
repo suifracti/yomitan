@@ -20,7 +20,7 @@
 // arrays. Formatting tags are dropped, text stays text, and malformed blocks are
 // skipped instead of failing the whole file. Times always come from the file.
 import {parseJson} from '../core/json.js';
-import {cuesFromTimedText, normalizeCues} from './subtitle-session.js';
+import {STUDY_BILINGUAL_VTT, STUDY_VTT_TRANSLATION, cuesFromTimedText, normalizeCues} from './subtitle-session.js';
 
 /** @typedef {'srt'|'vtt'|'sbv'|'ass'|'ttml'|'youtube'|'bilibili'|'json'} SubtitleFormat */
 /** @typedef {{cues: import('./subtitle-session.js').SubtitleCue[], format: SubtitleFormat, translations?: Map<string,string>, language?: string, offsetMs?: number}} ParsedSubtitles */
@@ -30,6 +30,7 @@ const MAX_TEXT = 4_000_000;
 const ENTITIES = {'amp': '&', 'lt': '<', 'gt': '>', 'quot': '"', '#39': '\'', 'nbsp': ' '};
 
 /** @typedef {{startMs: number, endMs: number, text: string}} TimedRow */
+/** @typedef {TimedRow & {translation?: string}} ReadingRow */
 
 /**
  * @param {string} value e.g. 01:02:03,456 / 02:03.456 / 0:02:03.45
@@ -84,17 +85,25 @@ function finish(rows) {
 /**
  * SRT and WebVTT, tolerant of numbering, cue settings, tags and stray blocks.
  * @param {string} text
- * @returns {{startMs: number, endMs: number, text: string}[]}
+ * @param {boolean} [marked] Only our marked VTT files label the translation separately.
+ * @returns {ReadingRow[]}
  */
-function readSrtVtt(text) {
+function readSrtVtt(text, marked = false) {
     const rows = [];
+    const tag = `\n${STUDY_VTT_TRANSLATION}`;
+    const endTag = '</lang>';
     for (const block of text.split(/\n\s*\n/)) {
         const lines = block.split('\n');
         const at = lines.findIndex((line) => line.includes('-->'));
         if (at < 0) { continue; }
         const [from, rest = ''] = lines[at].split('-->');
         const to = rest.trim().split(/\s+/)[0] ?? '';
-        rows.push({startMs: clockMs(from), endMs: clockMs(to), text: plain(lines.slice(at + 1).join('\n'))});
+        const content = lines.slice(at + 1).join('\n').trimEnd();
+        const translatedAt = marked && content.endsWith(endTag) ? content.lastIndexOf(tag) : -1;
+        const row = {startMs: clockMs(from), endMs: clockMs(to)};
+        rows.push(translatedAt < 0 ?
+            {...row, text: plain(content)} :
+            {...row, text: plain(content.slice(0, translatedAt)), translation: plain(content.slice(translatedAt + tag.length, -endTag.length))});
     }
     return rows;
 }
@@ -199,16 +208,15 @@ function readJsonRows(data) {
 }
 
 /**
- * Restore the reader's own JSON downloads. The reading rows carry translations;
- * the unmerged cues in the same file remain available to other tools.
- * @param {unknown} data
- * @returns {ParsedSubtitles|null}
+ * Restore explicit reading lines without guessing languages or joining repeats.
+ * @param {ReadingRow[]} rows
+ * @param {SubtitleFormat} format
+ * @param {unknown} language
+ * @param {unknown} [offset]
+ * @returns {ParsedSubtitles}
  * @throws {TypeError} Invalid or empty reading rows.
  */
-function readStudyExport(data) {
-    const file = /** @type {{source?: {language?: string}, cues?: (TimedRow & {translation?: string})[], rows?: (TimedRow & {translation?: string})[], offsetMs?: number}|null} */ (data);
-    if (!file?.source || !Array.isArray(file.cues) || !Array.isArray(file.rows)) { return null; }
-    const rows = file.rows.length > 0 ? file.rows : file.cues;
+function restoreStudyRows(rows, format, language, offset) {
     if (rows.length === 0) { throw new TypeError('没有读到带时间的字幕行。'); }
     // Generate local IDs; a file's old video URL or track identity is not authoritative.
     const cues = normalizeCues(rows.map(({startMs, endMs, text}) => ({startMs, endMs, text})));
@@ -217,15 +225,23 @@ function readStudyExport(data) {
         const value = rows[cue.sourceIndex].translation;
         if (typeof value === 'string' && value.trim()) { translations.set(cue.id, value.trim()); }
     }
-    const language = file.source.language;
-    const offset = file.offsetMs;
     return {
         cues,
-        format: 'json',
+        format,
         translations,
         ...(typeof language === 'string' && language.length <= 32 && /^[a-z]{2,3}(?:-[a-z\d]{1,8})*$/i.test(language) ? {language} : {}),
         ...(typeof offset === 'number' && Number.isSafeInteger(offset) && Math.abs(offset) <= 600000 ? {offsetMs: offset} : {}),
     };
+}
+
+/**
+ * @param {unknown} data
+ * @returns {ParsedSubtitles|null}
+ */
+function readStudyExport(data) {
+    const file = /** @type {{source?: {language?: string}, cues?: ReadingRow[], rows?: ReadingRow[], offsetMs?: number}|null} */ (data);
+    if (!file?.source || !Array.isArray(file.cues) || !Array.isArray(file.rows)) { return null; }
+    return restoreStudyRows(file.rows.length > 0 ? file.rows : file.cues, 'json', file.source.language, file.offsetMs);
 }
 
 /**
@@ -240,6 +256,9 @@ export function parseSubtitles(text, name = '') {
     const body = text.replace(/^\uFEFF/, '').replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     const head = body.trimStart().slice(0, 400);
     const hint = name.toLowerCase();
+    if (head.startsWith(STUDY_BILINGUAL_VTT)) {
+        return restoreStudyRows(readSrtVtt(body, true), 'vtt', head.slice(STUDY_BILINGUAL_VTT.length).split('\n', 1)[0]);
+    }
     if (/\[Script Info\]|^Dialogue:/im.test(head) || /\.(ass|ssa)(\?|$)/.test(hint) || /^Dialogue:/m.test(body)) { return {cues: finish(readAss(body)), format: 'ass'}; }
     if (head.startsWith('{') || head.startsWith('[')) {
         /** @type {unknown} */

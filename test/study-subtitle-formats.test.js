@@ -56,18 +56,31 @@ test('separate English and Chinese ASS lines at the same exact times become read
     expect(guessLanguage(result?.cues ?? input)).toBe('en');
 });
 
-test('a two-line bilingual VTT download can be read again as a bilingual clip', () => {
+test('an older unmarked two-line VTT can still be read as a bilingual clip', () => {
     const original = new SubtitleSession({mediaKey: 'file:tiny|5', trackKey: 'en', language: 'en', revision: 'tiny', acquisition: 'fixture'}, [
         {id: '0', startMs: 1000, endMs: 2000, text: 'Keep the receipt.'},
         {id: '1', startMs: 3000, endMs: 4100, text: 'Wait here.'},
     ]);
-    original.acceptTranslation('0', '请把购物小票留下来。');
-    original.acceptTranslation('1', '请在这边等一下。');
-    const parsed = parseSubtitles(original.exportVtt(true), 'tiny.zh.vtt');
+    const older = 'WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nKeep the receipt.\n请把购物小票留下来。\n\n2\n00:00:03.000 --> 00:00:04.100\nWait here.\n请在这边等一下。\n';
+    const parsed = parseSubtitles(older, 'tiny.zh.vtt');
     const restored = splitBilingual(parsed.cues, true);
     expect(restored?.cues).toEqual(original.cues);
     expect(restored?.translations.get('1')).toBe('请在这边等一下。');
     expect(splitBilingual(parsed.cues)).toBeNull();
+});
+
+test('partially translated VTT keeps its separate lines and original track language after reimport', () => {
+    const original = new SubtitleSession({mediaKey: 'file:lesson|7', trackKey: 'es', language: 'es', revision: 'lesson', acquisition: 'fixture'}, [
+        {startMs: 500, endMs: 1800, text: 'Lee «中文» & <ejemplo>.'},
+        {startMs: 2100, endMs: 4200, text: 'Pausa.'},
+        {startMs: 4500, endMs: 6600, text: 'Hasta pronto.'},
+    ]);
+    original.acceptTranslation('0', '读「中文」和 <示例>。\n\n先读第一段。');
+    const restored = parseSubtitles(original.exportVtt(true), 'moved.vtt');
+    expect(restored.language).toBe('es');
+    expect(restored.cues).toEqual(original.cues);
+    expect([...restored.translations ?? []]).toEqual([['0', '读「中文」和 <示例>。\n先读第一段。']]);
+    expect(parseSubtitles(original.exportVtt(), 'original.vtt').cues).toEqual(original.cues);
 });
 
 test('TTML clock times, ticks and durations', () => {

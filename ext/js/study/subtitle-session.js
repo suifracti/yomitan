@@ -18,6 +18,10 @@
 /* View/selection model only. A DOM subtitle or this class is NOT a save permission. */
 import {parseTimedText} from './vendor/kiss/youtube-caption-source.js';
 
+export const STUDY_BILINGUAL_VTT = 'WEBVTT\n\nNOTE Yomitan bilingual ';
+
+export const STUDY_VTT_TRANSLATION = '<lang zh-CN>';
+
 /**
  * @typedef {{id: string, sourceIndex: number, startMs: number, endMs: number, text: string}} SubtitleCue
  * @typedef {{id?: string, sourceIndex?: number, startMs: number, endMs: number, text: string}} SubtitleCueInput
@@ -420,11 +424,19 @@ export class SubtitleSession {
      * @returns {string}
      */
     exportVtt(bilingual = false) {
+        const escapeText = (/** @type {string} */ text) => text.trim()
+            .replaceAll(/\r\n?/g, '\n')
+            .replaceAll(/\n[ \t\n]*\n/g, '\n')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;');
+        const header = bilingual ? `${STUDY_BILINGUAL_VTT}${this.source.language}\n\n` : 'WEBVTT\n\n';
         const body = this.cues.map((c, i) => {
             const translation = bilingual ? this.translation(c.id) : '';
-            return `${i + 1}\n${timeLabel(c.startMs, true)} --> ${timeLabel(c.endMs, true)}\n${c.text}${translation ? '\n' + translation : ''}`;
+            const line = translation ? `\n${STUDY_VTT_TRANSLATION}${escapeText(translation)}</lang>` : '';
+            return `${i + 1}\n${timeLabel(c.startMs, true)} --> ${timeLabel(c.endMs, true)}\n${escapeText(c.text)}${line}`;
         });
-        return 'WEBVTT\n\n' + body.join('\n\n') + '\n';
+        return header + body.join('\n\n') + '\n';
     }
 }
 

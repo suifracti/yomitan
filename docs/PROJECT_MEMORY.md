@@ -27,6 +27,7 @@
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
 | 刚导入本地字幕，突然被晚到的网站字幕替换 | L-006；YoutubeReader.importText 和正在载入的控制器 |
 | 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
+| 只翻了一部分再下载双语 VTT，导回后中文混进原文或轨道变成英语 | L-006；SubtitleSession.exportVtt、subtitle-formats.restoreStudyRows |
 | 长视频只记得一个词或一句中文，想跳回那句字幕 | L-006；YoutubeReader._renderCaptionRows、CaptionList、原时间按钮 |
 | 明明听见一个完整短语，字幕拆成几行就搜不到了 | L-006；SubtitleSession.search 复用 groupForReading |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
@@ -260,6 +261,8 @@
 短语跨行时，`SubtitleSession.search` 按已经用于连句的间隔、句末和组长规则匹配，不真的合并。返回短语实际经过的各行；原文和译文不混查，缺译文的行不跨过。时间与行工具仍取原字幕。见[跨行短语验收](youtube-study-wiring.md#2026-11-19-字幕可以搜到跨行短语)。
 
 **下载 JSON 要能重新导入**：现有导出用 `startMs/endMs`，原通用 JSON 进口只认其他时间键。读自家导出时用 `rows` 的原文、译文与时间、明确语言及偏移；不替换文件中给其他工具使用的 `cues`，不让旧 `source.url` 取得任何权限。当前视频里同一导入文件后来手调的偏移优先，手调归零也是有效选择。一律作为当前页的手动文件，不开模型。见[实际下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
+
+**只翻几句的双语 VTT 也要能导回**：扩展生成的双语 VTT 在文件头用 `NOTE` 记录原轨语言，每条已有中文用 WebVTT 语言标签标记。读这种文件与自家 JSON 共用明确译文的恢复，不看中文比例，也不把译文变成可查原文；没有标记的旧字幕继续原识别。原文、译文里的尖括号按文字导出，VTT 仍用原始时间，保留偏移选 JSON。来源权限不变。[部分翻译往返](youtube-study-wiring.md#2026-11-19-只译了几句也能下载再导入双语-vtt)。
 
 **跟读倒计时只属于当次暂停**：`shadowPausedId` 按播放器与实际暂停位置确认操作仍适用。跳转清掉旧提示和倒计时；换播放器或改偏移不沿用旧暂停，没有跳转时照常空格继续、按 R 重听或倒数继续。见[拖动进度的复现](youtube-study-wiring.md#2026-11-19-拖动视频进度不触发旧跟读倒计时)。
 
