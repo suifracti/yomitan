@@ -28,7 +28,7 @@ import {sourceKey} from '../study/study-journal.js';
 import {timedUrl, videoListenUrl} from '../study/media-key.js';
 import {YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
 
@@ -88,9 +88,10 @@ function plainText(value) {
  * @param {{url?: string, videoTime?: number}} entry
  * @param {string} title
  * @param {string} [articleHref] The bridge's optional direct link to the saved sentence.
+ * @param {string} [libraryUrl] The library page base for an optional related-source link.
  * @returns {HTMLElement | null}
  */
-export function createSourceLine(entry, title, articleHref = '') {
+export function createSourceLine(entry, title, articleHref = '', libraryUrl = '') {
     let name = title.trim();
     let href = '';
     try {
@@ -118,6 +119,14 @@ export function createSourceLine(entry, title, articleHref = '') {
         text.target = '_blank'; text.rel = 'noopener noreferrer';
     }
     line.append(text);
+    if (href && libraryUrl) {
+        const related = document.createElement('a');
+        related.href = createSourceLibraryUrl(entry.url ?? '', libraryUrl);
+        related.textContent = '同来源原句 ↗';
+        related.target = '_blank';
+        related.rel = 'noopener noreferrer';
+        line.append(' · ', related);
+    }
     return line;
 }
 
@@ -782,7 +791,8 @@ listedQuery :
                 context.textContent = record.entry.context;
                 article.append(context);
             }
-            const sourceLine = createSourceLine(record.entry ?? {}, record.entry?.title?.trim() || (typeof legacyLocator?.title === 'string' ? legacyLocator.title : ''), record.articleHref);
+            const libraryUrl = category === 'source' ? '' : chrome.runtime.getURL('/study-library.html');
+            const sourceLine = createSourceLine(record.entry ?? {}, record.entry?.title?.trim() || (typeof legacyLocator?.title === 'string' ? legacyLocator.title : ''), record.articleHref, libraryUrl);
             if (sourceLine) { article.append(sourceLine); }
             const technicalDetails = makeTechnicalDetails(record.path, record.entry?.subtitleSource, legacyLocator);
             if (technicalDetails) { article.append(technicalDetails); }

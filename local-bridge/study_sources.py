@@ -11,9 +11,22 @@ VIDEO_QUERY_KEYS = ('v', 'p', 'id', 'vid', 'ep', 'episode', 'video', 'list', 'in
 
 
 def page_source_key(url):
-    """Group chapter/text anchors for browsing without changing saved source identity."""
+    """Group related notes for browsing without changing their source identity."""
     if not url.startswith(('http://', 'https://')):
         return url
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        host = parsed.hostname or ''
+    except ValueError:
+        return url
+    if host in YOUTUBE_HOSTS:
+        video = media_key_of(url)
+        if video:
+            return video
+    if (host == BILIBILI_HOST or host.endswith('.' + BILIBILI_HOST)) and re.fullmatch(r'/video/(?:BV[0-9A-Za-z]+|av[0-9]+)/?', parsed.path):
+        part = urllib.parse.parse_qs(parsed.query).get('p', ['1'])[0]
+        if re.fullmatch(r'[0-9]+', part):
+            return media_key_of(f'https://{BILIBILI_HOST}{parsed.path}?p={int(part) or 1}')
     page, _, fragment = url.partition('#')
     anchor = fragment.split(':~:', 1)[0]
     return page + '#' + anchor if anchor.startswith(('/', '!')) or '=' in anchor else page

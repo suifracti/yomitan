@@ -20,7 +20,7 @@ import {mediaKeyOf, timedUrl, videoListenUrl} from './media-key.js';
 import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
-import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
+import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, createSourceLibraryUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
 import {StudyJournal, conversationRecordId, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
@@ -1325,9 +1325,8 @@ export function prepareStudyService(lookupDictionary = null) {
             return true;
         }
         if (studyAction === 'openPageLibrary' && sender.id === chrome.runtime.id && sender.frameId === 0 && /^https?:\/\//.test(sender.url || '')) {
-            const url = new URL(chrome.runtime.getURL('study-library.html'));
-            url.searchParams.set('source', pageUrl(sender) || '');
-            void chrome.tabs.create({url: url.href}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '没有打开学习库。'}));
+            const url = createSourceLibraryUrl(pageUrl(sender) || '', chrome.runtime.getURL('study-library.html'));
+            void chrome.tabs.create({url}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '没有打开学习库。'}));
             return true;
         }
         if (studyAction === 'openStudyRecord' && sender.id === chrome.runtime.id && /^(?:https?|file):/.test(sender.url || '')) {

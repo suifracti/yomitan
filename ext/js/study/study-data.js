@@ -321,6 +321,17 @@ export function createResumeUrl(record, searchUrl) {
 }
 
 /**
+ * @param {string} sourceUrl
+ * @param {string} libraryUrl
+ * @returns {string}
+ */
+export function createSourceLibraryUrl(sourceUrl, libraryUrl) {
+    const url = new URL(libraryUrl);
+    url.searchParams.set('source', sourceUrl);
+    return url.href;
+}
+
+/**
  * An explicitly opened note in the ordinary lookup view; live subtitle authority is separate.
  * @param {import('display').HistoryState | null | undefined} state
  * @param {string} word
