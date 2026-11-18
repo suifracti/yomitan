@@ -233,8 +233,11 @@ describe('study library page', () => {
             {id: '3'.repeat(32), vaultSaved: true, entry: {word: 'on', sentence: 'We went on and on!', translation: '我们接着说个不停！'}, media: {audio: {name: 'exact.webm'}}},
         ];
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
-        mocks.studyCall.mockImplementation(async (action) => {
-            if (action === 'libraryList') { return {items, total: items.length, canSearch: true}; }
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action === 'libraryList') {
+                if (payload.practice === 'dictation') { return {items: [items[1], items[2]], total: 2}; }
+                return {items: items.slice(0, 2), total: items.length, canSearch: true};
+            }
             if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
             return [];
         });
@@ -244,10 +247,11 @@ describe('study library page', () => {
         await vi.waitFor(() => expect(start.hidden).toBe(false));
         const baseline = mocks.studyCall.mock.calls.length;
         start.click();
-        expect(panel.textContent).toContain('1 / 1');
+        await vi.waitFor(() => expect(panel.textContent).toContain('1 / 1'));
         expect(panel.textContent).not.toContain('We went');
         expect(panel.textContent).not.toContain('我们接着');
-        expect(mocks.studyCall.mock.calls).toHaveLength(baseline);
+        const find = ['libraryList', {language: 'en', scope: 'all', url: '', title: '', practice: 'dictation'}];
+        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find]);
         /** @type {HTMLButtonElement} */ (panel.querySelector('button')).click();
         await vi.waitFor(() => expect(startAudio).toHaveBeenCalledOnce());
         const field = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
@@ -260,7 +264,7 @@ describe('study library page', () => {
         expect(new URL(link.href).searchParams.get('studyRecordId')).toBe(items[2].id);
         /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
         expect(panel.textContent).toContain('本轮结束');
-        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([['libraryAudioRead', {id: items[2].id}]]);
+        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find, ['libraryAudioRead', {id: items[2].id}]]);
     });
 
     test('uses saved sentences for a short cloze without grading or changing the records', async () => {

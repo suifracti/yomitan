@@ -7,9 +7,39 @@ from unittest.mock import patch
 from study_library import StudyLibrary, normalize_entry, entry_id
 from study_settings import YomitanLibrary
 from test_study_auto_sync import AutoSyncTests
+from test_study_media_video import WEBM, asset
 
 
 class RecordIndexTests(AutoSyncTests):
+    def test_dictation_finds_original_recordings_before_list_paging(self):
+        root = 'https://example.test/film'
+        def save(word, sentence, url=root, audio=False):
+            row = self.library.handle({'action': 'librarySave', 'makeCard': False,
+                                        'entry': {'word': word, 'sentence': sentence, 'url': url, 'videoTime': 12}})
+            if audio:
+                self.library.handle({'action': 'libraryMedia', 'id': row['id'], 'version': row['version'],
+                                     'start': 12, 'end': 15, 'origin': 'capture', 'assets': [asset('audio', 'audio/webm', WEBM)]})
+            return row
+        sentence = 'We finally reached the harbor.'
+        save('finally', sentence, audio=True)
+        old = save('harbor', sentence, audio=True)
+        stale = save('shore', 'We reached the shore.', audio=True)
+        self.library.handle({'action': 'libraryUpdate', 'id': stale['id'], 'entry': {'sentence': 'We see the harbor.'}})
+        save('boats', 'Boats were waiting at the harbor.', url='https://example.test/other', audio=True)
+        for i in range(11):
+            save(f'word{i}', f'A new example for word{i}.')
+        request = {'action': 'libraryList', 'scope': 'all', 'url': '', 'title': ''}
+        normal = self.library.handle(request)
+        self.assertNotIn(old['id'], {row['id'] for row in normal['items']})
+        self.calls.clear()
+        with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('dictation reopened a note')), \
+                patch('study_media.attachment', side_effect=AssertionError('dictation opened audio before playback')):
+            result = self.library.handle({**request, 'scope': 'source', 'url': root, 'query': 'harbor', 'practice': 'dictation'})
+            self.assertEqual(result['total'], 1)
+            self.assertEqual([r['id'] for r in result['items']], [old['id']])
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.library.handle(request)['total'], normal['total'])
+
     def test_find_an_older_sentence_by_meaning_or_word_before_paging(self):
         def save(word, sentence, meaning):
             return self.library.handle({'action': 'librarySave', 'makeCard': False,

@@ -389,8 +389,10 @@ def _normalize_request(p):
                 if 'kind' in card and not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', text(card['kind'], 40, True)):
                     raise ValueError('卡片类型无效。')
         return p
-    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query'}:
+    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice'}:
         scope = p.get('scope', 'source')
+        if 'practice' in p and p['practice'] != 'dictation':
+            raise ValueError('练习类型无效。')
         if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall'):
             raise ValueError('学习列表范围无效。')
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),

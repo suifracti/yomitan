@@ -32,9 +32,14 @@ def context_matches(record, ref, entry):
     return entry_id(entry) == record['id']
 
 
+def has_current_audio(row):
+    ref = row.get('media', {}).get('audio')
+    return bool(ref and ref.get('name') and context_matches(row, ref, row['entry']))
+
+
 def with_audio_context(row):
     ref = row.get('media', {}).get('audio')
-    return {**row, 'audioContextChanged': True} if ref and not context_matches(row, ref, row['entry']) else row
+    return {**row, 'audioContextChanged': True} if ref and not has_current_audio(row) else row
 
 
 def require_audio(record, values):

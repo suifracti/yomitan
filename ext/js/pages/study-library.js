@@ -820,7 +820,7 @@ async function initializePage() {
              */
             const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, listening, makeSavedAudioButton, clearSavedAudio));
             let prompts = listening ? dictation : cloze;
-            if (activePractice === button || prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()) {
+            if (activePractice === button || (!listening && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
                 open(prompts);
                 return;
             }
@@ -829,28 +829,36 @@ async function initializePage() {
             button.textContent = '取消找题';
             const scope = category;
             const url = scope === 'source' ? articleUrl : '';
-            setStatus('正在找可练的原句…');
+            setStatus(listening ? '正在找带原声的原句…' : '正在找可练的原句…');
             const query = search.value.trim();
             const indexed = canSearch;
-            const end = total;
-            let next = offset;
+            const base = {language: 'en', scope, url, title: ''};
             let failed = false;
             try {
-                while (prompts.length < SENTENCE_PRACTICE_LIMIT && next < end) {
-                    const payload = {language: 'en', scope, url, title: '', offset: next, ...(indexed && query ? {query} : {})};
-                    const page = normalizeRecords(await studyCall('libraryList', payload));
-                    if (sentenceSearch !== request) { return; }
-                    if (page.length === 0) { break; }
-                    next += page.length;
-                    prompts = sentencePrompts(indexed ? page : page.filter((row) => matchesSearch(row, query)), prompts, listening);
+                if (listening) {
+                    const found = await studyCall('libraryList', {...base, practice: 'dictation', ...(query ? {query} : {})});
+                    prompts = sentencePrompts(normalizeRecords(found), [], true);
+                } else {
+                    const end = total;
+                    let next = offset;
+                    while (prompts.length < SENTENCE_PRACTICE_LIMIT && next < end) {
+                        const payload = {...base, offset: next, ...(indexed && query ? {query} : {})};
+                        const page = normalizeRecords(await studyCall('libraryList', payload));
+                        if (sentenceSearch !== request) { return; }
+                        if (page.length === 0) { break; }
+                        next += page.length;
+                        prompts = sentencePrompts(indexed ? page : page.filter((row) => matchesSearch(row, query)), prompts, false);
+                    }
                 }
             } catch { failed = true; }
             if (sentenceSearch !== request) { return; }
             cancelSentenceSearch();
             if (prompts.length > 0) {
                 open(prompts);
+            } else if (listening) {
+                setStatus(failed ? '暂时没能查到更多录音。可多加载一些记录，再试听写。' : '这里没有能练听写的录音。可以换个分类或清空搜索再试。');
             } else {
-                setStatus(failed ? '后面的原句没有读到，可以再试一次。' : (listening ? '没找到带原声的原句，可以继续看记录。' : '这次没找到能做成填空的原句，可以继续看记录。'));
+                setStatus(failed ? '后面的原句没有读到，可以再试一次。' : '这次没找到能做成填空的原句，可以继续看记录。');
             }
         }
         for (const button of sentenceButtons) {
@@ -1297,7 +1305,8 @@ listedQuery :
             cloze = loading || listError ? [] : sentencePrompts(practiceRows, [], false);
             dictation = loading || listError ? [] : sentencePrompts(practiceRows, [], true);
             clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
-            dictationButton.hidden = dictation.length === 0 && !moreScopedPrompts() && (activePractice !== dictationButton || loading || Boolean(listError));
+            const canOfferDictation = total > 0 || dictation.length > 0 || activePractice === dictationButton;
+            dictationButton.hidden = waiting || loading || Boolean(listError) || category === 'anki-only' || !canOfferDictation;
             if (activePractice?.hidden) { closePractice(); }
             listenSource.hidden = !sourceVideoId || !practice.hidden;
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];

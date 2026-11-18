@@ -11,7 +11,7 @@ import tempfile
 
 from study_cards import linked_note_ids, with_card_progress
 from study_sources import page_source_key, with_article_href
-from study_media import with_audio_context
+from study_media import has_current_audio, with_audio_context
 
 
 def needs_attention(row):
@@ -55,6 +55,7 @@ def search_hit(row, query):
 
 def indexed_page(rows, p):
     scope = p.get('scope', 'source')
+    dictation = p.get('practice') == 'dictation'
     source = page_source_key(p['url']) if scope == 'source' else ''
     query = ' '.join(p.get('query', '').casefold().split())
     matches = []
@@ -69,10 +70,11 @@ def indexed_page(rows, p):
         if scope == 'anki-only' and row.get('syncState') != 'anki-only': continue
         if scope == 'manual-known' and not row.get('manualKnown'): continue
         if scope == 'favorites' and not row.get('favorite'): continue
-        if scope == 'saved' and (not row.get('vaultSaved') or row.get('learningState') == 'favorite-only'): continue
+        if (scope == 'saved' or dictation) and (not row.get('vaultSaved') or row.get('learningState') == 'favorite-only'): continue
         if scope == 'linked' and row.get('ankiState') != 'linked' and not linked_note_ids((row,)): continue
         order = recent_recall(row, now) if scope == 'recent-recall' else row['created']
         if scope == 'recent-recall' and not order: continue
+        if dictation and (not e['sentence'] or not has_current_audio(row)): continue
         rank = 0
         if query:
             match = search_hit(row, query)
@@ -81,6 +83,11 @@ def indexed_page(rows, p):
             row = {**row, 'searchHit': hit}
         matches.append((rank, order, row))
     matches.sort(key=lambda x: x[:2], reverse=True)
+    if dictation:
+        unique = {}
+        for match in matches:
+            unique.setdefault(match[2]['entry']['sentence'], match)
+        matches = list(unique.values())
     offset = p.get('offset', 0)
     return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for _, _, row in matches[offset:offset + 10]], 'total': len(matches), 'canSearch': True}
 
