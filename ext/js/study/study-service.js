@@ -1191,6 +1191,15 @@ export function prepareStudyService(lookupDictionary = null) {
     }
     const service = new StudyService(chrome.storage.local);
     const companionOpen = prepareStudyCompanion(service, lookupDictionary);
+    /**
+     * @param {chrome.runtime.MessageSender} sender
+     * @returns {string | undefined}
+     */
+    const pageUrl = (sender) => {
+        const url = (sender.frameId === 0 ? sender.tab?.url : void 0) ?? sender.url;
+        // The document URL can lag behind history.pushState; text directives are not visible in location.href.
+        return url?.replace(/(#.*?):~:.*$/, (_fragment, anchor) => (anchor === '#' ? '' : anchor));
+    };
     // Near-real-time Obsidian↔Anki sync while the browser runs; each pass only touches what changed.
     if (chrome.alarms?.create) {
         void chrome.alarms.create('study-auto-sync', {periodInMinutes: 0.5});
@@ -1252,23 +1261,45 @@ export function prepareStudyService(lookupDictionary = null) {
             return true;
         }
         if (studyAction === 'pageWordsSave' && sender.id === chrome.runtime.id && /^https?:/.test(sender.url || '')) {
-            const items = data?.items;
+            const {items, source} = /** @type {{items?: Pick<import('study').LibraryEntry, 'word'|'sentence'|'meaning'>[], source?: string}} */ (data ?? {});
+            const url = pageUrl(sender);
+            if (source !== void 0 && source !== url) {
+                reply({ok: false, error: '页面已经换了，请回到原页再保存。'});
+                return false;
+            }
             if (!Array.isArray(items) || items.length > 6000 || items.some((r) => !r || typeof r.word !== 'string' || r.word.length > 128 || typeof r.sentence !== 'string' || !r.sentence || r.sentence.length > 2400 || typeof r.meaning !== 'string' || r.meaning.length > 5000)) {
                 reply({ok:false,error:'词和原句没读完整，请重试。'}); return false;
             }
             void (async () => {
-                let changed = false;
-                try {
-                    for (const item of items) {
-                        const entry = {word: item.word, sentence: item.sentence, meaning: item.meaning, url: sender.url, title: sender.tab?.title?.slice(0, 300) || '', language: 'en', context: '', translation: '', notes: ''};
-                        await service.handle('librarySave', {entry, makeCard: false});
-                        changed = true;
-                        await service.handleRequest('libraryMarkKnown', {word: item.word, known: false}, null, null, false);
+                let saved = 0;
+                let error = '';
+                let colourIncomplete = false;
+                for (const item of items) {
+                    const entry = {word: item.word, sentence: item.sentence, meaning: item.meaning, url, title: sender.tab?.title?.slice(0, 300) || '', language: 'en', context: '', translation: '', notes: ''};
+                    try {
+                        const record = /** @type {{vaultSaved?: boolean}|null} */ (await service.handle('librarySave', {entry, makeCard: false}));
+                        if (record?.vaultSaved !== true) { throw new Error('没有收到这条笔记的保存确认。'); }
+                    } catch (error_) {
+                        error = error_ instanceof Error ? error_.message : '没有收到保存确认。';
+                        break;
                     }
-                    return true;
-                } finally {
-                    if (changed) { await service.refreshWordStatus(); }
+                    ++saved;
+                    try {
+                        await service.handleRequest('libraryMarkKnown', {word: item.word, known: false}, null, null, false);
+                    } catch {
+                        colourIncomplete = true;
+                    }
                 }
+                if (saved > 0) {
+                    try {
+                        const words = items.slice(0, saved).map((row) => row.word);
+                        await service.handleRequest('knownWords', {known: {remove: words}, ignored: {remove: words}}, null, null, false);
+                    } catch {
+                        colourIncomplete = true;
+                    }
+                    await service.refreshWordStatus().catch(() => { colourIncomplete = true; });
+                }
+                return {saved, ...(error ? {error} : {}), ...(colourIncomplete ? {colourIncomplete} : {})};
             })().then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message})); return true;
         }
         if (studyAction === 'youtubeCaptionTracks' && sender.id === chrome.runtime.id && sender.tab?.id && /^https:\/\/(www\.)?youtube\.com\//.test(sender.url || '')) {
@@ -1287,7 +1318,7 @@ export function prepareStudyService(lookupDictionary = null) {
         }
         if (studyAction === 'openPageLibrary' && sender.id === chrome.runtime.id && sender.frameId === 0 && /^https?:\/\//.test(sender.url || '')) {
             const url = new URL(chrome.runtime.getURL('study-library.html'));
-            url.searchParams.set('source', sender.url || '');
+            url.searchParams.set('source', pageUrl(sender) || '');
             void chrome.tabs.create({url: url.href}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '没有打开学习库。'}));
             return true;
         }

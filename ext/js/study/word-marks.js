@@ -842,7 +842,7 @@ export class WordMarks {
      *
      * @param {string} text
      * @param {()=>unknown} [undo]
-     * @param {()=>Promise<unknown>} [commit]
+     * @param {(notice: HTMLElement)=>Promise<void>} [commit]
      */
     _notice(text, undo, commit) {
         const notice = document.createElement('div');
@@ -851,11 +851,7 @@ export class WordMarks {
         notice.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);padding:10px 16px;border-radius:8px;background:#263248;color:white;z-index:2147483646;font:14px sans-serif';
         const timer = setTimeout(() => {
             if (commit) {
-                notice.textContent = '正在保存笔记…';
-                void commit().then(() => notice.remove(), (error) => {
-                    notice.textContent = `没有保存：${error instanceof Error ? error.message : '请重试。'}`;
-                    setTimeout(() => notice.remove(), 5000);
-                });
+                void commit(notice);
             } else {
                 notice.remove();
             }
@@ -882,10 +878,55 @@ export class WordMarks {
      * @param {()=>unknown} [undo]
      */
     _remember(items, undo = () => {}) {
-        this._notice('已记住，5 秒后保存笔记', undo, async () => {
-            await studyCall('knownWords', {known: {remove: items.map((r) => r.word)}, ignored: {remove: items.map((r) => r.word)}});
-            await studyCall('pageWordsSave', {items: items.map(({word, sentence, meaning}) => ({word, sentence, meaning}))});
-        });
+        const rows = items.map(({word, sentence, meaning}) => ({word, sentence, meaning}));
+        const source = location.href;
+        let confirmed = 0;
+        let colourIncomplete = false;
+        /** @param {HTMLElement} notice */
+        const save = async (notice) => {
+            const pending = rows.slice(confirmed);
+            notice.textContent = `正在保存剩余 ${pending.length} 条…`;
+            let reason = '';
+            let retryable = false;
+            if (location.href !== source) {
+                reason = '请回到原页再补存。';
+                retryable = true;
+            } else {
+                try {
+                    const value = /** @type {{saved?: number, error?: string, colourIncomplete?: boolean}|true|null} */ (await studyCall('pageWordsSave', {items: pending, source}));
+                    const count = value === true ? pending.length : value?.saved;
+                    if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > pending.length) {
+                        throw new Error('没有收到保存回执');
+                    }
+                    confirmed += count;
+                    colourIncomplete ||= value !== true && value?.colourIncomplete === true;
+                    reason = value !== true ? value?.error || '' : '';
+                    retryable = confirmed < rows.length;
+                } catch {
+                    reason = '没有收到这次保存结果；先到「本页记过的原句」核对，再补存。';
+                }
+            }
+            const left = rows.length - confirmed;
+            const colour = colourIncomplete ? ' · 有些词的标色没更新' : '';
+            notice.textContent = `已确认保存 ${confirmed} 条${left ? ` · 尚未确认 ${left} 条` : ''}${colour}${reason ? ` · ${reason}` : ''}`;
+            if (left === 0) {
+                setTimeout(() => notice.remove(), 6000);
+                return;
+            }
+            if (retryable) {
+                const retry = document.createElement('button');
+                retry.type = 'button';
+                retry.textContent = `补存 ${left} 条`;
+                retry.onclick = () => { void save(notice); };
+                notice.append(' ', retry);
+            }
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.textContent = '关闭';
+            close.onclick = () => notice.remove();
+            notice.append(' ', close);
+        };
+        this._notice(`准备保存 ${rows.length} 条笔记，5 秒内可撤销`, undo, save);
     }
 
     /**

@@ -113,12 +113,15 @@ test('saved page words update the shared word colours once after the whole batch
     let receive = (_message, _sender, _reply) => { throw new Error('学习消息尚未注册'); };
     /** @type {string[]} */
     const calls = [];
+    /** @type {string[]} */
+    const sources = [];
     let failing = false;
     // eslint-disable-next-line @typescript-eslint/unbound-method -- Called below with its current service as the receiver.
     const send = StudyService.prototype.handle;
     const save = vi.spyOn(StudyService.prototype, 'handle').mockImplementation(async function saveFixture(action, value) {
         if (action === 'librarySave') {
             calls.push(action);
+            sources.push(/** @type {{entry: {url: string}}} */ (value).entry.url);
             if (failing && /** @type {{entry: {word: string}}} */ (value).entry.word === 'receipt') { throw new Error('暂时未写入'); }
             return {vaultSaved: true};
         }
@@ -149,15 +152,24 @@ test('saved page words update the shared word colours once after the whole batch
     try {
         prepareStudyService();
         const items = ['harbor', 'receipt', 'charge'].map((word) => ({word, sentence: `Remember ${word}.`, meaning: '示例'}));
-        const request = () => new Promise((resolve) => {
-            receive({studyAction: 'pageWordsSave', data: {items}}, {id: 'fixture', url: 'https://reading.test/story'}, resolve);
+        const url = 'https://reading.test/story#chapter';
+        const request = (batch = items, tabUrl = url + ':~:text=Remember') => new Promise((resolve) => {
+            receive(
+                {studyAction: 'pageWordsSave', data: {items: batch, source: url}},
+                {id: 'fixture', url: 'https://reading.test/old', frameId: 0, tab: {url: tabUrl}},
+                resolve,
+            );
         });
-        expect(await request()).toEqual({ok: true, value: true});
-        expect(calls).toEqual([...items.flatMap(() => ['librarySave', 'libraryMarkKnown']), 'libraryWordStatus']);
+        expect(await request()).toEqual({ok: true, value: {saved: 3}});
+        expect(calls).toEqual([...items.flatMap(() => ['librarySave', 'libraryMarkKnown']), 'knownWords', 'libraryWordStatus']);
+        expect(sources).toEqual([url, url, url]);
         calls.length = 0;
         failing = true;
-        expect(await request()).toEqual({ok: false, error: '暂时未写入'});
-        expect(calls).toEqual(['librarySave', 'libraryMarkKnown', 'librarySave', 'libraryWordStatus']);
+        expect(await request()).toEqual({ok: true, value: {saved: 1, error: '暂时未写入'}});
+        expect(calls).toEqual(['librarySave', 'libraryMarkKnown', 'librarySave', 'knownWords', 'libraryWordStatus']);
+        calls.length = 0;
+        expect(await request(items.slice(1), url + '-other')).toMatchObject({ok: false});
+        expect(calls).toEqual([]);
     } finally {
         save.mockRestore();
         vi.unstubAllGlobals();

@@ -23,6 +23,7 @@
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章，想看上次记过的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选 |
+| 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
@@ -202,7 +203,7 @@
 
 如果「刚撤销，颜色又变回去」，先查后台发布顺序，不要改复习阈值。后台只发布最后一次 `refreshWordStatus`，网页、词卡和字幕共用桥已合并人工标记的 v2；旧的 `studyKnownWords` 只解释 v1 及更早的缓存。见[逆序返回案例](youtube-study-wiring.md#2026-11-18-刚撤销认识了旧刷新又把词标回去)。
 
-一篇文章批量保存生词时，仍逐条保存和核对，但只在批次结束取一次标色状态。中途有失败，前面已经保存的词也会一起更新颜色；错误仍返回原处。单独切换「认识了」不延迟。见[三条词的调用顺序](youtube-study-wiring.md#2026-11-18-一篇文章记多个词只重新读一次标色)。
+一篇文章批量保存生词时，逐条等笔记确认，批次结束只取一次标色。中断时保留已确认数量，用户可在原页补存剩余词；整个回执丢失先查「本页记过的原句」，不自动重传。顶部网页历史切换后，Chrome 的发信文档网址可能仍是上一页；批量保存和本页原句共用浏览器给的当前网址，去掉 JS 本来就看不到的文字定位片段，保留普通锚点。标色失败不算未保存，单独切换「认识了」不延迟。见[批量保存中断案例](youtube-study-wiring.md#2026-11-18-记词中断后只补存剩下的词)。
 
 重复标相同状态时，以索引读出的当前原形标记为准，不为每个词重写已经相同的笔记。旧拼写的认识或忽略条目仍按真实指令清理；状态文件没有变化才不写。测试覆盖 charges 的真实撤销、旧拼写清理和撤销后再点没有写入。
 
