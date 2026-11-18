@@ -18,6 +18,7 @@
 // @vitest-environment jsdom
 
 import {Blob} from 'node:buffer';
+import {webcrypto} from 'node:crypto';
 import {afterEach, describe, expect, test, vi} from 'vitest';
 import {parseJson} from '../dev/json.js';
 import {deferPromise} from '../ext/js/core/utilities.js';
@@ -480,18 +481,21 @@ describe('study library page', () => {
         vi.resetModules();
         makePageDom();
         vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        vi.stubGlobal('crypto', webcrypto);
         const startAudio = vi.fn();
+        const decodeAudioData = vi.fn().mockResolvedValue({});
+        let changedAudio = true;
         vi.stubGlobal('Blob', Blob);
         vi.stubGlobal('AudioContext', class {
             resume = vi.fn().mockResolvedValue(void 0);
             close = vi.fn().mockResolvedValue(void 0);
-            decodeAudioData = vi.fn().mockResolvedValue({});
+            decodeAudioData = decodeAudioData;
             createBufferSource = () => ({buffer: null, connect: vi.fn(), addEventListener: vi.fn(), start: startAudio});
         });
         const items = [
             {id: '1'.repeat(32), vaultSaved: true, entry: {word: 'silent', sentence: 'A silent record.'}},
             {id: '2'.repeat(32), vaultSaved: true, audioContextChanged: true, entry: {word: 'edited', sentence: 'An edited record.'}, media: {audio: {name: 'old.webm'}}},
-            {id: '3'.repeat(32), vaultSaved: true, entry: {word: 'on', sentence: 'We went on and on!', translation: '我们接着说个不停！'}, media: {audio: {name: 'exact.webm'}}},
+            {id: '3'.repeat(32), vaultSaved: true, entry: {word: 'on', sentence: 'We went on and on!', translation: '我们接着说个不停！'}, media: {audio: {name: 'exact.webm', sha256: 'ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb'}}},
             {id: '4'.repeat(32), vaultSaved: true, entry: {word: 'loud', sentence: 'It was not only loud, but clear.'}, media: {audio: {name: 'later.webm'}}},
         ];
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
@@ -500,7 +504,7 @@ describe('study library page', () => {
                 if (payload.practice === 'dictation') { return {items: items.slice(1), total: 3}; }
                 return {items: items.slice(0, 2), total: items.length, canSearch: true};
             }
-            if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
+            if (action === 'libraryAudioRead') { return {parts: [changedAudio ? 'Yg==' : 'YQ==']}; }
             return [];
         });
         await import('../ext/js/pages/study-library.js');
@@ -514,6 +518,11 @@ describe('study library page', () => {
         expect(panel.textContent).not.toContain('我们接着');
         const find = ['libraryList', {language: 'en', scope: 'all', url: '', title: '', practice: 'dictation'}];
         expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find]);
+        /** @type {HTMLButtonElement} */ (panel.querySelector('button')).click();
+        await vi.waitFor(() => expect(panel.querySelector('[role="status"]')?.textContent).toContain('原声已换过'));
+        expect(decodeAudioData).not.toHaveBeenCalled();
+        expect(startAudio).not.toHaveBeenCalled();
+        changedAudio = false;
         /** @type {HTMLButtonElement} */ (panel.querySelector('button')).click();
         await vi.waitFor(() => expect(startAudio).toHaveBeenCalledOnce());
         const submit = (/** @type {string} */ answer) => {
@@ -536,13 +545,14 @@ describe('study library page', () => {
         expect(panel.textContent).toContain('It was not only loud, but clear.');
         next();
         expect(panel.textContent).toContain('本轮结束');
-        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find, ['libraryAudioRead', {id: items[2].id}]]);
+        const readAudio = ['libraryAudioRead', {id: items[2].id}];
+        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find, readAudio, readAudio]);
         [...panel.querySelectorAll('button')].find((b) => b.textContent === '重听没对上的 1 句')?.click();
         expect(panel.textContent).toContain('重听没对上的 · 1 / 1');
         expect(panel.textContent).not.toContain('but clear');
         /** @type {HTMLButtonElement} */ (panel.querySelector('button')).click();
         await vi.waitFor(() => expect(startAudio).toHaveBeenCalledTimes(2));
-        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find, ['libraryAudioRead', {id: items[2].id}], ['libraryAudioRead', {id: items[3].id}]]);
+        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find, readAudio, readAudio, ['libraryAudioRead', {id: items[3].id}]]);
         submit('it was not only loud but clear');
         expect(panel.textContent).toContain('和原句一致');
         next();

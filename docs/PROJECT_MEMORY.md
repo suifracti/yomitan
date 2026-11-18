@@ -36,6 +36,7 @@
 | 从学习库或复习答案回原视频听这一句，不只是跳到秒数 | L-007；makeVideoListenButton、videoListenUrl、openVideoListening、claimVideoListening |
 | 词已经记了，却没录当时的原声；补录时不想改自己的解释 | L-007；canSupplementAudio、YoutubeReader.lookupCaption、mountStudyLibrary |
 | 原网页打不开，想播放已附在笔记里的原声 | L-007；study_media.read_audio、libraryAudioRead |
+| 听写题开着时重录了原声，旧题却播成新版声音 | L-007；study-library.js 的 playSavedAudio、附件 sha256 |
 | 录音后说已保存却不能制卡，或点取消时附件其实已送出 | L-007；display/study-library.js 的采集和保存阶段、savedAudioAttachment |
 | 只用学习库听写，不启用 Anki 时怎样保存原声 | L-007；display/study-library.js 的 openAudio 和 captureAudio |
 | 笔记已经改句，却还播放或用旧原声制卡 | L-007；study_media.context_matches、require_audio、audioContextChanged |
@@ -281,6 +282,8 @@
 **给旧笔记补原声，不重新保存文字**：「回视频听／补原声」仍走原视频单句交接。揭晓后只从已对上的英语字幕按原词与原记录号打开原声面板；切到别的素材、失去来源、已有可用录音或属于受保护字幕时不能借用。点录音前读这条笔记的版本，之后只发原 `libraryMedia`，不经过 `rememberEntry`，也不用录完后才读的版本覆盖中途改动。默认不带视频或截图。见[回听及附件边界](youtube-study-wiring.md#2026-11-18-从学习库给旧笔记补原声)。
 
 **原网页打不开，已存的本句音频仍可听**：学习库「详情 → 播放已存原声」只给确有本条音频附件的笔记。按照原记录号及历史目标找附件，复用已有附件名、路径、大小与内容校验；不从视频文件、相似句或 Anki 的其他卡借音。音频过大就复用本机分帧，完整收齐后只在学习库内存解码；不新增缓存、站点权限或附件写入。见[已有音频的独立播放](youtube-study-wiring.md#2026-11-18-原网页打不开也能播放已存原声)。
+
+**打开的题目不能替换成后来重录的声音**：桥用原编号读当前附件并核内容；学习库再拿播放按钮所在的题面／详情已拿到的附件 SHA-256 比对，避免同一编号后来改句并重新采集时播错。对不上不解码，提示刷新；换题仍丢弃迟到结果。旧结果不带摘要时沿原桥校验，不请求额外正文。见[练习中的附件版本](youtube-study-wiring.md#2026-11-19-已打开的听写题不播放后来换过的原声)。
 
 **录到了，不等于笔记已收到原声**：词卡在送出附件前可取消；一旦请求发出，显示正在保存，不承诺能撤销。仅接受对应记录、原句和采集范围的音频回执，才显示这次已存；失败前没有发送的新原声与送出后尚未确认分开说，既有文字与录音不自动重写。词卡和学习库用同一个已存附件引用；受保护的来源不因此解锁制卡。见[采集与保存的边界](youtube-study-wiring.md#2026-11-18-录到原声和保存原声分开确认)。
 

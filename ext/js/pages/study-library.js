@@ -21,7 +21,7 @@ import {Frontend} from '../app/frontend.js';
 import {PopupFactory} from '../app/popup-factory.js';
 import {ThemeController} from '../app/theme-controller.js';
 import {HotkeyHandler} from '../input/hotkey-handler.js';
-import {escapeRegExp} from '../core/utilities.js';
+import {arrayBufferDigest, escapeRegExp} from '../core/utilities.js';
 import {blankStudyWord} from '../display/study-card-kinds.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
@@ -917,11 +917,12 @@ async function initializePage() {
         window.addEventListener('pagehide', clearSavedAudio);
         /**
          * @param {string} id
+         * @param {string | undefined} expectedSha256
          * @param {HTMLButtonElement} button
          * @param {(message: string) => void} report
          * @returns {Promise<void>}
          */
-        async function playSavedAudio(id, button, report) {
+        async function playSavedAudio(id, expectedSha256, button, report) {
             const stopping = button === audioButton;
             clearSavedAudio();
             if (stopping) { return; }
@@ -935,7 +936,15 @@ async function initializePage() {
                 const {parts} = /** @type {{parts: string[]}} */ (await studyCall('libraryAudioRead', {id}));
                 if (savedAudio !== context) { return; }
                 const bytes = parts.map((part) => Uint8Array.from(atob(part), (character) => character.charCodeAt(0)));
-                const audio = await context.decodeAudioData(await new Blob(bytes).arrayBuffer());
+                const buffer = await new Blob(bytes).arrayBuffer();
+                const sameAudio = !expectedSha256 || await arrayBufferDigest('SHA-256', buffer) === expectedSha256;
+                if (savedAudio !== context) { return; }
+                if (!sameAudio) {
+                    clearSavedAudio();
+                    report('笔记里的原声已换过。请刷新学习库再试。');
+                    return;
+                }
+                const audio = await context.decodeAudioData(buffer);
                 if (savedAudio !== context) { return; }
                 const source = context.createBufferSource();
                 source.buffer = audio;
@@ -959,13 +968,14 @@ async function initializePage() {
          * @returns {HTMLButtonElement | null}
          */
         function makeSavedAudioButton(record, report) {
-            if (!matchesCategory(record, 'saved') || !savedAudioAttachment(record)) { return null; }
+            const attachment = savedAudioAttachment(record);
+            if (!matchesCategory(record, 'saved') || !attachment) { return null; }
             const button = document.createElement('button');
             button.type = 'button';
             button.textContent = '播放已存原声';
             button.onclick = () => {
                 report?.('');
-                void playSavedAudio(record.id, button, report ?? setStatus);
+                void playSavedAudio(record.id, attachment.sha256, button, report ?? setStatus);
             };
             return button;
         }
