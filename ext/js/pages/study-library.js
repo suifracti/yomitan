@@ -43,7 +43,7 @@ const SOURCES_UPDATE_BRIDGE = '当前的本机桥还不能按素材查看。可�
 /** @typedef {'cloze'|'dictation'|'recall'} PracticeMode */
 /** @typedef {{row: StudyLibraryRecord, kind: 'cloze'|'dictation'|'read', text: string, answer: string, hint: string}} SentencePrompt */
 /** @typedef {{prompts: SentencePrompt[], hasMore: boolean}} DictationRound */
-/** @typedef {{url: string, title: string, records: number, audio: number}} SourceShelfItem */
+/** @typedef {{url: string, title: string, records: number, audio: number, recall?: number}} SourceShelfItem */
 
 /**
  * @param {unknown} value
@@ -142,7 +142,7 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
  * @param {SourceShelfItem} source
  * @returns {HTMLElement}
  */
-function renderSourceShelfItem({url, title, records, audio}) {
+function renderSourceShelfItem({url, title, records, audio, recall}) {
     const parsed = new URL(url);
     const local = parsed.protocol === 'file:';
     const youtube = YOUTUBE_HOSTS.has(parsed.hostname);
@@ -161,7 +161,7 @@ function renderSourceShelfItem({url, title, records, audio}) {
     heading.textContent = local ? path.split('/').pop() ?? path : title.trim() || `${locationLabel} ${fallbackTitle}`;
     const counts = document.createElement('p');
     counts.className = 'study-library-source';
-    counts.textContent = `${locationLabel} · ${records} 条记录${audio ? ` · ${audio} 条有原声` : ''}`;
+    counts.textContent = `${locationLabel} · ${records} 条记录${audio ? ` · ${audio} 条有原声` : ''}${recall ? ` · ${recall} 条卡点` : ''}`;
     const actions = document.createElement('div');
     actions.className = 'study-library-actions';
     const related = document.createElement('a');
@@ -176,6 +176,14 @@ function renderSourceShelfItem({url, title, records, audio}) {
         listen.href = practice.href;
         listen.textContent = '练原声听写';
         actions.append(listen);
+    }
+    if (recall) {
+        const practice = new URL(related.href);
+        practice.searchParams.set('practice', 'recall');
+        const recallLink = document.createElement('a');
+        recallLink.href = practice.href;
+        recallLink.textContent = '复习本素材卡点';
+        actions.append(recallLink);
     }
     card.append(heading, counts, actions);
     return card;
@@ -817,6 +825,7 @@ async function initializePage() {
         const practiceButton = byId('study-library-practice-button');
         const clozeButton = byId('study-library-cloze-button');
         const dictationButton = byId('study-library-dictation-button');
+        const sourceRecallButton = byId('study-library-source-recall');
         const listenSource = /** @type {HTMLButtonElement} */ (byId('study-library-listen-source'));
         const practice = byId('study-library-practice');
         let lookupWarning = '';
@@ -956,14 +965,16 @@ async function initializePage() {
         const requestedSource = requested.get('source') || '';
         search.value = (requested.get('query') || '').slice(0, 240);
         const sourceUrl = librarySource(requestedSource);
-        const requestedDictation = Boolean(sourceUrl && requested.get('practice') === 'dictation');
+        const sourcePractice = sourceUrl ? requested.get('practice') : '';
+        const requestedDictation = sourcePractice === 'dictation';
+        const requestedSourceRecall = sourcePractice === 'recall';
         const recallId = requested.get('recall') || '';
         const requestedRecall = !sourceUrl && /^[a-f0-9]{32}$/.test(recallId) ? recallId : '';
         let focusRecall = requestedRecall;
         const legacyWordPractice = !sourceUrl && !requested.has('word') && requested.get('practice') === 'word';
         const word = sourceUrl || requestedRecall ? '' : (requested.get('word') || (legacyWordPractice ? search.value : '')).trim().slice(0, 128);
         if (legacyWordPractice) { search.value = ''; }
-        let openRequestedPractice = Boolean(requestedRecall) || requestedDictation || Boolean(word && requested.get('practice') === 'word');
+        let openRequestedPractice = Boolean(requestedRecall) || requestedDictation || requestedSourceRecall || Boolean(word && requested.get('practice') === 'word');
         let category = word ? 'word' : 'all';
         if (sourceUrl) {
             category = 'source';
@@ -1007,7 +1018,9 @@ async function initializePage() {
         let dictation = [];
         /** @type {{button: HTMLElement, label: string} | null} */
         let sentenceSearch = null;
-        const sentenceButtons = [clozeButton, dictationButton];
+        /** @type {SentencePrompt[]} */
+        let sourceRecall = [];
+        const sentenceButtons = [clozeButton, dictationButton, sourceRecallButton];
         const moreScopedPrompts = () => {
             if (!['source', 'word', 'recent-recall'].includes(category) || loading || listError || offset >= total) { return false; }
             return listedCategory === category && (!canSearch || listedQuery === search.value.trim());
@@ -1039,6 +1052,7 @@ async function initializePage() {
             practiceButton.textContent = practiceLabel();
             clozeButton.textContent = clozeLabel();
             dictationButton.textContent = '练原声听写';
+            sourceRecallButton.textContent = '复习本素材卡点';
             for (const button of [practiceButton, ...sentenceButtons]) { button.setAttribute('aria-expanded', 'false'); }
         }
         /**
@@ -1142,7 +1156,10 @@ async function initializePage() {
                 setStatus(failed ? '后面的原句没有读到，可以再试一次。' : '这次没找到能练的原句，可以继续看记录。');
             }
         }
-        for (const button of sentenceButtons) {
+        sourceRecallButton.addEventListener('click', () => {
+            togglePractice(sourceRecallButton, () => showSentencePractice(practice, sourceRecall, 'recall', makeSavedAudioButton, clearSavedAudio));
+        });
+        for (const button of [clozeButton, dictationButton]) {
             button.addEventListener('click', () => { void startSentencePractice(button); });
         }
 
@@ -1604,6 +1621,8 @@ listedQuery :
             clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
             const canOfferDictation = total > 0 || dictation.length > 0 || activePractice === dictationButton;
             dictationButton.hidden = recall || waiting || loading || Boolean(listError) || category === 'anki-only' || !canOfferDictation;
+            sourceRecall = category === 'source' && !waiting && !loading && !listError && recallRound ? sentencePrompts(recallRound, [], 'recall') : [];
+            sourceRecallButton.hidden = sourceRecall.length === 0;
             if (activePractice?.hidden) { closePractice(); }
             listenSource.hidden = !sourceVideoId || !practice.hidden;
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
@@ -1728,7 +1747,7 @@ listedQuery :
                 if (reset) {
                     records.clear();
                     sourceShelf.length = 0;
-                    recallRound = tab === 'recent-recall' ? result?.recallRound ?? null : null;
+                    recallRound = ['source', 'recent-recall'].includes(tab) ? result?.recallRound ?? null : null;
                     const contrast = result?.practicePair ?? [];
                     const examples = result?.practiceExamples ?? [];
                     compareExamples = contrast.length !== 2 && examples.length === 2;
@@ -1797,8 +1816,15 @@ listedQuery :
                     void loadPage(true, read);
                 } else if (openRequestedPractice) {
                     openRequestedPractice = false;
-                    if (!obsolete() && !listError && tab === 'source' && requestedDictation && !dictationButton.hidden) {
-                        dictationButton.click();
+                    if (!obsolete() && !listError && tab === 'source') {
+                        if (requestedDictation && !dictationButton.hidden) { dictationButton.click(); }
+                        if (requestedSourceRecall) {
+                            if (!sourceRecallButton.hidden) {
+                                sourceRecallButton.click();
+                            } else {
+                                setStatus(recallRound ? '这份素材目前没有可练的卡点，可先看下面的原句。' : '本机桥还不能按素材复习卡点，可先看下面的原句。');
+                            }
+                        }
                     } else if (!obsolete() && !listError && tab === 'word') {
                         if (!practiceButton.hidden) {
                             practiceButton.click();

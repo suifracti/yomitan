@@ -14,16 +14,25 @@ class RecordIndexTests(AutoSyncTests):
     def test_source_shelf_groups_saved_contexts_and_search_keeps_whole_group_counts(self):
         yt = 'https://www.youtube.com/watch?v=abcdefghijk&t=4s'
         local = 'file:///examples/a/Lesson.mp4#study-duration=18'
+        bilibili = 'https://www.bilibili.com/video/BV1xx411c7mD?p=2'
+        article = 'https://example.test/coast'
+        ids = {}
         for word, url in [('beacon', yt), ('harbor', 'https://youtu.be/abcdefghijk?t=13s'),
-                          ('change', local), ('bridge', local.replace('/a/', '/b/'))]:
+                          ('change', local), ('bridge', local.replace('/a/', '/b/')),
+                          ('charge', bilibili), ('charge', bilibili.replace('p=2', 'p=1')),
+                          ('shore', article + '#harbor'), ('shore', 'https://example.test/other')]:
+            sentence = f'We saw a {word}.'
             row = self.library.handle({'action': 'librarySave', 'makeCard': False,
-                                        'entry': {'word': word, 'sentence': f'We saw a {word}.', 'url': url, 'videoTime': 4}})
+                                        'entry': {'word': word, 'sentence': sentence, 'url': url, 'videoTime': 4, 'title': 'Same title'}})
             if word in ('beacon', 'change'):
                 self.library.handle({'action': 'libraryMedia', 'id': row['id'], 'version': row['version'],
                                      'start': 4, 'end': 6, 'origin': 'capture', 'assets': [asset('audio', 'audio/webm', WEBM)]})
+            ids[url] = row['id']
+            if word != 'beacon':
+                self.library.handle({'action': 'libraryContextMiss', 'word': word, 'kind': 'recall', 'url': url, 'sentence': sentence, 'videoTime': 4})
         request = {'action': 'libraryList', 'scope': 'sources', 'url': '', 'title': ''}
         all_sources = self.library.handle(request)
-        self.assertEqual(all_sources['total'], 3)
+        self.assertEqual(all_sources['total'], 7)
         self.assertEqual({row['url'] for row in all_sources['sources'] if row['url'].startswith('file:')},
                          {local, local.replace('/a/', '/b/')})
         self.calls.clear()
@@ -31,7 +40,11 @@ class RecordIndexTests(AutoSyncTests):
                 patch('study_media.attachment', side_effect=AssertionError('source shelf opened audio')):
             found = self.library.handle({**request, 'query': 'harbor'})
             self.assertEqual(found['total'], 1)
-            self.assertEqual([(s['records'], s['audio']) for s in found['sources']], [(2, 1)])
+            self.assertEqual([(s['records'], s['audio'], s['recall']) for s in found['sources']], [(2, 1, 1)])
+            for url, key in ((yt, 'https://youtu.be/abcdefghijk?t=13s'), (bilibili + '&t=4', bilibili),
+                             (article + '#later', article + '#harbor'), (local, local)):
+                scoped = self.library.handle({**request, 'scope': 'source', 'url': url})
+                self.assertEqual([row['id'] for row in scoped['recallRound']], [ids[key]])
             self.assertEqual(self.library.handle({**request, 'offset': 1})['sources'], all_sources['sources'][1:])
         self.assertEqual(self.calls, [])
 

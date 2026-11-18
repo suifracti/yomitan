@@ -8,6 +8,7 @@ import os
 import pathlib
 import re
 import tempfile
+import time
 
 from study_cards import card_receipts, linked_note_ids, with_card_progress
 from study_sources import page_source_key, with_article_href
@@ -60,6 +61,8 @@ def saved_record(row):
 
 
 def indexed_sources(rows, query, offset):
+    from study_senses import recent_recall
+    now = time.time()
     groups = {}
     matched = set()
     for row in rows:
@@ -67,9 +70,10 @@ def indexed_sources(rows, query, offset):
         url = entry['url']
         if not url or not saved_record(row): continue
         key = page_source_key(url)
-        group = groups.setdefault(key, {'url': url, 'title': '', 'records': 0, 'audio': 0, 'created': ''})
+        group = groups.setdefault(key, {'url': url, 'title': '', 'records': 0, 'audio': 0, 'recall': 0, 'created': ''})
         group['records'] += 1
         group['audio'] += bool(entry['sentence'] and has_current_audio(row))
+        group['recall'] += bool(recent_recall(row, now))
         if row['created'] > group['created']:
             group.update(url=url, title=entry['title'] or group['title'], created=row['created'])
         if not group['title']: group['title'] = entry['title']
@@ -96,8 +100,8 @@ def indexed_page(rows, p, *, complete=True):
         head = word_aliases(row['entry'] for row in rows).get(word) or word
         rows = [row for row in rows if canonical(row['entry']) == head]
     matches = []
-    if scope == 'recent-recall':
-        import time
+    source_recall = scope == 'source' and bool(source) and not offset and not dictation
+    if scope == 'recent-recall' or source_recall:
         from study_senses import recall_round, recent_recall
         now = time.time()
     for row in rows:
@@ -152,8 +156,12 @@ def indexed_page(rows, p, *, complete=True):
     def list_item(row):
         return with_article_href(with_card_progress(with_audio_context(row)))
 
-    if scope == 'recent-recall' and not offset:
-        chosen = recall_round(row for _, _, row in matches)
+    if (scope == 'recent-recall' and not offset) or source_recall:
+        ranked = matches
+        if source_recall:
+            ranked = [(rank, at, row) for rank, _, row in matches if (at := recent_recall(row, now))]
+            ranked.sort(key=lambda match: match[:2], reverse=True)
+        chosen = recall_round(row for _, at, row in ranked if at)
         extras['recallRound'] = [list_item(row) for row in chosen]
     return {'items': [list_item(row) for row in page], 'total': len(matches), 'canSearch': True, **extras}
 

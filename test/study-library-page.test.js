@@ -74,6 +74,7 @@ function makePageDom() {
             <button id="study-library-practice-button" hidden>用旧原句辨词义</button>
             <button id="study-library-cloze-button" hidden>练原句填空</button>
             <button id="study-library-dictation-button" hidden>练原声听写</button>
+            <button id="study-library-source-recall" hidden>复习本素材卡点</button>
             <button id="study-library-listen-source" hidden>回视频练一轮</button>
             <section id="study-library-practice" hidden></section>
             <button id="study-library-export-saved">导出已收集收藏</button>
@@ -611,8 +612,8 @@ describe('study library page', () => {
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         const row = {id: 'a'.repeat(32), vaultSaved: true, entry: {word: 'shelter', sentence: 'We built a shelter.', url, videoTime: 12}, media: {audio: {name: 'own-clip.webm'}}};
         mocks.studyCall.mockImplementation(async (_action, value) => (value?.scope === 'sources' ?
-            {sources: [{url, title: '', records: 1, audio: 1}], total: 1, canSearch: true} :
-            {items: [row], total: 1, canSearch: true}));
+            {sources: [{url, title: '', records: 1, audio: 1, recall: 1}], total: 1, canSearch: true} :
+            {items: [row], recallRound: [row], total: 1, canSearch: true}));
         try {
             const {createSourceLine} = await import('../ext/js/pages/study-library.js');
             const source = createSourceLine(row.entry, '', '', 'chrome-extension://test/study-library.html');
@@ -631,12 +632,23 @@ describe('study library page', () => {
             document.querySelector('[data-library-category="sources"]').click();
             await vi.waitFor(() => expect(document.querySelector('#study-library-list [data-material] h2')?.textContent).toBe('lesson one.mp4'));
             const shelf = document.querySelector('#study-library-list [data-material]');
-            expect(shelf?.textContent).toContain('/examples/folder-a/lesson one.mp4 · 1 条记录 · 1 条有原声');
+            expect(shelf?.textContent).toContain('/examples/folder-a/lesson one.mp4 · 1 条记录 · 1 条有原声 · 1 条卡点');
             const links = [...(shelf?.querySelectorAll('a') ?? [])].map((a) => new URL(a.href));
             expect(links.map((link) => [link.protocol, link.searchParams.get('source'), link.searchParams.get('practice')])).toEqual([
-                ['chrome-extension:', url, null], ['chrome-extension:', url, 'dictation'],
+                ['chrome-extension:', url, null], ['chrome-extension:', url, 'dictation'], ['chrome-extension:', url, 'recall'],
             ]);
             expect(mocks.studyCall.mock.calls.slice(2)).toEqual([['libraryList', {language: 'en', url: '', title: '', scope: 'sources', offset: 0}]]);
+            history.replaceState(null, '', links[2].search);
+            vi.resetModules();
+            mocks.studyCall.mockClear();
+            makePageDom();
+            await import('../ext/js/pages/study-library.js');
+            const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+            await vi.waitFor(() => expect(panel.textContent).toContain('复习最近卡点 · 1 / 1'));
+            const reveal = [...panel.querySelectorAll('button')].find((button) => button.textContent === '直接看原句');
+            reveal?.click();
+            expect(panel.textContent).toContain('We built a shelter.');
+            expect(mocks.studyCall.mock.calls).toEqual([['libraryList', {...params, offset: 0}]]);
         } finally {
             history.replaceState(null, '', previousUrl);
         }
