@@ -64,3 +64,26 @@ def time_link(url, seconds, label=None):
 def source_link(label, url):
     # Keep parentheses in article titles from closing a Markdown link early.
     return f'[{label}]({url.replace("(", "%28").replace(")", "%29")})'
+
+
+def article_href(entry):
+    """An optional browser text fragment for a plain page, never its saved identity."""
+    url = entry.get('url', '')
+    sentence = ' '.join(entry.get('sentence', '').split())
+    if 'videoTime' in entry or len(sentence) > 400 or len(sentence.split()) < 3:
+        return ''
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return ''
+    host = parsed.hostname or ''
+    if (parsed.scheme not in ('http', 'https') or not host or parsed.fragment or
+            host in YOUTUBE_HOSTS or host == BILIBILI_HOST or host.endswith('.' + BILIBILI_HOST)):
+        return ''
+    selected = urllib.parse.quote(sentence, safe='').replace('-', '%2D')
+    return url.partition('#')[0] + '#:~:text=' + selected
+
+
+def with_article_href(row):
+    href = article_href(row['entry'])
+    return {**row, 'articleHref': href} if href else row

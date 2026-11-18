@@ -75,6 +75,7 @@ export type SaveTargetSettings = {deckByKind?: Partial<Record<CardKind, string>>
 
 export type LibraryRecord = {
     searchHit?: {label: string, text: string};
+    articleHref?: string;
     cardProgress?: {confirmed: number, waiting: number, stage?: number};
     turnIds?: string[];
     manualKnown?: boolean;

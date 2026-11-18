@@ -8,6 +8,7 @@ import time
 
 from study_library import entry_id, entry_lemma as canonical, paragraph, text, source_url
 from study_cards import CARD_STAGES, card_receipts
+from study_sources import with_article_href
 
 MISS_KINDS = ('newSense', 'collocation', 'structure', 'recall')
 MATURE = {'familiar', 'known'}
@@ -208,7 +209,7 @@ def practice_pair(rows, word):
         seen_senses.add(key)
         seen_glosses.add(short)
         fields = ('word', 'sentence', 'sense', 'context', 'url', 'title', 'videoTime', 'language')
-        pair.append({'id': row['id'], 'entry': {k: e[k] for k in fields if k in e}})
+        pair.append(with_article_href({'id': row['id'], 'entry': {k: e[k] for k in fields if k in e}}))
         if len(pair) == 2:
             return pair
     return []

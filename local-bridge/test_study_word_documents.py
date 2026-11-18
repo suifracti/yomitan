@@ -35,6 +35,20 @@ class WordDocumentTests(unittest.TestCase):
         return (library or self.library).handle({'action': 'librarySave', 'entry': entry or self.entry(),
             'makeCard': False, 'turns': turns or [], 'targetId': target or self.target})
 
+    def test_opening_a_web_source_can_locate_the_original_sentence_without_changing_its_identity(self):
+        url = 'https://example.com/essay?issue=7'
+        sentence = 'It is a well-made, just decision.'
+        saved = self.save(self.entry(sentence, url, title='A reading'))
+        chapter = self.save(self.entry(sentence, url + '#chapter-two', title='Existing anchor'))
+        response = self.fresh().handle({'action': 'libraryList', 'scope': 'all', 'url': '', 'title': ''})
+        rows = {row['id']: row for row in response['items']}
+        href = url + '#:~:text=It%20is%20a%20well%2Dmade%2C%20just%20decision.'
+        self.assertEqual((rows[saved['id']]['entry']['url'], rows[saved['id']]['articleHref']), (url, href))
+        self.assertNotIn('articleHref', rows[chapter['id']])
+        lib = self.fresh().library_for(self.target)
+        self.assertIn(f'来源：[A reading]({href})', lib.read(saved['id'])[1])
+        self.assertIn(f'来源：[Existing anchor]({url}#chapter-two)', lib.read(chapter['id'])[1])
+
     def test_same_word_different_contexts_share_one_file_but_keep_separate_answers(self):
         a = self.save(turns=[self.turn('turn-first', 'FIRST ANSWER')])
         other = self.entry('I have just arrived.', 'https://example.com/b', meaning='recently')

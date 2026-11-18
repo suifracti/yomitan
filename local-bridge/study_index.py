@@ -10,6 +10,7 @@ import re
 import tempfile
 
 from study_cards import linked_note_ids, with_card_progress
+from study_sources import with_article_href
 
 
 def needs_attention(row):
@@ -73,7 +74,7 @@ def indexed_page(rows, p):
         matches.append((rank, row))
     matches.sort(key=lambda x: (x[0], x[1]['created']), reverse=True)
     offset = p.get('offset', 0)
-    return {'items': [with_card_progress(row) for _, row in matches[offset:offset + 10]], 'total': len(matches), 'canSearch': True}
+    return {'items': [with_article_href(with_card_progress(row)) for _, row in matches[offset:offset + 10]], 'total': len(matches), 'canSearch': True}
 
 
 class RecordIndex:

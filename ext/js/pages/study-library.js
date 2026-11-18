@@ -35,7 +35,7 @@ const PAGE_SIZE = 10;
 
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
-/** @typedef {{id: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
+/** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
 
 /**
  * @param {unknown} value
@@ -85,9 +85,10 @@ function plainText(value) {
 /**
  * @param {{url?: string, videoTime?: number}} entry
  * @param {string} title
+ * @param {string} [articleHref] The bridge's optional direct link to the saved sentence.
  * @returns {HTMLElement | null}
  */
-export function createSourceLine(entry, title) {
+export function createSourceLine(entry, title, articleHref = '') {
     let name = title.trim();
     let href = '';
     try {
@@ -98,7 +99,7 @@ export function createSourceLine(entry, title) {
             const host = url.hostname.replace(/^www\./, '');
             const platform = YOUTUBE_HOSTS.has(url.hostname) ? 'YouTube' : host;
             name = name ? `${platform} · ${name}` : platform;
-            href = timedUrl(url.href, entry.videoTime).url;
+            href = articleHref || timedUrl(url.href, entry.videoTime).url;
             if (Number.isFinite(entry.videoTime) && entry.videoTime >= 0) {
                 const seconds = Math.floor(entry.videoTime);
                 name += ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -292,7 +293,7 @@ function showSensePractice(panel, pair) {
                 const saved = entry.sense.gloss;
                 answer.textContent = label === saved ? `你当时记的是「${saved}」。` : `你选了「${label}」，这句你当时记的是「${saved}」。`;
                 const legacy = parseLegacySourceLocator(entry.context);
-                const source = createSourceLine(entry, entry.title || (typeof legacy?.title === 'string' ? legacy.title : ''));
+                const source = createSourceLine(entry, entry.title || (typeof legacy?.title === 'string' ? legacy.title : ''), row.articleHref);
                 if (source) { answer.append(source); }
                 const resume = document.createElement('a');
                 resume.textContent = '继续学习 ↗';
@@ -615,7 +616,7 @@ listedQuery :
                 context.textContent = record.entry.context;
                 article.append(context);
             }
-            const sourceLine = createSourceLine(record.entry ?? {}, record.entry?.title?.trim() || (typeof legacyLocator?.title === 'string' ? legacyLocator.title : ''));
+            const sourceLine = createSourceLine(record.entry ?? {}, record.entry?.title?.trim() || (typeof legacyLocator?.title === 'string' ? legacyLocator.title : ''), record.articleHref);
             if (sourceLine) { article.append(sourceLine); }
             const technicalDetails = makeTechnicalDetails(record.path, record.entry?.subtitleSource, legacyLocator);
             if (technicalDetails) { article.append(technicalDetails); }

@@ -19,7 +19,7 @@ import urllib.request
 from study_cards import MASTERY_LABELS, card_key, with_card_progress
 from study_index import indexed_page
 from study_protocol import SETTINGS_ACTIONS
-from study_sources import media_key_of, source_link, time_link
+from study_sources import article_href, media_key_of, source_link, time_link, with_article_href
 
 RELATIVE = pathlib.Path('01-高考2027/05-英语（Larry）/语境词库')
 JAPANESE_RELATIVE = pathlib.Path('02-个人与生活/语言学习/日语/语境词库')
@@ -455,7 +455,7 @@ def source_line(entry):
     parsed = urllib.parse.urlsplit(url)
     title = safe_markdown(entry.get('title') or url)
     if parsed.scheme in ('http', 'https'):
-        source = time_link(url, entry['videoTime'], title) if 'videoTime' in entry else source_link(title, url)
+        source = time_link(url, entry['videoTime'], title) if 'videoTime' in entry else source_link(title, article_href(entry) or url)
     elif parsed.scheme == 'file':
         source = safe_markdown(urllib.parse.unquote(parsed.path.rsplit('/', 1)[-1]))
     else:
@@ -763,7 +763,7 @@ class StudyLibrary:
     def result(self, ident):
         path = self.path(ident)
         r, body, version = self.read_file(path, ident)
-        return with_card_progress(self.result_from(r, body, version, path))
+        return with_article_href(with_card_progress(self.result_from(r, body, version, path)))
 
     def indexed_files(self):
         from study_index import RecordIndex
