@@ -114,7 +114,7 @@ test('sentence translation stays manual and paints inline from the current saved
    if(studyAction==='generate'){
      modelCalls++;assert.equal(data.mode,'translate');assert.equal(data.sentence,'We are tired of this.');
      assert.equal(data.question,'','manual translation must not consume a typed follow-up');
-     turns=[{id:'translation1',translation:'我们已经厌倦了这件事。',meaning:'tired of 是厌倦',notes:'',question:'',saved:false}];
+     turns=[{id:'translation1',mode:'translate',translation:'我们已经厌倦了这件事。',meaning:'',notes:'',question:'',saved:false}];
      return {ok:true,value:{result:turns[0],cached:false}};
    }
    throw new Error('Unexpected backend action '+studyAction);

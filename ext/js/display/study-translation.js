@@ -63,6 +63,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
     const original = source.querySelector('p');
     const action = source.querySelector('[data-study-translate-sentence]');
     if (!original || !action) { return () => {}; }
+    const inline = /** @type {HTMLElement|null} */ (source.querySelector('.study-source-translation'));
     const doc = source.ownerDocument;
     const view = doc.createElement('div'); view.className = 'sf-parallel-sentence';
     original.after(view);
@@ -70,6 +71,8 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
     let abort = new AbortController();
     let request = '';
     let sentence = '';
+    let manual = false;
+    const shownInline = () => inline?.dataset.studyTranslationFor === sentence && Boolean(inline?.textContent?.trim());
     const cancel = () => {
         ++sequence; abort.abort();
         abort = new AbortController();
@@ -78,13 +81,17 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
         }
     };
     const paint = async (explicit = false) => {
+        const nextSentence = original.textContent.trim();
+        const completed = source.dataset.studySegmentSentence === sentence && Boolean(source.dataset.studySegmentTranslation) && view.childElementCount > 0;
+        if (!explicit && nextSentence === sentence && (manual || completed)) { return; }
         cancel();
         const run = sequence;
-        sentence = original.textContent.trim();
+        sentence = nextSentence;
+        manual = explicit;
         const split = splitStudySentence(sentence);
         const parts = split.length > 0 ? split : [sentence];
-        source.classList.toggle('sf-segmented-source', split.length > 0);
-        view.replaceChildren(); view.hidden = false;
+        source.classList.remove('sf-segmented-source');
+        view.replaceChildren(); view.hidden = true;
         delete source.dataset.studySegmentTranslation;
         delete source.dataset.studySegmentSentence;
         if (!sentence) { return; }
@@ -108,7 +115,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                 english.append(text.slice(0, selected - start), mark.cloneNode(true), text.slice(selected - start + mark.textContent.length));
             } else { english.textContent = text; }
             const chinese = doc.createElement('p'); chinese.className = 'sf-segment-translation';
-            chinese.lang = 'zh-CN'; chinese.textContent = '翻译中…';
+            chinese.lang = 'zh-CN';
             if (split.length > 0) { row.append(english); }
             row.append(chinese); view.append(row);
             return {text, chinese};
@@ -116,21 +123,37 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
         const status = doc.createElement('p'); status.className = 'sf-parallel-status';
         status.setAttribute('role', 'status');
         view.append(status);
-        action.hidden = false;
+        action.hidden = shownInline();
         try {
             const prefs = await readSubtitlePrefs();
             const engine = prefs.engine;
             if (run !== sequence || !isCurrent()) { return; }
-            if (!explicit && !prefs.autoTranslate) {
-                for (const row of rows) { row.chinese.textContent = ''; }
+            const inlineReady = !explicit && shownInline();
+            if (inlineReady ? split.length === 0 : (!explicit && !prefs.autoTranslate)) { return; }
+            const config = /** @type {Partial<import('study').StudyConfig>} */ (engine === 'model' ? await call('subtitleSettings') : {});
+            if (run !== sequence || !isCurrent()) { return; }
+            const engineKey = engine === 'model' ? JSON.stringify([engine, config.model, config.effort]) : engine;
+            const keyFor = (/** @type {string} */ text) => JSON.stringify([engineKey, language, text]);
+            if (inlineReady && inline) {
+                const cached = rows.map((row) => parallelTranslations.get(keyFor(row.text)));
+                if (cached.every(Boolean) && cached.join('') === inline.textContent) {
+                    for (const [i, row] of rows.entries()) { row.chinese.textContent = cached[i] ?? ''; }
+                    source.dataset.studySegmentSentence = sentence;
+                    source.dataset.studySegmentTranslation = inline.textContent;
+                    source.classList.add('sf-segmented-source');
+                    view.hidden = false;
+                    inline.hidden = action.hidden = true;
+                }
                 return;
             }
-            const config = /** @type {Partial<import('study').StudyConfig>} */ (engine === 'model' ? await call('subtitleSettings') : {});
-            const engineKey = engine === 'model' ? JSON.stringify([engine, config.model, config.effort]) : engine;
+            if (!explicit && shownInline()) { return; }
+            view.hidden = false;
+            source.classList.toggle('sf-segmented-source', split.length > 0);
+            for (const row of rows) { row.chinese.textContent = '翻译中…'; }
             for (let offset = 0; offset < rows.length; offset += 8) {
                 const batch = rows.slice(offset, offset + 8);
                 for (const row of batch) {
-                    const cached = parallelTranslations.get(JSON.stringify([engineKey, language, row.text]));
+                    const cached = parallelTranslations.get(keyFor(row.text));
                     row.chinese.textContent = cached || '翻译中…';
                     row.chinese.dataset.complete = String(Boolean(cached));
                 }
@@ -147,22 +170,22 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                     translations = missing.map((_, i) => value.items.find((item) => item.id === `part-${i}`)?.translation || '');
                     request = '';
                 }
-                if (run !== sequence || !isCurrent()) { return; }
+                if (run !== sequence || !isCurrent() || (!explicit && shownInline())) { return; }
                 for (const [i, row] of missing.entries()) {
                     if (!translations[i]) { throw new Error('没有取得译文'); }
                     row.chinese.textContent = translations[i];
                     row.chinese.dataset.complete = 'true';
-                    parallelTranslations.set(JSON.stringify([engineKey, language, row.text]), translations[i]);
+                    parallelTranslations.set(keyFor(row.text), translations[i]);
                 }
             }
-            if (run !== sequence || !isCurrent()) { return; }
+            if (run !== sequence || !isCurrent() || (!explicit && shownInline())) { return; }
             source.dataset.studySegmentSentence = sentence;
             source.dataset.studySegmentTranslation = rows.map((row) => row.chinese.textContent).join('');
             status.textContent = ''; action.hidden = true;
             view.hidden = false;
             source.dispatchEvent(new CustomEvent('study-sentence-translated'));
         } catch {
-            if (run !== sequence || !isCurrent()) { return; }
+            if (run !== sequence || !isCurrent() || (!explicit && shownInline())) { return; }
             status.textContent = '';
             for (const row of rows.filter((item) => item.chinese.dataset.complete !== 'true')) {
                 const retry = doc.createElement('button');
@@ -172,6 +195,8 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
                 row.chinese.replaceChildren('这段没翻译成功 · ', retry);
             }
             action.hidden = false;
+        } finally {
+            if (run === sequence) { manual = false; }
         }
     };
     const onTranslate = (event) => {
@@ -179,6 +204,10 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
         void paint(true);
     };
     action.addEventListener('click', onTranslate, true);
+    const onInline = () => {
+        if (view.hidden && shownInline()) { void paint(); }
+    };
+    source.addEventListener('study-inline-translation', onInline);
     const observer = new MutationObserver(() => {
         if (original.textContent.trim() !== sentence) { void paint(); }
     });
@@ -189,6 +218,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
         stopPrefs();
         cancel(); observer.disconnect();
         action.removeEventListener('click', onTranslate, true);
+        source.removeEventListener('study-inline-translation', onInline);
         source.classList.remove('sf-segmented-source'); view.remove();
     };
 }
@@ -567,15 +597,19 @@ export function prepareStudyTranslation() {
             /** @param {import('study').LearningTurn[]} turns */
             const paintSentenceTranslation = (turns) => {
                 if (!sentenceChinese || !translateSentence) { return; }
+                const originalText = editor.value.trim();
                 const answer = [...turns].reverse().find((turn) => currentAnswer(turn) && turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
-                const text = answer?.translation?.trim() || (editor.value.trim() === sentence.trim() ? source.translation || '' : '');
+                const text = answer?.translation?.trim() || (originalText === sentence.trim() ? source.translation || '' : '');
+                const segmentReady = sourceBox?.dataset.studySegmentSentence === originalText && Boolean(sourceBox?.dataset.studySegmentTranslation);
+                sentenceChinese.dataset.studyTranslationFor = originalText;
                 sentenceChinese.textContent = text;
-                const parallel = sourceBox?.querySelector('.sf-parallel-sentence');
-                if (text && parallel && !sourceBox.dataset.studySegmentTranslation) {
+                const parallel = /** @type {HTMLElement|null|undefined} */ (sourceBox?.querySelector('.sf-parallel-sentence'));
+                if (text && sourceBox && parallel && !segmentReady) {
                     parallel.hidden = true; sourceBox.classList.remove('sf-segmented-source');
                 }
-                sentenceChinese.hidden = !text || Boolean(parallel && !parallel.hidden && parallel.childElementCount);
-                translateSentence.hidden = Boolean(text);
+                sentenceChinese.hidden = !text || segmentReady;
+                translateSentence.hidden = Boolean(text) || segmentReady;
+                if (text && !segmentReady) { sourceBox?.dispatchEvent(new CustomEvent('study-inline-translation')); }
             };
             const more = d.createElement('details');
             more.className = 'study-more-actions';
@@ -1000,6 +1034,7 @@ export function prepareStudyTranslation() {
             for (const control of container.querySelectorAll('button, input, textarea, select, summary')) {
                 control.classList.add('scan-disable');
             }
+            paintSentenceTranslation([]);
             const initialHistoryReady = restore();
         }};
 }
