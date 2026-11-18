@@ -362,13 +362,15 @@ class YomitanLibrary:
                     if (r.get('syncState') == 'missing') != missing:
                         changed.append((lib.target_id, ident))
                 for note in info if isinstance(info, list) else []:
-                    nid, mod = str(note.get('noteId')), note.get('mod')
-                    if notes.get(nid) != mod:
-                        if not first:
-                            for tag in note.get('tags', []):
-                                if tag in owner:
-                                    changed.append(owner[tag])
-                        notes[nid] = mod
+                    nid = str(note['noteId'])
+                    tags = sorted(note.get('tags', []))
+                    contents = [note.get('modelName'), note.get('fields'), tags, sorted(note.get('cards', []))]
+                    stamp = hashlib.sha256(json.dumps(contents, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+                    previous = notes.get(nid)
+                    # Older caches hold seconds. Adopt an unchanged legacy stamp without rewriting the note.
+                    if not first and previous != stamp and not (type(previous) is int and previous == note.get('mod')):
+                        changed.extend(owner[tag] for tag in tags if tag in owner)
+                    notes[nid] = stamp
             except Exception:
                 paused = 'Anki 未打开，只检查了笔记一侧。'
         synced, conflicts, errors = 0, 0, []

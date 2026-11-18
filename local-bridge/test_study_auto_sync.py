@@ -78,6 +78,22 @@ class AutoSyncTests(unittest.TestCase):
         self.assertIn('砖块（Anki 里改的）', body)
         settle = self.library.handle({'action': 'libraryAutoSync'})
         self.assertEqual(settle['synced'], 0)
+        # notesInfo can keep the same second, or omit mod entirely.
+        api = self.library.anki
+        missing_mod = False
+        def notes_info(action, params):
+            result = api(action, params)
+            if missing_mod and action == 'notesInfo':
+                for row in result: row.pop('mod', None)
+            return result
+        self.library.anki = notes_info
+        for missing_mod, label in ((False, '同一秒再改'), (True, '没有修改时间')):
+            note = self.notes[note_id]['fields']
+            note['Definition'] = note['Definition'].replace('砖块', label + '砖块')
+            result = self.library.handle({'action': 'libraryAutoSync'})
+            self.assertEqual(result['synced'], 1)
+            self.assertIn(label + '砖块', next(self.vault.rglob('*brick*.md')).read_text())
+            self.assertEqual(self.library.handle({'action': 'libraryAutoSync'})['synced'], 0)
 
     def test_an_obsidian_edit_reaches_anki_on_the_next_pass(self):
         self.make_card()
