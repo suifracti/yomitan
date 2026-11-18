@@ -36,7 +36,7 @@ import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY} from './study-data.js';
 const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
 const ORIGINAL_CONTROLS = 'a[href],button:not([disabled])';
 const ORIGINAL_TOGGLE_STYLE = '.study-page-original-toggle{margin-inline-start:.5em;padding:0 .35em;font:inherit;font-size:.85em;line-height:1.4;background:var(--st-paper,#fbfaf7);color:var(--st-accent,#505ead);border:1px solid var(--st-line,#dce2eb);border-radius:4px;cursor:pointer}';
-const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:24px;height:24px;padding:0}.study-selection-trigger button{display:block;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--st-accent,#505ead);color:white;font:12px sans-serif;cursor:pointer}.study-selection-translation{border-left:2px solid var(--st-line,#dce2eb);padding-left:10px}.study-selection-actions{display:none;gap:2px;float:right}.study-selection-translation:hover .study-selection-actions,.study-selection-translation:focus-within .study-selection-actions,.study-selection-card .study-selection-actions{display:inline-flex}.study-selection-actions button,.study-selection-card header>button{all:unset;cursor:pointer;font:14px/1.4 sans-serif;padding:4px}.study-selection-card{width:360px;box-sizing:border-box;max-width:calc(100vw - 16px)}.study-selection-card header{display:flex;align-items:center;gap:4px}.study-selection-card .study-ui-select{flex:1;min-width:0}.study-selection-source{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;color:var(--st-muted,#6b7280)}.study-selection-source.is-expanded{display:block}.study-selection-card .study-page-translation{font-size:15px;color:var(--st-ink,#263248)}.study-page-flash{animation:study-page-flash .9s ease-out}@keyframes study-page-flash{from{background:var(--st-accent-soft,#e8eaff)}to{background:transparent}}.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
+const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:24px;height:24px;padding:0}.study-selection-trigger button{display:block;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--st-accent,#505ead);color:white;font:12px sans-serif;cursor:pointer}.study-selection-translation{border-left:2px solid var(--st-line,#dce2eb);padding-left:10px}.study-selection-actions{display:none;gap:2px;float:right}.study-selection-translation:hover .study-selection-actions,.study-selection-translation:focus-within .study-selection-actions,.study-selection-card .study-selection-actions{display:inline-flex}.study-selection-actions button,.study-selection-card header>button{all:unset;cursor:pointer;font:14px/1.4 sans-serif;padding:4px}.study-selection-card{width:360px;box-sizing:border-box;max-width:calc(100vw - 16px)}.study-selection-card header{display:flex;align-items:center;gap:4px}.study-selection-card header>button[hidden]{display:none}.study-selection-card .study-ui-select{flex:1;min-width:0}.study-selection-source{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;color:var(--st-muted,#6b7280)}.study-selection-source.is-expanded{display:block}.study-selection-card .study-page-translation{font-size:15px;color:var(--st-ink,#263248)}.study-page-flash{animation:study-page-flash .9s ease-out}@keyframes study-page-flash{from{background:var(--st-accent-soft,#e8eaff)}to{background:transparent}}.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
 
 /**
  * The language declared for the text, not necessarily the site's interface language.
@@ -504,6 +504,17 @@ export class PageTranslate {
             return;
         }
         const inline = this.prefs.selectionDisplay !== 'card';
+        /** @type {HTMLSelectElement|undefined} */
+        let engineSelect;
+        /** @type {HTMLButtonElement|undefined} */
+        let retry;
+        /** @type {SubtitleEngine|undefined} */
+        let usedEngine;
+        let failed = false;
+        let settingsReady = Promise.resolve();
+        const paintRetry = () => {
+            if (retry && engineSelect) { retry.hidden = !failed && (!usedEngine || engineSelect.value === usedEngine); }
+        };
         this.selectionUi = null;
         if (inline) {
             ui.remove();
@@ -519,9 +530,18 @@ export class PageTranslate {
             ui.replaceChildren();
             const header = document.createElement('header');
             const engine = document.createElement('select');
+            engineSelect = engine;
             engine.setAttribute('aria-label', '翻译服务');
             fillEngineSelect(engine, (await readSubtitlePrefs()).engine);
-            engine.onchange = () => { void writeSubtitlePrefs({engine: /** @type {import('./subtitle-prefs.js').SubtitleEngine} */ (engine.value)}); };
+            retry = Object.assign(document.createElement('button'), {type: 'button', textContent: '重译', title: '用当前服务重译这句', hidden: true});
+            retry.dataset.selectionRetry = '';
+            retry.onclick = () => { void attempt(/** @type {SubtitleEngine} */ (engine.value)); };
+            engine.addEventListener('study-ui-sync', paintRetry);
+            engine.onchange = () => {
+                settingsReady = writeSubtitlePrefs({engine: /** @type {SubtitleEngine} */ (engine.value)}).then(() => {});
+                void settingsReady.catch(() => {});
+                paintRetry();
+            };
             const pin = Object.assign(document.createElement('button'), {type: 'button', textContent: '📌', title: '固定'});
             pin.setAttribute('aria-pressed', 'false');
             pin.onclick = () => {
@@ -530,7 +550,7 @@ export class PageTranslate {
             };
             const close = Object.assign(document.createElement('button'), {type: 'button', textContent: '✕', title: '关闭'});
             close.onclick = () => this.closeSelectionCard();
-            header.append(engine, pin, close);
+            header.append(engine, retry, pin, close);
             ui.append(header);
             menuSelect(engine);
             const source = document.createElement('p');
@@ -545,73 +565,106 @@ export class PageTranslate {
             requestAnimationFrame(() => { expand.hidden = source.scrollHeight <= source.clientHeight + 1; });
             original = source;
         }
-        this.render(original, text, '翻译中…', true);
-        const waiting = this.rows.get(original);
-        try {
-            const translation = await this.requestText(text, language);
-            if (!original.isConnected || this.rows.get(original) !== waiting) { return; }
-            if (!isCurrent()) {
-                if (inline) {
-                    this.restore(original);
-                } else {
-                    this.closeSelectionCard();
-                }
+        const dismiss = () => {
+            if (inline) {
+                this.restore(original);
+            } else if (this.selectionCard === ui) {
+                this.closeSelectionCard();
+            }
+        };
+        const attempt = async (/** @type {SubtitleEngine|undefined} */ expectedEngine = void 0) => {
+            if (!original.isConnected || !isCurrent()) {
+                dismiss();
                 return;
             }
-            const node = this.render(original, text, translation, true);
-            if (inline) { node.classList.add('study-selection-translation'); }
-            const tools = document.createElement('span');
-            tools.className = 'study-selection-actions';
-            for (const [icon, label] of [['🔊', '朗读'], ['⧉', '复制'], ['☆', '记住这句'], ['✕', '收起']]) {
-                if (label === '记住这句' && language !== 'en') { continue; }
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.textContent = icon;
-                button.title = label;
-                button.setAttribute('aria-label', label);
-                button.onclick = (event) => {
-                    event.stopPropagation();
-                    void (async () => {
-                        if (label === '复制') {
-                            await navigator.clipboard.writeText(translation);
-                            button.textContent = '✓';
-                        }
-                        if (label === '朗读') {
-                            const voice = speechSynthesis.getVoices().find((v) => v.lang.split('-')[0].toLowerCase() === language);
-                            if (voice) {
-                                await new TextToSpeechAudio(text, voice).play();
-                            } else {
-                                button.title = '这个语言的朗读声音还没准备好，请再点一次';
+            const pending = this.render(original, text, '翻译中…', true);
+            const waiting = () => original.isConnected && this.rows.get(original)?.node === pending;
+            try {
+                await settingsReady;
+                const {engine} = await readSubtitlePrefs();
+                if (!waiting()) { return; }
+                if (!isCurrent()) {
+                    dismiss();
+                    return;
+                }
+                if (expectedEngine && expectedEngine !== engine) { throw new Error('翻译服务刚换了，请按现在的选择重译。'); }
+                usedEngine = engine;
+                failed = false;
+                paintRetry();
+                const translation = await this.requestText(text, language, engine);
+                if (!waiting()) { return; }
+                if (!isCurrent()) {
+                    dismiss();
+                    return;
+                }
+                const node = this.render(original, text, translation, true);
+                if (inline) { node.classList.add('study-selection-translation'); }
+                const tools = document.createElement('span');
+                tools.className = 'study-selection-actions';
+                for (const [icon, label] of [['🔊', '朗读'], ['⧉', '复制'], ['☆', '记住这句'], ['✕', '收起']]) {
+                    if (label === '记住这句' && language !== 'en') { continue; }
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.textContent = icon;
+                    button.title = label;
+                    button.setAttribute('aria-label', label);
+                    button.onclick = (event) => {
+                        event.stopPropagation();
+                        void (async () => {
+                            if (label === '复制') {
+                                await navigator.clipboard.writeText(translation);
+                                button.textContent = '✓';
                             }
-                        }
-                        if (label === '记住这句') {
-                            if (!isCurrent()) { throw new Error('页面或原句已经换了，请在当前文章重新选中这句。'); }
-                            button.disabled = true;
-                            const row = /** @type {import('study').LibraryRecord} */ (await studyCall('pageSentenceSave', {sentence: text, translation, source: sourceUrl}));
-                            if (row?.vaultSaved !== true) { throw new Error('没有收到保存确认，请先到学习库核对。'); }
-                            button.textContent = '★';
-                            button.title = row?.localSyncIncomplete ? LOCAL_SYNC_INCOMPLETE_TEXT : '已记住';
+                            if (label === '朗读') {
+                                const voice = speechSynthesis.getVoices().find((v) => v.lang.split('-')[0].toLowerCase() === language);
+                                if (voice) {
+                                    await new TextToSpeechAudio(text, voice).play();
+                                } else {
+                                    button.title = '这个语言的朗读声音还没准备好，请再点一次';
+                                }
+                            }
+                            if (label === '记住这句') {
+                                if (!isCurrent()) { throw new Error('页面或原句已经换了，请在当前文章重新选中这句。'); }
+                                button.disabled = true;
+                                const row = /** @type {import('study').LibraryRecord} */ (await studyCall('pageSentenceSave', {sentence: text, translation, source: sourceUrl}));
+                                if (row?.vaultSaved !== true) { throw new Error('没有收到保存确认，请先到学习库核对。'); }
+                                button.textContent = '★';
+                                button.title = row?.localSyncIncomplete ? LOCAL_SYNC_INCOMPLETE_TEXT : '已记住';
+                                button.setAttribute('aria-label', button.title);
+                            }
+                            if (label === '收起') {
+                                if (inline) {
+                                    this.restore(original);
+                                } else {
+                                    this.closeSelectionCard();
+                                }
+                            }
+                        })().catch((error) => {
+                            button.disabled = false;
+                            button.title = `没完成：${String(error)}`;
                             button.setAttribute('aria-label', button.title);
-                        }
-                        if (label === '收起') {
-                            if (inline) {
-                                this.restore(original);
-                            } else {
-                                this.closeSelectionCard();
-                            }
-                        }
-                    })().catch((error) => {
-                        button.disabled = false;
-                        button.title = `没完成：${String(error)}`;
-                        button.setAttribute('aria-label', button.title);
-                    });
-                };
-                tools.append(button);
+                        });
+                    };
+                    tools.append(button);
+                }
+                node.append(tools);
+            } catch (error) {
+                if (!waiting()) { return; }
+                if (!isCurrent()) {
+                    dismiss();
+                    return;
+                }
+                failed = true;
+                paintRetry();
+                pending.textContent = '没翻译成功：' + reasonOf(error);
+                if (inline) {
+                    const button = Object.assign(document.createElement('button'), {type: 'button', className: 'study-page-original-toggle', textContent: '重试'});
+                    button.onclick = () => { void attempt(); };
+                    pending.append(button);
+                }
             }
-            node.append(tools);
-        } catch (error) {
-            if (waiting && this.rows.get(original) === waiting) { waiting.node.textContent = `没翻译成功：${reasonOf(error)}，请重新选中后点「译」。`; }
-        }
+        };
+        await attempt(/** @type {SubtitleEngine|undefined} */ (engineSelect?.value));
     }
 
     /** @returns {Promise<void>} */

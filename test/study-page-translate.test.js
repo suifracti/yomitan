@@ -298,3 +298,59 @@ test('checks and runs Chrome translation in the language direction the caller as
         await env.teardown(global);
     }
 });
+
+test('retries the same pinned selection with a newly chosen service after the setting has saved', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<!DOCTYPE html><html lang="en"><body><p id="original">Keep the window open.</p></body></html>',
+        url: 'https://example.test/article',
+    }});
+    let selected = 'chrome';
+    let finishWrite = () => {};
+    const requests = [];
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage: async (/** @type {{studyAction: string, data?: {engine: string}}} */ message) => {
+            if (message.studyAction === 'subtitlePrefsUpdate') {
+                return await new Promise((resolve) => {
+                    finishWrite = () => {
+                        selected = message.data?.engine ?? selected;
+                        resolve({ok: true, value: {engine: selected}});
+                    };
+                });
+            }
+            return {ok: true, value: {model: 'fixture', effort: 'low'}};
+        }},
+        storage: {local: {get: async () => ({studyTranslationPrefs: {engine: selected}})}},
+    });
+    const {PageTranslate} = await import('../ext/js/study/page-translate.js');
+    const page = new PageTranslate({translate: async (text, {engine} = {}) => {
+        requests.push([text, engine]);
+        if (engine === 'chrome') { throw new Error('还没下载语言包'); }
+        return '别关窗。';
+    }});
+    page.prefs.selectionDisplay = 'card';
+    const original = /** @type {HTMLElement} */ (document.getElementById('original'));
+    const card = document.createElement('div');
+    document.body.append(card);
+    try {
+        await page.openSelection('Keep the window open.', card, original);
+        expect(card.textContent).toContain('还没下载语言包');
+        const click = (/** @type {string} */ selector) => /** @type {HTMLButtonElement} */ (card.querySelector(selector)).click();
+        click('[title="固定"]');
+        click('.su-current');
+        click('[data-value="google"]');
+        expect(requests).toEqual([['Keep the window open.', 'chrome']]);
+        click('[data-selection-retry]');
+        await Promise.resolve();
+        expect(requests).toHaveLength(1);
+        finishWrite();
+        await vi.waitFor(() => expect(card.querySelector('.study-page-translation')?.textContent).toContain('别关窗。'));
+        expect(requests).toEqual([['Keep the window open.', 'chrome'], ['Keep the window open.', 'google']]);
+        expect(page.selectionCard).toBe(card);
+        expect(card.dataset.pinned).toBe('true');
+        expect(original.textContent).toBe('Keep the window open.');
+    } finally {
+        page.stop();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
