@@ -410,7 +410,7 @@ export class YoutubeReader extends EventTarget {
             this._restoringVideoState = false;
             return;
         }
-        if (typeof state.offsetMs === 'number' && state.offsetMs !== 0 && state.trackKey === raw.source.trackKey) { this.setOffset(state.offsetMs, false); }
+        if (typeof state.offsetMs === 'number' && state.trackKey === raw.source.trackKey) { this.setOffset(state.offsetMs, false); }
         const at = state.resumeMs;
         const now = (this._video?.currentTime ?? 0) * 1000;
         if (this._prefs.resume && typeof at === 'number' && at > 30000 && Math.abs(at - now) > 15000 && this._view) {
@@ -1013,8 +1013,8 @@ export class YoutubeReader extends EventTarget {
     importText(text, name) {
         if (!this._view || !this._mediaKey) { return; }
         try {
-            const {cues, format} = parseSubtitles(text, name);
-            this._useCues(cues, {trackKey: `file:${name.slice(0, 100)}`, label: `${name.slice(0, 60)}（本地文件 · ${format.toUpperCase()}）`, language: '', acquisition: 'import'});
+            const {cues, format, translations, language = '', offsetMs} = parseSubtitles(text, name);
+            this._useCues(cues, {trackKey: `file:${name.slice(0, 100)}`, label: `${name.slice(0, 60)}（本地文件 · ${format.toUpperCase()}）`, language, acquisition: 'import', translations, offsetMs});
         } catch (error) {
             this._status(`导入失败：${error instanceof Error ? error.message : String(error)}`);
         }
@@ -1022,12 +1022,12 @@ export class YoutubeReader extends EventTarget {
 
     /**
      * @param {import('./subtitle-session.js').SubtitleCue[]} input
-     * @param {{trackKey: string, label: string, language: string, acquisition: 'provider'|'import'}} meta
+     * @param {{trackKey: string, label: string, language: string, acquisition: 'provider'|'import', translations?: Map<string,string>, offsetMs?: number}} meta
      */
     _useCues(input, meta) {
         const key = this._mediaKey;
         if (!key) { return; }
-        const bilingual = splitBilingual(input, meta.acquisition === 'import');
+        const bilingual = meta.translations ? null : splitBilingual(input, meta.acquisition === 'import');
         const cues = bilingual?.cues ?? input;
         // A session always needs a language; "und" is the standard code for an unknown one.
         const language = meta.language || guessLanguage(cues) || 'und';
@@ -1044,12 +1044,12 @@ export class YoutubeReader extends EventTarget {
         this._restoringVideoState = true;
         this._aiGroups = null;
         /** @type {Map<string, string>} */
-        const translations = bilingual?.translations ?? new Map();
+        const translations = meta.translations ?? bilingual?.translations ?? new Map();
         this._fileTranslations = translations;
-        this._offsetMs = 0;
+        this._offsetMs = meta.offsetMs ?? 0;
         this._present(session);
         void this._restoreVideoState(session);
-        if (bilingual) { this._status(`${meta.label} · ${cues.length} 句 · 已带中文译文`); }
+        if (translations.size > 0) { this._status(`${meta.label} · ${cues.length} 句 · 已带中文译文`); }
         if (this._prefs.aiSegment) { void this._runSegmentation(); }
     }
 

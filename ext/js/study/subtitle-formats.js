@@ -23,6 +23,7 @@ import {parseJson} from '../core/json.js';
 import {cuesFromTimedText, normalizeCues} from './subtitle-session.js';
 
 /** @typedef {'srt'|'vtt'|'sbv'|'ass'|'ttml'|'youtube'|'bilibili'|'json'} SubtitleFormat */
+/** @typedef {{cues: import('./subtitle-session.js').SubtitleCue[], format: SubtitleFormat, translations?: Map<string,string>, language?: string, offsetMs?: number}} ParsedSubtitles */
 
 const MAX_TEXT = 4_000_000;
 /** @type {Record<string, string>} */
@@ -198,10 +199,40 @@ function readJsonRows(data) {
 }
 
 /**
+ * Restore the reader's own JSON downloads. The reading rows carry translations;
+ * the unmerged cues in the same file remain available to other tools.
+ * @param {unknown} data
+ * @returns {ParsedSubtitles|null}
+ * @throws {TypeError} Invalid or empty reading rows.
+ */
+function readStudyExport(data) {
+    const file = /** @type {{source?: {language?: string}, cues?: (TimedRow & {translation?: string})[], rows?: (TimedRow & {translation?: string})[], offsetMs?: number}|null} */ (data);
+    if (!file?.source || !Array.isArray(file.cues) || !Array.isArray(file.rows)) { return null; }
+    const rows = file.rows.length > 0 ? file.rows : file.cues;
+    if (rows.length === 0) { throw new TypeError('没有读到带时间的字幕行。'); }
+    // Generate local IDs; a file's old video URL or track identity is not authoritative.
+    const cues = normalizeCues(rows.map(({startMs, endMs, text}) => ({startMs, endMs, text})));
+    const translations = new Map();
+    for (const cue of cues) {
+        const value = rows[cue.sourceIndex].translation;
+        if (typeof value === 'string' && value.trim()) { translations.set(cue.id, value.trim()); }
+    }
+    const language = file.source.language;
+    const offset = file.offsetMs;
+    return {
+        cues,
+        format: 'json',
+        translations,
+        ...(typeof language === 'string' && language.length <= 32 && /^[a-z]{2,3}(?:-[a-z\d]{1,8})*$/i.test(language) ? {language} : {}),
+        ...(typeof offset === 'number' && Number.isSafeInteger(offset) && Math.abs(offset) <= 600000 ? {offsetMs: offset} : {}),
+    };
+}
+
+/**
  * Reads any supported subtitle text into cues.
  * @param {string} text
  * @param {string} [name] File name or URL, used only as a hint.
- * @returns {{cues: import('./subtitle-session.js').SubtitleCue[], format: SubtitleFormat}}
+ * @returns {ParsedSubtitles}
  * @throws {Error}
  */
 export function parseSubtitles(text, name = '') {
@@ -219,6 +250,8 @@ export function parseSubtitles(text, name = '') {
             throw new TypeError('字幕 JSON 无法解析。');
         }
         if (data && typeof data === 'object' && 'events' in data) { return {cues: cuesFromTimedText(body), format: 'youtube'}; }
+        const saved = readStudyExport(data);
+        if (saved) { return saved; }
         const read = readJsonRows(data);
         if (read) { return {cues: finish(read.rows), format: read.format}; }
         throw new TypeError('不认识这种 JSON 字幕。');

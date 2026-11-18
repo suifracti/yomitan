@@ -75,6 +75,19 @@ test('Bilibili JSON in seconds and generic JSON in milliseconds', () => {
     expect(rows(parseSubtitles(clock))).toEqual([[1000, 2000, 'clock']]);
 });
 
+test('a previously exported reading view restores milliseconds, the saved translation and the offset', () => {
+    const backup = {
+        source: {language: 'en', trackKey: 'imported', url: 'https://example.com/old'},
+        offsetMs: -450,
+        cues: [{id: '4', startMs: 2300, endMs: 3400, text: 'Keep'}, {id: '5', startMs: 3400, endMs: 4100, text: 'the receipt.'}],
+        rows: [{id: '4', cueIds: ['4', '5'], startMs: 2300, endMs: 4100, text: 'Keep the receipt.', translation: '留好收据。'}],
+    };
+    const restored = parseSubtitles(JSON.stringify(backup), 'lesson.json');
+    expect(rows(restored)).toEqual([[2300, 4100, 'Keep the receipt.']]);
+    expect(restored).toMatchObject({format: 'json', language: 'en', offsetMs: -450});
+    expect(restored.translations?.get(restored.cues[0].id)).toBe('留好收据。');
+});
+
 test('YouTube json3 goes through the timed-text reader', () => {
     const json3 = JSON.stringify({events: [{tStartMs: 0, dDurationMs: 1000, segs: [{utf8: 'Hi'}]}]});
     expect(parseSubtitles(json3)).toMatchObject({format: 'youtube', cues: [{startMs: 0, endMs: 1000, text: 'Hi'}]});

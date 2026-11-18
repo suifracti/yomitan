@@ -161,6 +161,7 @@ function matchesSearch(record, query) {
     if (!query) { return true; }
     // Local-only favorites, or a bridge too old to search its index.
     const entry = 'entry' in record ? record.entry : record;
+    /** @type {(string|undefined)[]} */
     const fields = [entry.word, entry.sentence, entry.title, (entry.url || '').split(/[?#]/, 1)[0]];
     if ('entry' in record) {
         const e = record.entry;

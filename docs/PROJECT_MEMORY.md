@@ -19,6 +19,7 @@
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
+| 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
@@ -133,6 +134,8 @@
 证据：test/study-web-reader.test.js 中新增一个连续场景，先复现错误默认英语，再覆盖恢复中文/偏移与继续入口、显式切英语、旧轨失效退回、并发三种保存后再次载入；原跟读/偏移用例也通过。旧用例查侧栏的 offset output 已与“偏移只放视频面板”的现行UI不符，移除该过时位置断言，实际会话时间和持久偏移断言保留。测试使用临时DOM和内存storage，无真实站点、模型、Vault或Anki调用；源码安装与用户浏览器重载另记交接。
 
 **双语字幕按两个条目写**：旧识别只认一条里同时有英中行。手动导入时，若两条完全同起止、只有一原句一译文，且整个文件达到原双语识别门槛，就沿同一路径用英文原句的 ID 与秒数显示。中文取文件已有的字，不新翻译；不按近似时间配，不把一般网站轨道按此猜合。见[导入临时 ASS](youtube-study-wiring.md#2026-11-18-双语字幕分两条也能中英对照)。
+
+**下载 JSON 要能重新导入**：现有导出用 `startMs/endMs`，原通用 JSON 进口只认其他时间键。读自家导出时用 `rows` 的原文、译文与时间、明确语言及偏移；不替换文件中给其他工具使用的 `cues`，不让旧 `source.url` 取得任何权限。当前视频里同一导入文件后来手调的偏移优先，手调归零也是有效选择。一律作为当前页的手动文件，不开模型。见[实际下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
 
 ## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
 
