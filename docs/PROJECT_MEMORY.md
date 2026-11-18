@@ -22,6 +22,7 @@
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
+| 跟读暂停后拖了进度条，旧倒计时却启动了播放 | L-006；YoutubeReader.shadowPausedId、YoutubeOverlay._onPlaybackChange |
 | 网页明明有 en-GB／en-US，自动却先读别的字幕；首选读不了时无字幕 | L-006；WebVideoSite.sources 的语言顺序、load 的可读轨道退回 |
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
 | 刚导入本地字幕，突然被晚到的网站字幕替换 | L-006；YoutubeReader.importText 和正在载入的控制器 |
@@ -252,6 +253,8 @@
 短语跨行时，`SubtitleSession.search` 按已经用于连句的间隔、句末和组长规则匹配，不真的合并。返回短语实际经过的各行；原文和译文不混查，缺译文的行不跨过。时间与行工具仍取原字幕。见[跨行短语验收](youtube-study-wiring.md#2026-11-19-字幕可以搜到跨行短语)。
 
 **下载 JSON 要能重新导入**：现有导出用 `startMs/endMs`，原通用 JSON 进口只认其他时间键。读自家导出时用 `rows` 的原文、译文与时间、明确语言及偏移；不替换文件中给其他工具使用的 `cues`，不让旧 `source.url` 取得任何权限。当前视频里同一导入文件后来手调的偏移优先，手调归零也是有效选择。一律作为当前页的手动文件，不开模型。见[实际下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
+
+**跟读倒计时只属于当次暂停**：`shadowPausedId` 按播放器与实际暂停位置确认操作仍适用。跳转清掉旧提示和倒计时；换播放器或改偏移不沿用旧暂停，没有跳转时照常空格继续、按 R 重听或倒数继续。见[拖动进度的复现](youtube-study-wiring.md#2026-11-19-拖动视频进度不触发旧跟读倒计时)。
 
 ## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
 

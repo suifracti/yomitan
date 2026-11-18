@@ -130,7 +130,10 @@ export class YoutubeOverlay {
         /**
          *
          */
-        this._onPlay = () => { this._clearShadow(); };
+        this._onPlaybackChange = () => {
+            this._clearShadow();
+            this._reader.clearShadowStatus();
+        };
     }
 
     /** */
@@ -157,7 +160,10 @@ export class YoutubeOverlay {
                 this._clearShadow();
             } this._applyPrefs();
         });
-        reader.addEventListener('offset', () => this._applyPrefs());
+        reader.addEventListener('offset', () => {
+            if (this._shadowId && !reader.shadowPausedId) { this._onPlaybackChange(); }
+            this._applyPrefs();
+        });
         reader.addEventListener('resume', (event) => {
             const {ms} = /** @type {CustomEvent<{ms: number}>} */ (event).detail;
             if (ms < 0) {
@@ -183,7 +189,7 @@ export class YoutubeOverlay {
                 event.stopImmediatePropagation();
                 this._cancelShadowCountdown();
             }
-            if (this._shadowId && this._site.video()?.paused && !target?.closest('input,textarea,select,[contenteditable]') &&
+            if (this._shadowId && reader.shadowPausedId === this._shadowId && !target?.closest('input,textarea,select,[contenteditable]') &&
             !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && [' ', 'r', 'R'].includes(event.key)) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
@@ -217,8 +223,12 @@ export class YoutubeOverlay {
         }
         const video = this._site.video();
         if (video !== this._playVideo) {
-            this._playVideo?.removeEventListener('play', this._onPlay);
-            this._playVideo = video; video?.addEventListener('play', this._onPlay);
+            for (const event of ['play', 'seeking']) {
+                this._playVideo?.removeEventListener(event, this._onPlaybackChange);
+                video?.addEventListener(event, this._onPlaybackChange);
+            }
+            this._playVideo = video;
+            this._onPlaybackChange();
         }
         const controls = this._site.controls();
         if (controls && !this._button?.isConnected) {
@@ -410,7 +420,9 @@ export class YoutubeOverlay {
             });
             chip.append(button);
         };
-        add('空格 继续', () => this._reader.continueShadow());
+        add('空格 继续', () => {
+            if (this._reader.shadowPausedId === id) { this._reader.continueShadow(); }
+        });
         add('R 再听一遍', () => this._reader.replayShadow());
         add('关闭跟读', () => {
             this._reader.updatePrefs({shadow: false});
@@ -437,6 +449,10 @@ export class YoutubeOverlay {
             chip.append(countdown);
             countdown.textContent = `${left} 秒后继续`;
             this._shadowCountdown = window.setInterval(() => {
+                if (this._reader.shadowPausedId !== id) {
+                    this._onPlaybackChange();
+                    return;
+                }
                 --left; countdown.textContent = `${left} 秒后继续`;
                 if (left <= 0) {
                     this._cancelShadowCountdown();

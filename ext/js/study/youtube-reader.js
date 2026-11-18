@@ -104,7 +104,7 @@ export class YoutubeReader extends EventTarget {
         this._shadowRow = null;
         /** @type {string} The sentence we just paused after, so playing on does not pause again. */
         this._shadowDone = '';
-        /** @type {{id: string, plays: number}|null} */
+        /** @type {{id: string, plays: number, position: number, video: HTMLVideoElement}|null} */
         this._shadowPause = null;
         /** @type {(()=>void)|null} */
         this._restoreReplay = null;
@@ -420,6 +420,7 @@ export class YoutubeReader extends EventTarget {
         this._restoreReplay?.();
         for (const button of this._view?.list.querySelectorAll('button[data-cue-notes][aria-expanded="true"]') ?? []) { /** @type {HTMLButtonElement} */ (button).click(); }
         const value = Math.max(-600000, Math.min(600000, Math.round(ms / 50) * 50));
+        if (value !== this._offsetMs) { this._shadowPause = null; }
         this._offsetMs = value;
         for (const target of new Set([this._rawSession, this._session])) {
             try { target?.setOffset(value); } catch { /* bounds are checked above */ }
@@ -486,6 +487,7 @@ export class YoutubeReader extends EventTarget {
             clearInterval(this._shadowTimer);
             this._shadowTimer = 0;
             this._shadowRow = null;
+            this._shadowPause = null;
         }
     }
 
@@ -496,7 +498,7 @@ export class YoutubeReader extends EventTarget {
     _shadowTick() {
         const session = this._session;
         const video = this._video;
-        if (!session || !video || video.paused || this._loop || this._restoreReplay || this._listen || !this._prefs.shadow) { return; }
+        if (!session || !video || video.paused || video.seeking || this._loop || this._restoreReplay || this._listen || !this._prefs.shadow) { return; }
         const offset = session.offsetMs;
         const now = video.currentTime * 1000 - offset;
         let row = this._shadowRow;
@@ -520,9 +522,24 @@ export class YoutubeReader extends EventTarget {
         video.pause();
         this._shadowDone = row.id;
         this._shadowRow = null;
-        this._shadowPause = {id: row.id, plays: (this._shadowPause?.id === row.id ? this._shadowPause.plays : 0) + row.plays};
+        const id = row.id;
+        const plays = (this._shadowPause?.id === id ? this._shadowPause.plays : 0) + row.plays;
+        this._shadowPause = {id, plays, position: video.currentTime, video};
         this._status('已暂停跟读，按空格继续，或按 R 再听一遍。', 'shadow');
-        this._emit('shadow', this._shadowPause);
+        this._emit('shadow', {id, plays});
+    }
+
+    /** @returns {string} Empty when the old pause no longer owns this playback position. */
+    get shadowPausedId() {
+        const pause = this._shadowPause;
+        const video = this._video;
+        if (!this._prefs.shadow || !video?.paused || video.seeking || pause?.video !== video) { return ''; }
+        return video.currentTime === pause.position && this._site.video() === video ? pause.id : '';
+    }
+
+    /** */
+    clearShadowStatus() {
+        if (this._view?.status.dataset.mode === 'shadow') { this._status(''); }
     }
 
     /**
@@ -598,7 +615,8 @@ export class YoutubeReader extends EventTarget {
         const video = this._video;
         if (!session || !video || session.cues.length === 0) { return false; }
         this._restoreReplay?.();
-        const paused = video.paused && this._shadowPause ? session.cues.findIndex((c) => c.id === this._shadowPause?.id) : -1;
+        const shadow = this.shadowPausedId;
+        const paused = shadow ? session.cues.findIndex((c) => c.id === shadow) : -1;
         let current = paused;
         if (current < 0) {
             current = 0;
@@ -659,8 +677,9 @@ export class YoutubeReader extends EventTarget {
 
     /** Replay the paused sentence; the next pause counts this listen too. */
     replayShadow() {
-        if (!this._shadowPause || !this._session || !this._video) { return; }
-        this._video.currentTime = this._session.seekSeconds(this._shadowPause.id);
+        const id = this.shadowPausedId;
+        if (!id || !this._session || !this._video) { return; }
+        this._video.currentTime = this._session.seekSeconds(id);
         this._shadowDone = ''; this._shadowRow = null;
         this.continueShadow();
     }
@@ -741,6 +760,8 @@ export class YoutubeReader extends EventTarget {
         this._endListening();
         this._restoreReplay?.();
         this._video?.removeEventListener('timeupdate', this._timeListener);
+        this._shadowRow = this._shadowPause = null;
+        this._shadowDone = '';
         this._video = video;
         video.addEventListener('timeupdate', this._timeListener);
         this._tryLibraryListening();
