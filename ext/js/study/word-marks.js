@@ -32,6 +32,7 @@ import {studyCall} from './study-client.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {safePerformance} from '../core/safe-performance.js';
 import {WORD_MARKS_KEY, WORD_STATUS_KEY} from './study-data.js';
+import {DOMTextScanner} from '../dom/dom-text-scanner.js';
 
 export const ENCOUNTERS_KEY = 'studyEncounters';
 
@@ -232,7 +233,7 @@ export function recentEncounters(all, word, span = 7, now = new Date()) {
 }
 
 /** @typedef {{word:string,sentence:string,meaning:string}} PageWord */
-/** @typedef {PageWord & {node:Text,sourceText:string,box?:HTMLInputElement,ignored?:boolean}} PageCandidate */
+/** @typedef {PageWord & {node:Text,start:number,sourceText:string,box?:HTMLInputElement,ignored?:boolean}} PageCandidate */
 /** @typedef {{known:string[],ignored:string[]}} KnownWords */
 export class WordMarks {
     constructor() {
@@ -756,7 +757,7 @@ export class WordMarks {
         };
         const page = document.createElement('button');
         page.type = 'button';
-        page.textContent = `本页生词（${this.pageWords().length}）`;
+        page.textContent = `本页生词（${this._pageOccurrences().length}）`;
         page.onclick = () => void this.openPageWords();
         const keys = document.createElement('small');
         keys.style.display = 'block';
@@ -772,13 +773,42 @@ export class WordMarks {
      *
      * @param {Text} node
      * @param {number} offset
+     * @param {boolean} forward
+     * @returns {string}
+     */
+    _sentenceSide(node, offset, forward) {
+        let result = '';
+        /** @type {Node|null} */
+        let current = node;
+        while (current && result.length < 2400) {
+            let enterable = false;
+            if (current instanceof Text) {
+                const remaining = 2400 - result.length;
+                const edge = current === node ? offset : (forward ? 0 : current.length);
+                const part = forward ? current.data.slice(edge, edge + remaining) : current.data.slice(Math.max(0, edge - remaining), edge);
+                const end = forward ? part.search(/[.!?\n]/) : Math.max(part.lastIndexOf('.'), part.lastIndexOf('!'), part.lastIndexOf('?'), part.lastIndexOf('\n'));
+                result = forward ? result + part.slice(0, end < 0 ? part.length : end + 1) : part.slice(end + 1) + result;
+                if (end >= 0) { break; }
+            } else if (current instanceof Element && !current.matches(SKIP)) {
+                const info = DOMTextScanner.getElementSeekInfo(current);
+                if (info.newlines > 0) { break; }
+                enterable = info.enterable;
+            }
+            /** @type {Node[]} */
+            const exited = [];
+            current = DOMTextScanner.getNextNodeToProcess(current, forward, enterable, exited);
+            if (exited.some((item) => item instanceof Element && DOMTextScanner.getElementSeekInfo(item).newlines > 0)) { break; }
+        }
+        return result;
+    }
+
+    /**
+     * @param {Text} node
+     * @param {number} offset
      * @returns {string}
      */
     _sentence(node, offset) {
-        const text = node.data;
-        const start = Math.max(text.lastIndexOf('.', offset - 1), text.lastIndexOf('!', offset - 1), text.lastIndexOf('?', offset - 1), text.lastIndexOf('\n', offset - 1)) + 1;
-        const rest = text.slice(offset).search(/[.!?\n]/);
-        return text.slice(start, rest < 0 ? text.length : offset + rest + 1).trim().slice(0, 2400);
+        return (this._sentenceSide(node, offset, false) + this._sentenceSide(node, offset, true)).trim().slice(0, 2400);
     }
 
     /**
@@ -808,11 +838,13 @@ export class WordMarks {
         return {word, sentence: this._sentence(node, token.index), meaning: this._glosses[word] || ''};
     }
 
-    /**
-     *
-     */
     /** @returns {PageCandidate[]} */
     pageWords() {
+        return this._pageOccurrences().map(([word, {node, start, meaning}]) => ({word, node, start, meaning, sourceText: node.data, sentence: this._sentence(node, start)}));
+    }
+
+    /** @returns {[string, {node:Text, start:number, meaning:string}][]} */
+    _pageOccurrences() {
         /** @type {Map<string, {node:Text, start:number, meaning:string}>} */
         const occurrences = new Map();
         for (const [node, ranges] of this._ranges) {
@@ -824,11 +856,10 @@ export class WordMarks {
                 }
             }
         }
-        return [...occurrences].filter(([word]) => !wordInfo(word, this._words))
-            .map(([word, {node, start, meaning}]) => ({word, node, meaning, sourceText: node.data, sentence: this._sentence(node, start)}));
+        return [...occurrences].filter(([word]) => !wordInfo(word, this._words));
     }
+
     /**
-     *
      * @param {string} word
      * @param {'known'|'ignored'} type
      */
@@ -1006,7 +1037,9 @@ export class WordMarks {
         done.textContent = '完成';
         panel.append(done);
         done.onclick = async () => {
-            if (source !== location.href || rows.some((r) => !r.ignored && (!r.node.isConnected || r.node.data !== r.sourceText || r.node.parentElement?.closest(SKIP)))) {
+            if (source !== location.href || rows.some((r) => !r.ignored && (
+                !r.node.isConnected || r.node.data !== r.sourceText || r.node.parentElement?.closest(SKIP) || this._sentence(r.node, r.start) !== r.sentence
+            ))) {
                 note.textContent = '页面内容变了，刚才的选择没有保存。';
                 done.textContent = '重新读取本页';
                 done.onclick = () => { void this.openPageWords(); };
