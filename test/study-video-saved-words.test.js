@@ -43,7 +43,13 @@ test('explains saved video words, opens uncarded words for card selection, and r
         {id: '3'.repeat(32), word: 'successful', sentence, videoTime: 24, cards: 1, sense: {gloss: '有成效的'}},
     ];
     const call = vi.fn(async (/** @type {string} */ action, /** @type {{cue?: {videoTime: number}}} */ data) => {
-        if (action === 'libraryVideoWords') { return {items: data?.cue ? savedItems.filter(({videoTime}) => data.cue?.videoTime === videoTime) : savedItems}; }
+        if (action === 'libraryVideoWords') {
+            const cue = data?.cue;
+            if (!cue) { return {items: savedItems}; }
+            const translation = ['项目要成功，团队得一起耐心投入。', '有成效的项目离不开全队耐心协作。'];
+            return {items: savedItems.filter(({videoTime}) => cue.videoTime === videoTime)
+                .map((item, i) => (cue.videoTime === 24 ? {...item, translation: translation[i]} : item))};
+        }
         return {words: 2, cards: 2, openUrl: 'obsidian://open?vault=test&file=summary'};
     });
     const reader = new YoutubeReader({prefs: {merge: false}, call});
@@ -94,8 +100,12 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(translate).not.toHaveBeenCalled();
         expect(progress).not.toHaveBeenCalled();
         expect(practice.textContent).not.toContain(sentence);
+        expect(call.mock.calls.filter(([, request]) => request?.cue)).toHaveLength(1);
         /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-reveal]')).click();
         expect(practice.textContent).toContain(sentence);
+        await vi.waitFor(() => expect(practice.querySelector('.r-listen-answer')?.textContent)
+            .toBe(`${sentence}\n项目要成功，团队得一起耐心投入。\n有成效的项目离不开全队耐心协作。`));
+        expect(call.mock.calls.filter(([, request]) => request?.cue)).toHaveLength(2);
         const notes = [...practice.querySelectorAll('button[data-listen-note]')];
         expect(notes.map((button) => button.textContent)).toEqual(['继续学习：successful · 成功的', '继续学习：successful · 有成效的']);
         /** @type {HTMLButtonElement} */ (notes[1]).click();
@@ -111,6 +121,11 @@ test('explains saved video words, opens uncarded words for card selection, and r
         playSentence.click();
         expect(video.currentTime).toBe(0);
         expect(miss.getAttribute('aria-pressed')).toBe('false');
+        reader.session?.acceptTranslation(reader.session.cues[0].id, '这一处旧桥没有笔记译文，保留字幕译文。');
+        /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-reveal]')).click();
+        await Promise.resolve();
+        expect(practice.querySelector('.r-listen-answer')?.textContent)
+            .toBe(`${sentence}\n这一处旧桥没有笔记译文，保留字幕译文。`);
         next.click();
         const retry = /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-retry]'));
         expect(retry.textContent).toBe('重听这 1 句');

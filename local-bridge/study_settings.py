@@ -483,6 +483,7 @@ class YomitanLibrary:
                          'path': row.get('path', ''), 'vault': str(lib.vault),
                          'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
                          'cards': progress['confirmed'], 'stage': progress['stage'], **({'cardHint': hint} if hint else {}),
+                         **({'translation': entry['translation']} if cue and entry.get('translation') else {}),
                          **({'sense': entry['sense']} if entry.get('sense') else {})})
         rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
         return rows

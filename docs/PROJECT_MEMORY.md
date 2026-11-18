@@ -25,6 +25,7 @@
 | 长视频只记得一个词或一句中文，想跳回那句字幕 | L-006；YoutubeReader._renderCaptionRows、CaptionList、原时间按钮 |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 在原视频不看字幕，先听自己保存的句子；听完回哪一条笔记 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play、openStudyRecord |
+| 视频回听点看原句，笔记存过中文却只显示英文 | L-007；`libraryVideoWords(cue)` 与 YoutubeReader._beginListening 的揭晓 |
 | 想只重听刚才没听清的句子 | L-007；YoutubeReader._beginListening 的本轮队列 |
 | 从学习库或复习答案回原视频听这一句，不只是跳到秒数 | L-007；makeVideoListenButton、videoListenUrl、openVideoListening、claimVideoListening |
 | 词已经记了，却没录当时的原声；补录时不想改自己的解释 | L-007；canSupplementAudio、YoutubeReader.lookupCaption、mountStudyLibrary |
@@ -227,6 +228,8 @@
 **字幕栏的「先听，再看原句」**：用已保存的原句和秒数在当前英语轨唯一对回播放行；同一范围的多个义项只听一次，零个或多个匹配不选。复用 `YoutubeStudyContext.play` 的真实播放器，来源或轨道变了就停止；练习时隐藏可控制的字幕层、暂停自动翻译和进度写入，退出恢复原显示设置。只在用户点看原句时显示原文及已有译文；无新练习档案、不打分、不写排程。见[独立播放器和两次重复台词](youtube-study-wiring.md#2026-11-18-先听已记下的原声再揭晓原句)。
 
 **听完想回到当时记的意思**：`_beginListening` 按字幕行保留匹配的记录，去重的是待播行而非义项；揭晓后才显示各条笔记入口，换一句即清除。用 `openStudyRecord` 读原记录号并在搜索词卡里继续，传 `openPanel:false` 不自动显示制卡；没传这项的旧制卡入口照旧。搜索词卡不因此得到对原视频的取声权限。见[同一句不同义项的回听接续](youtube-study-wiring.md#2026-11-18-回听揭晓后接回原笔记)。
+
+**回听揭晓优先看自己保存的中文**：以前只看当前字幕轨上已翻的内容。主动点「看原句」才用同来源的 `libraryVideoWords(cue)` 按原文和整秒读已匹配记录的译文，重复译文合并，并保留同一句不同的译法；换句等失效就丢旧回执。整份词表不带译文，老桥无返回仍用字幕轨已有译文。见[双语回听](youtube-study-wiring.md#2026-11-19-视频回听揭晓能看到已存译文)。
 
 **只重练没听清的原句**：练习有明确末尾，不在最后一句之后悄悄循环。用现有字幕行 ID 暂记本人主动标出的句子，不拿英文文本或词义去重，也不从没播放、跳过或看答案推断掌握。下一轮仅重播这些行，并从空标记开始；换轨、退出、改偏移仍丢掉本轮状态，不写第二套学习记录。见[集中重听](youtube-study-wiring.md#2026-11-18-只重听自己标过没听清的句子)。
 

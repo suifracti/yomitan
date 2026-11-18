@@ -2046,10 +2046,24 @@ export class YoutubeReader extends EventTarget {
         play.dataset.listenPlay = '';
         const reveal = this._button('看原句', () => {
             const id = queue[current];
-            answer.textContent = [this._rowInfo.get(id)?.text, session?.translation(id)].filter(Boolean).join('\n');
+            const info = this._rowInfo.get(id);
+            if (!info) { return; }
+            const revealed = document.createTextNode([info.text, session?.translation(id)].filter(Boolean).join('\n'));
+            answer.replaceChildren(revealed);
             answer.hidden = false;
             reveal.hidden = true;
-            for (const {id: recordId, word, sentence, sense, supplementAudio} of savedByCue.get(id) ?? []) {
+            const records = savedByCue.get(id) ?? [];
+            if (this._mediaKey && records.length > 0) {
+                const ids = new Set(records.map((record) => record.id));
+                const cue = {sentence: info.text, videoTime: Math.floor(info.start)};
+                void this._call('libraryVideoWords', {mediaKey: this._mediaKey, cue}).then((value) => {
+                    if (this._listen !== practice || revealed.parentNode !== answer || !info.isCurrent()) { return; }
+                    const {items: matched} = /** @type {{items: SavedPlayback[]}} */ (value);
+                    const translations = new Set(matched.filter((item) => ids.has(item.id)).map((item) => item.translation?.trim()).filter(Boolean));
+                    if (translations.size > 0) { revealed.data = [info.text, ...translations].join('\n'); }
+                }).catch(() => {});
+            }
+            for (const {id: recordId, word, sentence, sense, supplementAudio} of records) {
                 const label = [word, sense?.gloss].filter(Boolean).join(' · ');
                 const resume = this._button(`继续学习：${label}`, () => {
                     practice.cancel?.();

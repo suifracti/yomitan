@@ -137,9 +137,14 @@ class VideoMediaTests(unittest.TestCase):
 
     def test_video_words_list_only_this_video_in_time_order(self):
         for word, url, t in [('wall', 'https://www.youtube.com/watch?v=abcdefghijk', 40), ('brick', 'https://youtu.be/abcdefghijk', 12), ('other', 'https://www.youtube.com/watch?v=zzzzzzzzzzz', 5)]:
-            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} here.', 'meaning': '义', 'url': url, 'videoTime': t}, 'makeCard': False})
+            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} here.', 'meaning': '义', 'url': url, 'videoTime': t, 'translation': f'{word} 的已存译文'}, 'makeCard': False})
         rows = self.library.handle({'action': 'libraryVideoWords', 'videoId': 'abcdefghijk'})['items']
         self.assertEqual([(r['word'], r['videoTime']) for r in rows], [('brick', 12), ('wall', 40)])
+        self.assertTrue(all('translation' not in row for row in rows))
+        cue = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'youtube:abcdefghijk',
+                                  'sourceUrl': 'https://www.youtube.com/watch?v=abcdefghijk',
+                                  'cue': {'sentence': 'A brick here.', 'videoTime': 12}})['items']
+        self.assertEqual([(r['word'], r['translation']) for r in cue], [('brick', 'brick 的已存译文')])
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryVideoWords', 'videoId': '../etc'})
 

@@ -57,7 +57,7 @@ export type LibraryEntry = {
     explanationSource?: string;
 };
 
-export type SavedVideoListening = Pick<LibraryEntry, 'word' | 'sentence'> & {id: string; videoTime: number | null; sense?: {gloss?: string}; supplementAudio?: boolean};
+export type SavedVideoListening = Pick<LibraryEntry, 'word' | 'sentence'> & {id: string; videoTime: number | null; sense?: {gloss?: string}; supplementAudio?: boolean; translation?: string};
 
 export type ReviewDraft = {
     id: string;
