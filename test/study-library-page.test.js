@@ -61,6 +61,7 @@ function makePageDom() {
             <button data-library-category="all" aria-pressed="true">全部</button>
             <button data-library-category="sources" aria-pressed="false">按素材</button>
             <button data-library-category="source" hidden>本页原句</button>
+            <button data-library-category="word" hidden>同词原句</button>
             <button data-library-category="favorites" aria-pressed="false">收藏</button>
             <button data-library-category="saved" aria-pressed="false">已保存</button>
             <button data-library-category="linked" aria-pressed="false">关联卡</button>
@@ -104,16 +105,29 @@ describe('study library page', () => {
         });
         const url = new URL(link.href);
         expect(url.pathname).toBe('/study-library.html');
-        expect([...url.searchParams]).toEqual([['query', 'charge'], ['practice', 'word']]);
+        expect([...url.searchParams]).toEqual([['word', 'charge'], ['practice', 'word']]);
         expect(call).not.toHaveBeenCalled();
 
         makePageDom();
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         const previousUrl = location.href;
-        const saved = {id: '2'.repeat(32), vaultSaved: true, entry: {word: 'charges', lemma: 'charge', sentence: 'She charges by the hour.', meaning: '收费'}};
+        const saved = {id: '2'.repeat(32),
+            vaultSaved: true,
+            entry: {
+                word: 'charges',
+                lemma: 'charge',
+                sentence: 'She charges by the hour.',
+                meaning: '收费',
+                translation: '她按小时收费。',
+                url: 'https://reading.example/story',
+                title: 'A magazine',
+            }};
         const unrelated = {id: '1'.repeat(32), vaultSaved: true, entry: {word: 'hour', sentence: 'An hour of charging is enough.'}};
         mocks.studyCall.mockImplementation(async (action, payload) => {
-            if (action === 'libraryList') { return {items: payload?.query === 'charge' ? [unrelated, saved] : [], total: 2, canSearch: true}; }
+            if (action === 'libraryList') {
+                const items = payload?.scope === 'word' && payload.word === 'charge' ? [saved] : [unrelated, saved];
+                return {items, total: items.length, canSearch: true};
+            }
             return [];
         });
         history.replaceState(null, '', url.search);
@@ -124,7 +138,20 @@ describe('study library page', () => {
             expect(panel.textContent).toContain('练原句填空 · 1 / 1');
             expect(panel.textContent).toContain('She');
             expect(panel.textContent).not.toContain('charging');
-            expect(mocks.studyCall.mock.calls.every(([action]) => action === 'libraryList' || action === 'saved')).toBe(true);
+            document.getElementById('study-library-cloze-button')?.click();
+            expect(panel.hidden).toBe(true);
+            const list = document.getElementById('study-library-list');
+            expect(list?.textContent).toContain('她按小时收费。');
+            expect(list?.textContent).toContain('A magazine');
+            expect(list?.textContent).not.toContain('An hour of charging');
+            expect(mocks.studyCall.mock.calls).toEqual([
+                ['libraryList', {language: 'en', scope: 'word', word: 'charge', url: '', title: '', offset: 0}],
+            ]);
+            mocks.studyCall.mockRejectedValueOnce(new Error('不支持的学习库操作或字段。'));
+            document.getElementById('study-library-refresh')?.click();
+            const status = document.getElementById('study-library-status');
+            await vi.waitFor(() => expect(status?.textContent).toContain('可先到「全部」搜索「charge」'));
+            expect(mocks.studyCall.mock.calls).toHaveLength(2);
         } finally { history.replaceState(null, '', previousUrl); }
     });
 

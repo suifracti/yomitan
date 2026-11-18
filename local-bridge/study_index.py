@@ -88,6 +88,13 @@ def indexed_page(rows, p):
     offset = p.get('offset', 0)
     if scope == 'sources':
         return indexed_sources(rows, query, offset)
+    if scope == 'word':
+        from study_senses import canonical, practice_material, word_aliases
+        rows = [row for row in rows if saved_record(row) and row['entry'].get('kind') != 'sentence'
+                and row['entry'].get('language', 'en').split('-')[0].lower() == 'en' and row['entry']['sentence']]
+        word = p['word'].casefold()
+        head = word_aliases(row['entry'] for row in rows).get(word) or word
+        rows = [row for row in rows if canonical(row['entry']) == head]
     matches = []
     if scope == 'recent-recall':
         import time
@@ -122,7 +129,8 @@ def indexed_page(rows, p):
         for match in matches:
             unique.setdefault(match[2]['entry']['sentence'], match)
         matches = list(unique.values())
-    return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for _, _, row in matches[offset:offset + PAGE_SIZE]], 'total': len(matches), 'canSearch': True}
+    extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not dictation else {}
+    return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for _, _, row in matches[offset:offset + PAGE_SIZE]], 'total': len(matches), 'canSearch': True, **extras}
 
 
 class RecordIndex:

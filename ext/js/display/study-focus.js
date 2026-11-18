@@ -7,7 +7,7 @@ import {updateStudySourcePreview, prepareParallelSentence} from './study-transla
 import {explainWordForm, findFormExample} from './study-word-forms.js';
 import {chromeTranslate} from '../study/free-translators.js';
 import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
-import {WORD_STATUS_KEY, createResumeUrl, createSourceLibraryUrl, librarySource, savedStudyLanguage, savedStudyRecordId} from '../study/study-data.js';
+import {WORD_STATUS_KEY, createResumeUrl, createSourceLibraryUrl, createWordLibraryUrl, librarySource, savedStudyLanguage, savedStudyRecordId} from '../study/study-data.js';
 import {timeLabel} from '../study/subtitle-session.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
 
@@ -954,13 +954,12 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     }
                     row.append(noteActions); noteRow.append(row);
                 }
-                if (language === 'en' && memory?.total > ordered.length) {
+                if (language === 'en' && (ordered.length > 0 || memory?.total > 0)) {
                     const more = d.createElement('a');
-                    const url = new URL(LIBRARY_PATH, location.href);
-                    url.searchParams.set('query', word);
-                    more.href = url.href; more.target = '_blank'; more.rel = 'noopener noreferrer';
+                    more.href = createWordLibraryUrl(owner.lemma || word, chrome.runtime.getURL(LIBRARY_PATH));
+                    more.target = '_blank'; more.rel = 'noopener noreferrer';
                     more.className = 'sf-link sf-record-sync scan-disable';
-                    more.textContent = '到学习库查更多 ↗';
+                    more.textContent = '看这个词的原句 ↗';
                     noteRow.append(more);
                 }
                 const cardRow = make('div', 'sf-record-destination');

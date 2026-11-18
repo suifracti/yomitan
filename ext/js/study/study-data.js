@@ -360,6 +360,19 @@ export function createSourceLibraryUrl(sourceUrl, libraryUrl) {
 }
 
 /**
+ * @param {string} word
+ * @param {string | URL} libraryUrl
+ * @param {boolean} [practice]
+ * @returns {string}
+ */
+export function createWordLibraryUrl(word, libraryUrl, practice = false) {
+    const url = new URL(libraryUrl);
+    url.searchParams.set('word', word);
+    if (practice) { url.searchParams.set('practice', 'word'); }
+    return url.href;
+}
+
+/**
  * An explicitly opened note in the ordinary lookup view; live subtitle authority is separate.
  * @param {import('display').HistoryState | null | undefined} state
  * @param {string} word

@@ -903,17 +903,32 @@ async function initializePage() {
         const requested = new URL(location.href).searchParams;
         const requestedSource = requested.get('source') || '';
         search.value = (requested.get('query') || '').slice(0, 240);
-        const sourceTab = /** @type {?HTMLButtonElement} */ (document.querySelector('[data-library-category="source"]'));
         const sourceUrl = librarySource(requestedSource);
         const requestedDictation = Boolean(sourceUrl && requested.get('practice') === 'dictation');
-        const practiceWord = !sourceUrl && requested.get('practice') === 'word' ? search.value.trim() : '';
-        let openRequestedPractice = Boolean(practiceWord || requestedDictation);
-        let category = sourceUrl ? 'source' : 'all';
-        if (sourceUrl && sourceTab) {
-            sourceTab.hidden = false;
-            sourceTab.setAttribute('aria-pressed', 'true');
+        const legacyWordPractice = !sourceUrl && !requested.has('word') && requested.get('practice') === 'word';
+        const word = sourceUrl ? '' : (requested.get('word') || (legacyWordPractice ? search.value : '')).trim().slice(0, 128);
+        if (legacyWordPractice) { search.value = ''; }
+        let openRequestedPractice = requestedDictation || Boolean(word && requested.get('practice') === 'word');
+        let category = sourceUrl ? 'source' : (word ? 'word' : 'all');
+        const scopedTab = /** @type {?HTMLButtonElement} */ (document.querySelector(`[data-library-category="${category}"]`));
+        if (scopedTab && category !== 'all') {
+            scopedTab.hidden = false;
+            if (word) {
+                scopedTab.textContent = `同词原句 · ${word.length > 24 ? `${word.slice(0, 24)}…` : word}`;
+                scopedTab.title = word;
+            }
+            scopedTab.setAttribute('aria-pressed', 'true');
             document.querySelector('[data-library-category="all"]')?.setAttribute('aria-pressed', 'false');
         }
+        /**
+         * @param {string} scope
+         * @returns {{language: string, scope: string, url: string, title: string, word?: string}}
+         */
+        const libraryScope = (scope) => ({language: 'en',
+            scope,
+            url: scope === 'source' ? sourceUrl : '',
+            title: '',
+            ...(scope === 'word' ? {word} : {})});
         let canSearch = false;
         let listedQuery = '';
         let listedCategory = 'all';
@@ -930,7 +945,7 @@ async function initializePage() {
         let sentenceSearch = null;
         const sentenceButtons = [clozeButton, dictationButton];
         const moreScopedPrompts = () => {
-            if (!['source', 'recent-recall'].includes(category) || loading || listError || offset >= total) { return false; }
+            if (!['source', 'word', 'recent-recall'].includes(category) || loading || listError || offset >= total) { return false; }
             return listedCategory === category && (!canSearch || listedQuery === search.value.trim());
         };
         const cancelSentenceSearch = () => {
@@ -980,7 +995,7 @@ async function initializePage() {
             listenSource.hidden = true;
             search.hidden = sentenceButtons.includes(button);
             if (searchLabel) { searchLabel.hidden = search.hidden; }
-            button.textContent = search.hidden ? '返回学习库' : '返回搜索结果';
+            button.textContent = category === 'word' ? '查看这个词的原句' : (search.hidden ? '返回学习库' : '返回搜索结果');
             button.setAttribute('aria-expanded', 'true');
             show();
         }
@@ -1013,12 +1028,10 @@ async function initializePage() {
             const request = {button, label: listening ? '练原声听写' : '练原句填空'};
             sentenceSearch = request;
             button.textContent = '取消找题';
-            const scope = category;
-            const url = scope === 'source' ? sourceUrl : '';
             setStatus(listening ? '正在找带原声的原句…' : '正在找可练的原句…');
             const query = search.value.trim();
             const indexed = canSearch;
-            const base = {language: 'en', scope, url, title: ''};
+            const base = libraryScope(category);
             let failed = false;
             try {
                 if (listening) {
@@ -1189,7 +1202,8 @@ async function initializePage() {
             top.className = 'study-library-record-heading';
             const title = document.createElement('h2');
             title.textContent = record.entry?.word || (record.syncState === 'anki-only' ? '这张卡没有留下原词' : '(未命名记录)');
-            if (record.entry?.sense?.gloss) { title.append(` · ${record.entry.sense.gloss}`); }
+            const meaning = record.entry?.sense?.gloss || (category === 'word' ? record.entry?.meaning?.trim() : '');
+            if (meaning) { title.append(` · ${category === 'word' && meaning.length > 80 ? `${meaning.slice(0, 80)}…` : meaning}`); }
             const state = document.createElement('p');
             state.className = 'study-library-state';
             state.textContent = stateSummary(record);
@@ -1212,6 +1226,12 @@ listedQuery :
                 sentence.className = 'study-library-sentence';
                 writeSentence(sentence, record.entry.sentence, hit?.label === '原句' ? hitWord : record.entry.word || '');
                 article.append(sentence);
+            }
+            if (category === 'word' && record.entry?.translation) {
+                const translation = document.createElement('p');
+                translation.className = 'study-library-context';
+                translation.textContent = record.entry.translation;
+                article.append(translation);
             }
             const legacyLocator = parseLegacySourceLocator(record.entry?.context);
             if (record.entry?.context && !legacyLocator) {
@@ -1512,17 +1532,14 @@ listedQuery :
                 }
                 return;
             }
-            practiceButton.hidden = waiting || Boolean(listError) || category !== 'all' || practicePair.length !== 2;
+            practiceButton.hidden = waiting || Boolean(listError) || !['all', 'word'].includes(category) || practicePair.length !== 2;
             if (activePractice !== practiceButton) { practiceButton.textContent = practiceLabel(); }
             const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
             sourceVideoId = category === 'source' && !loading && !listError ?
                 rows.find((row) => matchesCategory(row, 'saved') && videoListenUrl(row.entry))?.id ?? '' :
                 '';
-            const practiceRows = category === 'all' && practiceWord && query === practiceWord ?
-                rows.filter(({entry}) => (entry?.lemma || entry?.word)?.toLowerCase() === practiceWord.toLowerCase()) :
-                rows;
-            cloze = loading || listError ? [] : sentencePrompts(practiceRows, [], false);
-            dictation = loading || listError ? [] : sentencePrompts(practiceRows, [], true);
+            cloze = loading || listError ? [] : sentencePrompts(rows, [], false);
+            dictation = loading || listError ? [] : sentencePrompts(rows, [], true);
             clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
             const canOfferDictation = total > 0 || dictation.length > 0 || activePractice === dictationButton;
             dictationButton.hidden = waiting || loading || Boolean(listError) || category === 'anki-only' || !canOfferDictation;
@@ -1540,6 +1557,8 @@ listedQuery :
                     empty.textContent = '正在学习库里找…';
                 } else if (loaded && category === 'source' && !query) {
                     empty.textContent = '还没有在这页记过的原句。读到想留下的句子时，可以点词卡里的「记住它」。';
+                } else if (loaded && category === 'word' && !query) {
+                    empty.textContent = '这个词还没有已存原句。读到想留下的句子时，可以点词卡里的「记住它」。';
                 } else if (loaded && category === 'recent-recall' && !query) {
                     empty.textContent = '这里显示近 30 天在已存原句上点过「一时没认出」的记录。还没有可显示的原句。';
                 } else if (loaded) {
@@ -1605,7 +1624,7 @@ listedQuery :
             const tab = category;
             const indexed = canSearch;
             const shelf = tab === 'sources';
-            const readOnly = searchOnly || Boolean(query) || ['manual-known', 'source', 'recent-recall'].includes(tab) || shelf;
+            const readOnly = searchOnly || Boolean(query) || ['manual-known', 'source', 'word', 'recent-recall'].includes(tab) || shelf;
             const obsolete = () => queuedSearch !== null || tab !== category || ((canSearch || shelf) && query !== search.value.trim());
             if (reset && !readOnly) { void refreshToday(); }
             more.disabled = true;
@@ -1625,14 +1644,14 @@ listedQuery :
                     }
                 }
                 if (obsolete()) { return; }
-                if ((!loaded || !readOnly) && tab !== 'source' && !shelf) { await refreshSavedWords(); }
+                if ((!loaded || !readOnly) && !['source', 'word'].includes(tab) && !shelf) { await refreshSavedWords(); }
                 if (obsolete()) { return; }
-                const scope = indexed || shelf || ['pending', 'anki-only', 'manual-known', 'source', 'recent-recall'].includes(tab) ? tab : 'all';
-                const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? sourceUrl : '', title: '', scope, offset: start, ...((indexed || shelf) && (query || searchOnly) ? {query} : {})});
+                const scope = indexed || shelf || ['pending', 'anki-only', 'manual-known', 'source', 'word', 'recent-recall'].includes(tab) ? tab : 'all';
+                const value = await studyCall('libraryList', {...libraryScope(scope), offset: start, ...((indexed || shelf || tab === 'word') && (query || searchOnly) ? {query} : {})});
                 const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], sources?: SourceShelfItem[]}|null} */ (value);
                 if (shelf && !result?.sources) { throw new Error(SOURCES_UPDATE_BRIDGE); }
                 canSearch = result?.canSearch === true;
-                if (!shelf && !indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }
+                if (!shelf && !indexed && canSearch && ((tab !== 'word' && search.value.trim()) || scope !== category)) { queuedSearch = true; }
                 if (obsolete()) { return; }
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
                 const shelfPage = result?.sources ?? [];
@@ -1695,6 +1714,9 @@ listedQuery :
                 listError = error instanceof Error ? error.message : '学习库读取失败。';
                 if (tab === 'recent-recall' && listError === '学习列表范围无效。') { listError = '本机桥还不能读最近卡点。更新后再试。'; }
                 if (shelf && listError === '学习列表范围无效。') { listError = SOURCES_UPDATE_BRIDGE; }
+                if (tab === 'word' && ['不支持的学习库操作或字段。', '学习列表范围无效。'].includes(listError)) {
+                    listError = `本机桥还不能按这个词找原句。可先到「全部」搜索「${word}」。`;
+                }
                 setStatus(shelf ? listError : `${listError}${loaded ? ' 上次已读取的记录仍保留。' : ' 未读到记录，不代表学习库为空。'}${savedWords.length > 0 ? ` 本地收藏仍有 ${savedWords.length} 条。` : ''}`);
             } finally {
                 loading = false;
@@ -1707,7 +1729,7 @@ listedQuery :
                     openRequestedPractice = false;
                     if (!obsolete() && !listError && tab === 'source' && requestedDictation && !dictationButton.hidden) {
                         dictationButton.click();
-                    } else if (!obsolete() && !listError && tab === 'all' && query === practiceWord) {
+                    } else if (!obsolete() && !listError && tab === 'word') {
                         if (!practiceButton.hidden) {
                             practiceButton.click();
                         } else if (!clozeButton.hidden) {

@@ -404,14 +404,15 @@ def _normalize_request(p):
                 if 'kind' in card and not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', text(card['kind'], 40, True)):
                     raise ValueError('卡片类型无效。')
         return p
-    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice'}:
+    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice', 'word'}:
         scope = p.get('scope', 'source')
         if 'practice' in p and p['practice'] != 'dictation':
             raise ValueError('练习类型无效。')
-        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'sources', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall'):
+        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'sources', 'word', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall') or ('word' in p) != (scope == 'word'):
             raise ValueError('学习列表范围无效。')
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),
-                **({'query': text(p['query'], 240)} if 'query' in p else {})}
+                **({'query': text(p['query'], 240)} if 'query' in p else {}),
+                **({'word': text(p['word'], 128, True)} if scope == 'word' else {})}
     if action == 'libraryRead' and set(p) == {'action', 'ids', 'includeTurns'} and p['includeTurns'] is True and isinstance(p['ids'], list) and len(p['ids']) == 1:
         return {**_normalize_request({'action': action, 'ids': p['ids']}), 'includeTurns': True}
     if action in ('librarySync', 'libraryRead') and set(p) == {'action', 'ids'} and isinstance(p['ids'], list) and 1 <= len(p['ids']) <= 10:

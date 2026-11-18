@@ -26,7 +26,7 @@
  * Also shows how often the word was met on other pages recently (local counts).
  */
 import {ENCOUNTERS_KEY, normalizeInfo, recentEncounters, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY} from '../study/study-data.js';
+import {WORD_STATUS_KEY, createWordLibraryUrl} from '../study/study-data.js';
 
 /** @typedef {'newSense'|'collocation'|'structure'|'recall'} MissKind */
 /** @typedef {{key: string, gloss: string, s: string, recordIds?: string[]}} Sense */
@@ -217,10 +217,7 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
         const form = (entry.lemma || entry.word).toLowerCase();
         const saved = normalizeInfo(status?.words?.[form]);
         if (saved && saved.s !== 'ignored' && (saved.senses ?? 0) > 0) {
-            const url = new URL('/study-library.html', doc.URL);
-            url.searchParams.set('query', saved.lemma || form);
-            url.searchParams.set('practice', 'word');
-            practice.href = url.href;
+            practice.href = createWordLibraryUrl(saved.lemma || form, new URL('/study-library.html', doc.URL), true);
             practice.hidden = false;
             box.hidden = false;
         }
