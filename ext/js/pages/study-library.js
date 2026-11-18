@@ -472,7 +472,9 @@ async function initializePage() {
         /** @type {boolean|null} Latest queued reset; true for a read-only search. */
         let queuedSearch = null;
         let loaded = false;
-        const requestedSource = new URL(location.href).searchParams.get('source') || '';
+        const requested = new URL(location.href).searchParams;
+        const requestedSource = requested.get('source') || '';
+        search.value = (requested.get('query') || '').slice(0, 240);
         const sourceTab = /** @type {?HTMLButtonElement} */ (document.querySelector('[data-library-category="source"]'));
         const articleUrl = /^https?:\/\//.test(requestedSource) && requestedSource.length <= 2000 ? requestedSource : '';
         let category = articleUrl ? 'source' : 'all';

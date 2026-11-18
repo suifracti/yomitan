@@ -601,6 +601,12 @@
 .sf-record-sync { margin-top: 3px; font-size: 11px; }
 .sf-record-destination>.sf-record-jump { white-space: pre-line; }
 .sf-record-destination>.sf-record-jump+.sf-record-jump { margin-top: 6px; }
+.sf-record-note-heading { margin: 0 0 5px; font-size: 12px; font-weight: 550; }
+.sf-record-note { padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--sf-line); border-radius: 7px; background: var(--sf-paper); overflow-wrap: anywhere; }
+.sf-record-note>strong { color: var(--sf-ink); }
+.sf-record-note-sentence { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 3px 0; color: var(--sf-ink); }
+.sf-record-note-source { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sf-record-note-actions { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 4px; }
 
 .study-card-type-choices { display: flex; flex-wrap: wrap; gap: 5px; }
 .study-card-type-choices button { border: 1px solid var(--sf-line); border-radius: 6px; padding: 5px 8px; color: var(--sf-accent); background: var(--sf-paper); font: inherit; font-size: 11px; cursor: pointer; }

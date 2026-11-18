@@ -7,12 +7,14 @@ import {updateStudySourcePreview, prepareParallelSentence} from './study-transla
 import {explainWordForm, findFormExample} from './study-word-forms.js';
 import {chromeTranslate} from '../study/free-translators.js';
 import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
-import {WORD_STATUS_KEY} from '../study/study-data.js';
+import {WORD_STATUS_KEY, createResumeUrl} from '../study/study-data.js';
+import {timeLabel} from '../study/subtitle-session.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
 
 const cleanText = (value) => typeof value === 'string' ? value : '';
 const asArray = (value) => Array.isArray(value) ? value : [];
 const validId = (value) => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+const LIBRARY_PATH = '/study-library.html';
 
 /** A reading-first view over the existing lookup, journal and save controls.
  * No new model, save pipeline, collection, or learning identity is created here.
@@ -131,7 +133,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const navigation = make('nav', 'sf-navigation');
         navigation.setAttribute('aria-label', '学习导航');
         const libraryLink = make('a', 'sf-link scan-disable', '学习库');
-        libraryLink.href = '/study-library.html';
+        libraryLink.href = LIBRARY_PATH;
         libraryLink.target = '_blank';
         libraryLink.rel = 'noopener noreferrer';
         navigation.append(libraryLink);
@@ -800,22 +802,30 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 // are not this word's records and must not be displayed/reconciled here.
                 const items = asArray(memory?.items).filter((item) => sameWord(item.word || item.record?.entry?.word));
                 const ids = [...new Set([...(validId(savedRecordId) ? [savedRecordId] : []), ...items.map((item) => item.id).filter(validId)])].slice(0,10);
+                /**
+                 * @param {unknown} result
+                 * @returns {import('study').LibraryRecord[]}
+                 */
+                const readRecords = (result) => {
+                    const materials = /** @type {{items?: import('study').LearningMaterial[]}} */ (result)?.items ?? [];
+                    return materials.flatMap(({record}) => (record && sameWord(record.entry.word) ? [record] : []));
+                };
+                /** @type {import('study').LibraryRecord[]} */
                 let exactRecords = [];
                 const reconciliation = new Map();
                 let reconcileFailed = false;
                 if (ids.length) {
                     try {
                         const result = await call('libraryRead', {ids, language});
-                        exactRecords = asArray(result?.items).filter((item) => sameWord(item.record?.entry?.word || item.word));
-                        for (const item of (subtitleSource ? [] : exactRecords)) {
-                            const id = item?.record?.id;
+                        exactRecords = readRecords(result);
+                        for (const {id} of (subtitleSource ? [] : exactRecords)) {
                             if (!validId(id)) { continue; }
                             try {
                                 reconciliation.set(id, await call('libraryReconcile', {id, language}));
                             } catch { reconcileFailed = true; }
                         }
                         const reread = await call('libraryRead', {ids, language});
-                        exactRecords = asArray(reread?.items).filter((item) => sameWord(item.record?.entry?.word || item.word));
+                        exactRecords = readRecords(reread);
                     } catch { /* Memory snippets remain useful when one exact record was moved. */ }
                 }
                 if (!current()) { return; }
@@ -824,30 +834,35 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 const requestedId = validId(savedRecordId) ? savedRecordId : context.dataset.studyRecordId;
                 const normalize = (value) => cleanText(value).trim().replace(/\s+/g, ' ').toLocaleLowerCase();
                 const currentSentence = cleanText(editor?.value).trim() || original.trim();
-                const requestedRecord = exactRecords.find((item) => item?.record?.id === requestedId && normalize(item.record.entry?.word) === normalize(word))?.record;
-                const candidates = currentSentence && normalize(currentSentence) !== normalize(word) ? exactRecords.filter((item) => {
-                        const record = item?.record;
-                        const entry = record?.entry;
-                        return entry && normalize(entry.word) === normalize(word) &&
-                            (entry.language ?? language) === language && normalize(entry.sentence) === normalize(currentSentence);
-                    }) : [];
-                const sourceMatches = candidates.filter((item) => {
-                    const entry = item?.record?.entry;
-                    if (!entry) { return false; }
-                    if (sourceUrlCurrent && cleanText(entry.url) !== sourceUrlCurrent) { return false; }
-                    if (sourceTitleCurrent && cleanText(entry.title) && cleanText(entry.title) !== sourceTitleCurrent) { return false; }
-                    if (typeof sourceTimeCurrent === 'number' && typeof entry.videoTime === 'number' && Math.floor(entry.videoTime) !== Math.floor(sourceTimeCurrent)) { return false; }
-                    return true;
+                const requestedRecord = exactRecords.find((item) => item.id === requestedId && normalize(item.entry.word) === normalize(word));
+                /**
+                 * @param {import('study').LibraryEntry} noteEntry
+                 * @returns {boolean}
+                 */
+                const sameSentence = (noteEntry) => Boolean(currentSentence) && normalize(currentSentence) !== normalize(word) &&
+                normalize(noteEntry.word) === normalize(word) && (noteEntry.language ?? language) === language &&
+                normalize(noteEntry.sentence) === normalize(currentSentence);
+                /**
+                 * @param {import('study').LibraryEntry} noteEntry
+                 * @returns {boolean}
+                 */
+                const sameTime = (noteEntry) => typeof sourceTimeCurrent !== 'number' ||
+                (typeof noteEntry.videoTime === 'number' && Math.floor(noteEntry.videoTime) === Math.floor(sourceTimeCurrent));
+                const sourceMatches = exactRecords.filter(({entry: noteEntry}) => {
+                    if (!sameSentence(noteEntry)) { return false; }
+                    if (sourceUrlCurrent && cleanText(noteEntry.url) !== sourceUrlCurrent) { return false; }
+                    if (sourceTitleCurrent && cleanText(noteEntry.title) && cleanText(noteEntry.title) !== sourceTitleCurrent) { return false; }
+                    return sameTime(noteEntry);
                 });
                 const complete = memory?.coverage?.status === 'complete' && exactRecords.length === ids.length && memory?.total === ids.length;
-                const matchingRecord = requestedRecord || (!validId(requestedId) && complete && sourceMatches.length === 1 ? sourceMatches[0]?.record : null);
+                const matchingRecord = requestedRecord || (!validId(requestedId) && complete && sourceMatches.length === 1 ? sourceMatches[0] : null);
                 if (matchingRecord && validId(matchingRecord.id)) {
                     context.dataset.studyRecordId = matchingRecord.id;
                     context.dispatchEvent(new d.defaultView.CustomEvent('study-record-current', {detail: matchingRecord}));
                 }
                 const coverage = memory?.coverage?.status || 'unavailable';
                 const anki = memory?.anki || {status: 'unavailable', items: []};
-                const knownNoteIds = new Set(exactRecords.flatMap((item) => asArray(item.record?.cards).map((card) => card.noteId)).filter((id) => Number.isSafeInteger(id) && id > 0));
+                const knownNoteIds = new Set(exactRecords.flatMap((record) => asArray(record.cards).map((card) => card.noteId)).filter((id) => Number.isSafeInteger(id) && id > 0));
                 const namesCurrentWord = (item) => {
                     if (knownNoteIds.has(item.noteId)) { return true; }
                     const front = normalizeWord(item.fields?.Word || item.fields?.Expression || item.fields?.Question || item.fields?.Front).replace(/<[^>]*>/g, ' ');
@@ -865,17 +880,76 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                 tabButtons[2].textContent = '我的记录';
                 readStatus.textContent = '';
                 const noteRow = make('div', 'sf-record-destination');
-                const noteUrl = exactRecords.map((item) => cleanText(item.record?.openUrl)).find((url) => /^obsidian:\/\/open\?/.test(url));
-                const noteWords = [...new Set([...exactRecords.map((item) => item.record?.entry?.word), ...items.map((item) => item.word)].filter(Boolean))].join('／') || word;
-                const notesLabel = `Obsidian · ${noteWords} · ${hasNotes ? '有笔记' : coverage === 'complete' ? '暂无笔记' : '未核实'}`;
-                if (noteUrl) {
-                    const link = make('a', 'sf-record-jump sf-link scan-disable', `${notesLabel} ↗`);
-                    link.href = noteUrl; link.title = '打开当前词最近的原笔记'; noteRow.append(link);
-                } else { noteRow.append(make('span', '', notesLabel)); }
+                const noteWords = [...new Set([...exactRecords.map((record) => record.entry.word), ...items.map((item) => item.word)].filter(Boolean))].join('／') || word;
+                /** @type {Map<string, import('study').LibraryRecord>} */
+                const visibleNotes = new Map();
+                /** @type {Set<string>} */
+                const thisSentence = new Set(sourceMatches.map((record) => record.id));
+                for (const record of exactRecords) {
+                    if (record.vaultSaved && validId(record.id)) { visibleNotes.set(record.id, record); }
+                }
+                // Reuse the page index when recent-by-word memory didn't include earlier saved senses of this sentence.
+                if (hasSentence && sourceUrlCurrent && memory?.total > visibleNotes.size) {
+                    try {
+                        const result = /** @type {{canSearch?: boolean, items?: import('study').LibraryRecord[]}} */ (await call('libraryList', {
+                            scope: 'source', url: sourceUrlCurrent, title: sourceTitleCurrent, language, offset: 0, query: word,
+                        }));
+                        if (result?.canSearch) {
+                            for (const record of result.items ?? []) {
+                                if (!record.vaultSaved || !validId(record.id) || !sameSentence(record.entry) || !sameTime(record.entry)) { continue; }
+                                visibleNotes.set(record.id, record);
+                                thisSentence.add(record.id);
+                            }
+                        }
+                    } catch { /* An older bridge may only provide recent records. */ }
+                }
+                if (!current()) { return; }
+                const ordered = [...visibleNotes.values()].sort((a, b) => Number(thisSentence.has(b.id)) - Number(thisSentence.has(a.id)));
+                if (ordered.length === 0) {
+                    noteRow.append(make('span', '', `Obsidian · ${noteWords} · ${hasNotes ? '已找到笔记线索' : coverage === 'complete' ? '暂无笔记' : '未核实'}`));
+                } else {
+                    noteRow.append(make('h4', 'sf-record-note-heading', 'Obsidian · 已读到的笔记'));
+                }
+                for (const record of ordered) {
+                    const saved = record.entry;
+                    const gist = cleanText(saved.sense?.gloss).trim() || cleanText(saved.meaning).trim().replace(/\s+/g, ' ');
+                    const label = `${saved.word} · ${gist ? gist.slice(0, 68) + (gist.length > 68 ? '…' : '') : '未记简释'}`;
+                    const row = make('article', 'sf-record-note');
+                    row.append(make('strong', '', label), make('p', 'sf-record-note-sentence', saved.sentence));
+                    const details = [record.id === savedRecordId ? '当前笔记' : (thisSentence.has(record.id) ? '本句' : ''), saved.title || saved.url];
+                    if (typeof saved.videoTime === 'number') { details.push(timeLabel(saved.videoTime * 1000)); }
+                    const meta = details.filter(Boolean).join(' · ');
+                    if (meta) { row.append(make('small', 'sf-record-note-source', meta)); }
+                    const noteActions = make('div', 'sf-record-note-actions');
+                    const resume = d.createElement('a');
+                    resume.className = 'sf-link scan-disable';
+                    resume.textContent = '继续学习 ↗';
+                    resume.setAttribute('aria-label', `继续学习：${label}`);
+                    resume.href = createResumeUrl({id: record.id, entry: {language: saved.language ?? language}}, chrome.runtime.getURL('/search.html'));
+                    resume.target = '_blank'; resume.rel = 'noopener noreferrer';
+                    noteActions.append(resume);
+                    if (/^obsidian:\/\/open\?/.test(cleanText(record.openUrl))) {
+                        const originalNote = d.createElement('a');
+                        originalNote.className = 'sf-link scan-disable';
+                        originalNote.textContent = '打开原笔记 ↗';
+                        originalNote.href = record.openUrl;
+                        noteActions.append(originalNote);
+                    }
+                    row.append(noteActions); noteRow.append(row);
+                }
+                if (language === 'en' && memory?.total > ordered.length) {
+                    const more = d.createElement('a');
+                    const url = new URL(LIBRARY_PATH, location.href);
+                    url.searchParams.set('query', word);
+                    more.href = url.href; more.target = '_blank'; more.rel = 'noopener noreferrer';
+                    more.className = 'sf-link sf-record-sync scan-disable';
+                    more.textContent = '到学习库查更多 ↗';
+                    noteRow.append(more);
+                }
                 const cardRow = make('div', 'sf-record-destination');
                 if (hasCards && display.application?.api?.viewNotes) {
                     for (const noteId of noteIds) {
-                        const linked = exactRecords.flatMap((item) => asArray(item.record?.cards).filter((card) => card.noteId === noteId).map((card) => ({card, word: item.record.entry.word})))[0];
+                        const linked = exactRecords.flatMap((record) => asArray(record.cards).filter((card) => card.noteId === noteId).map((card) => ({card, word: record.entry.word})))[0];
                         const remote = cardItems.find((item) => item.noteId === noteId);
                         const front = cleanText(linked?.card?.front || remote?.fields?.Question || remote?.fields?.Word || remote?.fields?.Front).replace(/<[^>]*>/g, ' ').trim();
                         const kind = CARD_CATALOG.find((item) => item.kind === linked?.card?.kind)?.label ?? '既有卡片';
@@ -895,7 +969,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     cardRow.append(make('span', '', `Anki · ${word} · ${hasCards ? '有卡片' : noCardsVerified ? '暂无卡片' : '未核实'}`));
                 }
                 memoryBody.append(noteRow, cardRow);
-                const states = [...reconciliation.values(), ...exactRecords.map((item) => item.record)];
+                const states = [...reconciliation.values(), ...exactRecords];
                 const conflict = states.some((item) => asArray(item?.conflicts).length > 0 || item?.syncState === 'conflict');
                 const pending = states.some((item) => item?.syncState === 'pending' || item?.ankiState === 'pending');
                 if (conflict || pending || reconcileFailed) {

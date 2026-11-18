@@ -23,6 +23,60 @@ import {studyCall} from '../ext/js/study/study-client.js';
 import {prepareSubtitleSettings} from '../ext/js/pages/subtitle-settings.js';
 import {translationEngineSelect} from '../ext/js/study/youtube-overlay.js';
 import {writeSubtitlePrefs} from '../ext/js/study/subtitle-prefs.js';
+import {prepareStudyFocus} from '../ext/js/display/study-focus.js';
+
+test('my records opens two senses of the same sentence by their saved IDs', async () => {
+    const url = 'https://reading.test/story';
+    const html = '<div class="content-body-inner"><article class="study-entry"><section class="study-reading-anchor"><div class="study-source"><p>They charged him.</p></div></section><div id="study-context"></div></article></div>';
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html, url}});
+    /** @type {Map<string, () => void>} */
+    const events = new Map();
+    const display = /** @type {import('../ext/js/display/display.js').Display} */ (/** @type {unknown} */ ({
+        query: 'charge',
+        history: {state: {url, sentence: {text: 'They charged him.'}}},
+        on: (/** @type {string} */ name, /** @type {() => void} */ fn) => events.set(name, fn),
+    }));
+    const notes = ['收费', '指控'].map((gloss, i) => ({
+        id: String(i + 1).repeat(32),
+        vaultSaved: true,
+        entry: {word: 'charge', sentence: 'They charged him.', url, sense: {key: String(i), gloss}},
+        openUrl: `obsidian://open?vault=Test&file=charge-${i}`,
+    }));
+    const call = vi.fn(async (/** @type {string} */ action) => {
+        const [recent, earlier] = notes;
+        if (action === 'libraryMemory') { return {total: 2, items: [{id: recent.id, word: 'charge'}]}; }
+        if (action === 'libraryRead') { return {items: [{record: recent}]}; }
+        if (action === 'libraryList') { return {canSearch: true, total: 2, items: [recent, earlier]}; }
+        return recent;
+    });
+    vi.stubGlobal('ResizeObserver', class {
+        /** Layout is not measured in this DOM fixture. */
+        observe() {}
+        /** The fixture has no observation to release. */
+        disconnect() {}
+    });
+    vi.stubGlobal('chrome', {
+        permissions: {contains: async () => true},
+        runtime: {getURL: (/** @type {string} */ path) => `chrome-extension://test${path}`},
+        storage: {local: {get: async () => ({})}, onChanged: {addListener() {}, removeListener() {}}},
+    });
+    try {
+        prepareStudyFocus(display, {call});
+        events.get('contentUpdateComplete')?.();
+        await vi.waitFor(() => expect(document.querySelectorAll('.sf-record-note')).toHaveLength(2));
+        const rows = [...document.querySelectorAll('.sf-record-note')];
+        expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual(['charge · 收费', 'charge · 指控']);
+        const links = rows.map((row) => new URL(row.querySelector('a')?.href ?? ''));
+        expect(links.map((link) => link.searchParams.get('studyRecordId'))).toEqual(notes.map(({id}) => id));
+        expect(links.every((link) => !link.searchParams.get('full'))).toBe(true);
+        expect(document.querySelector('#study-context')?.hasAttribute('data-study-record-id')).toBe(false);
+        expect(call).toHaveBeenCalledWith('libraryList', expect.objectContaining({scope: 'source', url, query: 'charge'}));
+    } finally {
+        events.get('contentClear')?.();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
 
 test('opens settings through the background and keeps video and settings engine controls in sync', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: readFileSync(new URL('../ext/settings.html', import.meta.url), 'utf8'), url: 'https://www.youtube.com/watch?v=abcdefghijk'}});
