@@ -37,6 +37,8 @@ export const PAGE_PREFS_KEY = 'studyPageTranslation';
 /** @type {PagePrefs} */
 const DEFAULTS = {mode: 'bilingual', sites: [], auto: false, selection: 'button', hoverKey: 'Alt', selectionDisplay: 'inline', ball: true, ballSites: {}};
 const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
+const ORIGINAL_CONTROLS = 'a[href],button:not([disabled])';
+const ORIGINAL_TOGGLE_STYLE = '.study-page-original-toggle{margin-inline-start:.5em;padding:0 .35em;font:inherit;font-size:.85em;line-height:1.4;background:var(--st-paper,#fbfaf7);color:var(--st-accent,#505ead);border:1px solid var(--st-line,#dce2eb);border-radius:4px;cursor:pointer}';
 const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:24px;height:24px;padding:0}.study-selection-trigger button{display:block;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--st-accent,#505ead);color:white;font:12px sans-serif;cursor:pointer}.study-selection-translation{border-left:2px solid var(--st-line,#dce2eb);padding-left:10px}.study-selection-actions{display:none;gap:2px;float:right}.study-selection-translation:hover .study-selection-actions,.study-selection-translation:focus-within .study-selection-actions,.study-selection-card .study-selection-actions{display:inline-flex}.study-selection-actions button,.study-selection-card header>button{all:unset;cursor:pointer;font:14px/1.4 sans-serif;padding:4px}.study-selection-card{width:360px;box-sizing:border-box;max-width:calc(100vw - 16px)}.study-selection-card header{display:flex;align-items:center;gap:4px}.study-selection-card .study-ui-select{flex:1;min-width:0}.study-selection-source{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;color:var(--st-muted,#6b7280)}.study-selection-source.is-expanded{display:block}.study-selection-card .study-page-translation{font-size:15px;color:var(--st-ink,#263248)}.study-page-flash{animation:study-page-flash .9s ease-out}@keyframes study-page-flash{from{background:var(--st-accent-soft,#e8eaff)}to{background:transparent}}.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
 
 /** @returns {Promise<PagePrefs>} */
@@ -105,7 +107,7 @@ export class PageTranslate {
          *
          */
         this.prefs = {...DEFAULTS};
-        /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,manual:boolean}>} */
+        /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,manual:boolean,originalToggle?:HTMLButtonElement}>} */
         this.rows = new Map();
         /** @type {Map<string,Promise<string>>} */
         this.cache = new Map();
@@ -148,7 +150,7 @@ export class PageTranslate {
     /** Connect only this document; no background page scanning. */
     async start() {
         const style = document.createElement('style');
-        style.textContent = STYLE;
+        style.textContent = STYLE + ORIGINAL_TOGGLE_STYLE;
         document.head.append(style);
         this.prefs = await readPagePrefs();
         this.bindSelection();
@@ -275,8 +277,11 @@ export class PageTranslate {
     paint() {
         document.dispatchEvent(new Event('study-page-change'));
         for (const [original, row] of this.rows) {
-            original.classList.toggle('study-original-hidden', this.prefs.mode === 'translation' && !row.manual && !row.node.classList.contains('study-page-error'));
-            row.node.dataset.only = String(this.prefs.mode === 'translation' && !row.manual);
+            const only = this.prefs.mode === 'translation' && !row.manual && !row.node.classList.contains('study-page-error');
+            const hidden = only && row.originalToggle?.getAttribute('aria-expanded') !== 'true';
+            original.classList.toggle('study-original-hidden', hidden);
+            row.node.dataset.only = String(hidden);
+            if (row.originalToggle) { row.originalToggle.hidden = !only; }
         }
     }
 
@@ -292,17 +297,36 @@ export class PageTranslate {
      * @param {string} text
      * @param {string} translation
      * @param {boolean} [manual]
+     * @param {boolean} [failed]
      * @returns {HTMLElement}
      */
-    render(original, text, translation, manual = false) {
+    render(original, text, translation, manual = false, failed = false) {
         this.restore(original);
         const node = document.createElement('div');
         node.className = 'study-page-translation scan-disable';
+        if (failed) { node.classList.add('study-page-error'); }
         node.lang = 'zh-CN';
         node.textContent = translation;
         node.dataset.original = text;
         original.after(node);
-        this.rows.set(original, {node, text, snapshot: this.source(original), manual});
+        let originalToggle;
+        if (!manual && !failed && original.querySelector(ORIGINAL_CONTROLS)) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'study-page-original-toggle';
+            button.textContent = '展开原文';
+            button.setAttribute('aria-expanded', 'false');
+            button.onclick = (event) => {
+                const expand = button.getAttribute('aria-expanded') !== 'true';
+                button.setAttribute('aria-expanded', String(expand));
+                button.textContent = expand ? '收起原文' : '展开原文';
+                this.paint();
+                if (expand && event.detail === 0) { /** @type {?HTMLElement} */ (original.querySelector(ORIGINAL_CONTROLS))?.focus(); }
+            };
+            originalToggle = button;
+            node.append(button);
+        }
+        this.rows.set(original, {node, text, snapshot: this.source(original), manual, originalToggle});
         this.paint();
         return node;
     }
@@ -348,13 +372,8 @@ export class PageTranslate {
             if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) { this.render(original, text, result, manual); }
         } catch (error) {
             if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) {
-                this.render(original, text, `这段没翻译成功：${reasonOf(error)} · 点击重试`, manual);
-                const row = this.rows.get(original);
-                if (row) {
-                    row.node.classList.add('study-page-error');
-                    row.node.onclick = () => { void this.translateNode(original, manual); };
-                    original.classList.remove('study-original-hidden');
-                }
+                const node = this.render(original, text, `这段没翻译成功：${reasonOf(error)} · 点击重试`, manual, true);
+                node.onclick = () => { void this.translateNode(original, manual); };
             }
         } finally {
             this.pending.delete(original);

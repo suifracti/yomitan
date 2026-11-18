@@ -63,6 +63,7 @@
 | 翻译中途切轨后「翻译全文」一直灰色；确认条留着不走 | L-010；YoutubeReader._finishTranslation、confirmTranslation |
 | 字幕正在翻，查词卡又把同一句翻了一遍 | L-010；YoutubeReader._waitCaptionTranslation、frontendReadCaptionTranslation |
 | 整页翻译用免费的，中途切 AI 会不会扣费 | L-010；PageTranslate.approve、SubtitleTranslation.handle 的 expectedEngine |
+| 只看译文时想点原段里的链接或按钮 | L-010；PageTranslate.render / paint |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
@@ -315,6 +316,8 @@
 **打开词卡不另翻正在翻译的字幕**：已经有译文时直接显示；正在请求时先打开词卡，借该行原有私有令牌和原句等同一批返回，不按英文串猜。取消、失败或等待超时则留「翻译本句」，不因设置通知自动补发；还没交给服务的字幕不挡住词卡翻译。复用的译文可随原句保存，不记作新的翻译轮次。见[浏览器双轨与请求数](youtube-study-wiring.md#2026-11-18-正在翻译的字幕与词卡共享结果)。
 
 **免费请求不能因中途切设置变成付费**：整页翻译以同一个引擎快照做确认、缓存和发请求；后台以实际准备使用的全局引擎核 `expectedEngine`，改了就保留原文，提示重试，不自动改投。模型确认让当前页排队段落共用；本人点的单句仍不弹确认。见[切换竞态与替身验证](youtube-study-wiring.md#2026-11-19-整页翻译切服务不跳过费用确认)。
+
+**只看译文不等于不能用原网页的链接**：悬停的原文只是提示，不可点击。含链接或可用按钮的段落才给就地展开入口，靠原节点的隐藏类切换；不复制链接或改写地址和监听。键盘展开后把焦点送到原控件。纯文本、双语、单句和失败状态不多一个入口。见[原链接和键盘操作](youtube-study-wiring.md#2026-11-19-只看译文也能用原网页的链接)。
 
 ## L-011 同步到日常使用的版本可以原样再跑一次
 

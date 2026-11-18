@@ -104,7 +104,7 @@ test('switching the global service cannot turn a free page request into an uncon
 });
 
 test('translates visible blocks and restores the exact original nodes in both modes', async () => {
-    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<p id="source">Hello <strong>world</strong><button>Skip</button>.</p><nav>Navigation</nav>', url: 'https://example.test/article'}});
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<p id="source">Hello <a href="#world"><strong>world</strong></a><button>Skip</button>.</p><nav>Navigation</nav>', url: 'https://example.test/article'}});
     /** @type {Element[]} */
     const observed = [];
     vi.stubGlobal('IntersectionObserver', class {
@@ -127,16 +127,31 @@ test('translates visible blocks and restores the exact original nodes in both mo
     const controller = new PageTranslate({translate: async () => '你好，世界。'});
     try {
         const original = document.querySelector('#source');
+        const link = original.querySelector('a');
         const strong = original.querySelector('strong');
+        const clicked = vi.fn((/** @type {Event} */ event) => event.preventDefault());
+        link.addEventListener('click', clicked);
         await controller.toggle();
         expect(observed).toContain(original);
         expect(observed).not.toContain(document.querySelector('nav'));
         await controller.translateNode(original);
-        expect(document.querySelector('.study-page-translation').textContent).toBe('你好，世界。');
+        const translation = document.querySelector('.study-page-translation');
+        expect(translation.firstChild.textContent).toBe('你好，世界。');
         controller.prefs.mode = 'translation';
         controller.paint();
         expect(original.classList.contains('study-original-hidden')).toBe(true);
-        expect(document.querySelector('.study-page-translation').dataset.original).toBe('Hello world .');
+        expect(translation.dataset.original).toBe('Hello world .');
+        const reveal = translation.querySelector('button');
+        expect(reveal?.getAttribute('aria-expanded')).toBe('false');
+        reveal.click();
+        expect(original.classList.contains('study-original-hidden')).toBe(false);
+        expect(document.activeElement).toBe(link);
+        expect(original.querySelector('a')).toBe(link);
+        link.click();
+        expect(clicked).toHaveBeenCalledOnce();
+        expect(link.getAttribute('href')).toBe('#world');
+        reveal.click();
+        expect(original.classList.contains('study-original-hidden')).toBe(true);
         const later = document.createElement('p');
         later.textContent = 'A later paragraph.';
         document.body.append(later);
