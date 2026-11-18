@@ -66,6 +66,7 @@
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
 | 想用旧原句辨义，或对照同一个意思在两句话里的用法 | L-012；study_senses.practice_material、study-library.js |
+| 想看同一个词义在另一篇文章或别的视频里怎么用 | L-012；practice_material 的素材优先、学习库用法对照 |
 | 查词卡又没认出这个词，想练这句或找以前的原句 | L-012；study-stuck.js、libraryContextMiss 的 recallRecordId、学习库入口 |
 | 想直接对照这个词在视频、文章里的旧原句，不想先做题 | L-012；study-focus.js「我的记录」、libraryList 的 word 范围 |
 | 想用自己的旧原句练填空，但不想制卡 | L-012；study-library.js 的 sentencePrompts、study-card-kinds.js 的 blankStudyWord |
@@ -325,6 +326,8 @@
 网页与字幕共用短义：40 字放不下时，部分掌握的词把还在学的义项排在前面。字幕挑句、计数、已制卡原句排重按 v2 里可选的 `lemma`；选中与回听仍用真实字幕的词形、原句和时间，不把原声中的 charges 换成 charge。旧桥没有此字段时沿用原来命中的词。见[字幕推荐案例](youtube-study-wiring.md#2026-11-18-字幕推荐给不同的词留位置)。
 
 **用旧原句辨义或对照用法**：学习库首页搜索同一原形或已关联词形时，`study_senses.practice_material` 优先返回原来两种不同义项的 `practicePair`。如果不能出辨义题，却有两条明确归属同一义项的已存原句，另给 `practiceExamples`；旧版不会把它当辨义题。两种模式用同一入口，保留原词形、出处、记录号；同文重复不当两个例子，同一原句有不同读法时不拿来出题。不调用模型或评定掌握。见[两种 charge 的浏览器练习](youtube-study-wiring.md#2026-11-18-用自己的旧原句辨词义)、[同一个意思的实际用法](youtube-study-wiring.md#2026-11-18-对照同一义项的两条旧原句)。
+
+**同义项先跨素材看用法**：有真正不同来源时，不取同一视频里的最新两句；复用同一素材分组，分享、跳时和播放地址不算不同素材。仍找不到两个不同来源就保留原来两句。已有译文跟随原笔记；辨义先选择再显示，用法对照直接显示，不为缺译文发请求。见[一个词从视频到文章](youtube-study-wiring.md#2026-11-18-同一个词去另一份素材看用法)。
 
 **不制卡也可以用原句练填空**：「练原句填空」与辨词义共用现有练习区，只取当前已读结果中已存的英语笔记；`blankStudyWord` 与填空卡合用单词边界，练习只取有唯一空位的题目，不从词形猜新题。遮去提示中的原词，核对的是原文用法而非判定语法或掌握；答案揭晓后能继续打开原记录，不调模型或写复习结果。见[原句用词核对](youtube-study-wiring.md#2026-11-18-用已保存的原句练一小轮填空)。
 

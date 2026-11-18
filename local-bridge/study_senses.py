@@ -9,7 +9,7 @@ import time
 
 from study_library import entry_id, entry_lemma as canonical, paragraph, text, source_url
 from study_cards import CARD_STAGES, card_receipts
-from study_sources import with_article_href
+from study_sources import page_source_key, with_article_href
 
 MISS_KINDS = ('newSense', 'collocation', 'structure', 'recall')
 MATURE = {'familiar', 'known'}
@@ -235,11 +235,12 @@ def practice_material(rows, word):
             continue
         by_sentence.setdefault(sentence, {}).setdefault(sense_key(e), row)
     def pack(pair):
-        fields = ('word', 'sentence', 'sense', 'context', 'url', 'title', 'videoTime', 'language')
+        fields = ('word', 'sentence', 'sense', 'context', 'translation', 'url', 'title', 'videoTime', 'language')
         return [with_article_href({'id': row['id'], 'entry': {k: row['entry'][k] for k in fields if k in row['entry']}})
                 for row in pair]
 
-    pair, examples, first_by_key, seen_senses, seen_glosses = [], [], {}, set(), set()
+    pair, examples, cross_source = [], [], []
+    first_by_key, source_by_key, seen_senses, seen_glosses = {}, {}, set(), set()
     for senses in by_sentence.values():
         if len(senses) != 1:
             continue  # The learner saved more than one reading of this exact sentence.
@@ -250,6 +251,10 @@ def practice_material(rows, word):
             if not examples and key in first_by_key:
                 examples = [first_by_key[key], row]
             first_by_key.setdefault(key, row)
+            if not cross_source and (source := page_source_key(e.get('url') or '')):
+                first_source, first_row = source_by_key.setdefault(key, (source, row))
+                if source != first_source:
+                    cross_source = [first_row, row]
         if key in seen_senses or short in seen_glosses:
             continue
         seen_senses.add(key)
@@ -257,7 +262,7 @@ def practice_material(rows, word):
         pair.append(row)
         if len(pair) == 2:
             return {'practicePair': pack(pair)}
-    return {'practiceExamples': pack(examples)} if examples else {}
+    return {'practiceExamples': pack(cross_source or examples)} if examples else {}
 
 
 def senses(library, word, now=None):

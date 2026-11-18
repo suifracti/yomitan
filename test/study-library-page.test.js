@@ -172,6 +172,7 @@ describe('study library page', () => {
                 context: 'A morning routine.',
                 title: index === 0 ? 'Park journal' : 'River journal',
                 url: `https://reading.example/story?id=${index}`,
+                ...(index === 1 ? {translation: '她沿河跑步。'} : {}),
                 sense: {key: 'run#2', gloss: '跑步'},
             },
         }));
@@ -193,6 +194,7 @@ describe('study library page', () => {
             expect(panel.querySelectorAll('button')).toHaveLength(0);
             expect(panel.textContent).toContain('River journal');
             expect(panel.textContent).toContain('跑步');
+            expect([...panel.querySelectorAll('.study-library-context')].map((line) => line.textContent)).toEqual(['她沿河跑步。']);
             const links = [...panel.querySelectorAll('a')].filter((link) => link.textContent.includes('继续学习'));
             expect(links.map((link) => new URL(link.href).searchParams.get('studyRecordId'))).toEqual(items.map(({id}) => id));
             start.click();

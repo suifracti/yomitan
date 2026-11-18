@@ -39,7 +39,7 @@ const SOURCES_UPDATE_BRIDGE = '当前的本机桥还不能按素材查看。可�
 
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
-/** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
+/** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}, translation?: string}}} SensePracticeItem */
 /** @typedef {'cloze'|'dictation'|'recall'} PracticeMode */
 /** @typedef {{row: StudyLibraryRecord, kind: 'cloze'|'dictation'|'read', text: string, answer: string, hint: string}} SentencePrompt */
 /** @typedef {{prompts: SentencePrompt[], hasMore: boolean}} DictationRound */
@@ -337,6 +337,12 @@ function writeSentence(element, sentence, word, wholeWord = false) {
 function appendPracticeSource(answer, row, includeContext = false) {
     const {entry} = row;
     const legacy = parseLegacySourceLocator(entry.context);
+    if (entry.translation) {
+        const translation = document.createElement('p');
+        translation.className = 'study-library-context';
+        translation.textContent = entry.translation;
+        answer.append(translation);
+    }
     if (includeContext && entry.context && !legacy) {
         const context = document.createElement('p');
         context.textContent = entry.context;
