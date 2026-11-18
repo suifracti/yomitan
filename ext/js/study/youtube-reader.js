@@ -406,6 +406,7 @@ export class YoutubeReader extends EventTarget {
      */
     setOffset(ms, remember = true) {
         this._endListening();
+        this._restoreReplay?.();
         for (const button of this._view?.list.querySelectorAll('button[data-cue-notes][aria-expanded="true"]') ?? []) { /** @type {HTMLButtonElement} */ (button).click(); }
         const value = Math.max(-600000, Math.min(600000, Math.round(ms / 50) * 50));
         this._offsetMs = value;
@@ -601,37 +602,28 @@ export class YoutubeReader extends EventTarget {
         const index = Math.max(0, Math.min(session.cues.length - 1, current + (key === 'a' ? -1 : (key === 'd' ? 1 : 0))));
         const cue = session.cues[index];
         this._stopLoop('');
-        this._seek(cue.id);
         this._shadowRow = null;
         this._shadowDone = '';
         this._shadowPause = null;
-        if (key === 's') {
-            const rate = video.playbackRate;
+        if (key !== 's') {
+            if (this._seek(cue.id)) { this.continueShadow(); }
+            return true;
+        }
+        this._endListening();
+        try {
             const start = session.seekSeconds(cue.id);
             const end = (cue.endMs + session.offsetMs) / 1000;
-            const restore = () => {
-                video.playbackRate = rate;
-                video.removeEventListener('timeupdate', finish);
-                video.removeEventListener('seeking', seek);
-                video.removeEventListener('ended', restore);
+            const info = this._rowInfo.get(cue.id);
+            const isCurrent = () => this._video === video && info?.isCurrent() === true;
+            const cancel = youtubeStudyContext.playRange(video, {start, end, isCurrent, rate: slow ? 0.75 : void 0}, (reason) => {
                 this._restoreReplay = null;
-            };
-            const finish = () => {
-                if (video.currentTime >= end) {
-                    video.pause();
-                    restore();
-                }
-            };
-            const seek = () => {
-                if (video.currentTime < start - 0.5 || video.currentTime > end + 0.5) { restore(); }
-            };
-            this._restoreReplay = restore;
-            if (slow) { video.playbackRate = 0.75; }
-            video.addEventListener('timeupdate', finish);
-            video.addEventListener('seeking', seek);
-            video.addEventListener('ended', restore);
+                if (reason === 'failed') { this._status('播放没有开始，请点播放器的播放按钮。'); }
+            });
+            this._restoreReplay = () => cancel(false);
+            this._resumeFollow();
+        } catch (error) {
+            this._status(error instanceof Error ? error.message : String(error));
         }
-        this.continueShadow();
         return true;
     }
 
@@ -1736,17 +1728,20 @@ export class YoutubeReader extends EventTarget {
 
     /**
      * @param {string} id
+     * @returns {boolean}
      */
     _seek(id) {
         this._endListening();
         this._restoreReplay?.();
-        if (!this._session || !this._video) { return; }
+        if (!this._session || !this._video) { return false; }
         if (this._loop && this._loop.id !== id) { this._stopLoop('已退出循环'); }
         try {
             this._video.currentTime = this._session.seekSeconds(id);
             this._resumeFollow();
+            return true;
         } catch (error) {
             this._status(error instanceof Error ? error.message : String(error));
+            return false;
         }
     }
 

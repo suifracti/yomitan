@@ -108,12 +108,31 @@ export class YoutubeStudyContext {
         const bound = this.tokens.get(token);
         const video = bound?.video;
         if (!bound || !video) { throw new Error('没找到这句的播放器，请回到视频里重试。'); }
-        const live = () => bound.element.isConnected && bound.row.isCurrent() && video.isConnected && video === bound.row.video() &&
-        video.src === bound.src && (video.currentSrc || video.src) === bound.media && (video.srcObject ?? null) === bound.srcObject;
+        const isCurrent = () => bound.element.isConnected && bound.row.isCurrent() && video === bound.row.video();
+        if (video.src !== bound.src || (video.currentSrc || video.src) !== bound.media || (video.srcObject ?? null) !== bound.srcObject) {
+            throw new Error('视频或字幕已改变，请回到视频里重试。');
+        }
+        const {start, end} = bound.row;
+        return this.playRange(video, {start, end, isCurrent}, finished);
+    }
+
+    /**
+     * Plays a reader-owned range. This does not issue a selection or capture token.
+     * @param {HTMLVideoElement} video
+     * @param {{start: number, end: number, isCurrent: () => boolean, rate?: number}} range
+     * @param {(reason: 'ended'|'cancelled'|'failed') => void} [finished]
+     * @returns {(pause?: boolean) => void}
+     * @throws {Error}
+     */
+    playRange(video, {start, end, isCurrent, rate}, finished) {
+        const {src, srcObject} = video;
+        const media = video.currentSrc || src;
+        const live = () => video.isConnected && video.src === src && (video.currentSrc || video.src) === media &&
+        video.srcObject === srcObject && isCurrent();
         if (!live()) { throw new Error('视频或字幕已改变，请回到视频里重试。'); }
         if (this.active.size > 0) { throw new Error('正在采集原声，请稍后再回听。'); }
-        const {start, end} = bound.row;
         this.replay?.('cancelled');
+        const previousRate = video.playbackRate;
         const clockEvents = ['timeupdate', 'playing', 'seeked', 'ratechange'];
         /** @type {ReturnType<typeof setTimeout>|undefined} */
         let timer;
@@ -126,6 +145,7 @@ export class YoutubeStudyContext {
             video.removeEventListener('ended', onEnded);
             video.removeEventListener('emptied', onEmptied);
             this.replay = null;
+            if (rate !== void 0 && video.playbackRate === rate) { video.playbackRate = previousRate; }
             finished?.(reason);
         };
         const onTime = () => {
@@ -148,15 +168,16 @@ export class YoutubeStudyContext {
         const onEnded = () => { stop(live() && video.currentTime >= end - 0.1 ? 'ended' : 'cancelled'); };
         const onEmptied = () => { stop('cancelled'); };
         this.replay = stop;
+        if (rate !== void 0) { video.playbackRate = rate; }
         video.currentTime = start;
         for (const event of clockEvents) { video.addEventListener(event, onTime); }
         video.addEventListener('seeking', onSeek);
         video.addEventListener('ended', onEnded);
         video.addEventListener('emptied', onEmptied);
         void video.play()?.catch?.(() => stop('failed'));
-        return () => {
+        return (pause = true) => {
             if (this.replay !== stop) { return; }
-            if (live()) { video.pause(); }
+            if (pause && live()) { video.pause(); }
             stop('cancelled');
         };
     }

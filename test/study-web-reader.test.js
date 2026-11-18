@@ -235,6 +235,56 @@ test('regrouping retains finished translations only for exact rows of the same l
     }
 });
 
+test('keyboard replay stops on the shared media clock and releases slow speed on exit', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: false, resume: false}, site: /** @type {never} */ (fakeSite(null)), call: async () => ({items: []})});
+    reader.start();
+    await vi.waitFor(() => expect(document.querySelector('#study-yt-reader')).not.toBeNull());
+    reader.importText('1\n00:00:01,000 --> 00:00:02,000\nWe learn from sentences.\n', 'lesson.srt');
+    const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+    const paused = vi.spyOn(video, 'paused', 'get').mockReturnValue(false);
+    const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
+    const play = vi.spyOn(video, 'play').mockResolvedValue();
+    let time = 1.4;
+    const readTime = vi.spyOn(video, 'currentTime', 'get').mockImplementation(() => time);
+    const seek = vi.spyOn(video, 'currentTime', 'set').mockImplementation((value) => { time = value; });
+    vi.useFakeTimers();
+    video.playbackRate = 1.25;
+    try {
+        expect(reader.captionShortcut('s', true)).toBe(true);
+        expect(time).toBe(1);
+        expect(video.playbackRate).toBe(0.75);
+        video.dispatchEvent(new Event('playing'));
+        vi.advanceTimersByTime(1300);
+        expect(pause).not.toHaveBeenCalled();
+        time = 2;
+        vi.advanceTimersByTime(40);
+        expect(pause).toHaveBeenCalledOnce();
+        expect(video.playbackRate).toBe(1.25);
+
+        reader.captionShortcut('s', true);
+        time = 8;
+        video.dispatchEvent(new Event('seeking'));
+        expect(video.playbackRate).toBe(1.25);
+        expect(pause).toHaveBeenCalledOnce();
+        reader.setOffset(-1500, false);
+        expect(() => reader.captionShortcut('s', true)).not.toThrow();
+        expect(play).toHaveBeenCalledTimes(2);
+        expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('请调整偏移');
+    } finally {
+        reader.updatePrefs({shortcuts: false});
+        paused.mockRestore();
+        pause.mockRestore();
+        play.mockRestore();
+        readTime.mockRestore();
+        seek.mockRestore();
+        video.playbackRate = 1;
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+    }
+});
+
 test('other sites: nothing found explains how to get subtitles', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}, site: /** @type {never} */ (fakeSite(null))});
