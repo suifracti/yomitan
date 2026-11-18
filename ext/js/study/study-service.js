@@ -17,7 +17,7 @@
  */
 
 import {mediaKeyOf, timedUrl} from './media-key.js';
-import {StudySync} from './study-sync.js';
+import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
 import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
@@ -773,7 +773,8 @@ export class StudyService {
                 const update = {...entry};
                 delete update.recordId;
                 const turns = await this.journal.get(entry);
-                await this.sync.enqueue({key: `update:${entry.language ?? 'en'}:${existingId}`,
+                const updateKey = studyUpdateKey(entry.language ?? 'en', existingId);
+                await this.sync.enqueue({key: updateKey,
                     action: 'libraryUpdate',
                     id: existingId,
                     language: entry.language ?? 'en',
@@ -785,7 +786,7 @@ export class StudyService {
                 const row = /** @type {{items?: import('study').LearningMaterial[]}|undefined} */ (response.library)?.items?.[0]?.record;
                 if (!response.ok || row?.id !== existingId) { throw new Error(response.error ?? '更新待同步；不会另建记录。'); }
                 await this.sync.bind(entry, row);
-                const pending = (await this.sync.pending()).find((task) => task.id === existingId);
+                const pending = (await this.sync.pending()).find((task) => task.key === updateKey);
                 return pending ? {...row, syncState: 'pending', error: pending.error ?? '学习更新待同步'} : row;
             }
             return await this.rememberEntry(entry);
@@ -804,7 +805,7 @@ export class StudyService {
         if (action === 'journalConversation') { return await this.journal.conversation(value); }
         if (action === 'syncPending') {
             if (!(/** @type {{checkOnly?: boolean}} */ (value ?? {})).checkOnly) { await this.sync.flush(); }
-            return await this.sync.pending();
+            return (await this.sync.pending()).map((task) => (needsStudyUpdateReview(task) ? {...task, reviewOnly: true} : task));
         }
         if (action === 'conversationUsage') { return this.journal.usage(value); }
         if (action === 'usageStats') {

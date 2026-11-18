@@ -413,6 +413,8 @@ async function initializePage() {
             }
         } catch { /* Keep the browser-preferred fallback if profile options are unavailable. */ }
         const status = byId('study-library-status');
+        const oldUpdates = document.getElementById('study-library-old-updates');
+        const oldText = oldUpdates?.querySelector('textarea');
         const list = byId('study-library-list');
         const search = /** @type {HTMLInputElement} */ (document.getElementById('study-library-search'));
         const more = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-more'));
@@ -421,6 +423,36 @@ async function initializePage() {
         let lookupWarning = '';
         /** @param {string} text */
         const setStatus = (text) => { status.textContent = lookupWarning ? `${text} · 选词查词未就绪：${lookupWarning}` : text; };
+        oldUpdates?.querySelector('button')?.addEventListener('click', async () => {
+            if (!oldText) { return; }
+            try {
+                await navigator.clipboard.writeText(oldText.value);
+                setStatus('旧问答已复制；请粘贴到核对过的笔记。');
+            } catch {
+                oldText.focus();
+                oldText.select();
+                setStatus('已选中旧问答，请用复制快捷键。');
+            }
+        });
+        /** @param {import('study').PendingSyncTask[]} pending */
+        const showOldUpdates = (pending) => {
+            if (!oldUpdates || !oldText) { return; }
+            const held = pending.filter((task) => task.reviewOnly);
+            oldUpdates.hidden = held.length === 0;
+            const summary = oldUpdates.querySelector('summary');
+            if (summary) { summary.textContent = `有 ${held.length} 项旧问答需核对`; }
+            oldText.value = held.map(({entry, turns}, i) => {
+                const saved = [entry?.word, entry?.sentence, entry?.title, entry?.url, entry?.context, entry?.meaning, entry?.translation, entry?.notes];
+                const conversation = (turns ?? []).flatMap((turn) => [
+                    turn.question && `问：${turn.question}`,
+                    turn.meaning,
+                    turn.translation,
+                    turn.notes,
+                    turn.feedback === 'understood' ? '本人反馈：这次懂了' : (turn.feedback === 'unclear' ? '本人反馈：仍没懂' : ''),
+                ]);
+                return [`旧补充 ${i + 1}`, ...new Set([...saved, ...conversation].filter(Boolean))].join('\n');
+            }).join('\n\n');
+        };
         void prepareStudyLibraryLookup(application).catch((error) => {
             lookupWarning = error instanceof Error ? error.message : '请刷新页面再试。';
             setStatus('学习库仍可使用');
@@ -965,8 +997,10 @@ listedQuery :
             syncPendingError = '';
             if (!readOnly) {
                 try {
-                    const pending = await studyCall('syncPending');
-                    pendingSyncCount = Array.isArray(pending) ? pending.length : 0;
+                    const result = await studyCall('syncPending');
+                    const pending = /** @type {import('study').PendingSyncTask[]} */ (Array.isArray(result) ? result : []);
+                    showOldUpdates(pending);
+                    pendingSyncCount = pending.filter((task) => !task.reviewOnly).length;
                 } catch (error) {
                     syncPendingError = error instanceof Error ? error.message : '待同步队列检查失败。';
                 }

@@ -254,3 +254,4 @@ export type RememberSaveIntent = {targetId?: string; key: string; entry: Library
 
 export type SyncLink = {key: string; id: string; language: string; targetId?: string};
 export type SyncTask = {remember?: boolean; key: string; action: string; language: string; id?: string; targetId?: string; entry?: Partial<LibraryEntry>; turns?: LearningTurn[]; favorite?: boolean; revision?: string; error?: string};
+export type PendingSyncTask = SyncTask & {reviewOnly?: true};

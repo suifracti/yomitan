@@ -105,6 +105,35 @@ test('following up in a saved sense never writes into the last opened sense', as
     expect(await service.handle('journalPeek', source)).toMatchObject([{translation: '还没有选笔记。'}]);
 });
 
+test('old unverified note updates stay readable and cannot merge into a confirmed follow-up', async () => {
+    const id = 'a'.repeat(32);
+    const source = {word: 'charge', sentence: 'They charged him.', url: 'https://reading.test/story', context: '', language: 'en'};
+    const legacy = {key: `update:en:${id}`,
+        revision: 'before-upgrade',
+        action: 'libraryUpdate',
+        remember: true,
+        id,
+        language: 'en',
+        entry: {meaning: '可能来自另一个意思'},
+        turns: [{id: 'old-turn', question: '原先的问题'}]};
+    const data = {studySyncOutboxV1: [legacy]};
+    const {service, sent} = make(data, (payload) => {
+        const {action} = /** @type {{action: string}} */ (payload);
+        const record = {id, entry: source, vaultSaved: true};
+        if (action === 'libraryRead') { return {ok: true, library: {items: [{id, record}]}}; }
+        return {ok: true, library: record};
+    });
+    await service.handle('libraryRead', {ids: [id], language: 'en'});
+    await service.handle('generate', {...source, recordId: id, mode: 'translate', sentenceTranslation: '他们向他收费。'});
+    const pending = await service.handle('syncPending');
+    const updates = sent.filter((p) => /** @type {{action: string}} */ (p).action === 'libraryUpdate');
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({id, entry: {translation: '他们向他收费。'}, turns: [{translation: '他们向他收费。'}]});
+    expect(updates[0]).not.toHaveProperty('entry.meaning');
+    expect(data.studySyncOutboxV1).toEqual([legacy]);
+    expect(pending).toEqual([{...legacy, reviewOnly: true}]);
+});
+
 test('a late refresh cannot mark a word known again after undo', async () => {
     vi.stubGlobal('chrome', {permissions: {contains: async () => true}});
     const started = deferPromise();

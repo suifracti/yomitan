@@ -846,8 +846,8 @@ export function prepareStudyTranslation() {
                         }
                         await refresh();
                     }
-                    const pendingSync = /** @type {unknown[]} */ (await studyCall('syncPending', {checkOnly: true}));
-                    status.textContent = Array.isArray(pendingSync) && pendingSync.length > 0 ?
+                    const pendingSync = /** @type {import('study').PendingSyncTask[]} */ (await studyCall('syncPending', {checkOnly: true}));
+                    status.textContent = Array.isArray(pendingSync) && pendingSync.some((task) => !task.reviewOnly) ?
 '内容已保留 · 有更新待同步，可在学习库重试。' :
                         (mode === 'translate' ? '原句译文已显示。' : '本轮问答已保留。') +
                         (payload.recordId ? '' : ' 点「记住它」存入学习记录。');

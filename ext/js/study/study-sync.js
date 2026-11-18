@@ -22,6 +22,24 @@ import {SAVED_KEY} from './study-data.js';
 const LINKS = 'studySyncLinksV1';
 const OUTBOX = 'studySyncOutboxV1';
 
+/**
+ * @param {string} language
+ * @param {string} id
+ * @returns {string}
+ */
+export function studyUpdateKey(language, id) {
+    return `update:v2:${language}:${id}`;
+}
+
+/**
+ * Old entries could combine a selected note and a turn whose sense was never checked.
+ * @param {import('study').SyncTask} task
+ * @returns {boolean}
+ */
+export function needsStudyUpdateReview(task) {
+    return task.action === 'libraryUpdate' && task.key !== studyUpdateKey(task.language, task.id ?? '');
+}
+
 /** Existing browser storage holds delivery intents, never a second learning database. */
 export class StudySync {
     /** @param {import('./study-service.js').StudyService} service */
@@ -79,7 +97,8 @@ export class StudySync {
                 revision,
                 ...(task.entry && task.action === 'libraryUpdate' ? {entry: {...old?.entry, ...task.entry}} : {}),
                 ...(turns.size > 0 ? {turns: [...turns.values()]} : {})}];
-            if (new TextEncoder().encode(JSON.stringify(next)).length > 2000000) { throw new Error('待同步内容较多，请先补齐；未删除旧记录。'); }
+            const retryable = next.filter((row) => !needsStudyUpdateReview(row));
+            if (new TextEncoder().encode(JSON.stringify(retryable)).length > 2000000) { throw new Error('待同步内容较多，请先补齐；未删除旧记录。'); }
             if (task.action === 'libraryFavorite') {
                 // Publish pending metadata before a worker can pick up this revision.
                 const saved = (await this.service.storage.get(SAVED_KEY))[SAVED_KEY];
@@ -107,7 +126,7 @@ export class StudySync {
         if (!link) { return; }
         const entry = Object.fromEntries(Object.entries(result).filter(([k, v]) => ['translation', 'meaning', 'notes'].includes(k) && typeof v === 'string' && v.trim()));
         const turns = await this.service.journal.get(source);
-        await this.enqueue({...link, key: `update:${link.language}:${link.id}`, action: 'libraryUpdate', entry, turns});
+        await this.enqueue({...link, key: studyUpdateKey(link.language, link.id), action: 'libraryUpdate', entry, turns});
         void this.flush();
     }
 
@@ -162,6 +181,7 @@ export class StudySync {
      */
     async deliver(attempted = new Set()) {
         for (const task of await this.pending()) {
+            if (needsStudyUpdateReview(task)) { continue; }
             const token = `${task.key}:${task.revision}`;
             if (attempted.has(token)) { continue; }
             const current = (await this.pending()).find((row) => row.key === task.key);
