@@ -47,6 +47,7 @@
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 换浏览器后旧问答只留在笔记，词卡学习历史看不到 | L-002；readStudyRecord、study_library_core.saved_learning_turns |
+| 另一端已改释义，刷新词卡仍显示旧内容／「记住它」盖回去 | L-002；search-main 的笔记编号恢复、study-library.rememberNote、StudyService.rememberEntry |
 | 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
@@ -102,6 +103,8 @@
 **词卡里要继续问的是这一条旧笔记，不是最近的一条**：「我的记录」按已读到的记录号列简释、原句与来源，优先本句。按词的近期摘要没召回较早义项时，再查现有本页索引；不把同页另一个原句冒充本句。继续学习只传编号与语言，打开后沿 `readStudyRecord` 重读；原笔记链接和 Anki 仍是各自的入口。见[从词卡选择这条笔记](youtube-study-wiring.md#2026-11-18-从我的记录继续问指定的笔记)。
 
 **没有浏览器缓存也能看这条笔记的旧问答**：明确恢复笔记才用 `libraryRead(includeTurns: true)`，按原文中已确认的轮次编号读最近五轮，不从另一义项、摘要或模型缓存猜。词卡以轮次编号和本地问答合并，保留未同步反馈；只有笔记保存而没有本地副本的轮次在历史里只读，不盖过手动更正。旧桥只在不认该投影字段时回常规读取。不迁移原笔记，不增加数据库。见[干净浏览器两入口回读](youtube-study-wiring.md#2026-11-18-换了浏览器也能找回已存问答)。
+
+**历史里的词卡不是最新笔记**：搜索页保留原笔记的记录编号与语言，刷新即重读；升级时只剩旧浏览器状态也按原编号读，不拿旧释义作退路。「记住它」和需要先保存的制卡／取声共用同一提交函数。已读回的卡对照打开时的值，只更新本次变动，别处改过其他字段不覆盖；提交前碰到同字段不同值提示保留草稿并重开。此处比对在入队前，不证明离线补交时的并发保护。见[同页刷新及部分编辑验证](youtube-study-wiring.md#2026-11-18-刷新重读笔记只保存这张卡的改动)。
 
 **已保存的两个义项不能共用一枚弹窗标签**：旧标签身份只看词、原句、网址和视频位置，切回会恢复第一条笔记和草稿。现在标签、词卡和记录页都从 `savedStudyRecordId` 取明确身份，标签加短义。捕获草稿不再把 DOM 中自动匹配的候选笔记当作恢复对象；只有当前同来源的明确保存回执才刷新该标签的笔记、词义和轮次。正常词卡与受校验字幕不互相套用授权。见[两条草稿的切换验证](youtube-study-wiring.md#2026-11-18-收起词卡后不同义项各自保留草稿)。
 

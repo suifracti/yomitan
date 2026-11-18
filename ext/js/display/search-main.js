@@ -30,7 +30,7 @@ import {SearchDisplayController} from './search-display-controller.js';
 import {prepareStudyCard} from './study-card.js';
 import {prepareStudyFocus} from './study-focus.js';
 import {readStudyRecord, studyCall} from '../study/study-client.js';
-import {studyResumeParams} from '../study/study-data.js';
+import {savedStudyLanguage, savedStudyRecordId, studyResumeParams} from '../study/study-data.js';
 import {SearchPersistentStateController} from './search-persistent-state-controller.js';
 
 await Application.main(true, async (application) => {
@@ -111,8 +111,10 @@ await Application.main(true, async (application) => {
         }
     } else {
         const resumeParams = new URLSearchParams(location.search);
-        if (resumeParams.get('studyResume') === '1') {
-            const savedRecordId = resumeParams.get('studyRecordId') ?? '';
+        const resume = resumeParams.get('studyResume') === '1';
+        const queryAtOpen = resumeParams.get('query') ?? '';
+        const savedRecordId = resume ? resumeParams.get('studyRecordId') ?? '' : savedStudyRecordId(display.history.state, queryAtOpen) ?? '';
+        if (resume || savedRecordId) {
             /** @type {import('study').LibraryEntry|undefined} */
             let savedRecordEntry;
             /** @type {string[]|undefined} */
@@ -121,7 +123,8 @@ await Application.main(true, async (application) => {
             let savedRecordTurns;
             if (savedRecordId) {
                 try {
-                    const record = await readStudyRecord(savedRecordId, resumeParams.get('studyLanguage') ?? 'en');
+                    const language = resumeParams.get('studyLanguage') ?? savedStudyLanguage(display.history.state, queryAtOpen) ?? 'en';
+                    const record = await readStudyRecord(savedRecordId, language);
                     savedRecordEntry = record.entry;
                     savedRecordTurnIds = record.turnIds ?? [];
                     savedRecordTurns = record.savedTurns;
@@ -143,7 +146,11 @@ await Application.main(true, async (application) => {
             const videoTimeValue = lookupParams.has('studyVideoTime') ? Number(lookupParams.get('studyVideoTime')) : Number.NaN;
             display.setContent({focus: false,
                 historyMode: 'overwrite',
-                params: {type: 'terms', query, full: sentence, offset: `${offset}`},
+                params: {type: 'terms',
+                    query,
+                    full: sentence,
+                    offset: `${offset}`,
+                    ...(savedRecordId ? {studyResume: '1', studyRecordId: savedRecordId, studyLanguage: savedRecordEntry?.language ?? 'en'} : {})},
                 state: {focusEntry: 0,
                     optionsContext: display.getOptionsContext(),
                     sentence: {text: sentence, offset, adjacent: lookupParams.get('studyContext') ?? '', recordId: savedRecordId},

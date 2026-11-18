@@ -44,7 +44,9 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     let entryExtras = {};
     /** @returns {import('study').LibraryEntry} */
     const entryOf = () => /** @type {import('study').LibraryEntry} */ ({...getEntry(), ...entryExtras});
-    const language = entryOf().language ?? 'en';
+    const initialEntry = entryOf();
+    const language = initialEntry.language ?? 'en';
+    let baseEntry = validLibraryId(initialEntry.recordId) ? initialEntry : null;
     let mediaOperation = 0;
     let disposed = false;
     let busy = false;
@@ -67,7 +69,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const status = d.createElement('p');
     status.className = 'study-library-status';
     status.setAttribute('role', 'status');
-    const initialRecordId = entryOf()?.recordId;
+    const initialRecordId = initialEntry.recordId;
     if (validLibraryId(initialRecordId)) { container.dataset.studyRecordId = initialRecordId; }
     const addCard = d.createElement('button');
     addCard.type = 'button';
@@ -601,12 +603,27 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 }
             });
     };
+    /**
+     * @param {import('study').LibraryEntry} entry
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    const rememberNote = async (entry) => {
+        const recordId = currentSaved?.id || container.dataset.studyRecordId || entry.recordId;
+        const row = /** @type {import('study').LibraryRecord} */ (await studyCall('rememberEntry', {entry,
+            ...(validLibraryId(recordId) ? {recordId} : {}),
+            ...(baseEntry?.recordId === recordId && baseEntry ? {baseEntry} : {})}));
+        if (row?.vaultSaved && row.syncState !== 'pending' && row.entry) {
+            const {meaning, notes, translation, explanationSource} = row.entry;
+            // Keep the original/context as entered on this card; the answer fields use the save receipt.
+            baseEntry = {...entry, recordId: row.id, meaning, notes, translation, explanationSource};
+        }
+        return row;
+    };
     const ensureNote = async () => {
         const entry = entryOf();
         const unchanged = currentSaved && ['word', 'sentence', 'context', 'meaning', 'translation', 'notes', 'url', 'title'].every((key) => currentSaved?.entry?.[/** @type {keyof import('study').LibraryEntry} */ (key)] === entry[/** @type {keyof import('study').LibraryEntry} */ (key)]);
         if (unchanged && currentSaved) { return currentSaved; }
-        const recordId = currentSaved?.id || container.dataset.studyRecordId || entry.recordId;
-        const row = /** @type {import('study').LibraryRecord} */ (await studyCall('rememberEntry', {entry, ...(validLibraryId(recordId) ? {recordId} : {})}));
+        const row = await rememberNote(entry);
         if (!row || !validLibraryId(row.id)) { throw new Error('笔记保存未返回确认，未继续制卡或附加原声。'); }
         if (isCurrent() && !disposed) { showAnkiStatus(row); }
         return row;
@@ -835,8 +852,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         run(async () => {
             status.textContent = '正在保存本次学习…';
             // One background operation owns durable save intent; it outlives this document.
-            const recordId = currentSaved?.id || container.dataset.studyRecordId || entry.recordId;
-            const row = /** @type {import('study').LibraryRecord} */ (await studyCall('rememberEntry', {entry, ...(validLibraryId(recordId) ? {recordId} : {})}));
+            const row = await rememberNote(entry);
             const saved = row;
             if (isCurrent()) {
                 showAnkiStatus(row);

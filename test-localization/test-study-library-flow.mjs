@@ -426,6 +426,33 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     await waitFor(() => h.bridge.pending.size === 0, 'outstanding readback before closing the temporary bridge');
 });
 
+test('saving a partly edited card keeps newer text from the original note', async (t) => {
+    const h = await createHarness(t);
+    const entry = {word: 'just', language: 'en', sentence: SENTENCE, context: '', url: ARTICLE_URL,
+        title: 'Synthetic article', meaning: '卡片打开时的含义', translation: '', notes: ''};
+    const saved = await h.native({action: 'librarySave', entry, makeCard: false}).promise;
+    assert.equal(saved.ok, true, saved.error);
+    const id = saved.library.id;
+    const {dom, container, view} = mountUi(SENTENCE, {...entry, recordId: id, contextSelected: true});
+    t.after(() => { view.cancel(); dom.window.close(); });
+    const changed = await h.native({action: 'libraryUpdate', id, entry: {meaning: '另一端更新的含义'}}).promise;
+    assert.equal(changed.ok, true, changed.error);
+    container.querySelector('[aria-label="补充语境"]').value = 'I added this context in the card.';
+    container.querySelector('[data-study-save="note"]').click();
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'selective save');
+    const {entry: current} = await readStudyRecord(id, 'en');
+    assert.equal(current.meaning, '另一端更新的含义');
+    assert.equal(current.context, 'I added this context in the card.');
+    await waitFor(() => !container.querySelector('[data-study-save="note"]').disabled, 'first save complete');
+    const writtenElsewhere = await h.native({action: 'libraryUpdate', id, entry: {context: 'The latest context from the note.'}}).promise;
+    assert.equal(writtenElsewhere.ok, true, writtenElsewhere.error);
+    container.querySelector('[aria-label="补充语境"]').value = 'A conflicting edit on the card.';
+    container.querySelector('[data-study-save="note"]').click();
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('没有覆盖'), 'same-field conflict');
+    assert.equal((await readStudyRecord(id, 'en')).entry.context, 'The latest context from the note.');
+    assert.deepEqual((await latestState(h.bridge)).notes, {});
+});
+
 test('a partial Anki receipt can be completed from the card without creating the notes again', async (t) => {
     const h = await createHarness(t);
     const {dom, container, view} = mountUi();

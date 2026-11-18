@@ -772,8 +772,8 @@ export class StudyService {
             return tasks.length > 0 ? await this.handle('remember', tasks[0]) : null;
         }
         if (action === 'rememberEntry') {
-            if (!value || typeof value !== 'object' || Object.keys(value).some((k) => !['entry', 'recordId'].includes(k))) { throw new Error('学习保存参数无效。'); }
-            const {entry, recordId} = /** @type {{entry: import('study').LibraryEntry; recordId?: string}} */ (value);
+            if (!value || typeof value !== 'object' || Object.keys(value).some((k) => !['entry', 'recordId', 'baseEntry'].includes(k))) { throw new Error('学习保存参数无效。'); }
+            const {entry, recordId, baseEntry} = /** @type {{entry: import('study').LibraryEntry; recordId?: string; baseEntry?: import('study').LibraryEntry}} */ (value);
             const existingId = recordId ?? entry.recordId;
             if (existingId) {
                 if (!/^[a-f0-9]{32}$/.test(existingId)) { throw new Error('原学习记录编号无效。'); }
@@ -783,6 +783,17 @@ export class StudyService {
                 if (entry.sense || originalRecord.entry.word.toLocaleLowerCase() !== entry.word.toLocaleLowerCase()) { return await this.rememberEntry(entry); }
                 const update = {...entry};
                 delete update.recordId;
+                if (baseEntry?.recordId === existingId) {
+                    for (const key of /** @type {(keyof import('study').LibraryEntry)[]} */ (Object.keys(update))) {
+                        const before = baseEntry[key] ?? '';
+                        const current = originalRecord.entry[key] ?? '';
+                        if (update[key] === before || update[key] === current) {
+                            delete update[key];
+                        } else if (current !== before) {
+                            throw new Error('原笔记在别处改过这项内容，没有覆盖。请先留好这里的新内容，再重新打开笔记。');
+                        }
+                    }
+                }
                 const turns = await this.journal.get(entry);
                 const updateKey = studyUpdateKey(entry.language ?? 'en', existingId);
                 await this.sync.enqueue({key: updateKey,
