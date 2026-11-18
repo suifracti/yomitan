@@ -98,7 +98,7 @@ def indexed_page(rows, p, *, complete=True):
     matches = []
     if scope == 'recent-recall':
         import time
-        from study_senses import recent_recall
+        from study_senses import recall_round, recent_recall
         now = time.time()
     for row in rows:
         e = row['entry']
@@ -148,7 +148,14 @@ def indexed_page(rows, p, *, complete=True):
         extras.update(focusIds=[row['id'] for row in page if row['id'] in focus_ids], focusTotal=len(focus_ids),
                       focusComplete=complete,
                       ankiNoteIds=sorted({ident for row in page for ident, _ in card_receipts(row) if ident is not None}))
-    return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for row in page], 'total': len(matches), 'canSearch': True, **extras}
+
+    def list_item(row):
+        return with_article_href(with_card_progress(with_audio_context(row)))
+
+    if scope == 'recent-recall' and not offset:
+        chosen = recall_round(row for _, _, row in matches)
+        extras['recallRound'] = [list_item(row) for row in chosen]
+    return {'items': [list_item(row) for row in page], 'total': len(matches), 'canSearch': True, **extras}
 
 
 class IndexUnavailable(ValueError):

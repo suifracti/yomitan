@@ -36,7 +36,7 @@ class SenseTests(AutoSyncTests):
     def test_recent_recall_only_reviews_the_saved_sentence_at_the_matching_time(self):
         earlier = self.save_word('charge', 'They charge a fee.', videoTime=12, sense={'key': 'new', 'gloss': '收费'})
         later = self.save_word('charge', 'They charge a fee.', videoTime=37, sense=earlier['entry']['sense'])
-        self.save_word('charge', 'They charge at dawn.', sense={'key': 'new', 'gloss': '冲锋'})
+        different = self.save_word('charge', 'They charge at dawn.', sense={'key': 'new', 'gloss': '冲锋'})
         tap = {'action': 'libraryContextMiss', 'word': 'charge', 'kind': 'recall', 'url': earlier['entry']['url']}
         confirmed = self.library.handle({**tap, 'sentence': 'They charge a fee.', 'videoTime': 37.7})
         self.assertEqual(confirmed['recallRecordId'], later['id'])
@@ -55,6 +55,19 @@ class SenseTests(AutoSyncTests):
         self.assertEqual([item['id'] for item in self.library.handle(scope)['items']], [earlier['id'], later['id']])
         focused = self.library.handle({**scope, 'focus': {'id': later['id']}})
         self.assertEqual([item['id'] for item in focused['items']], [later['id'], earlier['id']])
+        self.library.handle({**tap, 'sentence': different['entry']['sentence']})
+        crowded = []
+        for at in range(40, 50):
+            row = self.save_word('charges', 'It charges a fee.', lemma='charge', videoTime=at, sense=earlier['entry']['sense'])
+            self.library.handle({**tap, 'word': 'charges', 'lemma': 'charge', 'sentence': row['entry']['sentence'], 'videoTime': at})
+            crowded.append(row['id'])
+        ordinary = self.library.handle(scope)
+        self.assertEqual([item['id'] for item in ordinary['items']], crowded[::-1])
+        self.assertEqual([item['id'] for item in ordinary['recallRound']], [crowded[-1], different['id'], *crowded[-2:-5:-1]])
+        focused = self.library.handle({**scope, 'focus': {'id': later['id']}})
+        self.assertEqual([item['id'] for item in focused['recallRound']], [later['id'], different['id'], *crowded[-1:-4:-1]])
+        filtered = self.library.handle({**scope, 'query': 'dawn', 'focus': {'id': later['id']}})
+        self.assertEqual([item['id'] for item in filtered['recallRound']], [different['id']])
         self.assertEqual(self.calls, [])
 
     def test_manual_known_is_word_wide_undoable_and_never_changes_anki(self):

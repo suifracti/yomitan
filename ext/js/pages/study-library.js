@@ -1001,6 +1001,8 @@ async function initializePage() {
         const clozeLabel = () => (category === 'recent-recall' ? '复习最近卡点' : '练原句填空');
         /** @type {SentencePrompt[]} */
         let cloze = [];
+        /** @type {StudyLibraryRecord[]|null} */
+        let recallRound = null;
         /** @type {SentencePrompt[]} */
         let dictation = [];
         /** @type {{button: HTMLElement, label: string} | null} */
@@ -1085,7 +1087,7 @@ async function initializePage() {
              */
             const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, mode, makeSavedAudioButton, clearSavedAudio, loadNextRound));
             let prompts = listening ? dictation : cloze;
-            if (activePractice === button || (!listening && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
+            if (activePractice === button || (mode === 'recall' && recallRound) || (!listening && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
                 open(prompts);
                 return;
             }
@@ -1595,7 +1597,8 @@ listedQuery :
                 rows.find((row) => matchesCategory(row, 'saved') && videoListenUrl(row.entry))?.id ?? '' :
                 '';
             const recall = category === 'recent-recall';
-            cloze = loading || listError ? [] : sentencePrompts(rows, [], recall ? 'recall' : 'cloze');
+            const practiceRows = !waiting && recall && recallRound ? recallRound : rows;
+            cloze = loading || listError ? [] : sentencePrompts(practiceRows, [], recall ? 'recall' : 'cloze');
             dictation = recall || loading || listError ? [] : sentencePrompts(rows, [], 'dictation');
             if (activePractice !== clozeButton && sentenceSearch?.button !== clozeButton) { clozeButton.textContent = clozeLabel(); }
             clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
@@ -1714,7 +1717,7 @@ listedQuery :
                     focusRecall = '';
                     value = await studyCall('libraryList', {...libraryScope(scope), ...params});
                 }
-                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], sources?: SourceShelfItem[]}|null} */ (value);
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], recallRound?: StudyLibraryRecord[], sources?: SourceShelfItem[]}|null} */ (value);
                 if (shelf && !result?.sources) { throw new Error(SOURCES_UPDATE_BRIDGE); }
                 canSearch = result?.canSearch === true;
                 if (!shelf && !indexed && canSearch && ((tab !== 'word' && search.value.trim()) || scope !== category)) { queuedSearch = true; }
@@ -1725,6 +1728,7 @@ listedQuery :
                 if (reset) {
                     records.clear();
                     sourceShelf.length = 0;
+                    recallRound = tab === 'recent-recall' ? result?.recallRound ?? null : null;
                     const contrast = result?.practicePair ?? [];
                     const examples = result?.practiceExamples ?? [];
                     compareExamples = contrast.length !== 2 && examples.length === 2;

@@ -41,6 +41,21 @@ def recent_recall(record, now):
     return max((event['at'] for event in events if event['contextKey'] == key), default=0)
 
 
+def recall_round(rows):
+    """Keep the focused/most recent sentence first, then cover more saved senses."""
+    first, repeat, seen = [], [], set()
+    for row in rows:
+        key = sense_key(row['entry'])
+        if key not in seen:
+            seen.add(key)
+            first.append(row)
+            if len(first) == 5:
+                break
+        elif len(repeat) < 4:
+            repeat.append(row)
+    return first + repeat[:5 - len(first)]
+
+
 def gloss(entry):
     value = entry.get('sense', {}).get('gloss') or entry.get('meaning', '')
     value = re.sub(r'^词典简释[^：]*：|^本句含义[：:]?', '', value).strip().split('\n')[0]

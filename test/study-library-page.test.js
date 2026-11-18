@@ -304,8 +304,13 @@ describe('study library page', () => {
         mocks.studyCall.mockImplementation(async (action, payload) => {
             if (action === 'libraryList') {
                 if (payload?.scope !== 'recent-recall') { return {items: [], total: 0, canSearch: true}; }
-                const sorted = payload.focus?.id === items[0].id ? items : [items[1], items[0], items[2]];
-                return {items: sorted, total: items.length, canSearch: true};
+                const focused = payload.focus?.id === items[0].id;
+                return {
+                    items: focused ? [items[0], items[2], items[1]] : [items[2], items[0], items[1]],
+                    recallRound: focused ? items : [items[2], items[0], items[1]],
+                    total: items.length,
+                    canSearch: true,
+                };
             }
             if (action === 'openVideoListening') { return openVideo(); }
             if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
