@@ -149,12 +149,16 @@ def indexed_page(rows, p, *, complete=True):
     return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for row in page], 'total': len(matches), 'canSearch': True, **extras}
 
 
+class IndexUnavailable(ValueError):
+    """The disposable cache cannot be used; note identity has not been checked."""
+
+
 class RecordIndex:
     def __init__(self, library):
         self.library = library
         self.root = pathlib.Path(library.cache_dir) if library.cache_dir else None
         if self.root and self.root.resolve().is_relative_to(library.vault.resolve()):
-            raise ValueError('记录索引必须位于桥缓存目录，不能放入 Vault。')
+            raise IndexUnavailable('记录索引必须位于桥缓存目录，不能放入 Vault。')
         self.key = hashlib.sha256(json.dumps([str(library.vault), str(library.relative), library.language]).encode()).hexdigest()
 
     def refresh(self):
@@ -193,11 +197,11 @@ class RecordIndex:
         if lib.records.is_dir():
             with os.scandir(lib.records) as entries:
                 for file in entries:
-                    if not file.name.endswith('.md') or not file.is_file(follow_symlinks=False):
+                    if not file.name.endswith('.md') or not (file.is_file(follow_symlinks=False) or file.is_symlink()):
                         continue
                     stamp = file.stat(follow_symlinks=False)
                     old = previous.get(file.name, {})
-                    if (isinstance(old, dict) and old.get('mtime') == stamp.st_mtime_ns and
+                    if (isinstance(old, dict) and old.get('mtime') == stamp.st_mtime_ns and old.get('ctime') == stamp.st_ctime_ns and
                             old.get('size') == stamp.st_size and isinstance(old.get('rows'), list)
                             and ('complete' in old or old['rows'])):
                         files[file.name] = old
@@ -210,7 +214,7 @@ class RecordIndex:
                     except (OSError, ValueError, KeyError, TypeError):
                         rows = []  # An invalid changed note must not leave stale learning data behind.
                         complete = False
-                    files[file.name] = {'mtime': stamp.st_mtime_ns, 'size': stamp.st_size, 'rows': rows, 'complete': complete}
+                    files[file.name] = {'mtime': stamp.st_mtime_ns, 'ctime': stamp.st_ctime_ns, 'size': stamp.st_size, 'rows': rows, 'complete': complete}
         return files, changed or files.keys() != previous.keys()
 
     def parse(self, path):

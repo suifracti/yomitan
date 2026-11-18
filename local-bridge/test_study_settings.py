@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from study_library import RELATIVE
+from study_library import RELATIVE, StudyLibrary
 from study_settings import YomitanLibrary
 
 
@@ -79,11 +79,25 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(legacy_pending['targetId'], old['targetId'])
         fresh = self.save('fresh', targetId=new['targetId'])
         self.assertTrue(fresh['path'].startswith('Elsewhere/'))
-        with patch('study_memory.memory', return_value={}), patch('study_memory.compact', return_value={}):
-            rows = self.library.handle({'action': 'libraryRead', 'ids': [fresh['id'], old['id']]})['items']
-        self.assertEqual([r['id'] for r in rows], [fresh['id'], old['id']])
+        same_folder = self.save_settings(deck='Second deck', model='Second model')
+        second = self.save('same folder', targetId=same_folder['targetId'])
+        legacy = StudyLibrary(self.vault, self.anki).handle(
+            {'action': 'librarySave', 'entry': self.entry('legacy file'), 'makeCard': False})
+        self.library.cache_dir = self.root / 'cache'
+        self.library.handle({'action': 'libraryList', 'scope': 'all'})
+        ids = [fresh['id'], old['id'], legacy['id'], second['id']]
+        with patch.object(StudyLibrary, 'file_content', autospec=True, side_effect=StudyLibrary.file_content) as content:
+            rows = self.library.handle({'action': 'libraryRead', 'ids': ids})['items']
+        self.assertEqual([str(call.args[1].relative_to(self.vault)) for call in content.call_args_list],
+                         [fresh['path'], old['path'], legacy['path'], second['path']])
+        self.assertEqual([r['id'] for r in rows], ids)
         self.assertEqual(rows[1]['record']['targetId'], old['targetId'])
+        self.assertEqual(rows[3]['record']['target']['deck'], 'Second deck')
         self.assertEqual(len(list(self.vault.glob('**/' + pathlib.Path(old['path']).name))), 1)
+        path = self.vault / fresh['path']
+        path.with_name('duplicate-' + path.name).write_bytes(path.read_bytes())
+        with self.assertRaisesRegex(ValueError, '相同学习编号'):
+            self.library.handle({'action': 'libraryRead', 'ids': [fresh['id']]})
 
     def test_disabled_preserves_pending_and_drafts_without_anki(self):
         row = self.save()

@@ -48,6 +48,7 @@
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 换浏览器后旧问答只留在笔记，词卡学习历史看不到 | L-002；readStudyRecord、study_library_core.saved_learning_turns |
 | 只打开已存笔记，却查询相关词或 Anki | L-002；`libraryRead`、`includeRelated` |
+| 学习库能找到笔记，点开时却逐份读单词文档 | L-002；`YomitanLibrary.indexed`、`RecordIndex` |
 | 另一端已改释义，刷新词卡仍显示旧内容／「记住它」盖回去 | L-002；search-main 的笔记编号恢复、study-library.rememberNote、StudyService.rememberEntry |
 | 等待补交期间又改了同一条笔记；重连后旧改动不该覆盖 | L-002；StudySync 现有队列、study_sync.update 的 ifUnchanged |
 | 问 AI 之后笔记原来的解释被换掉 | L-002；StudySync.learned、study_sync.update 的 fillMissing |
@@ -108,7 +109,9 @@
 
 **没有浏览器缓存也能看这条笔记的旧问答**：明确恢复笔记才用 `libraryRead(includeTurns: true)`，按原文中已确认的轮次编号读最近五轮，不从另一义项、摘要或模型缓存猜。词卡以轮次编号和本地问答合并，保留未同步反馈；只有笔记保存而没有本地副本的轮次在历史里只读，不盖过手动更正。旧桥只在不认该投影字段时回常规读取。不迁移原笔记，不增加数据库。见[干净浏览器两入口回读](youtube-study-wiring.md#2026-11-18-换了浏览器也能找回已存问答)。
 
-**按编号回读不该查相关历史或 Anki**：旧 `libraryRead` 即使只打开已存笔记，也对词执行 `study_memory.memory` 并查询 Anki。现在默认从指定笔记的同一份内容生成词卡、正文、版本及请求的问答，只有显式 AI 制卡草稿带 `includeRelated: true`；旧桥只在不认字段时按原请求读，已有的相关证据仍传给草稿。编号到文件的原定位和后台关联未改。见[按编号打开不另做相关检索](youtube-study-wiring.md#2026-11-18-按编号打开不另做相关检索)。
+**按编号回读不该查相关历史或 Anki**：旧 `libraryRead` 即使只打开已存笔记，也对词执行 `study_memory.memory` 并查询 Anki。现在默认从指定笔记的同一份内容生成词卡、正文、版本及请求的问答，只有显式 AI 制卡草稿带 `includeRelated: true`；旧桥只在不认字段时按原请求读，已有的相关证据仍传给草稿。后台关联未改。见[按编号打开不另做相关检索](youtube-study-wiring.md#2026-11-18-按编号打开不另做相关检索)。
+
+**按编号打开和学习库列表共用文件索引**：普通英语回读用当前目标目录的现有增量索引，一批只定位一次。缓存给文件地址，正文仍现场读取，并核对原保存目录、牌组和模板身份；同一个目录的历史设置也不能互换。索引缺项、不全或不可用时保留原定位；重复编号停止读取、不给出任意一份。旧平铺文件、字幕凭证及写入规则不改。见[预热后的文件打开次数](youtube-study-wiring.md#2026-11-18-按编号打开复用学习库索引)。
 
 **历史里的词卡不是最新笔记**：搜索页保留原笔记的记录编号与语言，刷新即重读；升级时只剩旧浏览器状态也按原编号读，不拿旧释义作退路。「记住它」和需要先保存的制卡／取声共用同一提交函数。已读回的卡对照打开时的值，只更新本次变动，别处改过其他字段不覆盖；提交前碰到同字段不同值提示保留草稿并重开。见[同页刷新及部分编辑验证](youtube-study-wiring.md#2026-11-18-刷新重读笔记只保存这张卡的改动)。
 

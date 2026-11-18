@@ -835,9 +835,9 @@ class StudyLibrary:
             details.update({'targetId': self.target_id, 'vault': str(self.vault), 'directory': str(self.relative), 'ankiEnabled': self.anki_enabled})
         return details
 
-    def record_snapshot(self, ident):
+    def record_snapshot(self, ident, *, path=None):
         from study_media import with_audio_context
-        path = self.path(ident)
+        path = self.path(ident) if path is None else path
         r, body, version = self.read_file(path, ident)
         record = with_article_href(with_card_progress(with_audio_context(self.result_from(r, body, version, path))))
         return record, (r, body, version)
@@ -1058,7 +1058,7 @@ class StudyLibrary:
         self.write(r, body, version)
         return self.result(r['id'])
 
-    def handle(self, payload):
+    def handle(self, payload, *, indexed_location=None):
         p = normalize_request(payload)
         lang = language(p.get('language', p.get('entry', {}).get('language', 'en')))
         if p.get('action') == 'librarySave' and lang != p['entry'].get('language', 'en'):
@@ -1103,7 +1103,12 @@ class StudyLibrary:
                 try:
                     items = []
                     for i in p['ids']:
-                        record, snapshot = self.record_snapshot(i)
+                        if indexed_location:
+                            path, verify = indexed_location
+                            record, snapshot = self.record_snapshot(i, path=path)
+                            verify(snapshot[0])
+                        else:
+                            record, snapshot = self.record_snapshot(i)
                         item = {**self.material(i, include_turns=p.get('includeTurns', False), snapshot=snapshot), 'record': record}
                         if include_related:
                             e = record['entry']

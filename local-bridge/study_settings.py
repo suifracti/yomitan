@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 from study_protocol import SETTINGS_ACTIONS
-from study_index import indexed_page, needs_attention
+from study_index import IndexUnavailable, indexed_page, needs_attention
 from study_cards import REVIEW_FIELDS as FIELDS, card_progress, linked_note_ids, read_review_view, review_view_state
 from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, normalize_entry, normalize_request, text
 
@@ -131,6 +131,16 @@ class YomitanLibrary:
         return StudyLibrary(self.targets[ident]['vault'], self.anki, cache_dir=self.cache_dir,
                             target=self.settings(ident), group_words=True)
 
+    def record_target(self, target_id, saved, folder):
+        original = target_id or self.legacy_id
+        target = self.targets.get(original)
+        if target is None:
+            raise ValueError('记录的原保存目的地已失效，未改投当前目录。')
+        if ((target['vault'], target['directory']) != folder
+                or (saved and any(saved.get(k) != target[k] for k in ('targetId', 'vault', 'directory', 'deck', 'model')))):
+            raise ValueError('记录原目的地与历史设置不同，未重定向。')
+        return original
+
     def locate(self, ident):
         found = []
         seen = set()
@@ -142,15 +152,8 @@ class YomitanLibrary:
             lib = self.library_for(target_id)
             path = lib.path(ident)
             if path.is_file():
-                record = lib.read(ident)[0]
-                original = record.get('targetId', self.legacy_id)
-                if original not in self.targets:
-                    raise ValueError('记录的原保存目的地已失效，未改投当前目录。')
-                original_lib = self.library_for(original)
-                saved = record.get('savedTarget')
-                if (str(original_lib.vault), str(original_lib.relative)) != folder or (saved and any(saved.get(k) != self.targets[original][k] for k in ('targetId', 'vault', 'directory', 'deck', 'model'))):
-                    raise ValueError('记录原目的地与历史设置不同，未重定向。')
-                found.append(original_lib)
+                record = lib.read_file(path, ident)[0]
+                found.append(self.library_for(self.record_target(record.get('targetId'), record.get('savedTarget'), folder)))
         if len(found) > 1:
             raise ValueError('不同目录有相同学习编号，请先人工确认；没有自动覆盖。')
         return found[0] if found else None
@@ -274,7 +277,7 @@ class YomitanLibrary:
                 raise ValueError('语境目录必须位于当前选定的 Vault 内；原设置未改变。') from None
         return {'path': str(chosen), 'cancelled': False}
 
-    def indexed(self):
+    def indexed(self, only_ids=None):
         """One incremental cache pass over each distinct record folder."""
         self.index_complete = True
         files, records, seen, libraries = {}, {}, set(), {}
@@ -293,16 +296,12 @@ class YomitanLibrary:
                 files[str(path)] = stamp['mtime']
                 for item in stamp['rows']:
                     ident = item['id']
-                    original = item.get('targetId') or self.legacy_id
-                    if original not in self.targets:
-                        raise ValueError('记录的原保存目的地已失效，未改投当前目录。')
+                    if only_ids is not None and ident not in only_ids:
+                        continue
+                    original = self.record_target(item.get('targetId'), item['result'].get('savedTarget'), folder)
                     if original not in libraries:
                         libraries[original] = self.library_for(original)
                     original_lib = libraries[original]
-                    saved = item['result'].get('savedTarget')
-                    if ((str(original_lib.vault), str(original_lib.relative)) != folder or
-                            (saved and any(saved.get(k) != self.targets[original][k] for k in ('targetId', 'vault', 'directory', 'deck', 'model')))):
-                        raise ValueError('记录原目的地与历史设置不同，未重定向。')
                     if ident in records:
                         raise ValueError('不同目录有相同学习编号，请先人工确认；没有自动覆盖。')
                     row = {**item['result'], 'target': original_lib.target_details(),
@@ -593,8 +592,18 @@ class YomitanLibrary:
         if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryAudioRead','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite','libraryRepair'):
             # Split mixed destinations while preserving caller ordering and per-record versions.
             rows = []
+            indexed = {}
+            if action == 'libraryRead' and self.cache_dir and not p.get('cueAuthorization'):
+                try:
+                    _, candidates = self.indexed(only_ids=set(ids))
+                    # A partial index may hide a duplicate; keep the original path checks.
+                    if self.index_complete:
+                        indexed = candidates
+                except (IndexUnavailable, OSError):
+                    pass
             for ident in ids:
-                lib = self.locate(ident)
+                location = indexed.get(ident)
+                lib = location[0] if location else self.locate(ident)
                 if lib is None: raise ValueError('没有找到原学习记录；未改投当前目录。')
                 if action == 'libraryCardsAdd':
                     lib.new_card_defaults = self.settings()
@@ -605,7 +614,16 @@ class YomitanLibrary:
                 if 'items' in p: request['items'] = [r for r in p['items'] if r['id'] == ident]
                 if p.get('targetId') and lib.target_id != p['targetId']:
                     raise ValueError('记录目标与请求目标不同；未改投。')
-                result = lib.handle(request)
+                if location:
+                    folder = (str(lib.vault), str(lib.relative))
+
+                    def verify(record):
+                        if self.record_target(record.get('targetId'), record.get('savedTarget'), folder) != lib.target_id:
+                            raise ValueError('记录的保存位置已变；请重新打开。')
+
+                    result = lib.handle(request, indexed_location=(location[1], verify))
+                else:
+                    result = lib.handle(request)
                 if 'items' not in result: return result
                 rows.extend(result['items'])
             return {'items': rows, 'ankiEnabled': self.anki_enabled}
