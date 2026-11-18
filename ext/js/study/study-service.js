@@ -1591,7 +1591,15 @@ export function prepareStudyService(lookupDictionary = null) {
             void companionOpen(data, sender).then((/** @type {unknown} */ value) => reply({ok: true, value}), (/** @type {unknown} */ error) => reply({ok: false, error: error instanceof Error ? error.message : '打开未完成。'}));
             return true;
         }
-        void service.handle(studyAction, data).then((result) => reply({ok: true, value: result}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '学习操作失败。'}));
+        void service.handle(studyAction, data).then((result) => {
+            reply({ok: true, value: result});
+            if ((studyAction === 'rememberEntry' || studyAction === 'libraryCardsAdd') && typeof sender.tab?.id === 'number') {
+                const saved = /** @type {import('study').LibraryRecord|null|undefined} */ (result);
+                if (saved?.vaultSaved && typeof saved.entry?.videoTime === 'number') {
+                    void chrome.tabs.sendMessage(sender.tab.id, {studyVideoNotesChanged: true}).catch(() => {});
+                }
+            }
+        }, (error) => reply({ok: false, error: error instanceof Error ? error.message : '学习操作失败。'}));
         return true;
     };
     chrome.runtime.onMessage.addListener(receive);

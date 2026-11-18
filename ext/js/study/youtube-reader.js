@@ -259,6 +259,13 @@ export class YoutubeReader extends EventTarget {
                 this._learningWords = /** @type {{words?: Record<string, unknown>}|undefined} */ (changes[WORD_STATUS_KEY].newValue)?.words ?? {};
                 this._refreshLearning();
             });
+            chrome.runtime?.onMessage?.addListener((message, sender) => {
+                const view = this._view;
+                if (sender.id === chrome.runtime.id && message?.studyVideoNotesChanged === true && view && !view.root.hidden && !view.words.hidden) {
+                    void this._loadWords();
+                }
+                return false;
+            });
         }
         this._sync();
     }
@@ -2247,9 +2254,9 @@ export class YoutubeReader extends EventTarget {
     async _loadWords() {
         const view = this._view;
         const mediaKey = this._mediaKey;
-        if (!view || !mediaKey) { return; }
-        const generation = this._generation;
         const source = this._sourceKey;
+        if (!view || !mediaKey || source !== pageSourceKey(this._site.pageUrl())) { return; }
+        const generation = this._generation;
         const recommended = this._recommendations();
         recommended.replaceChildren('正在挑选适合制卡的句子…');
         const saved = document.createElement('div');
@@ -2263,10 +2270,11 @@ export class YoutubeReader extends EventTarget {
         review.dataset.reviewSource = '';
         note.append(' ', review);
         view.words.replaceChildren(note, recommended, saved);
+        const current = () => generation === this._generation && saved.parentElement === view.words && source === pageSourceKey(this._site.pageUrl());
         saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
             const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: (SavedPlayback & {stage: number, cards: number, cardHint?: string})[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
-            if (generation !== this._generation || source !== pageSourceKey(this._site.pageUrl())) { return; }
+            if (!current()) { return; }
             const items = result.items ?? [];
             this._cardContexts = result.cardContexts ?? items.filter((item) => item.cards > 0);
             this._refreshLearning();
@@ -2325,7 +2333,7 @@ export class YoutubeReader extends EventTarget {
                 return row;
             }));
         } catch (error) {
-            if (generation === this._generation) {
+            if (current()) {
                 view.words.querySelector('.r-recommend').textContent = '暂时无法挑选制卡句子，请重新打开这个页签。';
                 saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: `暂时读不到：${error instanceof Error ? error.message : String(error)}`}));
             }

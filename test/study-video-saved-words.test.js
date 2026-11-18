@@ -18,6 +18,7 @@
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 import {prepareStudyService, StudyService} from '../ext/js/study/study-service.js';
+import {WORD_STATUS_KEY} from '../ext/js/study/study-data.js';
 import {VIDEO_STATE_KEY} from '../ext/js/study/subtitle-prefs.js';
 
 test('explains saved video words, opens uncarded words for card selection, and reports a saved summary clearly', async () => {
@@ -159,6 +160,81 @@ test('explains saved video words, opens uncarded words for card selection, and r
     } finally { reader._reset(); youtubeStudyContext.openCard = null; vi.unstubAllGlobals(); await env.teardown(global); }
 });
 
+test('confirmed card creation updates the open video word list even when word status has not changed', async () => {
+    const url = 'https://www.youtube.com/watch?v=abcdefghijk';
+    const sentence = 'Our successful project brought meaningful changes across the whole region.';
+    const entry = {word: 'successful', sentence, videoTime: 0, url};
+    const id = '7'.repeat(32);
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>', url,
+    }});
+    const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
+    /** @typedef {{id: string, url?: string, tab?: {id: number, url: string}}} VideoUpdateSender */
+    /** @typedef {(message: unknown, sender: VideoUpdateSender, reply: (value: unknown) => void) => boolean} VideoUpdateListener */
+    /** @type {VideoUpdateListener[]} */
+    const listeners = [];
+    const notify = vi.fn(async (/** @type {number} */ tabId, /** @type {unknown} */ message) => {
+        if (tabId === 41) {
+            for (const listener of listeners.slice(1)) { listener(message, {id: 'test'}, () => {}); }
+        }
+    });
+    vi.stubGlobal('chrome', {
+        runtime: {
+            id: 'test',
+            getURL: (/** @type {string} */ path) => `chrome-extension://test/${path}`,
+            onMessage: {addListener: (/** @type {VideoUpdateListener} */ listener) => { listeners.push(listener); }},
+        },
+        tabs: {sendMessage: notify},
+        storage: {local: {get: async () => ({[WORD_STATUS_KEY]: {words: {successful: 'learning'}}}), set: async () => {}},
+            onChanged: {addListener() {}, removeListener() {}}},
+    });
+    const events = [{tStartMs: 0, dDurationMs: 4000, segs: [{utf8: sentence}]}];
+    vi.stubGlobal('fetch', async () => ({ok: true, text: async () => JSON.stringify({events})}));
+    let count = 0;
+    const handle = vi.spyOn(StudyService.prototype, 'handle').mockImplementation(async (action) => {
+        if (action !== 'libraryCardsAdd') { throw new Error('Unexpected action'); }
+        count = 1;
+        return {id, vaultSaved: true, entry};
+    });
+    let reads = 0;
+    let finishOldRead = () => {};
+    const words = async (/** @type {string} */ action) => {
+        if (action !== 'libraryVideoWords') { return null; }
+        const snapshot = {items: [{...entry, id, cards: count}], cardContexts: count ? [{word: entry.word, sentence}] : []};
+        if (++reads === 2) {
+            await new Promise((resolve) => { finishOldRead = () => resolve(null); });
+        }
+        return snapshot;
+    };
+    const reader = new YoutubeReader({prefs: {merge: false}, call: words});
+    try {
+        prepareStudyService();
+        reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
+        reader.start();
+        await vi.waitFor(() => expect(reader.session?.cues.length).toBe(1));
+        const tab = /** @type {HTMLButtonElement} */ (document.querySelector('[data-tab=words]'));
+        tab.click();
+        await vi.waitFor(() => expect(document.querySelector('.r-word-meta')?.textContent).toContain('还没制卡'));
+        expect(document.querySelector('[data-recommend-card]')).not.toBeNull();
+        tab.click();
+        const answer = /** @type {unknown} */ (await new Promise((resolve) => {
+            listeners[0]({studyAction: 'libraryCardsAdd', data: {id}}, {id: 'test', url: 'chrome-extension://test/popup.html', tab: {id: 41, url}}, resolve);
+        }));
+        expect(answer).toMatchObject({ok: true, value: {id, vaultSaved: true}});
+        expect(notify).toHaveBeenCalledWith(41, {studyVideoNotesChanged: true});
+        await vi.waitFor(() => expect(document.querySelector('.r-word-meta')?.textContent).toContain('已制 1 张卡'));
+        finishOldRead();
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        expect(document.querySelector('[data-recommend-card]')).toBeNull();
+        expect(reads).toBe(3);
+    } finally {
+        reader.setPrefs({...reader.prefs, enabled: false});
+        handle.mockRestore();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 test('a library video handoff keeps the saved occurrence and can prepare a full round in order', async () => {
     const url = 'https://www.youtube.com/watch?v=abcdefghijk';
     const id = '4'.repeat(32);
@@ -176,7 +252,7 @@ test('a library video handoff keeps the saved occurrence and can prepare a full 
     vi.stubGlobal('chrome', {
         runtime: {id: 'test',
             getURL: (/** @type {string} */ path) => `chrome-extension://test/${path}`,
-            onMessage: {addListener: (/** @type {ListeningReceiver} */ fn) => { receive = fn; }},
+            onMessage: {addListener: (/** @type {ListeningReceiver} */ fn) => { receive ??= fn; }},
             sendMessage: (/** @type {unknown} */ message) => new Promise((resolve) => { receive(message, sender, resolve); })},
         tabs: {create: async () => ({id: 41}), update},
         storage: {
