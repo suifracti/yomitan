@@ -309,6 +309,13 @@ class YomitanLibrary:
         from study_senses import word_status
         return word_status(self)
 
+    def sync_state(self):
+        if not self.cache_dir: return {}
+        try:
+            return json.loads((pathlib.Path(self.cache_dir) / 'auto-sync-state.json').read_text())
+        except (OSError, ValueError):
+            return {}
+
     def auto_sync(self, now=None):
         """One pass of automatic two-way sync, run by the extension every ~30 seconds.
 
@@ -324,10 +331,7 @@ class YomitanLibrary:
         if not self.cache_dir:
             raise ValueError('本机桥缓存目录缺失，无法自动同步。')
         state_path = pathlib.Path(self.cache_dir) / 'auto-sync-state.json'
-        try:
-            state = json.loads(state_path.read_text())
-        except (OSError, ValueError):
-            state = {}
+        state = self.sync_state()
         first = not isinstance(state.get('files'), dict)
         files = state.get('files') if not first else {}
         notes = state.get('notes') if isinstance(state.get('notes'), dict) else {}
@@ -350,6 +354,13 @@ class YomitanLibrary:
         anki_ok = self.anki_enabled
         paused = ''
         if anki_ok:
+            linked = linked_note_ids(r for _, _, r in records.values())
+            if not linked:
+                state.pop('ankiProfile', None)
+            profile, paused = study_sync.sync_profile(self.anki, state.get('ankiProfile')) if linked else ('', '')
+            if paused:
+                # Do not advance file/Anki stamps or consume retries while the other collection is open.
+                return {'first': first, 'checked': 0, 'synced': 0, 'conflicts': 0, 'errors': [], 'paused': paused, 'upgrade': []}
             try:
                 edit_scope = 'tag:english_study OR tag:japanese_study'
                 if personal:
@@ -357,10 +368,11 @@ class YomitanLibrary:
                 edited = self.anki('findNotes', {'query': '(' + edit_scope + ') edited:1'})
                 ignored_path = pathlib.Path(self.cache_dir) / 'anki-ignored.json'
                 ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
-                linked = linked_note_ids(r for _, _, r in records.values())
                 live = set(self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'}))
                 untagged = personal.keys() - live
                 personal_live = set(self.anki('findNotes', {'query': 'nid:' + ','.join(map(str, untagged))})) if untagged else set()
+                if profile and linked & (live | personal_live):
+                    state['ankiProfile'] = profile  # Seeing the name alone does not establish ownership.
                 candidates = live - linked - set(ignored)
                 requested = sorted(set(edited) | candidates)
                 info = self.anki('notesInfo', {'notes': requested}) if requested else []
@@ -372,7 +384,7 @@ class YomitanLibrary:
                 for ident, (lib, _path, r) in records.items():
                     missing = any(n not in live and not (n in personal_live and (lib.target_id, ident) in personal[n])
                                   for n in linked_note_ids([r]))
-                    if (r.get('syncState') == 'missing') != missing:
+                    if not first and (r.get('syncState') == 'missing') != missing:
                         changed.append((lib.target_id, ident))
                 for note in info if isinstance(info, list) else []:
                     nid = str(note['noteId'])
@@ -563,6 +575,8 @@ class YomitanLibrary:
                 if lib is None: raise ValueError('没有找到原学习记录；未改投当前目录。')
                 if action == 'libraryCardsAdd':
                     lib.new_card_defaults = self.settings()
+                if action == 'libraryReconcile':
+                    lib.expected_anki_profile = self.sync_state().get('ankiProfile')
                 request = {**p}
                 if 'ids' in p: request['ids'] = [ident]
                 if 'items' in p: request['items'] = [r for r in p['items'] if r['id'] == ident]

@@ -75,11 +75,19 @@ class RecordIndexTests(AutoSyncTests):
                       'targetId': lib.target_id, 'savedTarget': lib.target_details()}
             path = lib.records / (f'word{i}--w' + lib.word_id(entry) + '.md')
             path.write_text(lib.word_header(entry) + lib.context_block(record, '\n## 学习\n\n文本\n'))
+        profile = '学习'
         def fast_anki(action, params):
+            if action == 'getActiveProfile': return profile
+            if action == 'findNotes' and params['query'] == '(tag:study_* OR tag:studycard_*)':
+                return list(range(1000, 3000)) if profile == '学习' else []
+            if action == 'findCards' and params['query'].startswith('nid:'):
+                return [int(n) * 10 for n in params['query'][4:].split(',')] if profile == '学习' else []
             if action == 'notesInfo':
                 return [{'noteId': n, 'cards': [n * 10]} for n in params['notes']]
             if action == 'cardsInfo':
-                return [{'cardId': c, 'interval': 30, 'lapses': 0} for c in params['cards']]
+                return [{'cardId': c, 'note': c // 10, 'mod': 1, 'interval': 30, 'lapses': 0} for c in params['cards']]
+            if action == 'cardsModTime':
+                return [{'cardId': c, 'mod': 1} for c in params['cards']]
             return []
         self.library.anki = fast_anki
         self.library.auto_sync()
@@ -91,6 +99,11 @@ class RecordIndexTests(AutoSyncTests):
         print(f'2000 records quiet auto_sync: {elapsed * 1000:.1f} ms')
         self.assertEqual(result['checked'], 2000)
         self.assertLess(elapsed, .3)
+        profile = '另一个账户'
+        with patch('study_sync.reconcile', return_value={}) as reconcile:
+            switched = fresh.auto_sync()
+            self.assertIn('账户', switched['paused'])
+            reconcile.assert_not_called()
 
 
 if __name__ == '__main__':

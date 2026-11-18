@@ -10,6 +10,7 @@
 |---|---|
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
+| Anki 换了账户，一批已有的卡突然显示被删 | L-002；study_settings.auto_sync、study_sync.sync_profile |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
@@ -84,6 +85,8 @@
 **Anki 里改了答案，笔记却不变**：先看 `study_settings.auto_sync` 如何识别编辑。有些 `notesInfo` 不给修改时间，同一秒的两次编辑也不能靠秒数区分。对已经在「今天编辑／未关联候选」范围内读到的字段与关联做摘要，不能为判断变化而全库读取或把卡面再保存一份。首次同步只立基线，已处理的旧时间可以接续。见[临时 Anki 中编辑答案](youtube-study-wiring.md#2026-11-18-在-anki-改了答案学习笔记还是旧字)。
 
 **离线改笔记，连上还是旧答案**：发现修改不等于已经同步。原来的 mtime 和 Anki 摘要都可能在断线、核对失败时向前走。现用同一个同步缓存的 `retryRecords` 留原记录与原目标，不复制内容、不另开轮询；下一次成功或进入人工冲突处理才退出。见[断线重连与双边冲突](youtube-study-wiring.md#2026-11-18-anki-没开时改的笔记重连后也要同步)。
+
+**换了 Anki 账户不是删卡**：自动同步用已有的关联 ID 看到原卡后，才记当前 Anki profile；只看到一个账户名不算归属。切到其他账户，自动同步和学习库逐条核对暂停，原同步进度不推进；切回后继续比较，同账户真删卡仍进「需处理」。首次只采基线，旧连接器从未报告过账户时仍走老流程。没有把同步改成多账户合并，不替人认领迁移或改名的账户。见[切换账户和真正删卡的对照](youtube-study-wiring.md#2026-11-18-换了-anki-账户不是删卡)。
 
 **自己的卡去掉学习标签后，每轮都被重新同步，粗体也没了**：明确关联（`linkedExisting`）按选定的 Anki 笔记号检查存在和当天的编辑，不以标签代替其身份。普通扩展制卡的标签核对和孤卡发现照旧。关联自有卡只在笔记里确实改了哪一面的文字时才写那一面；Anki 自己改的字只读回，不重排它的 HTML、原例句、标签或排程。[临时 Anki 的双向实测](youtube-study-wiring.md#2026-11-18-关联自有卡不剥掉它的排版)。
 

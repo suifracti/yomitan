@@ -19,6 +19,19 @@ BLOCK_RE = re.compile(re.escape(BLOCK_START) + r'\n(.*?)\n' + re.escape(BLOCK_EN
 ANNOTATION = re.compile(r'<!-- study-sync-v1:(.*?) -->', re.S)
 
 
+def sync_profile(anki, expected):
+    """Older AnkiConnect installations may not report a profile name."""
+    try:
+        current = anki('getActiveProfile', {})
+    except Exception:
+        current = None
+    current = current if isinstance(current, str) else ''
+    if not expected or current == expected:
+        return current, ''
+    reason = 'Anki 现在开着另一个账户' if current else '没能确认当前 Anki 账户'
+    return current, f'{reason}。请在 Anki 打开「{expected}」再同步；原笔记和卡片没有改动。'
+
+
 def _compact(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
 
@@ -403,6 +416,10 @@ def reconcile(lib, p):
         return {**lib.result(ident), 'syncState':'local-only', 'conflicts':[]}
     if not lib.anki_enabled:
         return {**lib.result(ident), 'syncState':'paused', 'conflicts':[]}
+    if expected := getattr(lib, 'expected_anki_profile', ''):
+        _, paused = sync_profile(lib.anki, expected)
+        if paused:
+            return {**lib.result(ident), 'syncState': 'paused', 'error': paused, 'conflicts': []}
     if any(not c.get('noteId') for c in r.get('cards', [])):
         synced = lib.sync(ident)
         r, body, version = lib.read(ident)
