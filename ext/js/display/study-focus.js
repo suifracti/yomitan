@@ -7,7 +7,7 @@ import {updateStudySourcePreview, prepareParallelSentence} from './study-transla
 import {explainWordForm, findFormExample} from './study-word-forms.js';
 import {chromeTranslate} from '../study/free-translators.js';
 import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
-import {WORD_STATUS_KEY, createResumeUrl, savedStudyRecordId} from '../study/study-data.js';
+import {WORD_STATUS_KEY, createResumeUrl, createSourceLibraryUrl, librarySource, savedStudyRecordId} from '../study/study-data.js';
 import {timeLabel} from '../study/subtitle-session.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
 
@@ -1031,6 +1031,16 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             }
             const link = make('a', 'sf-link scan-disable', label); link.href = href;
             link.target = '_blank'; link.rel = 'noopener noreferrer'; sourceFooter.append(link);
+        }
+        const relatedSource = savedRecordId ? librarySource(display.history.state?.savedRecordEntry?.url ?? '') : '';
+        if (relatedSource) {
+            const related = d.createElement('a');
+            related.className = 'sf-link scan-disable';
+            related.textContent = '同来源原句 ↗';
+            related.href = createSourceLibraryUrl(relatedSource, chrome.runtime.getURL(LIBRARY_PATH));
+            related.target = '_blank';
+            related.rel = 'noopener noreferrer';
+            sourceFooter.append(related);
         }
         sourcePane.append(sourceFooter); owned.push(sourceFooter);
         // A lookup from our video captions is a different learning object: say so, and

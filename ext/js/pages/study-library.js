@@ -29,7 +29,7 @@ import {timedUrl, videoListenUrl} from '../study/media-key.js';
 import {timeLabel} from '../study/subtitle-session.js';
 import {BILIBILI_HOST, YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, canSupplementAudio, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, canSupplementAudio, cardReceipt, createResumeUrl, createSourceLibraryUrl, librarySource, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
 
@@ -87,15 +87,6 @@ function plainText(value) {
     } catch {
         return '（无法显示）';
     }
-}
-
-/**
- * Keep the stored string for the index; a file URL here is metadata, not a navigation target.
- * @param {string} value
- * @returns {string}
- */
-function librarySource(value) {
-    return value.length <= 2000 && /^(?:https?:\/\/|file:\/\/\/[^/])/.test(value) ? value : '';
 }
 
 /**

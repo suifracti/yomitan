@@ -340,6 +340,15 @@ export function createResumeUrl(record, searchUrl) {
 }
 
 /**
+ * Keep the stored string for the index; a file URL here is metadata, not a navigation target.
+ * @param {string} value
+ * @returns {string}
+ */
+export function librarySource(value) {
+    return value.length <= 2000 && /^(?:https?:\/\/|file:\/\/\/[^/])/.test(value) ? value : '';
+}
+
+/**
  * @param {string} sourceUrl
  * @param {string} libraryUrl
  * @returns {string}
