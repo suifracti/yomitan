@@ -408,7 +408,7 @@ def _normalize_request(p):
         return p
     if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice', 'word', 'focus'}:
         scope = p.get('scope', 'source')
-        if 'practice' in p and p['practice'] not in ('dictation', 'translation'):
+        if 'practice' in p and p['practice'] not in ('dictation', 'translation', 'cloze'):
             raise ValueError('练习类型无效。')
         if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'sources', 'word', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall') or ('word' in p) != (scope == 'word'):
             raise ValueError('学习列表范围无效。')

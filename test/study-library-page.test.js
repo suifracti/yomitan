@@ -606,6 +606,47 @@ describe('study library page', () => {
         expect(mocks.studyCall.mock.calls).toHaveLength(reads);
     });
 
+    test('indexed cloze finds old sentences across pages and continues without moving the library list', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}, storage: {local: {get: async () => ({})}}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const row = (/** @type {number} */ id, /** @type {string} */ word, /** @type {string} */ sentence) => ({
+            id: String(id).padStart(32, '0'), entry: {word, sentence, language: 'en'}, vaultSaved: true,
+        });
+        const invalid = [row(1, 'play', 'The display is bright.'), row(2, 'play', 'They play whenever we play.')];
+        const suitable = ['lamp', 'path', 'lake', 'gate', 'moon', 'branch'].map((word, i) => row(i + 3, word, `We could see the ${word} at stop ${i + 1}.`));
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action !== 'libraryList') { return []; }
+            if (payload.practice !== 'cloze') { return {items: invalid, total: 20, canSearch: true, canFindCloze: true}; }
+            return {items: payload.offset ? suitable : invalid, total: 8, canSearch: true};
+        });
+        await import('../ext/js/pages/study-library.js');
+        const start = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-cloze-button'));
+        const panel = /** @type {HTMLElement} */ (document.getElementById('study-library-practice'));
+        const press = (/** @type {string} */ text) => [...panel.querySelectorAll('button')].find((button) => button.textContent === text)?.click();
+        const lists = () => mocks.studyCall.mock.calls.filter(([action]) => action === 'libraryList');
+        await vi.waitFor(() => expect(start.hidden).toBe(false));
+        expect(lists()).toHaveLength(1);
+        start.click();
+        await vi.waitFor(() => expect(panel.textContent).toContain('练原句填空 · 1 / 5'));
+        expect(panel.textContent).toContain('We could see the […] at stop 1.');
+        for (let i = 0; i < 5; ++i) {
+            press('直接看答案');
+            press(i === 4 ? '完成这轮' : '下一句');
+        }
+        press('练下一组');
+        await vi.waitFor(() => expect(panel.textContent).toContain('We could see the […] at stop 6.'));
+        const scope = {language: 'en', scope: 'all', url: '', title: ''};
+        expect(lists()).toEqual([
+            ['libraryList', {...scope, offset: 0}],
+            ['libraryList', {...scope, practice: 'cloze'}],
+            ['libraryList', {...scope, practice: 'cloze', offset: 2}],
+        ]);
+        start.click();
+        expect(document.querySelectorAll('#study-library-list article')).toHaveLength(2);
+    });
+
     test('practice finds eligible sentences on the next source page without expanding the visible list', async () => {
         vi.resetModules();
         makePageDom();

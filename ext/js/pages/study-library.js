@@ -538,13 +538,14 @@ function makeVideoListenButton(row, report) {
  * @param {PracticeMode} mode
  * @param {(row: StudyLibraryRecord, report?: (message: string) => void) => HTMLButtonElement | null} makeAudioButton
  * @param {() => void} stopAudio
- * @param {() => Promise<SentenceRound>} [loadNextRound]
+ * @param {((isCurrent: () => boolean) => Promise<SentenceRound>)} [loadNextRound]
  */
 function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, loadNextRound) {
     const heading = document.createElement('h2');
     heading.tabIndex = -1;
     const recall = mode === 'recall';
     const translating = mode === 'translation';
+    const roundMaterial = mode === 'dictation' ? '可练的原声' : (translating ? '带译文的原句' : '可练的原句');
     const retryLabel = recall ? '再练没对上的' : '重听没对上的';
     let queue = prompts;
     let index = 0;
@@ -554,7 +555,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
     const show = () => {
         if (index === queue.length) {
             heading.textContent = '本轮结束';
-            const message = Object.assign(document.createElement('p'), {textContent: loadNextRound ? (translating ? '还有已存的原句可练。' : '还有可练的原声。这组的作答不会保存。') : '可返回学习库继续找原句。这轮不保存成绩。'});
+            const message = Object.assign(document.createElement('p'), {textContent: loadNextRound ? `还可以继续找${roundMaterial}。这组的作答不会保存。` : '可返回学习库继续找原句。这轮不保存成绩。'});
             panel.replaceChildren(heading, message);
             const actions = document.createElement('div');
             actions.className = 'study-library-practice-choices';
@@ -567,12 +568,12 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
                     if (retry) { retry.disabled = true; }
                     message.textContent = '正在找下一组…';
                     try {
-                        const {prompts: next, hasMore} = await loadNextRound();
+                        const {prompts: next, hasMore} = await loadNextRound(() => panel.contains(load));
                         if (!panel.contains(load)) { return; }
                         if (!hasMore) { loadNextRound = void 0; }
                         if (next.length === 0) {
                             load.remove();
-                            message.textContent = translating ? '目前没有更多带译文的原句了。' : '目前没有更多可练的原声了。';
+                            message.textContent = `目前没有更多${roundMaterial}了。`;
                             heading.focus();
                             return;
                         }
@@ -1028,6 +1029,8 @@ async function initializePage() {
             ...(scope === 'word' ? {word} : {}),
             ...(scope === 'recent-recall' && focusRecall ? {focus: {id: focusRecall}} : {})});
         let canSearch = false;
+        let canFindCloze = false;
+        const indexedCloze = () => canFindCloze && ['all', 'saved', 'source', 'word'].includes(category);
         let listedQuery = '';
         let listedCategory = 'all';
         let searchTimer = 0;
@@ -1122,12 +1125,13 @@ async function initializePage() {
             cancelSentenceSearch();
             const listening = button === dictationButton;
             const translating = button === translationButton;
-            const indexedPractice = listening || translating;
+            const findingCloze = button === clozeButton && indexedCloze();
+            const indexedPractice = listening || translating || findingCloze;
             /** @type {PracticeMode} */
             let mode = category === 'recent-recall' ? 'recall' : 'cloze';
             if (listening) { mode = 'dictation'; }
             if (translating) { mode = 'translation'; }
-            /** @type {(() => Promise<SentenceRound>) | undefined} */
+            /** @type {((isCurrent: () => boolean) => Promise<SentenceRound>) | undefined} */
             let loadNextRound;
             /**
              * @param {SentencePrompt[]} prompts
@@ -1151,18 +1155,29 @@ async function initializePage() {
             let oldPractice = false;
             try {
                 if (indexedPractice) {
-                    const payload = {...base, practice: translating ? 'translation' : 'dictation', ...(query ? {query} : {})};
+                    const payload = {...base, practice: mode, ...(query ? {query} : {})};
                     let nextOffset = 0;
                     let available = Number.POSITIVE_INFINITY;
                     /** @type {SentencePrompt[]} */
                     const waiting = [];
-                    const readRound = async () => {
-                        if (waiting.length < SENTENCE_PRACTICE_LIMIT && nextOffset < available) {
+                    /** @type {Set<string>} */
+                    const clozeSeen = new Set();
+                    const readRound = async (isCurrent = () => sentenceSearch === request) => {
+                        while (isCurrent() && waiting.length < SENTENCE_PRACTICE_LIMIT && nextOffset < available) {
                             const found = await studyCall('libraryList', {...payload, ...(nextOffset ? {offset: nextOffset} : {})});
                             const rows = normalizeRecords(found);
                             nextOffset += rows.length;
                             available = rows.length > 0 ? (/** @type {{total?: number}} */ (found).total ?? nextOffset) : nextOffset;
-                            waiting.push(...sentencePrompts(rows, [], mode, PAGE_SIZE));
+                            const candidates = sentencePrompts(rows, [], mode, PAGE_SIZE);
+                            if (!findingCloze) {
+                                waiting.push(...candidates);
+                                break;
+                            }
+                            for (const prompt of candidates) {
+                                if (clozeSeen.has(prompt.text)) { continue; }
+                                clozeSeen.add(prompt.text);
+                                waiting.push(prompt);
+                            }
                         }
                         return {prompts: waiting.splice(0, SENTENCE_PRACTICE_LIMIT), hasMore: waiting.length > 0 || nextOffset < available};
                     };
@@ -1668,7 +1683,8 @@ listedQuery :
             const canFindTranslation = translations.length > 0 || activePractice === translationButton || total > 0;
             translationButton.hidden = waiting || loading || Boolean(listError) || !['all', 'saved', 'source'].includes(category) || !canFindTranslation;
             if (activePractice !== clozeButton && sentenceSearch?.button !== clozeButton) { clozeButton.textContent = clozeLabel(); }
-            clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
+            const canOfferCloze = indexedCloze() && total > 0 && !waiting && !loading && !listError;
+            clozeButton.hidden = cloze.length === 0 && !canOfferCloze && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
             const canOfferDictation = total > 0 || dictation.length > 0 || activePractice === dictationButton;
             dictationButton.hidden = recall || waiting || loading || Boolean(listError) || category === 'anki-only' || !canOfferDictation;
             sourceRecall = category === 'source' && !waiting && !loading && !listError && recallRound ? sentencePrompts(recallRound, [], 'recall') : [];
@@ -1786,11 +1802,12 @@ listedQuery :
                     focusRecall = '';
                     value = await studyCall('libraryList', {...libraryScope(scope), ...params});
                 }
-                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], recallRound?: StudyLibraryRecord[], sources?: SourceShelfItem[]}|null} */ (value);
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, canFindCloze?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], recallRound?: StudyLibraryRecord[], sources?: SourceShelfItem[]}|null} */ (value);
                 if (shelf && !result?.sources) { throw new Error(SOURCES_UPDATE_BRIDGE); }
                 canSearch = result?.canSearch === true;
                 if (!shelf && !indexed && canSearch && ((tab !== 'word' && search.value.trim()) || scope !== category)) { queuedSearch = true; }
                 if (obsolete()) { return; }
+                canFindCloze = result?.canFindCloze === true;
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
                 const shelfPage = result?.sources ?? [];
                 const pageLength = shelf ? shelfPage.length : page.length;

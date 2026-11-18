@@ -101,6 +101,23 @@ class RecordIndexTests(AutoSyncTests):
         self.assertEqual([r['entry']['sentence'] for r in result['items']], [old['entry']['sentence']])
         self.assertEqual(self.calls, [])
 
+        sentence = 'The lighthouse stood above the shore.'
+        for word, url in [('lighthouse', source), ('shore', source), ('other', source), ('stood', source + '/another')]:
+            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': sentence, 'url': url},
+                                 'makeCard': False})
+        save(sentence, source, True, '灯塔矗立在海岸上方。')
+        for i in range(12):
+            save(f'After the lighthouse we saw point {i}.', source, True, '随后我们看见了新地标。')
+        ordinary = self.library.handle({**args, 'query': 'lighthouse'})
+        self.assertTrue(ordinary['canFindCloze'])
+        self.assertFalse(any(row['entry']['word'] == 'shore' for row in ordinary['items']))
+        self.calls.clear()
+        with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('cloze reopened a note')):
+            cloze = self.library.handle({**args, 'practice': 'cloze', 'query': 'lighthouse'})
+        self.assertEqual(cloze['total'], 2)
+        self.assertEqual({r['entry']['word'] for r in cloze['items']}, {'lighthouse', 'shore'})
+        self.assertEqual(self.calls, [])
+
     def test_video_source_uses_playback_order_for_the_list_and_dictation(self):
         local = 'file:///examples/a/Lesson.mp4#study-duration=80'
         for word, second in [('later', 52), ('first', 0), ('middle', 10), ('unknown', None)]:

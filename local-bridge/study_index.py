@@ -89,6 +89,7 @@ def indexed_page(rows, p, *, complete=True):
     practice = p.get('practice')
     dictation = practice == 'dictation'
     translating = practice == 'translation'
+    cloze = practice == 'cloze'
     source = page_source_key(p['url']) if scope == 'source' else ''
     query = ' '.join(p.get('query', '').casefold().split())
     offset = p.get('offset', 0)
@@ -119,6 +120,9 @@ def indexed_page(rows, p, *, complete=True):
         if scope == 'recent-recall' and not order: continue
         if dictation and (not e['sentence'] or not has_current_audio(row)): continue
         if translating and (e.get('kind') != 'sentence' or e.get('language', 'en') != 'en' or not e['translation'].strip()): continue
+        # Only prefilter candidates. The same browser masking rule used by cards decides if a blank is valid.
+        if cloze and (e.get('kind') == 'sentence' or e.get('language', 'en').split('-', 1)[0].lower() != 'en'
+                      or e['word'].casefold() not in e['sentence'].casefold()): continue
         rank = 0
         if query:
             match = search_hit(row, query)
@@ -147,7 +151,9 @@ def indexed_page(rows, p, *, complete=True):
     if practice:
         unique = {}
         for match in matches:
-            unique.setdefault(match[2]['entry']['sentence'], match)
+            entry = match[2]['entry']
+            key = (entry['word'].casefold(), entry['sentence']) if cloze else entry['sentence']
+            unique.setdefault(key, match)
         matches = list(unique.values())
     extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not practice and not focus and p.get('language', 'en') == 'en' else {}
     page = [row for _, _, row in matches[offset:offset + PAGE_SIZE]]
@@ -166,7 +172,7 @@ def indexed_page(rows, p, *, complete=True):
             ranked.sort(key=lambda match: match[:2], reverse=True)
         chosen = recall_round(row for _, at, row in ranked if at)
         extras['recallRound'] = [list_item(row) for row in chosen]
-    return {'items': [list_item(row) for row in page], 'total': len(matches), 'canSearch': True, **extras}
+    return {'items': [list_item(row) for row in page], 'total': len(matches), 'canSearch': True, 'canFindCloze': True, **extras}
 
 
 class IndexUnavailable(ValueError):
