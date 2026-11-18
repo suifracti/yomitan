@@ -67,18 +67,27 @@ class TodayTests(unittest.TestCase):
         from unittest.mock import patch
         import study_translator as native
         calls = []
+        active = '学习'
         def anki(action, params):
             calls.append(action)
+            if action == 'getActiveProfile': return active
             if action == 'deckNames': return ['外语']
             if action == 'getDeckStats': return {'1': {'name': '外语', 'new_count': 2, 'learn_count': 1, 'review_count': 4}}
             if action == 'findCards': return [123]
             self.fail(action)
-        library = SimpleNamespace(settings=lambda: {'ankiEnabled': True, 'deck': '外语'}, anki=anki)
-        payload = json.dumps({'action': 'ankiToday'}).encode()
-        source = SimpleNamespace(buffer=io.BytesIO(struct.pack('=I', len(payload)) + payload))
-        sink = SimpleNamespace(buffer=io.BytesIO())
-        with patch.object(native.sys, 'argv', ['fixture', native.ORIGIN]), patch.object(native.sys, 'stdin', source), patch.object(native.sys, 'stdout', sink), patch('study_settings.YomitanLibrary', return_value=library), patch.object(native, 'configured_codex', side_effect=AssertionError('no model')):
-            self.assertEqual(native.main(), 0)
-        result = json.loads(sink.buffer.getvalue()[4:])
+        library = SimpleNamespace(settings=lambda: {'ankiEnabled': True, 'deck': '外语'}, anki=anki,
+                                  sync_state=lambda: {'ankiProfile': '学习'})
+        def request():
+            payload = json.dumps({'action': 'ankiToday'}).encode()
+            source = SimpleNamespace(buffer=io.BytesIO(struct.pack('=I', len(payload)) + payload))
+            sink = SimpleNamespace(buffer=io.BytesIO())
+            with patch.object(native.sys, 'argv', ['fixture', native.ORIGIN]), patch.object(native.sys, 'stdin', source), patch.object(native.sys, 'stdout', sink), patch('study_settings.YomitanLibrary', return_value=library), patch.object(native, 'configured_codex', side_effect=AssertionError('no model')):
+                self.assertEqual(native.main(), 0)
+            return json.loads(sink.buffer.getvalue()[4:])
+        result = request()
         self.assertTrue(result['ok'])
         self.assertEqual(result['library'], {'due': 5, 'reviewed': 1, 'newDue': 2, 'decks': ['外语']})
+        calls.clear()
+        active = '另一个账户'
+        self.assertEqual(request(), {'ok': True, 'library': {'paused': True}})
+        self.assertEqual(calls, ['getActiveProfile'])

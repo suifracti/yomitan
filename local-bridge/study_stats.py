@@ -2,14 +2,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Read-only Anki summaries scoped to the configured learning decks."""
 
+from study_sync import sync_profile
+
 
 def quoted_deck(name):
     return 'deck:"' + name.replace('\\', '\\\\').replace('"', '\\"').replace('*', '\\*') + '"'
 
 
-def anki_today(library):
+def anki_today(library, expected_profile=None):
     settings = library.settings()
     if not settings.get('ankiEnabled', True):
+        return {'paused': True}
+    if expected_profile and sync_profile(library.anki, expected_profile)[1]:
         return {'paused': True}
     wanted = set(filter(None, [settings['deck'], *settings.get('deckByKind', {}).values()]))
     try:

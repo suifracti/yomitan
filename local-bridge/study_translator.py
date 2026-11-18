@@ -648,7 +648,8 @@ def main():
             from study_settings import YomitanLibrary
             from study_stats import anki_today
             root = pathlib.Path(__file__).parent
-            write_frame(sys.stdout.buffer, {'ok': True, 'library': anki_today(YomitanLibrary(root / 'bridge-config.json'))})
+            library = YomitanLibrary(root / 'bridge-config.json', cache_dir=root / 'learning-cache')
+            write_frame(sys.stdout.buffer, {'ok': True, 'library': anki_today(library, library.sync_state().get('ankiProfile'))})
             return 0
         if payload['action'] == 'bridgeHealth':
             from study_health import health
