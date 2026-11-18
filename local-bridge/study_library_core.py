@@ -412,15 +412,20 @@ def _normalize_request(p):
             raise ValueError('学习列表范围无效。')
         if 'focus' in p:
             focus = p['focus']
-            if scope != 'word' or not isinstance(focus, dict) or not {'word', 'sentence'} <= set(focus) or set(focus) - {'word', 'sentence', 'id', 'videoTime'}:
+            if not isinstance(focus, dict) or scope not in ('word', 'recent-recall'):
+                raise ValueError('当前原句格式无效。')
+            if scope == 'recent-recall' and set(focus) != {'id'}:
                 raise ValueError('当前原句格式无效。')
             if 'id' in focus and (not isinstance(focus['id'], str) or not ID_RE.fullmatch(focus['id'])):
                 raise ValueError('学习记录编号无效。')
-            at = focus.get('videoTime')
-            if 'videoTime' in focus and (type(at) not in (int, float) or not 0 <= at <= 604800):
-                raise ValueError('视频时间无效。')
-            p = {**p, 'focus': {**focus, 'word': text(focus['word'], 128, True), 'sentence': text(focus['sentence'], 2400),
-                                **({'videoTime': int(at)} if at is not None else {})}}
+            if scope == 'word':
+                if not {'word', 'sentence'} <= set(focus) or set(focus) - {'word', 'sentence', 'id', 'videoTime'}:
+                    raise ValueError('当前原句格式无效。')
+                at = focus.get('videoTime')
+                if 'videoTime' in focus and (type(at) not in (int, float) or not 0 <= at <= 604800):
+                    raise ValueError('视频时间无效。')
+                p = {**p, 'focus': {**focus, 'word': text(focus['word'], 128, True), 'sentence': text(focus['sentence'], 2400),
+                                    **({'videoTime': int(at)} if at is not None else {})}}
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),
                 **({'query': text(p['query'], 240)} if 'query' in p else {}),
                 **({'word': text(p['word'], 128, True)} if scope == 'word' else {})}

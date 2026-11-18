@@ -932,11 +932,19 @@ async function initializePage() {
         search.value = (requested.get('query') || '').slice(0, 240);
         const sourceUrl = librarySource(requestedSource);
         const requestedDictation = Boolean(sourceUrl && requested.get('practice') === 'dictation');
+        const recallId = requested.get('recall') || '';
+        const requestedRecall = !sourceUrl && /^[a-f0-9]{32}$/.test(recallId) ? recallId : '';
+        let focusRecall = requestedRecall;
         const legacyWordPractice = !sourceUrl && !requested.has('word') && requested.get('practice') === 'word';
-        const word = sourceUrl ? '' : (requested.get('word') || (legacyWordPractice ? search.value : '')).trim().slice(0, 128);
+        const word = sourceUrl || requestedRecall ? '' : (requested.get('word') || (legacyWordPractice ? search.value : '')).trim().slice(0, 128);
         if (legacyWordPractice) { search.value = ''; }
-        let openRequestedPractice = requestedDictation || Boolean(word && requested.get('practice') === 'word');
-        let category = sourceUrl ? 'source' : (word ? 'word' : 'all');
+        let openRequestedPractice = Boolean(requestedRecall) || requestedDictation || Boolean(word && requested.get('practice') === 'word');
+        let category = word ? 'word' : 'all';
+        if (sourceUrl) {
+            category = 'source';
+        } else if (requestedRecall) {
+            category = 'recent-recall';
+        }
         const scopedTab = /** @type {?HTMLButtonElement} */ (document.querySelector(`[data-library-category="${category}"]`));
         if (scopedTab && category !== 'all') {
             scopedTab.hidden = false;
@@ -949,13 +957,14 @@ async function initializePage() {
         }
         /**
          * @param {string} scope
-         * @returns {{language: string, scope: string, url: string, title: string, word?: string}}
+         * @returns {{language: string, scope: string, url: string, title: string, word?: string, focus?: {id: string}}}
          */
         const libraryScope = (scope) => ({language: 'en',
             scope,
             url: scope === 'source' ? sourceUrl : '',
             title: '',
-            ...(scope === 'word' ? {word} : {})});
+            ...(scope === 'word' ? {word} : {}),
+            ...(scope === 'recent-recall' && focusRecall ? {focus: {id: focusRecall}} : {})});
         let canSearch = false;
         let listedQuery = '';
         let listedCategory = 'all';
@@ -1676,10 +1685,18 @@ listedQuery :
                     }
                 }
                 if (obsolete()) { return; }
-                if ((!loaded || !readOnly) && !['source', 'word'].includes(tab) && !shelf) { await refreshSavedWords(); }
+                if ((!loaded || !readOnly) && !['source', 'word'].includes(tab) && !(tab === 'recent-recall' && requestedRecall) && !shelf) { await refreshSavedWords(); }
                 if (obsolete()) { return; }
                 const scope = indexed || shelf || ['pending', 'anki-only', 'manual-known', 'source', 'word', 'recent-recall'].includes(tab) ? tab : 'all';
-                const value = await studyCall('libraryList', {...libraryScope(scope), offset: start, ...((indexed || shelf || tab === 'word') && (query || searchOnly) ? {query} : {})});
+                const params = {offset: start, ...((indexed || shelf || tab === 'word' || tab === 'recent-recall') && (query || searchOnly) ? {query} : {})};
+                let value;
+                try {
+                    value = await studyCall('libraryList', {...libraryScope(scope), ...params});
+                } catch (error) {
+                    if (obsolete() || tab !== 'recent-recall' || !focusRecall || !(error instanceof Error) || error.message !== '当前原句格式无效。') { throw error; }
+                    focusRecall = '';
+                    value = await studyCall('libraryList', {...libraryScope(scope), ...params});
+                }
                 const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], sources?: SourceShelfItem[]}|null} */ (value);
                 if (shelf && !result?.sources) { throw new Error(SOURCES_UPDATE_BRIDGE); }
                 canSearch = result?.canSearch === true;
@@ -1768,6 +1785,12 @@ listedQuery :
                             clozeButton.click();
                         } else {
                             setStatus('这次没找到能练的旧原句。可以看下方记录，或读到合适的句子时点「记住它」。');
+                        }
+                    } else if (!obsolete() && !listError && tab === 'recent-recall' && requestedRecall) {
+                        if (!clozeButton.hidden && cloze[0]?.row.id === requestedRecall) {
+                            clozeButton.click();
+                        } else {
+                            setStatus('这句暂时不能直接开始，可以手动复习列表里的卡点。');
                         }
                     }
                 }

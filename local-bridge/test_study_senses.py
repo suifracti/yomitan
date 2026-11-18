@@ -38,7 +38,8 @@ class SenseTests(AutoSyncTests):
         later = self.save_word('charge', 'They charge a fee.', videoTime=37, sense=earlier['entry']['sense'])
         self.save_word('charge', 'They charge at dawn.', sense={'key': 'new', 'gloss': '冲锋'})
         tap = {'action': 'libraryContextMiss', 'word': 'charge', 'kind': 'recall', 'url': earlier['entry']['url']}
-        self.library.handle({**tap, 'sentence': 'They charge a fee.', 'videoTime': 37.7})
+        confirmed = self.library.handle({**tap, 'sentence': 'They charge a fee.', 'videoTime': 37.7})
+        self.assertEqual(confirmed['recallRecordId'], later['id'])
         scope = {'action': 'libraryList', 'scope': 'recent-recall', 'title': '', 'url': ''}
         self.calls.clear()
         self.assertEqual([item['id'] for item in self.library.handle(scope)['items']], [later['id']])
@@ -47,8 +48,13 @@ class SenseTests(AutoSyncTests):
         with self.assertRaisesRegex(ValueError, '词义'):
             self.library.handle({**tap, 'sentence': 'They charge every day.'})
         # An explicitly named sense can receive a word-level recall, but the unseen sentence isn't a saved prompt.
-        self.library.handle({**tap, 'sentence': 'They charge per hour.', 'senseKey': earlier['entry']['sense']['key']})
+        word_only = self.library.handle({**tap, 'sentence': 'They charge per hour.', 'senseKey': earlier['entry']['sense']['key']})
+        self.assertIsNone(word_only['recallRecordId'])
         self.assertEqual([item['id'] for item in self.library.handle(scope)['items']], [later['id']])
+        self.library.handle({**tap, 'sentence': 'They charge a fee.', 'videoTime': 12})
+        self.assertEqual([item['id'] for item in self.library.handle(scope)['items']], [earlier['id'], later['id']])
+        focused = self.library.handle({**scope, 'focus': {'id': later['id']}})
+        self.assertEqual([item['id'] for item in focused['items']], [later['id'], earlier['id']])
         self.assertEqual(self.calls, [])
 
     def test_manual_known_is_word_wide_undoable_and_never_changes_anki(self):
@@ -172,7 +178,8 @@ class SenseTests(AutoSyncTests):
         for kind in ['newSense', 'collocation', 'structure', 'recall']:
             result = self.library.handle({'action': 'libraryContextMiss', 'word': 'run', 'lemma': 'run', 'kind': kind,
                                          'senseKey': key, 'sentence': 'I run daily.', 'url': 'https://example.test/learn', 'videoTime': 12.5})
-            self.assertEqual(result, {'ok': True})
+            expected = {'ok': True, 'recallRecordId': None} if kind == 'recall' else {'ok': True}
+            self.assertEqual(result, expected)
         result = self.library.handle({'action': 'libraryWordSenses', 'word': 'run'})
         self.assertEqual(result['misses'], {'newSense': 1, 'collocation': 1, 'structure': 1, 'recall': 1})
         self.assertEqual(result['senses'][0]['s'], 'shaky')

@@ -246,8 +246,10 @@ describe('study library page', () => {
 
     test('recent recall mixes original audio, a blank, and a meaning review without losing the exact note', async () => {
         vi.resetModules();
-        makePageDom();
-        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        vi.stubGlobal('chrome', {
+            runtime: {getURL: (name) => `chrome-extension://test${name}`},
+            storage: {local: {get: async () => ({[WORD_STATUS_KEY]: {version: 2, words: {charge: {s: 'shaky', senses: 1}}}})}},
+        });
         vi.stubGlobal('Blob', Blob);
         vi.stubGlobal('AudioContext', class {
             resume = vi.fn().mockResolvedValue(void 0);
@@ -271,52 +273,78 @@ describe('study library page', () => {
                 audioContextChanged: true,
                 media: {audio: {name: 'old.webm'}}},
         ];
+        /** @type {string|null} */
+        let receipt = null;
+        const card = mountStuckHint({
+            doc: document,
+            getEntry: () => first,
+            call: async (action) => {
+                if (action === 'libraryWordSenses') { return {senses: [{key: 'charge#2', gloss: '收费', s: 'shaky'}]}; }
+                return {recallRecordId: receipt};
+            },
+            isCurrent: () => true,
+            onChoice: vi.fn(),
+        });
+        document.body.replaceChildren(card);
+        const recall = /** @type {HTMLButtonElement} */ (card.querySelector('[data-stuck="recall"]'));
+        await vi.waitFor(() => expect(card.textContent).toContain('学过的意思'));
+        recall.click();
+        await vi.waitFor(() => expect(card.textContent).toContain('这句没有加入复习'));
+        expect(card.querySelector('a')?.textContent).toContain('用旧原句练这个词');
+        receipt = items[0].id;
+        recall.click();
+        await vi.waitFor(() => expect(card.textContent).toContain('这句已加入'));
+        const recallUrl = new URL(card.querySelector('a')?.href ?? '');
+        expect([...recallUrl.searchParams]).toEqual([['recall', items[0].id]]);
+        makePageDom();
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         mocks.studyCall.mockImplementation(async (action, payload) => {
             if (action === 'libraryList') {
-                return payload?.scope === 'recent-recall' ? {items, total: items.length, canSearch: true} : {items: [], total: 0, canSearch: true};
+                if (payload?.scope !== 'recent-recall') { return {items: [], total: 0, canSearch: true}; }
+                const sorted = payload.focus?.id === items[0].id ? items : [items[1], items[0], items[2]];
+                return {items: sorted, total: items.length, canSearch: true};
             }
             if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
             return [];
         });
-        await import('../ext/js/pages/study-library.js');
-        /** @type {HTMLButtonElement} */ (document.querySelector('[data-library-category="recent-recall"]')).click();
-        const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-cloze-button'));
-        const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
-        const press = (/** @type {string} */ label) => [...panel.querySelectorAll('button')].find((item) => item.textContent === label)?.click();
-        const linkId = () => new URL([...panel.querySelectorAll('a')].find((link) => link.textContent?.includes('继续学习'))?.href ?? '').searchParams.get('studyRecordId');
-        await vi.waitFor(() => {
-            expect(start.textContent).toBe('复习最近卡点');
-            expect(start.hidden).toBe(false);
-        });
-        expect(document.getElementById('study-library-dictation-button')?.hidden).toBe(true);
-        const baseline = mocks.studyCall.mock.calls.length;
-        start.click();
-        expect(panel.textContent).toContain('1 / 3');
-        expect(panel.textContent).not.toContain('They charge him.');
-        expect(mocks.studyCall.mock.calls).toHaveLength(baseline);
-        press('播放已存原声');
-        await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryAudioRead', {id: items[0].id}));
-        press('直接看原句');
-        expect(panel.textContent).toContain('收费的意思');
-        expect(panel.textContent).toContain('他们向他收费。');
-        expect(panel.textContent).toContain('Original clip');
-        expect(linkId()).toBe(items[0].id);
-        press('下一句');
-        expect(panel.textContent).toContain('They […] him.');
-        press('直接看答案');
-        expect(panel.textContent).toContain('指控的意思');
-        expect(linkId()).toBe(items[1].id);
-        press('下一句');
-        expect(panel.textContent).toContain('We went on and on.');
-        expect(panel.textContent).not.toContain('一直继续');
-        expect(panel.querySelector('input, textarea')).toBeNull();
-        press('看当时的释义');
-        expect(panel.textContent).toContain('一直继续');
-        expect(linkId()).toBe(items[2].id);
-        press('完成这轮');
-        expect(panel.textContent).toContain('本轮结束');
-        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([['libraryAudioRead', {id: items[0].id}]]);
+        const previousUrl = location.href;
+        history.replaceState(null, '', recallUrl.search);
+        try {
+            await import('../ext/js/pages/study-library.js');
+            const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+            const press = (/** @type {string} */ label) => [...panel.querySelectorAll('button')].find((item) => item.textContent === label)?.click();
+            const linkId = () => new URL([...panel.querySelectorAll('a')].find((link) => link.textContent?.includes('继续学习'))?.href ?? '').searchParams.get('studyRecordId');
+            await vi.waitFor(() => expect(panel.textContent).toContain('1 / 3'));
+            expect(document.getElementById('study-library-dictation-button')?.hidden).toBe(true);
+            expect(mocks.studyCall.mock.calls).toEqual([
+                ['libraryList', {language: 'en', scope: 'recent-recall', url: '', title: '', offset: 0, focus: {id: items[0].id}}],
+            ]);
+            const baseline = mocks.studyCall.mock.calls.length;
+            expect(panel.textContent).not.toContain('They charge him.');
+            expect(mocks.studyCall.mock.calls).toHaveLength(baseline);
+            press('播放已存原声');
+            await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryAudioRead', {id: items[0].id}));
+            press('直接看原句');
+            expect(panel.textContent).toContain('收费的意思');
+            expect(panel.textContent).toContain('他们向他收费。');
+            expect(panel.textContent).toContain('Original clip');
+            expect(linkId()).toBe(items[0].id);
+            press('下一句');
+            expect(panel.textContent).toContain('They […] him.');
+            press('直接看答案');
+            expect(panel.textContent).toContain('指控的意思');
+            expect(linkId()).toBe(items[1].id);
+            press('下一句');
+            expect(panel.textContent).toContain('We went on and on.');
+            expect(panel.textContent).not.toContain('一直继续');
+            expect(panel.querySelector('input, textarea')).toBeNull();
+            press('看当时的释义');
+            expect(panel.textContent).toContain('一直继续');
+            expect(linkId()).toBe(items[2].id);
+            press('完成这轮');
+            expect(panel.textContent).toContain('本轮结束');
+            expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([['libraryAudioRead', {id: items[0].id}]]);
+        } finally { history.replaceState(null, '', previousUrl); }
     });
 
     test('dictates only matching recordings, then reveals the complete sentence and returns to its record', async () => {

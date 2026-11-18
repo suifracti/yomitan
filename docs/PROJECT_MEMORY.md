@@ -62,7 +62,7 @@
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
 | 想用旧原句辨义，或对照同一个意思在两句话里的用法 | L-012；study_senses.practice_material、study-library.js |
-| 查词卡又没认出这个词，想马上拿以前的原句练一下 | L-012；study-stuck.js、学习库 query / practice 入口 |
+| 查词卡又没认出这个词，想练这句或找以前的原句 | L-012；study-stuck.js、libraryContextMiss 的 recallRecordId、学习库入口 |
 | 想直接对照这个词在视频、文章里的旧原句，不想先做题 | L-012；study-focus.js「我的记录」、libraryList 的 word 范围 |
 | 想用自己的旧原句练填空，但不想制卡 | L-012；study-library.js 的 sentencePrompts、study-card-kinds.js 的 blankStudyWord |
 | 不开原网页，想先听自己存的录音再写整句 | L-012；study-library.js 的 sentencePrompts、showSentencePractice |
@@ -313,6 +313,8 @@
 **同一来源多页的练习不要停在列表第一页**：同来源不足五题时，只有点练习才继续读当前来源、搜索条件下的下一页；复用 `sentencePrompts` 去掉重复题，够五题或读完就停，不改可见列表的分页。取消、换分类或搜索后丢弃迟到页，不请求原声。见[跨页找题](youtube-study-wiring.md#2026-11-18-同来源原句能到下一页找题)。
 
 **只拿确实卡住的旧原句复习**：旧 `contextMiss` 的记录号可能只是拿来归档该义项，不能据此认定原句；旧逻辑也没有比视频位置。现在按实际词与原句、来源和已存整秒位置找唯一记录，已打开的原笔记号可从义项列表确认意思。新事件的 `contextKey` 核对当时的词、句、来源、时间和义项，不复刻原文；旧事件不补造，改了原句就不冒充同一个卡点。学习库「最近没认出」只拿 30 天内的确切原句（已标认识的不进），不写练习或排程。见[同句两个时间点](youtube-study-wiring.md#2026-11-18-最近没认出回到真正卡过的原句)。
+
+**词卡只在确切的已存原句可复习时直接开题**：不会因为一个词能记录卡点，就把任意旧句当作这次卡过的句子。桥确认入选后回 `recallRecordId`，词卡才给「从这句开始复习」；查到的最新列表还得以这个编号开头。旧桥、只记义项或原笔记不再符合条件时保留普通入口，不自动替选。见[词卡直达](youtube-study-wiring.md#2026-11-18-从词卡直达确切的原句复习)。
 
 **复习最近卡点不用分开挑练法**：同一轮最多五条，优先用这条笔记仍有效的原声出听写；其他用唯一空位填空，无唯一空位就先看原句回想。揭晓才对照本人已存释义、译文和来源，可回原笔记。按编号区分同文本的不同卡点，点击才取原声，失效不借别句；借用原练习区，不加接口、模型或排程。见[混合练习回归](youtube-study-wiring.md#2026-11-18-一轮复习最近卡点)。
 

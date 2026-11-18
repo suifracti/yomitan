@@ -101,6 +101,21 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
     let known = [];
     let supported = false;
     let choiceRequest = 0;
+    let wordPracticeUrl = '';
+
+    /** @param {string} [recallId] */
+    const showPractice = (recallId) => {
+        if (recallId) {
+            const url = new URL('/study-library.html', doc.URL);
+            url.searchParams.set('recall', recallId);
+            practice.href = url.href;
+            practice.textContent = '从这句开始复习 ↗';
+        } else {
+            practice.href = wordPracticeUrl;
+            practice.textContent = '用旧原句练这个词 ↗';
+        }
+        practice.hidden = !recallId && !wordPracticeUrl;
+    };
 
     /** @returns {string} */
     const gloss = () => {
@@ -115,6 +130,7 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
     const choose = (kind, phrase = '') => {
         for (const button of buttons.querySelectorAll('button')) { button.setAttribute('aria-pressed', String(button.dataset.stuck === kind)); }
         const request = ++choiceRequest;
+        showPractice();
         const entry = getEntry();
         const selected = entry.recordId ? known.find((sense) => sense.recordIds?.includes(entry.recordId ?? '')) : null;
         const senseKey = selected?.key ?? (known.length === 1 ? known[0].key : '');
@@ -134,8 +150,17 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
             ...(senseKey ? {senseKey} : {}),
             sentence: entry.sentence ?? '',
             url: entry.url ?? '',
-            ...(typeof entry.videoTime === 'number' ? {videoTime: entry.videoTime} : {})}).then(() => {
-            if (isCurrent() && request === choiceRequest && kind === 'recall') { result.textContent = messages[kind]; }
+            ...(typeof entry.videoTime === 'number' ? {videoTime: entry.videoTime} : {})}).then((response) => {
+            if (!isCurrent() || request !== choiceRequest || kind !== 'recall') { return; }
+            const {recallRecordId} = /** @type {{recallRecordId?: string|null}} */ (response);
+            if (recallRecordId && /^[a-f0-9]{32}$/.test(recallRecordId)) {
+                result.textContent = '这句已加入「最近没认出」，没有建卡。';
+                showPractice(recallRecordId);
+            } else {
+                result.textContent = recallRecordId === null ?
+                    '只记下了这个词的卡点，这句没有加入复习。' :
+                    '已记下这次没认出，暂不能确认这句能否复习。';
+            }
         }).catch((error) => {
             if (isCurrent() && request === choiceRequest) {
                 const detail = error instanceof Error ? error.message : '可以打开对应的已存原句再试。';
@@ -217,8 +242,8 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
         const form = (entry.lemma || entry.word).toLowerCase();
         const saved = normalizeInfo(status?.words?.[form]);
         if (saved && saved.s !== 'ignored' && (saved.senses ?? 0) > 0) {
-            practice.href = createWordLibraryUrl(saved.lemma || form, new URL('/study-library.html', doc.URL), true);
-            practice.hidden = false;
+            wordPracticeUrl = createWordLibraryUrl(saved.lemma || form, new URL('/study-library.html', doc.URL), true);
+            showPractice();
             box.hidden = false;
         }
         const info = wordInfo(entry.lemma || entry.word, status?.words ?? {}) ?? wordInfo(entry.word, status?.words ?? {});

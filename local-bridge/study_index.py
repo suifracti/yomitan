@@ -125,7 +125,8 @@ def indexed_page(rows, p, *, complete=True):
         # The existing recency order still breaks ties and orders untimed notes.
         matches.sort(key=lambda match: match[2]['entry'].get('videoTime', float('inf')))
     focus_ids = set()
-    if focus := p.get('focus'):
+    focus = p.get('focus')
+    if focus and scope == 'word':
         origin = page_source_key(p['url']) if p['url'] else ''
         sentence = ' '.join(focus['sentence'].casefold().split())
         for _, _, row in matches:
@@ -134,6 +135,7 @@ def indexed_page(rows, p, *, complete=True):
             if (sentence and same_source and e['word'].casefold() == focus['word'].casefold()
                     and ' '.join(e['sentence'].casefold().split()) == sentence and e.get('videoTime') == focus.get('videoTime')):
                 focus_ids.add(row['id'])
+    if focus:
         matches.sort(key=lambda match: (match[2]['id'] != focus.get('id'), match[2]['id'] not in focus_ids))
     if dictation:
         unique = {}
@@ -142,7 +144,7 @@ def indexed_page(rows, p, *, complete=True):
         matches = list(unique.values())
     extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not dictation and not focus and p.get('language', 'en') == 'en' else {}
     page = [row for _, _, row in matches[offset:offset + PAGE_SIZE]]
-    if focus:
+    if focus and scope == 'word':
         extras.update(focusIds=[row['id'] for row in page if row['id'] in focus_ids], focusTotal=len(focus_ids),
                       focusComplete=complete,
                       ankiNoteIds=sorted({ident for row in page for ident, _ in card_receipts(row) if ident is not None}))

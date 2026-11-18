@@ -406,6 +406,9 @@ def add_miss(library, p, now=None):
         record.setdefault('contextMiss', []).append(event)
         body += '\n### 语境卡点\n\n' + paragraph(p['kind'] + ' · ' + event['senseKey']) + '\n'
         lib.write(record, body, version)
+    if p['kind'] == 'recall':
+        ready = recent_recall({**row, 'contextMiss': [event]}, now)
+        return {'ok': True, 'recallRecordId': row['id'] if ready else None}
     return {'ok': True}
 
 
