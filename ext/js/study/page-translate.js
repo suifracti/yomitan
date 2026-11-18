@@ -33,6 +33,7 @@ import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY} from './study-data.js';
 /** @typedef {Pick<import('study').StudyConfig, 'model'|'effort'>} TranslationModel */
 
 /** @typedef {import('./page-prefs.js').PagePrefs} PagePrefs */
+const TRANSLATION_CHUNK_SIZE = 2200;
 const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
 const ORIGINAL_CONTROLS = 'a[href],button:not([disabled])';
 const ORIGINAL_TOGGLE_STYLE = '.study-page-original-toggle{margin-inline-start:.5em;padding:0 .35em;font:inherit;font-size:.85em;line-height:1.4;background:var(--st-paper,#fbfaf7);color:var(--st-accent,#505ead);border:1px solid var(--st-line,#dce2eb);border-radius:4px;cursor:pointer}';
@@ -69,8 +70,8 @@ async function translateText(text, {language, target = 'zh', engine, config} = {
     config ??= /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
     language ||= pageLanguage(document.documentElement);
     const result = [];
-    for (let offset = 0; offset < text.length; offset += 2200) {
-        const part = text.slice(offset, offset + 2200);
+    for (let offset = 0; offset < text.length; offset += TRANSLATION_CHUNK_SIZE) {
+        const part = text.slice(offset, offset + TRANSLATION_CHUNK_SIZE);
         if (engine === 'chrome') {
             const status = await chromeTranslatorStatus(language, target);
             if (status !== 'available') {
@@ -343,20 +344,26 @@ export class PageTranslate {
     /**
      * @param {string} text
      * @param {string} language
-     * @param {SubtitleEngine} [engine]
+     * @param {SubtitleEngine} engine
+     * @param {()=>boolean} isCurrent
      * @returns {Promise<string>}
      */
-    async requestText(text, language, engine) {
-        engine ??= (await readSubtitlePrefs()).engine;
+    async requestText(text, language, engine, isCurrent) {
         const config = /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
-        const key = JSON.stringify([text, language, engine, config.model, config.effort]);
-        let task = this.cache.get(key);
-        if (!task) {
-            task = this.translate(text, {language, engine, config});
-            this.cache.set(key, task);
-            task.catch(() => this.cache.delete(key));
+        const chunks = [];
+        for (let offset = 0; offset < text.length; offset += TRANSLATION_CHUNK_SIZE) {
+            if (!isCurrent()) { throw new DOMException('已取消', 'AbortError'); }
+            const part = text.slice(offset, offset + TRANSLATION_CHUNK_SIZE);
+            const key = JSON.stringify([part, language, engine, config.model, config.effort]);
+            let task = this.cache.get(key);
+            if (!task) {
+                task = this.translate(part, {language, engine, config});
+                this.cache.set(key, task);
+                task.catch(() => this.cache.delete(key));
+            }
+            chunks.push((await runTranslationTasks([() => task]))[0]);
         }
-        return (await runTranslationTasks([() => task]))[0];
+        return chunks.join('\n');
     }
 
     /**
@@ -366,32 +373,35 @@ export class PageTranslate {
     async translateNode(original, manual = false) {
         const text = this.source(original);
         const language = pageLanguage(original);
-        if (!translatableBlock(text, language) || this.pending.has(original)) { return; }
+        const {version, pending} = this;
+        if (!translatableBlock(text, language) || pending.has(original)) { return; }
         const sameSource = () => pageLanguage(original) === language && this.source(original) === text;
-        this.pending.add(original);
+        const current = () => version === this.version && original.isConnected && sameSource();
+        pending.add(original);
         ++this.busy;
         document.dispatchEvent(new Event('study-page-change'));
-        const version = this.version;
         try {
             const {engine} = await readSubtitlePrefs();
-            if (version !== this.version) { return; }
+            if (!current()) { return; }
             if (!manual && !await this.approve(engine)) {
                 if (this.active && version === this.version) { this.stop(); }
                 return;
             }
-            if (version !== this.version || !original.isConnected) { return; }
-            const result = await this.requestText(text, language, engine);
-            if ((this.active || manual) && version === this.version && original.isConnected && sameSource()) { this.render(original, text, result, manual); }
+            if (!current()) { return; }
+            const result = await this.requestText(text, language, engine, current);
+            if ((this.active || manual) && current()) { this.render(original, text, result, manual); }
         } catch (error) {
-            if ((this.active || manual) && version === this.version && original.isConnected && sameSource()) {
+            if ((this.active || manual) && current()) {
                 const node = this.render(original, text, `这段没翻译成功：${reasonOf(error)} · 点击重试`, manual, true);
                 node.onclick = () => { void this.translateNode(original, manual); };
             }
         } finally {
-            this.pending.delete(original);
-            --this.busy;
-            document.dispatchEvent(new Event('study-page-change'));
-            if (this.active && original.isConnected && !sameSource()) { this.scan(original); }
+            pending.delete(original);
+            if (pending === this.pending) {
+                --this.busy;
+                document.dispatchEvent(new Event('study-page-change'));
+                if (this.active && original.isConnected && !sameSource()) { this.scan(original); }
+            }
         }
     }
 
@@ -600,7 +610,7 @@ export class PageTranslate {
                 usedEngine = engine;
                 failed = false;
                 paintRetry();
-                const translation = await this.requestText(text, language, engine);
+                const translation = await this.requestText(text, language, engine, () => waiting() && isCurrent());
                 if (!waiting()) { return; }
                 if (!isCurrent()) {
                     dismiss();
@@ -756,15 +766,16 @@ export class PageTranslate {
         this.active = false;
         this.approval?.abort.abort();
         this.approval = null;
-        document.dispatchEvent(new Event('study-page-change'));
         ++this.version;
         this.io?.disconnect();
         this.mo?.disconnect();
         this.mo = null;
         for (const original of this.rows.keys()) { this.restore(original); }
         this.pending = new WeakSet();
+        this.busy = 0;
         this.selectionUi?.remove();
         this.closeSelectionCard();
+        document.dispatchEvent(new Event('study-page-change'));
     }
 }
 

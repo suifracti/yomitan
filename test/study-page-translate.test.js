@@ -17,6 +17,71 @@
 
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {deferPromise} from '../ext/js/core/utilities.js';
+
+test('restoring the page stops unsent chunks without interrupting the next translation run', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<p></p>', url: 'https://example.test/article',
+    }});
+    const original = /** @type {HTMLParagraphElement} */ (document.querySelector('p'));
+    original.textContent = 'First long paragraph. '.repeat(105) + 'Old ending.';
+    /** @typedef {{ok: boolean, value: {items: {translation: string}[]}}} Reply */
+    /** @type {import('core').DeferredPromiseDetails<Reply|null>} */
+    const oldReply = deferPromise();
+    /** @type {import('core').DeferredPromiseDetails<Reply|null>} */
+    const currentReply = deferPromise();
+    const send = vi.fn(async (/** @type {{studyAction: string, data: {items?: {text: string}[]}}} */ message) => {
+        if (message.studyAction === 'subtitleSettings') { return {ok: true, value: {model: 'fixture', effort: 'low'}}; }
+        const text = message.data.items?.[0]?.text ?? '';
+        if (text.startsWith('First long paragraph.')) { return await oldReply.promise; }
+        if (text === 'Another paragraph.') { return await currentReply.promise; }
+        return {ok: true, value: {items: [{translation: '旧尾段不应发送'}]}};
+    });
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage: send},
+        storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'google'}})}},
+    });
+    vi.stubGlobal('IntersectionObserver', class {
+        /** */
+        observe() {}
+        /** */
+        disconnect() {}
+    });
+    const {PageTranslate} = await import('../ext/js/study/page-translate.js');
+    const controller = new PageTranslate();
+    /** @type {Promise<void>[]} */
+    const requests = [];
+    const sent = () => send.mock.calls.flatMap(([message]) => message.data.items?.map(({text}) => text) ?? []);
+    try {
+        await controller.toggle();
+        const old = controller.translateNode(original);
+        requests.push(old);
+        await vi.waitFor(() => expect(sent()).toHaveLength(1));
+        await controller.toggle();
+        original.textContent = 'Another paragraph.';
+        await controller.toggle();
+        const current = controller.translateNode(original);
+        requests.push(current);
+        await vi.waitFor(() => expect(sent()[1]).toBe('Another paragraph.'));
+        oldReply.resolve({ok: true, value: {items: [{translation: '旧译文'}]}});
+        await old;
+        expect(sent()).toHaveLength(2);
+        expect(original.nextElementSibling).toBeNull();
+        expect(controller.busy).toBe(1);
+        expect(controller.pending.has(original)).toBe(true);
+        currentReply.resolve({ok: true, value: {items: [{translation: '本次译文'}]}});
+        await current;
+        expect(original.nextElementSibling?.textContent).toBe('本次译文');
+        expect(controller.busy).toBe(0);
+    } finally {
+        oldReply.resolve(null);
+        currentReply.resolve(null);
+        controller.stop();
+        await Promise.allSettled(requests);
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
 
 test('mixed-language blocks and selections use their source language, including in the page cache', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
