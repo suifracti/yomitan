@@ -64,6 +64,7 @@ function makePageDom() {
             <button data-library-category="word" hidden>同词原句</button>
             <button data-library-category="favorites" aria-pressed="false">收藏</button>
             <button data-library-category="saved" aria-pressed="false">已保存</button>
+            <button data-library-category="recent-recall" aria-pressed="false">最近没认出</button>
             <button data-library-category="linked" aria-pressed="false">关联卡</button>
             <button data-library-category="pending" aria-pressed="false">待同步</button>
             <label for="study-library-search">搜索学习库</label>
@@ -241,6 +242,81 @@ describe('study library page', () => {
         await new Promise((resolve) => { setTimeout(resolve, 0); });
         expect(decodeAudioData).not.toHaveBeenCalled();
         expect(mocks.studyCall.mock.calls.filter(([action]) => action === 'libraryAudioRead')).toEqual([['libraryAudioRead', {id: items[0].id}]]);
+    });
+
+    test('recent recall mixes original audio, a blank, and a meaning review without losing the exact note', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        vi.stubGlobal('Blob', Blob);
+        vi.stubGlobal('AudioContext', class {
+            resume = vi.fn().mockResolvedValue(void 0);
+            close = vi.fn().mockResolvedValue(void 0);
+            decodeAudioData = vi.fn().mockResolvedValue({});
+            createBufferSource = () => ({buffer: null, connect: vi.fn(), addEventListener: vi.fn(), start: vi.fn()});
+        });
+        const first = {word: 'charge',
+            sentence: 'They charge him.',
+            meaning: '收费的意思',
+            translation: '他们向他收费。',
+            url: 'https://www.youtube.com/watch?v=abcdefghijk',
+            title: 'Original clip',
+            videoTime: 6};
+        const items = [
+            {id: '1'.repeat(32), vaultSaved: true, entry: first, media: {audio: {name: 'original.webm'}}},
+            {id: '2'.repeat(32), vaultSaved: true, entry: {...first, videoTime: 9, meaning: '指控的意思', translation: '他们指控他。'}},
+            {id: '3'.repeat(32),
+                vaultSaved: true,
+                entry: {word: 'on', sentence: 'We went on and on.', meaning: '一直继续'},
+                audioContextChanged: true,
+                media: {audio: {name: 'old.webm'}}},
+        ];
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action === 'libraryList') {
+                return payload?.scope === 'recent-recall' ? {items, total: items.length, canSearch: true} : {items: [], total: 0, canSearch: true};
+            }
+            if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
+            return [];
+        });
+        await import('../ext/js/pages/study-library.js');
+        /** @type {HTMLButtonElement} */ (document.querySelector('[data-library-category="recent-recall"]')).click();
+        const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-cloze-button'));
+        const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+        const press = (/** @type {string} */ label) => [...panel.querySelectorAll('button')].find((item) => item.textContent === label)?.click();
+        const linkId = () => new URL([...panel.querySelectorAll('a')].find((link) => link.textContent?.includes('继续学习'))?.href ?? '').searchParams.get('studyRecordId');
+        await vi.waitFor(() => {
+            expect(start.textContent).toBe('复习最近卡点');
+            expect(start.hidden).toBe(false);
+        });
+        expect(document.getElementById('study-library-dictation-button')?.hidden).toBe(true);
+        const baseline = mocks.studyCall.mock.calls.length;
+        start.click();
+        expect(panel.textContent).toContain('1 / 3');
+        expect(panel.textContent).not.toContain('They charge him.');
+        expect(mocks.studyCall.mock.calls).toHaveLength(baseline);
+        press('播放已存原声');
+        await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryAudioRead', {id: items[0].id}));
+        press('直接看原句');
+        expect(panel.textContent).toContain('收费的意思');
+        expect(panel.textContent).toContain('他们向他收费。');
+        expect(panel.textContent).toContain('Original clip');
+        expect(linkId()).toBe(items[0].id);
+        press('下一句');
+        expect(panel.textContent).toContain('They […] him.');
+        press('直接看答案');
+        expect(panel.textContent).toContain('指控的意思');
+        expect(linkId()).toBe(items[1].id);
+        press('下一句');
+        expect(panel.textContent).toContain('We went on and on.');
+        expect(panel.textContent).not.toContain('一直继续');
+        expect(panel.querySelector('input, textarea')).toBeNull();
+        press('看当时的释义');
+        expect(panel.textContent).toContain('一直继续');
+        expect(linkId()).toBe(items[2].id);
+        press('完成这轮');
+        expect(panel.textContent).toContain('本轮结束');
+        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([['libraryAudioRead', {id: items[0].id}]]);
     });
 
     test('dictates only matching recordings, then reveals the complete sentence and returns to its record', async () => {
