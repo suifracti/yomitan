@@ -35,3 +35,47 @@ test('level candidates exclude saved and function words, and page selection writ
   marks._words.sophisticated={s:'ignored'};marks._mark(document.querySelector('p').firstChild);expect(marks.pageWords().map(r=>r.word)).toEqual(['appreciate']);
  } finally{vi.unstubAllGlobals();await env.teardown(global);}
 });
+
+test('page words follow live occurrences and do not submit a stale panel', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<p>I appreciate the quiet.</p><p>We appreciate the effort.</p><p>The architecture is unique.</p>',
+        url: 'https://example.test/article',
+    }});
+    const sendMessage = vi.fn();
+    vi.stubGlobal('CSS', {highlights: new Map()});
+    vi.stubGlobal('Highlight', Set);
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage, getURL: (path) => path},
+        storage: {local: {get: async () => ({studyWordMarks: {encounters: false}})}, onChanged: {addListener() {}}},
+    });
+    const levels = {appreciate: [3, 2000], architecture: [3, 4000], facade: [6, 9000]};
+    vi.stubGlobal('fetch', async (url) => new Response(JSON.stringify(url.endsWith('word-levels.json') ? levels : {})));
+    try {
+        const {WordMarks} = await import('../ext/js/study/word-marks.js');
+        const marks = new WordMarks();
+        await marks.start();
+        const [first, second, last] = document.querySelectorAll('p');
+        const listedSentence = () => marks.pageWords().find(({word}) => word === 'appreciate')?.sentence;
+        await vi.waitFor(() => expect(listedSentence()).toBe('We appreciate the effort.'));
+        second.remove();
+        expect(listedSentence()).toBe('I appreciate the quiet.');
+
+        const updated = last.firstChild;
+        updated.data = 'The facade is unique.';
+        expect(marks.pageWords().map(({word}) => word)).toEqual(['appreciate']);
+        await vi.waitFor(() => expect(marks.pageWords().some(({word}) => word === 'facade')).toBe(true));
+        await marks.openPageWords();
+        first.firstChild.data = 'Nothing to save here.';
+        document.querySelector('#study-page-words input').checked = true;
+        const button = [...document.querySelectorAll('#study-page-words button')].find((node) => node.textContent === '完成');
+        button.click();
+        expect(sendMessage).not.toHaveBeenCalled();
+        expect(button.textContent).toBe('重新读取本页');
+        button.click();
+        await vi.waitFor(() => expect(document.querySelector('#study-page-words h3')?.textContent).toBe('本页生词（1）'));
+        expect(document.querySelector('#study-page-words section')?.textContent).toContain('The facade is unique.');
+    } finally {
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});

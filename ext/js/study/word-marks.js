@@ -232,7 +232,7 @@ export function recentEncounters(all, word, span = 7, now = new Date()) {
 }
 
 /** @typedef {{word:string,sentence:string,meaning:string}} PageWord */
-/** @typedef {PageWord & {node:Text,box?:HTMLInputElement,ignored?:boolean}} PageCandidate */
+/** @typedef {PageWord & {node:Text,sourceText:string,box?:HTMLInputElement,ignored?:boolean}} PageCandidate */
 /** @typedef {{known:string[],ignored:string[]}} KnownWords */
 export class WordMarks {
     constructor() {
@@ -262,8 +262,6 @@ export class WordMarks {
          *
          */
         this._glossesLoaded = false;
-        /** @type {Map<string,PageCandidate>} */
-        this._candidates = new Map();
         /**
          *
          */
@@ -272,7 +270,7 @@ export class WordMarks {
         this._phrases = new Map();
         /** @type {Map<Text, Range[]>} */
         this._ranges = new Map();
-        /** @type {WeakMap<Range, {word: string, gloss: string}>} */
+        /** @type {WeakMap<Range, {word: string, gloss: string, possible?: {text: string, start: number}}>} */
         this._rangeInfo = new WeakMap();
         /** @type {(Node|TreeWalker)[]} Nodes to scan, or walkers paused mid-way. */
         this._queue = [];
@@ -413,7 +411,8 @@ export class WordMarks {
         this._observer = new MutationObserver((records) => {
             for (const record of records) {
                 if (record.type === 'characterData') {
-                    this._queue.push(record.target);
+                    this._forget(record.target);
+                    this._queue.unshift(record.target);
                 } else {
                     this._queue.push(...record.addedNodes);
                     if (record.removedNodes.length > 0) {
@@ -437,7 +436,6 @@ export class WordMarks {
         this._observer = null;
         this._queue = [];
         this._ranges.clear();
-        this._candidates.clear();
         this._count = 0;
         if (this._highlights) {
             for (const highlight of Object.values(this._highlights)) {
@@ -550,7 +548,7 @@ export class WordMarks {
             range.setStart(node, start);
             range.setEnd(node, end);
             highlight.add(range);
-            this._rangeInfo.set(range, {word, gloss: info.gloss || ''});
+            this._rangeInfo.set(range, {word, gloss: info.gloss || '', possible: info.s === 'possible' ? {text, start} : void 0});
             ranges.push(range);
             ++this._count;
         };
@@ -572,8 +570,6 @@ export class WordMarks {
                 if (word && level && !FUNCTION_WORDS.has(word) && !FUNCTION_WORDS.has(token[0].toLowerCase()) &&
                 (level[0] ? level[0] > this._level : level[1] > 8000)) {
                     info = {word, s: 'possible', gloss: this._glosses[word] || ''};
-                    const sentence = this._sentence(node, start);
-                    this._candidates.set(word, {word, sentence, meaning: info.gloss || '', node});
                 }
             }
             if (info) {
@@ -816,7 +812,21 @@ export class WordMarks {
      *
      */
     /** @returns {PageCandidate[]} */
-    pageWords() { return [...this._candidates.values()].filter((r) => r.node.isConnected && !wordInfo(r.word, this._words)); }
+    pageWords() {
+        /** @type {Map<string, {node:Text, start:number, meaning:string}>} */
+        const occurrences = new Map();
+        for (const [node, ranges] of this._ranges) {
+            if (!node.isConnected || node.parentElement?.closest(SKIP)) { continue; }
+            for (const range of ranges) {
+                const info = this._rangeInfo.get(range);
+                if (info?.possible?.text === node.data) {
+                    occurrences.set(info.word, {node, start: info.possible.start, meaning: info.gloss});
+                }
+            }
+        }
+        return [...occurrences].filter(([word]) => !wordInfo(word, this._words))
+            .map(([word, {node, start, meaning}]) => ({word, node, meaning, sourceText: node.data, sentence: this._sentence(node, start)}));
+    }
     /**
      *
      * @param {string} word
@@ -876,10 +886,10 @@ export class WordMarks {
      *
      * @param {PageWord[]} items
      * @param {()=>unknown} [undo]
+     * @param {string} [source]
      */
-    _remember(items, undo = () => {}) {
+    _remember(items, undo = () => {}, source = location.href) {
         const rows = items.map(({word, sentence, meaning}) => ({word, sentence, meaning}));
-        const source = location.href;
         let confirmed = 0;
         let colourIncomplete = false;
         let localSyncIncomplete = false;
@@ -948,8 +958,10 @@ export class WordMarks {
         panel.dataset.studyUi = '';
         panel.className = 'scan-disable st-scope';
         panel.style.cssText = 'position:fixed;right:12px;top:12px;bottom:12px;width:min(380px,calc(100vw - 24px));box-sizing:border-box;overflow:auto;padding:18px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);border:1px solid #dce2eb;border-radius:12px;z-index:2147483001;font:14px/1.6 sans-serif;box-shadow:0 5px 25px #0003';
+        const source = location.href;
+        const rows = this.pageWords();
         const title = document.createElement('h3');
-        title.textContent = `本页生词（${this.pageWords().length}）`;
+        title.textContent = `本页生词（${rows.length}）`;
         const close = document.createElement('button');
         close.textContent = '关闭';
         close.onclick = () => panel.remove();
@@ -966,7 +978,6 @@ export class WordMarks {
             }
         };
         panel.append(title, close, saved, note);
-        const rows = this.pageWords();
         for (const row of rows) {
             row.meaning = this._glosses[row.word] || row.meaning;
         }
@@ -995,6 +1006,12 @@ export class WordMarks {
         done.textContent = '完成';
         panel.append(done);
         done.onclick = async () => {
+            if (source !== location.href || rows.some((r) => !r.ignored && (!r.node.isConnected || r.node.data !== r.sourceText || r.node.parentElement?.closest(SKIP)))) {
+                note.textContent = '页面内容变了，刚才的选择没有保存。';
+                done.textContent = '重新读取本页';
+                done.onclick = () => { void this.openPageWords(); };
+                return;
+            }
             done.disabled = true;
             try {
                 const words = rows.filter((r) => !r.ignored && !(/** @type {HTMLInputElement} */ (r.box)).checked).map((r) => r.word);
@@ -1003,7 +1020,7 @@ export class WordMarks {
                 const undo = () => studyCall('knownWords', {known: {remove: words.filter((w) => !old.known.includes(w))}});
                 const learning = rows.filter((r) => !r.ignored && (/** @type {HTMLInputElement} */ (r.box)).checked);
                 if (learning.length > 0) {
-                    this._remember(learning, undo);
+                    this._remember(learning, undo, source);
                 } else {
                     this._notice('已标为认识', undo);
                 }
