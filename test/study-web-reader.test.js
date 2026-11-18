@@ -137,6 +137,58 @@ test('other sites: page subtitles load, a bilingual file brings its translations
     await vi.waitFor(() => expect(calls).toContainEqual(['libraryVideoWords', {mediaKey: 'web:course.example.org/watch?id=7'}]));
 });
 
+test('finds a caption by its saved translation and jumps using the same row', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const site = fakeSite(null);
+    const calls = vi.fn(async (/** @type {string} */ _action) => null);
+    const reader = new YoutubeReader({prefs: {merge: false, resume: false}, site: /** @type {never} */ (site), call: calls});
+    try {
+        reader.start();
+        await vi.waitFor(() => expect(document.querySelector('#study-yt-reader')).not.toBeNull());
+        const file = [
+            '1',
+            '00:00:01,000 --> 00:00:02,000',
+            'I love bricks.',
+            '我爱砖块。',
+            '',
+            '2',
+            '00:00:03,000 --> 00:00:04,000',
+            'Walls are made of them.',
+            '墙是用它们砌的。',
+        ].join('\n');
+        reader.importText(file, 'lesson.srt');
+        const search = /** @type {HTMLInputElement|null} */ (document.querySelector('input[aria-label="找字幕"]'));
+        expect(search).not.toBeNull();
+        if (!search) { return; }
+        const input = (/** @type {string} */ value) => {
+            search.value = value;
+            search.dispatchEvent(new Event('input', {bubbles: true}));
+        };
+        const rows = () => [...document.querySelectorAll('#study-yt-reader .r-text')].map((node) => node.textContent?.trim());
+        const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+        video.currentTime = 0;
+        input('砖块');
+        expect(video.currentTime).toBe(0);
+        expect(rows()).toEqual(['I love bricks.']);
+        /** @type {HTMLButtonElement|null} */ (document.querySelector('#study-yt-reader .r-time'))?.click();
+        expect(video.currentTime).toBe(1);
+        input('  WALLS  ');
+        expect(rows()).toEqual(['Walls are made of them.']);
+        reader.revealRow(reader.session?.cues[0].id ?? '');
+        expect(search.value).toBe('');
+        expect(rows()).toEqual(['I love bricks.', 'Walls are made of them.']);
+        input('没匹配');
+        expect(rows()).toEqual([]);
+        expect(document.querySelector('.r-search small')?.textContent).toContain('没找到');
+        input('');
+        expect(rows()).toEqual(['I love bricks.', 'Walls are made of them.']);
+        expect(calls.mock.calls.some(([action]) => action === 'subtitleTranslate')).toBe(false);
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
 test('other sites: nothing found explains how to get subtitles', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}, site: /** @type {never} */ (fakeSite(null))});

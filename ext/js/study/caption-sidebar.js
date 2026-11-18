@@ -71,6 +71,10 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} button:focus-visible{outline:2px solid var(--r-accent);outline-offset:1px}
 #${ROOT_ID} .r-list{position:relative;max-height:min(60vh,520px);overflow:auto;overscroll-behavior:contain;border-top:1px solid var(--r-line)}
 #${ROOT_ID} .r-list:empty{display:none}
+#${ROOT_ID} .r-search{display:flex;align-items:center;gap:8px;padding:6px 12px;color:var(--r-muted);font-size:12px}
+#${ROOT_ID} .r-search[hidden]{display:none}
+#${ROOT_ID} .r-search input{flex:1 1 auto;width:100%;min-width:0;font:inherit;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:4px 7px}
+#${ROOT_ID} .r-search small{flex-shrink:0}
 #${ROOT_ID} .r-cue{position:relative;display:grid;grid-template-columns:46px minmax(0,1fr) auto;column-gap:6px;padding:7px 8px 7px 0;border-left:3px solid transparent}
 #${ROOT_ID} .r-cue.is-current{background:var(--r-tint);border-left-color:var(--r-accent)}
 #${ROOT_ID} .r-cue.is-lookup .r-text{text-decoration:underline 2px var(--r-mark);text-underline-offset:4px}

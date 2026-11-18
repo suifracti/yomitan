@@ -22,6 +22,7 @@
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
 | 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
+| 长视频只记得一个词或一句中文，想跳回那句字幕 | L-006；YoutubeReader._renderCaptionRows、CaptionList、原时间按钮 |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 在原视频不看字幕，先听自己保存的句子；听完回哪一条笔记 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play、openStudyRecord |
 | 想只重听刚才没听清的句子 | L-007；YoutubeReader._beginListening 的本轮队列 |
@@ -215,6 +216,8 @@
 **同壳课程／同名视频的继续位置不共用**：`videoStateScope` 和后台 `videoStateRead/Update` 对浏览器当前来源；网页课程及本地文件存完整来源的摘要，不把地址明文放进进度缓存。YouTube／B 站保留已对应视频或选集的旧键；普通网页及本地文件旧短键无法对回某一课或路径，不复制也不主动删除。读取等本页写入回执；旧课程迟到的请求不改掉新课的选轨、偏移或位置。「继续」还要点击且只在当前来源跳。见[两个课程的进度](youtube-study-wiring.md#2026-11-18-同一播放器的课程进度分开记)。
 
 **双语字幕按两个条目写或只有一两句**：旧识别只认一条里同时有英中行。手动导入时，若两条完全同起止、只有一原句一译文，且整个文件达到原双语识别门槛，就沿同一路径用英文原句的 ID 与秒数显示。只有一两句的手动短片须每句都自带双语，支持自己的两句 VTT 下载读回。中文取文件已有的字，不新翻译；不按近似时间配，不把一般网站轨道按此猜合。见[导入临时 ASS](youtube-study-wiring.md#2026-11-18-双语字幕分两条也能中英对照)和[下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
+
+**找字幕不重新翻译或换轨**：筛选当前轨的原文和已存在的译文，显示原字幕行与时间/循环/笔记按钮。输入不跳播放位置，自动跟随暂停，清空或跟随按钮恢复列表；明确外部定位被筛掉的行就先清查询。换轨不沿用旧查询。见[双语文件与窄屏验证](youtube-study-wiring.md#2026-11-19-在字幕栏用原文或已译中文找一句)。
 
 **下载 JSON 要能重新导入**：现有导出用 `startMs/endMs`，原通用 JSON 进口只认其他时间键。读自家导出时用 `rows` 的原文、译文与时间、明确语言及偏移；不替换文件中给其他工具使用的 `cues`，不让旧 `source.url` 取得任何权限。当前视频里同一导入文件后来手调的偏移优先，手调归零也是有效选择。一律作为当前页的手动文件，不开模型。见[实际下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
 
