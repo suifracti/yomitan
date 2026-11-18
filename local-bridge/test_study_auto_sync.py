@@ -109,6 +109,41 @@ class AutoSyncTests(unittest.TestCase):
         self.assertIn('updateNoteFields', self.calls)
         self.assertIn('砖头（Obsidian 里改的）', next(iter(self.notes.values()))['fields']['Definition'])
 
+    def test_note_edited_while_reading_anki_is_retried_without_sending_the_old_answer(self):
+        ident = self.make_card()
+        note_id = next(iter(self.notes))
+        self.library.auto_sync()
+        path = next(self.vault.rglob('*brick*.md'))
+        original = path.read_text()
+        start = original.index('##### 答案')
+        first_edit = original[:start] + original[start:].replace('> 砖', '> 临时的答案', 1)
+        path.write_text(first_edit)
+        changed = False
+
+        def edit_during_anki_read(action, params):
+            nonlocal changed
+            result = self.anki(action, params)
+            if action == 'notesInfo' and not changed:
+                changed = True
+                path.write_text(first_edit.replace('> 临时的答案', '> 真正要保存的答案', 1))
+            return result
+
+        self.library.anki = edit_during_anki_read
+        self.calls.clear()
+        attempt = self.library.auto_sync()
+        self.assertTrue(changed)
+        self.assertNotIn('updateNoteFields', self.calls)
+        self.assertEqual(attempt['synced'], 0)
+        self.assertIn(ident, self.library.sync_state()['retryRecords'])
+        self.assertIn('真正要保存的答案', path.read_text())
+        self.assertNotIn('临时的答案', self.notes[note_id]['fields']['Definition'])
+        self.library.anki = self.anki
+
+        retry = self.library.auto_sync()
+        self.assertEqual((retry['synced'], retry['conflicts']), (1, 0))
+        self.assertIn('真正要保存的答案', self.notes[note_id]['fields']['Definition'])
+        self.assertNotIn(ident, self.library.sync_state()['retryRecords'])
+
     def test_offline_edit_retries_until_the_original_card_is_updated(self):
         from unittest.mock import patch
         ident = self.make_card()

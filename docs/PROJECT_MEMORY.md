@@ -67,6 +67,7 @@
 | 学习库能找到笔记，点开时却逐份读单词文档 | L-002；`YomitanLibrary.indexed`、`RecordIndex` |
 | 另一端已改释义，刷新词卡仍显示旧内容／「记住它」盖回去 | L-002；search-main 的笔记编号恢复、study-library.rememberNote、StudyService.rememberEntry |
 | 等待补交期间又改了同一条笔记；重连后旧改动不该覆盖 | L-002；StudySync 现有队列、study_sync.update 的 ifUnchanged |
+| 自动同步还在读 Anki，Obsidian 里再改了一次，旧答案却送到了卡上 | L-002；study_sync.reconcile 在 updateNoteFields 前核原语境版本 |
 | 问 AI 之后笔记原来的解释被换掉 | L-002；StudySync.learned、study_sync.update 的 fillMissing |
 | 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
@@ -195,6 +196,8 @@
 **Anki 里改了答案，笔记却不变**：先看 `study_settings.auto_sync` 如何识别编辑。有些 `notesInfo` 不给修改时间，同一秒的两次编辑也不能靠秒数区分。对已经在「今天编辑／未关联候选」范围内读到的字段与关联做摘要，不能为判断变化而全库读取或把卡面再保存一份。首次同步只立基线，已处理的旧时间可以接续。见[临时 Anki 中编辑答案](youtube-study-wiring.md#2026-11-18-在-anki-改了答案学习笔记还是旧字)。
 
 **离线改笔记，连上还是旧答案**：发现修改不等于已经同步。原来的 mtime 和 Anki 摘要都可能在断线、核对失败时向前走。现用同一个同步缓存的 `retryRecords` 留原记录与原目标，不复制内容、不另开轮询；下一次成功或进入人工冲突处理才退出。见[断线重连与双边冲突](youtube-study-wiring.md#2026-11-18-anki-没开时改的笔记重连后也要同步)。
+
+**读 Anki 时笔记可能再次修改**：`reconcile` 最后写回笔记本来会拒绝旧版本，但挡不住之前送出的卡片字段。现仅在准备发送变化时，用初次定位的路径再读当前语境版本；变了就不提交旧字段，自动同步按已有 `retryRecords` 重读。一个单词文件中另一条语境的修改不按本语境版本处理。该检查不能取消已经送出的请求，也不替代最终的写入校验。见[同步中再次修改答案](youtube-study-wiring.md#2026-11-19-同步中改了答案不把旧内容送给-anki)。
 
 **换了 Anki 账户不是删卡**：自动同步用已有的关联 ID 看到原卡后，才记当前 Anki profile；只看到一个账户名不算归属。切到其他账户，自动同步和学习库逐条核对暂停，原同步进度不推进；切回后继续比较，同账户真删卡仍进「需处理」。今日复习也走同一判断，不按同名牌组误计另一个账户的数字。首次只采基线，旧连接器从未报告过账户时仍走老流程。没有把同步改成多账户合并，不替人认领迁移或改名的账户。见[切换账户和真正删卡的对照](youtube-study-wiring.md#2026-11-18-换了-anki-账户不是删卡)。
 

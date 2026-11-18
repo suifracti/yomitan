@@ -423,7 +423,8 @@ def _note_values(lib, note_id, record, fields, review_only=False, info=None):
 
 def reconcile(lib, p):
     ident = p['id']
-    r, body, version = lib.read(ident)
+    path = lib.path(ident)
+    r, body, version = lib.read_file(path, ident)
     if not r.get('cards') and not r.get('noteId'):
         return {**lib.result(ident), 'syncState':'local-only', 'conflicts':[]}
     if not lib.anki_enabled:
@@ -434,7 +435,8 @@ def reconcile(lib, p):
             return {**lib.result(ident), 'syncState': 'paused', 'error': paused, 'conflicts': []}
     if any(not c.get('noteId') for c in r.get('cards', [])):
         synced = lib.sync(ident)
-        r, body, version = lib.read(ident)
+        path = lib.path(ident)
+        r, body, version = lib.read_file(path, ident)
         if any(not c.get('noteId') for c in r.get('cards', [])):
             return {**synced, 'syncState':'paused', 'conflicts':[]}
     fields = local_fields(r, body)
@@ -563,6 +565,9 @@ def reconcile(lib, p):
                       'Source':source_field(lib, r, merged, note_origin(raw.get('Source') or ''))}
         changed = {k:v for k,v in wanted.items() if raw.get(k) != v}
         if changed:
+            # Anki reads can outlive our local snapshot. Do not send it after an edit.
+            if lib.read_file(path, ident)[2] != version:
+                raise ValueError('笔记在同步时又改过了，请刷新后再同步。')
             lib.anki('updateNoteFields', {'note':{'id':note_id,'fields':changed}})
             row, raw_after = _note_values(lib, note_id, r, merged, card.get('reviewOnly', False))
             if any(raw_after.get(k) != v for k,v in changed.items()):
