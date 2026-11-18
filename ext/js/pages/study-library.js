@@ -33,6 +33,7 @@ import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, crea
 export {createResumeUrl} from '../study/study-data.js';
 
 const PAGE_SIZE = 10;
+const CLOZE_LIMIT = 5;
 
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
@@ -351,13 +352,14 @@ function showSensePractice(panel, pair, examples = false) {
 
 /**
  * @param {StudyLibraryRecord[]} rows
+ * @param {ClozePrompt[]} [picked]
  * @returns {ClozePrompt[]}
  */
-function clozePrompts(rows) {
-    /** @type {ClozePrompt[]} */
-    const prompts = [];
-    const seen = new Set();
+function clozePrompts(rows, picked = []) {
+    const prompts = [...picked];
+    const seen = new Set(picked.map(({text}) => text));
     for (const row of rows) {
+        if (prompts.length >= CLOZE_LIMIT) { break; }
         const {entry} = row;
         if (!matchesCategory(row, 'saved') || !entry?.sentence || !entry.word || !/^en(?:-|$)/i.test(entry.language || 'en')) { continue; }
         const facts = {word: entry.word, sentence: entry.sentence, forms: []};
@@ -366,7 +368,6 @@ function clozePrompts(rows) {
         seen.add(text);
         const hint = blankStudyWord(facts, entry.sense?.gloss || entry.meaning || '').text.trim().slice(0, 160);
         prompts.push({row, text, answer: answers[0], hint});
-        if (prompts.length === 5) { break; }
     }
     return prompts;
 }
@@ -712,6 +713,17 @@ async function initializePage() {
         const practiceLabel = () => (compareExamples ? '用旧原句看用法' : '用旧原句辨词义');
         /** @type {ClozePrompt[]} */
         let cloze = [];
+        /** @type {symbol|null} */
+        let clozeSearch = null;
+        const moreSourcePrompts = () => {
+            if (category !== 'source' || loading || listError || offset >= total) { return false; }
+            return listedCategory === category && (!canSearch || listedQuery === search.value.trim());
+        };
+        const cancelClozeSearch = () => {
+            if (!clozeSearch) { return; }
+            clozeSearch = null;
+            clozeButton.textContent = '练原句填空';
+        };
         /** @type {HTMLElement|null} */
         let activePractice = null;
         let sourceVideoId = '';
@@ -757,7 +769,50 @@ async function initializePage() {
             show();
         }
         practiceButton.addEventListener('click', () => togglePractice(practiceButton, () => showSensePractice(practice, practicePair, compareExamples)));
-        clozeButton.addEventListener('click', () => togglePractice(clozeButton, () => showClozePractice(practice, cloze, makeSavedAudioButton, clearSavedAudio)));
+
+        /**
+         * @param {ClozePrompt[]} prompts
+         * @returns {void}
+         */
+        const openCloze = (prompts) => togglePractice(clozeButton, () => showClozePractice(practice, prompts, makeSavedAudioButton, clearSavedAudio));
+        clozeButton.addEventListener('click', async () => {
+            if (clozeSearch) {
+                cancelClozeSearch();
+                setStatus('已取消找题，原列表保留。');
+                return;
+            }
+            if (activePractice === clozeButton || cloze.length >= CLOZE_LIMIT || !moreSourcePrompts()) {
+                openCloze(cloze);
+                return;
+            }
+            const request = Symbol();
+            clozeSearch = request;
+            clozeButton.textContent = '取消找题';
+            setStatus('正在从同来源找可练的原句…');
+            const query = search.value.trim();
+            const indexed = canSearch;
+            const end = total;
+            let next = offset;
+            let prompts = cloze;
+            let failed = false;
+            try {
+                while (prompts.length < CLOZE_LIMIT && next < end) {
+                    const payload = {language: 'en', scope: 'source', url: articleUrl, title: '', offset: next, ...(indexed && query ? {query} : {})};
+                    const page = normalizeRecords(await studyCall('libraryList', payload));
+                    if (clozeSearch !== request) { return; }
+                    if (page.length === 0) { break; }
+                    next += page.length;
+                    prompts = clozePrompts(indexed ? page : page.filter((row) => matchesSearch(row, query)), prompts);
+                }
+            } catch { failed = true; }
+            if (clozeSearch !== request) { return; }
+            cancelClozeSearch();
+            if (prompts.length > 0) {
+                openCloze(prompts);
+            } else {
+                setStatus(failed ? '后面的原句没有读到，可以再试一次。' : '这次没找到能做成填空的原句，可以继续看记录。');
+            }
+        });
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
@@ -1194,7 +1249,7 @@ listedQuery :
                 rows.filter(({entry}) => (entry?.lemma || entry?.word)?.toLowerCase() === practiceWord.toLowerCase()) :
                 rows;
             cloze = loading || listError ? [] : clozePrompts(clozeRows);
-            clozeButton.hidden = cloze.length === 0;
+            clozeButton.hidden = cloze.length === 0 && !moreSourcePrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
             if (activePractice?.hidden) { closePractice(); }
             listenSource.hidden = !sourceVideoId || !practice.hidden;
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
@@ -1262,6 +1317,7 @@ listedQuery :
          * @param {boolean} [searchOnly] Typing or clearing a search never reconciles notes.
          */
         async function loadPage(reset, searchOnly = false) {
+            cancelClozeSearch();
             if (loading) {
                 if (reset) { queuedSearch = searchOnly; }
                 return;
@@ -1441,6 +1497,7 @@ listedQuery :
             });
         }
         search.addEventListener('input', (event) => {
+            cancelClozeSearch();
             openRequestedPractice = false;
             window.clearTimeout(searchTimer);
             render();

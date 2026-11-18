@@ -264,6 +264,45 @@ describe('study library page', () => {
         expect(mocks.studyCall.mock.calls).toHaveLength(reads);
     });
 
+    test('practice finds eligible sentences on the next source page without expanding the visible list', async () => {
+        vi.resetModules();
+        makePageDom();
+        const url = 'https://reading.example/story?id=41#chapter';
+        const previousUrl = location.href;
+        history.replaceState(null, '', `?source=${encodeURIComponent(url)}`);
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const unfit = Array.from({length: 10}, (_, i) => ({
+            id: String(i).padStart(32, '0'),
+            entry: {word: 'play', sentence: 'We play whenever they play.', url},
+            vaultSaved: true,
+        }));
+        const later = ['lamp', 'path', 'lake', 'gate', 'moon'].map((word, i) => ({
+            id: String(i + 10).padStart(32, '0'),
+            entry: {word, sentence: `We can see the ${word} at stop ${i + 1}.`, url},
+            vaultSaved: true,
+        }));
+        const rows = [...unfit, ...later, ...Array.from({length: 20}, (_, i) => ({...unfit[0], id: String(i + 15).padStart(32, '0')}))];
+        mocks.studyCall.mockImplementation(async (action, value) => {
+            if (action !== 'libraryList') { throw new Error(`Unexpected call: ${action}`); }
+            const offset = Number(value.offset);
+            return {items: rows.slice(offset, offset + 10), total: rows.length, canSearch: true};
+        });
+        try {
+            await import('../ext/js/pages/study-library.js');
+            const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-cloze-button'));
+            await vi.waitFor(() => expect(start.hidden).toBe(false));
+            expect(mocks.studyCall.mock.calls).toEqual([['libraryList', {language: 'en', scope: 'source', url, title: '', offset: 0}]]);
+            start.click();
+            const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+            await vi.waitFor(() => expect(panel.textContent).toContain('练原句填空 · 1 / 5'));
+            expect(panel.textContent).toContain('We can see the […] at stop 1.');
+            expect(mocks.studyCall.mock.calls).toEqual([0, 10].map((offset) => ['libraryList', {language: 'en', scope: 'source', url, title: '', offset}]));
+            start.click();
+            expect(document.querySelectorAll('#study-library-list article')).toHaveLength(10);
+        } finally { history.replaceState(null, '', previousUrl); }
+    });
+
     test('opening the library from an article reads only that source before any user action', async () => {
         vi.resetModules();
         makePageDom();
