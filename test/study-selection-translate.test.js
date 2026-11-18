@@ -20,7 +20,10 @@ import {builtinEnvironments} from 'vitest/environments';
 
 test('selection translation saves a sentence only on click, while Alt toggles the same sentence renderer', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<p id="source">We learn from real sentences.</p>', url: 'https://example.test/article'}});
-    const send = vi.fn(async () => ({ok: true, value: {model: 'fixture', effort: 'low'}}));
+    const send = vi.fn(async (/** @type {{studyAction?: string}} */ message) => ({
+        ok: true,
+        value: message.studyAction === 'pageSentenceSave' ? {vaultSaved: true, localSyncIncomplete: true} : {model: 'fixture', effort: 'low'},
+    }));
     vi.stubGlobal('chrome', {runtime: {sendMessage: send}, storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'chrome'}})}}});
     const {PageTranslate} = await import('../ext/js/study/page-translate.js');
     const controller = new PageTranslate({translate: async () => '我们从真实的句子学习。'});
@@ -36,8 +39,11 @@ test('selection translation saves a sentence only on click, while Alt toggles th
         controller.selectionUi.querySelector('button').click();
         await vi.waitFor(() => expect(original.nextElementSibling?.classList.contains('study-selection-translation')).toBe(true));
         expect(send.mock.calls.some(([m]) => m.studyAction === 'pageSentenceSave')).toBe(false);
-        original.nextElementSibling.querySelector('button[title=记住这句]').click();
-        await vi.waitFor(() => expect(send.mock.calls.some(([m]) => m.studyAction === 'pageSentenceSave')).toBe(true));
+        const save = original.nextElementSibling.querySelector('button[title=记住这句]');
+        save.click();
+        await vi.waitFor(() => expect(save.textContent).toBe('★'));
+        expect(save.title).toContain('笔记已保存；扩展未更新本地记录');
+        expect(send.mock.calls.some(([m]) => m.studyAction === 'pageSentenceSave')).toBe(true);
         expect(original.textContent).toBe('We learn from real sentences.');
         await controller.openSelection('learn from', document.createElement('div'), original);
         expect(document.querySelectorAll('.study-selection-translation')).toHaveLength(1);

@@ -107,7 +107,7 @@ test('opens a saved video word with its original source context and stops when i
     }
 });
 
-test('saved page words update the shared word colours once after the whole batch', async () => {
+test('saved page words keep their count when browser binding fails and refresh colours once', async () => {
     /** @typedef {(message: unknown, sender: object, reply: (value: unknown) => void) => void} PageMessageHandler */
     /** @type {PageMessageHandler} */
     let receive = (_message, _sender, _reply) => { throw new Error('学习消息尚未注册'); };
@@ -116,19 +116,14 @@ test('saved page words update the shared word colours once after the whole batch
     /** @type {string[]} */
     const sources = [];
     let failing = false;
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called below with its current service as the receiver.
-    const send = StudyService.prototype.handle;
-    const save = vi.spyOn(StudyService.prototype, 'handle').mockImplementation(async function saveFixture(action, value) {
-        if (action === 'librarySave') {
-            calls.push(action);
-            sources.push(/** @type {{entry: {url: string}}} */ (value).entry.url);
-            if (failing && /** @type {{entry: {word: string}}} */ (value).entry.word === 'receipt') { throw new Error('暂时未写入'); }
-            return {vaultSaved: true};
-        }
-        return await send.call(this, action, value);
-    });
+    let linkUnavailable = true;
     vi.stubGlobal('chrome', {
-        storage: {local: {get: async () => ({}), set: async () => {}}},
+        storage: {local: {
+            get: async () => ({}),
+            set: async (/** @type {object} */ data) => {
+                if (linkUnavailable && 'studySyncLinksV1' in data) { throw new Error('扩展关联无法写入'); }
+            },
+        }},
         permissions: {contains: async () => true},
         runtime: {
             id: 'fixture',
@@ -140,9 +135,22 @@ test('saved page words update the shared word colours once after the whole batch
                 return {
                     onMessage: {addListener: (/** @type {(value: unknown) => void} */ fn) => { replyNative = fn; }},
                     onDisconnect: {addListener() {}},
-                    postMessage: (/** @type {{action: string}} */ value) => {
+                    postMessage: (/** @type {{action: string, entry: import('study').LibraryEntry}} */ value) => {
+                        if (value.action === 'libraryTargetResolve') {
+                            replyNative?.({ok: true, library: {targetId: 'a'.repeat(32)}});
+                            return;
+                        }
                         calls.push(value.action);
-                        replyNative?.({ok: true, library: {words: {}}});
+                        if (value.action !== 'librarySave') {
+                            replyNative?.({ok: true, library: {words: {}}});
+                            return;
+                        }
+                        sources.push(value.entry.url);
+                        if (failing && value.entry.word === 'receipt') {
+                            replyNative?.({ok: false, error: '暂时未写入'});
+                        } else {
+                            replyNative?.({ok: true, library: {id: 'b'.repeat(32), entry: value.entry, vaultSaved: true}});
+                        }
                     },
                     disconnect() {},
                 };
@@ -160,10 +168,11 @@ test('saved page words update the shared word colours once after the whole batch
                 resolve,
             );
         });
-        expect(await request()).toEqual({ok: true, value: {saved: 3}});
+        expect(await request()).toEqual({ok: true, value: {saved: 3, localSyncIncomplete: true}});
         expect(calls).toEqual([...items.flatMap(() => ['librarySave', 'libraryMarkKnown']), 'knownWords', 'libraryWordStatus']);
         expect(sources).toEqual([url, url, url]);
         calls.length = 0;
+        linkUnavailable = false;
         failing = true;
         expect(await request()).toEqual({ok: true, value: {saved: 1, error: '暂时未写入'}});
         expect(calls).toEqual(['librarySave', 'libraryMarkKnown', 'librarySave', 'knownWords', 'libraryWordStatus']);
@@ -171,7 +180,6 @@ test('saved page words update the shared word colours once after the whole batch
         expect(await request(items.slice(1), url + '-other')).toMatchObject({ok: false});
         expect(calls).toEqual([]);
     } finally {
-        save.mockRestore();
         vi.unstubAllGlobals();
     }
 });

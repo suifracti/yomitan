@@ -215,10 +215,9 @@ export class StudyJournal {
      */
     async save(entry, makeCard, frozenTurns, targetId) {
         const turns = frozenTurns ?? await this.get(entry);
-        /**
-         * @type {unknown}
-         */
+        /** @type {import('study').LibraryRecord | undefined} */
         let saved;
+        let localSyncIncomplete = false;
         // Small frames also keep long answers below the native-message byte budget.
         for (let i = 0; i < Math.max(1, turns.length); i += 4) {
             const batch = turns.slice(i, i + 4);
@@ -226,17 +225,28 @@ export class StudyJournal {
             if (!response.ok || !response.library) {
                 throw new Error(response.error ?? '保存未确认，问答仍在本地待保存。');
             }
-            saved = response.library;
-            await this.acknowledge(batch);
+            saved = /** @type {import('study').LibraryRecord} */ (response.library);
+            try {
+                await this.acknowledge(batch);
+            } catch (error) {
+                if (saved.vaultSaved !== true) { throw error; }
+                localSyncIncomplete = true;
+            }
         }
         if (saved && typeof saved === 'object' && 'id' in saved) {
-            await this.service.sync.bind(entry, /** @type {import('study').LibraryRecord} */ (saved));
+            try {
+                await this.service.sync.bind(entry, saved);
+            } catch (error) {
+                if (saved.vaultSaved !== true) { throw error; }
+                localSyncIncomplete = true;
+            }
         }
-        return saved;
+        return localSyncIncomplete ? {...saved, localSyncIncomplete: true} : saved;
     }
 
     /** @param {import('study').LearningTurn[]} batch */
     async acknowledge(batch) {
+        if (batch.length === 0) { return; }
         const snapshots = new Map(batch.map((t) => [t.id, t]));
         await this.service.write(KEY, (value) => {
             const rows = /** @type {import('study').JournalRow[]} */ (Array.isArray(value) ? value : []);

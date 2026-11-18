@@ -1274,11 +1274,13 @@ export function prepareStudyService(lookupDictionary = null) {
                 let saved = 0;
                 let error = '';
                 let colourIncomplete = false;
+                let localSyncIncomplete = false;
                 for (const item of items) {
                     const entry = {word: item.word, sentence: item.sentence, meaning: item.meaning, url, title: sender.tab?.title?.slice(0, 300) || '', language: 'en', context: '', translation: '', notes: ''};
                     try {
-                        const record = /** @type {{vaultSaved?: boolean}|null} */ (await service.handle('librarySave', {entry, makeCard: false}));
+                        const record = /** @type {import('study').LibraryRecord|null} */ (await service.handle('librarySave', {entry, makeCard: false}));
                         if (record?.vaultSaved !== true) { throw new Error('没有收到这条笔记的保存确认。'); }
+                        localSyncIncomplete ||= record.localSyncIncomplete === true;
                     } catch (error_) {
                         error = error_ instanceof Error ? error_.message : '没有收到保存确认。';
                         break;
@@ -1299,7 +1301,7 @@ export function prepareStudyService(lookupDictionary = null) {
                     }
                     await service.refreshWordStatus().catch(() => { colourIncomplete = true; });
                 }
-                return {saved, ...(error ? {error} : {}), ...(colourIncomplete ? {colourIncomplete} : {})};
+                return {saved, ...(error ? {error} : {}), ...(colourIncomplete ? {colourIncomplete} : {}), ...(localSyncIncomplete ? {localSyncIncomplete} : {})};
             })().then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message})); return true;
         }
         if (studyAction === 'youtubeCaptionTracks' && sender.id === chrome.runtime.id && sender.tab?.id && /^https:\/\/(www\.)?youtube\.com\//.test(sender.url || '')) {

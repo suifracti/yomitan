@@ -17,7 +17,7 @@
  */
 
 import {CARD_CATALOG} from '../study/card-catalog.js';
-import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY, canOfferUseCard, cardReceipt} from '../study/study-data.js';
+import {AUTO_SYNC_STATE_KEY, LOCAL_SYNC_INCOMPLETE_TEXT, SAVE_TARGETS_KEY, canOfferUseCard, cardReceipt} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
 import {explainWordForm} from './study-word-forms.js';
@@ -758,6 +758,10 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 status.textContent = '笔记已保存';
             }
             if (!isCurrent()) { return; }
+            if (row.localSyncIncomplete) {
+                status.textContent = LOCAL_SYNC_INCOMPLETE_TEXT;
+                return;
+            }
             if (row.ankiEnabled === false) {
                 status.textContent = '笔记已保存 · Anki 未启用';
                 return;

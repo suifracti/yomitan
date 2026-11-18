@@ -74,6 +74,8 @@ export type SyncConflict = {key: string; local: unknown; remote: unknown};
 export type SaveTargetSettings = {deckByKind?: Partial<Record<CardKind, string>>; ankiEnabled: boolean; targetId: string; vault: string; directory: string; deck: string; model: string};
 
 export type LibraryRecord = {
+    /** A bridge-confirmed save whose browser journal or sync link could not be updated. */
+    localSyncIncomplete?: true;
     searchHit?: {label: string, text: string};
     articleHref?: string;
     cardProgress?: {confirmed: number, waiting: number, stage?: number};

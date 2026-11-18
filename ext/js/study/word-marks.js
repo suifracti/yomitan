@@ -882,6 +882,7 @@ export class WordMarks {
         const source = location.href;
         let confirmed = 0;
         let colourIncomplete = false;
+        let localSyncIncomplete = false;
         /** @param {HTMLElement} notice */
         const save = async (notice) => {
             const pending = rows.slice(confirmed);
@@ -893,13 +894,14 @@ export class WordMarks {
                 retryable = true;
             } else {
                 try {
-                    const value = /** @type {{saved?: number, error?: string, colourIncomplete?: boolean}|true|null} */ (await studyCall('pageWordsSave', {items: pending, source}));
+                    const value = /** @type {{saved?: number, error?: string, colourIncomplete?: boolean, localSyncIncomplete?: true}|true|null} */ (await studyCall('pageWordsSave', {items: pending, source}));
                     const count = value === true ? pending.length : value?.saved;
                     if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > pending.length) {
                         throw new Error('没有收到保存回执');
                     }
                     confirmed += count;
                     colourIncomplete ||= value !== true && value?.colourIncomplete === true;
+                    localSyncIncomplete ||= value !== true && value?.localSyncIncomplete === true;
                     reason = value !== true ? value?.error || '' : '';
                     retryable = confirmed < rows.length;
                 } catch {
@@ -907,8 +909,9 @@ export class WordMarks {
                 }
             }
             const left = rows.length - confirmed;
-            const colour = colourIncomplete ? ' · 有些词的标色没更新' : '';
-            notice.textContent = `已确认保存 ${confirmed} 条${left ? ` · 尚未确认 ${left} 条` : ''}${colour}${reason ? ` · ${reason}` : ''}`;
+            const warnings = (colourIncomplete ? ' · 有些词的标色没更新' : '') +
+            (localSyncIncomplete ? ' · 有些词的本地记录没更新，新增问答请手动保存' : '');
+            notice.textContent = `已确认保存 ${confirmed} 条${left ? ` · 尚未确认 ${left} 条` : ''}${warnings}${reason ? ` · ${reason}` : ''}`;
             if (left === 0) {
                 setTimeout(() => notice.remove(), 6000);
                 return;

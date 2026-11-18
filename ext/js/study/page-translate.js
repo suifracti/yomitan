@@ -26,7 +26,7 @@ import {TextToSpeechAudio} from '../media/text-to-speech-audio.js';
 import {menuSelect} from './study-ui.js';
 import {confirmTranslation} from './translation-confirm.js';
 import {mountTranslationBall} from './translation-ball.js';
-import {WORD_MARKS_KEY} from './study-data.js';
+import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY} from './study-data.js';
 
 export const PAGE_PREFS_KEY = 'studyPageTranslation';
 
@@ -505,9 +505,10 @@ export class PageTranslate {
                         }
                         if (label === '记住这句') {
                             button.disabled = true;
-                            await studyCall('pageSentenceSave', {sentence: text, translation});
+                            const row = /** @type {import('study').LibraryRecord} */ (await studyCall('pageSentenceSave', {sentence: text, translation}));
                             button.textContent = '★';
-                            button.title = '已记住';
+                            button.title = row?.localSyncIncomplete ? LOCAL_SYNC_INCOMPLETE_TEXT : '已记住';
+                            button.setAttribute('aria-label', button.title);
                         }
                         if (label === '收起') {
                             if (inline) {
