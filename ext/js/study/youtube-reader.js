@@ -1428,20 +1428,13 @@ export class YoutubeReader extends EventTarget {
     _renderCaptionRows(resetScroll = false) {
         const {_view: view, _session: session} = this;
         if (!view || !session) { return; }
-        const normalize = (/** @type {string} */ text) => text
-            .normalize('NFKC')
-            .toLowerCase()
-            .trim()
-            .replace(/\s+/g, ' ');
-        const query = normalize(view.search.value);
-        const rows = query ?
-            session.cues.filter((cue) => normalize(cue.text).includes(query) || normalize(session.translation(cue.id)).includes(query)) :
-            session.cues;
+        const query = view.search.value.trim();
+        const rows = session.search(query);
         const top = resetScroll ? 0 : view.list.scrollTop;
         this._list.render(view.list, rows);
         view.list.scrollTop = top;
         view.follow.setAttribute('aria-pressed', String(this._follow && !query));
-        view.searchCount.textContent = !query ? '' : (rows.length > 0 ? `${rows.length} 句` : '没找到');
+        view.searchCount.textContent = !query ? '' : (rows.length > 0 ? `找到 ${rows.length} 行` : '没找到');
         if (resetScroll && !query && this._follow && this._active) {
             const row = this._list.ensure(this._active.split('|')[0]);
             if (row) { view.list.scrollTop = Math.max(0, row.offsetTop - view.list.clientHeight / 3); }

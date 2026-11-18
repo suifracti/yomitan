@@ -228,6 +228,59 @@ export class SubtitleSession {
     }
 
     /**
+     * Match connected text, but keep original cue IDs and timestamps for the results.
+     * @param {string} text
+     * @returns {SubtitleCue[]}
+     */
+    search(text) {
+        const normalize = (/** @type {string} */ value) => value
+            .normalize('NFKC')
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, ' ');
+        const query = normalize(text);
+        if (!query) { return this.cues; }
+        const matches = new Set();
+        /** @type {Map<string, string>} */
+        const originals = new Map(this.cues.map((cue) => [cue.id, cue.text]));
+        /**
+         * @param {string[]} ids
+         * @param {Map<string, string>} texts
+         */
+        const collect = (ids, texts) => {
+            let joined = '';
+            /** @type {{id: string, start: number, end: number}[]} */
+            const spans = [];
+            const flush = () => {
+                for (let start = joined.indexOf(query); start >= 0; start = joined.indexOf(query, start + 1)) {
+                    for (const span of spans) {
+                        if (span.end > start && span.start < start + query.length) { matches.add(span.id); }
+                    }
+                }
+                joined = '';
+                spans.length = 0;
+            };
+            for (const id of ids) {
+                const part = normalize(texts.get(id) ?? '');
+                if (!part) {
+                    flush();
+                    continue;
+                }
+                if (joined && !(/\p{Script=Han}$/u.test(joined) && /^\p{Script=Han}/u.test(part))) { joined += ' '; }
+                const start = joined.length;
+                joined += part;
+                spans.push({id, start, end: joined.length});
+            }
+            flush();
+        };
+        for (const {cueIds} of groupForReading(this.cues)) {
+            collect(cueIds, originals);
+            if (this.#translations.size > 0) { collect(cueIds, this.#translations); }
+        }
+        return this.cues.filter((cue) => matches.has(cue.id));
+    }
+
+    /**
      * @param {string} id
      * @returns {number}
      * @throws {Error}

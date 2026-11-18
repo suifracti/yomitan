@@ -189,6 +189,41 @@ test('finds a caption by its saved translation and jumps using the same row', as
     }
 });
 
+test('finds a phrase split across connected captions without stitching across speech pauses', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const calls = vi.fn(async (/** @type {string} */ _action) => null);
+    const reader = new YoutubeReader({prefs: {merge: false, resume: false}, site: /** @type {never} */ (fakeSite(null)), call: calls});
+    try {
+        reader.start();
+        reader.importText([
+            '1\n00:00:01,000 --> 00:00:02,000\nI can\n我能',
+            '2\n00:00:02,200 --> 00:00:03,000\ntake it\n接手',
+            '3\n00:00:03,100 --> 00:00:04,000\nfrom here.\n这里的事。',
+            '4\n00:00:06,000 --> 00:00:07,000\nPlease wait\n请等等',
+            '5\n00:00:09,000 --> 00:00:10,000\nfor me.\n等我。',
+        ].join('\n\n'), 'lesson.srt');
+        const search = /** @type {HTMLInputElement} */ (document.querySelector('input[aria-label="找字幕"]'));
+        const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+        video.currentTime = 0;
+        const rows = (/** @type {string} */ value) => {
+            search.value = value;
+            search.dispatchEvent(new Event('input', {bubbles: true}));
+            return [...document.querySelectorAll('#study-yt-reader .r-text')].map((node) => node.textContent?.trim());
+        };
+        expect(rows('CAN take it from')).toEqual(['I can', 'take it', 'from here.']);
+        expect(video.currentTime).toBe(0);
+        expect(rows('能接手')).toEqual(['I can', 'take it']);
+        /** @type {HTMLButtonElement} */ (document.querySelectorAll('.r-time')[1]).click();
+        expect(video.currentTime).toBe(2.2);
+        expect(rows('wait for')).toEqual([]);
+        expect(rows('接手 from')).toEqual([]);
+        expect(calls.mock.calls.some(([action]) => action === 'subtitleTranslate')).toBe(false);
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
 test('regrouping retains finished translations only for exact rows of the same loaded track', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     installReaderStorage({get: async () => ({}), set: async () => {}});
