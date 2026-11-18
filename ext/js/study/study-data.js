@@ -40,6 +40,15 @@ export const SAVED_KEY = 'studySavedWordsV1';
 export const LOCAL_SYNC_INCOMPLETE_TEXT = '笔记已保存；扩展未更新本地记录，新增问答请手动保存。';
 
 /**
+ * Keyboard equivalents for subtitle typography. Compare only, never change the source.
+ * @param {string} text
+ * @returns {string}
+ */
+export function foldSearchPunctuation(text) {
+    return text.replaceAll(/[‘’]/gu, "'").replaceAll(/[‐‑–—]/gu, '-');
+}
+
+/**
  * Reads the attachment reference from the saved note, not the capture in progress.
  * The bridge checks the file itself when playing it or making an audio card.
  * @param {import('study').LibraryRecord | null | undefined} record

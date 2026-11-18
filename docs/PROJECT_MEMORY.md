@@ -30,6 +30,7 @@
 | 只翻了一部分再下载双语 VTT，导回后中文混进原文或轨道变成英语 | L-006；SubtitleSession.exportVtt、subtitle-formats.restoreStudyRows |
 | 长视频只记得一个词或一句中文，想跳回那句字幕 | L-006；YoutubeReader._renderCaptionRows、CaptionList、原时间按钮 |
 | 明明听见一个完整短语，字幕拆成几行就搜不到了 | L-006；SubtitleSession.search 复用 groupForReading |
+| 键盘写 I'm 或连字符，找不到原文里的 I’m 或不同的连字符 | L-006；字幕栏和学习库共用 foldSearchPunctuation，桥索引用 search_form |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 在原视频不看字幕，先听自己保存的句子；听完回哪一条笔记 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play、openStudyRecord |
 | 视频回听点看原句，笔记存过中文却只显示英文 | L-007；`libraryVideoWords(cue)` 与 YoutubeReader._beginListening 的揭晓 |
@@ -259,6 +260,8 @@
 **找字幕不重新翻译或换轨**：筛选当前轨的原文和已存在的译文，显示原字幕行与时间/循环/笔记按钮。输入不跳播放位置，自动跟随暂停，清空或跟随按钮恢复列表；明确外部定位被筛掉的行就先清查询。换轨不沿用旧查询。见[双语文件与窄屏验证](youtube-study-wiring.md#2026-11-19-在字幕栏用原文或已译中文找一句)。
 
 短语跨行时，`SubtitleSession.search` 按已经用于连句的间隔、句末和组长规则匹配，不真的合并。返回短语实际经过的各行；原文和译文不混查，缺译文的行不跨过。时间与行工具仍取原字幕。见[跨行短语验收](youtube-study-wiring.md#2026-11-19-字幕可以搜到跨行短语)。
+
+字幕和学习库的文字搜索只在比较时把弯撇号和常见连字符视为键盘上的 `'`、`-`。学习库桥索引、旧桥/收藏的浏览器过滤和字幕跨行搜索都沿这一规则；普通来源链接先按原来地址处理，不套用这一步。结果保留实际原文，不改词形归属、字幕时点或存档。[键盘输入与原文标点](youtube-study-wiring.md#2026-11-19-普通键盘标点也能找到字幕和旧原句)。
 
 **下载 JSON 要能重新导入**：现有导出用 `startMs/endMs`，原通用 JSON 进口只认其他时间键。读自家导出时用 `rows` 的原文、译文与时间、明确语言及偏移；不替换文件中给其他工具使用的 `cues`，不让旧 `source.url` 取得任何权限。当前视频里同一导入文件后来手调的偏移优先，手调归零也是有效选择。一律作为当前页的手动文件，不开模型。见[实际下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
 

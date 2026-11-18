@@ -225,9 +225,9 @@ test('finds and replays a phrase split across connected captions without crossin
     try {
         reader.start();
         reader.importText([
-            '1\n00:00:01,000 --> 00:00:02,000\nI can\n我能',
+            '1\n00:00:01,000 --> 00:00:02,000\nI’ll\n我能',
             '2\n00:00:02,200 --> 00:00:03,000\ntake it\n接手',
-            '3\n00:00:03,100 --> 00:00:04,000\nfrom here.\n这里的事。',
+            '3\n00:00:03,100 --> 00:00:04,000\nstep‑by‑step.\n这里的事。',
             '4\n00:00:06,000 --> 00:00:07,000\nPlease wait\n请等等',
             '5\n00:00:09,000 --> 00:00:10,000\nfor me.\n等我。',
         ].join('\n\n'), 'lesson.srt');
@@ -239,7 +239,7 @@ test('finds and replays a phrase split across connected captions without crossin
             search.dispatchEvent(new Event('input', {bubbles: true}));
             return [...document.querySelectorAll('#study-yt-reader .r-text')].map((node) => node.textContent?.trim());
         };
-        expect(rows('CAN take it from')).toEqual(['I can', 'take it', 'from here.']);
+        expect(rows("I'LL take it step-by-step")).toEqual(['I’ll', 'take it', 'step‑by‑step.']);
         expect(video.currentTime).toBe(0);
         const play = vi.spyOn(video, 'play').mockResolvedValue();
         const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
@@ -258,11 +258,11 @@ test('finds and replays a phrase split across connected captions without crossin
         play.mockRestore();
         pause.mockRestore();
         reader.setOffset(0, false);
-        expect(rows('能接手')).toEqual(['I can', 'take it']);
+        expect(rows('能接手')).toEqual(['I’ll', 'take it']);
         /** @type {HTMLButtonElement} */ (document.querySelectorAll('.r-time')[1]).click();
         expect(video.currentTime).toBe(2.2);
         expect(rows('wait for')).toEqual([]);
-        expect(rows('接手 from')).toEqual([]);
+        expect(rows('接手 step-by-step')).toEqual([]);
         expect(calls.mock.calls.some(([action]) => action === 'subtitleTranslate')).toBe(false);
     } finally {
         vi.unstubAllGlobals();

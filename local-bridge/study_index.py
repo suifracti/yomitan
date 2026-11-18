@@ -15,6 +15,12 @@ from study_sources import page_source_key, source_search_key, with_article_href
 from study_media import has_current_audio, with_audio_context
 
 PAGE_SIZE = 10
+SEARCH_PUNCTUATION = str.maketrans("‘’‐‑–—", "''----")
+
+
+def search_form(value):
+    # These one-character replacements do not shift the displayed snippet.
+    return value.translate(SEARCH_PUNCTUATION).casefold()
 
 
 def needs_attention(row):
@@ -38,9 +44,9 @@ def search_hit(row, query):
     match = None
     for label, value in fields:
         value = ' '.join((value or '').split())
-        folded = value.casefold()
+        folded = search_form(value)
         if query in folded:
-            rank = 2 if query in ((e.get('word') or '').casefold(), (e.get('lemma') or '').casefold()) else 1
+            rank = 2 if query in (search_form(e.get('word') or ''), search_form(e.get('lemma') or '')) else 1
             match = (rank, label, value, folded.index(query), len(query))
             break
         if ' ' in query and remaining:
@@ -103,7 +109,7 @@ def indexed_page(rows, p, *, complete=True):
     source = page_source_key(p['url']) if scope == 'source' else ''
     raw_query = p.get('query', '')
     link_source = source_search_key(raw_query)
-    query = '' if link_source else ' '.join(raw_query.casefold().split())
+    query = '' if link_source else ' '.join(search_form(raw_query).split())
     offset = p.get('offset', 0)
     if scope == 'sources':
         return indexed_sources(rows, query, offset, link_source)

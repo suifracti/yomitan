@@ -29,7 +29,7 @@ import {pageSourceKey, timedUrl, videoListenUrl} from '../study/media-key.js';
 import {timeLabel} from '../study/subtitle-session.js';
 import {BILIBILI_HOST, YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, canSupplementAudio, cardReceipt, createResumeUrl, createSourceLibraryUrl, librarySource, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, canSupplementAudio, cardReceipt, createResumeUrl, createSourceLibraryUrl, foldSearchPunctuation, librarySource, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
 
@@ -236,8 +236,9 @@ function matchesSearch(record, query) {
         const legacy = parseLegacySourceLocator(e.context);
         fields.push(e.lemma, e.sense?.gloss, e.meaning, e.translation, legacy ? plainText(legacy.title) : e.context, record.path);
     }
-    const values = fields.map((value) => (value || '').toLocaleLowerCase());
-    return query.toLocaleLowerCase().split(/\s+/u).every((part) => values.some((value) => value.includes(part)));
+    const values = fields.map((value) => foldSearchPunctuation(value || '').toLocaleLowerCase());
+    return foldSearchPunctuation(query).toLocaleLowerCase().split(/\s+/u)
+        .every((part) => values.some((value) => value.includes(part)));
 }
 
 /**

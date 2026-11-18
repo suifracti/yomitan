@@ -16,6 +16,7 @@
  */
 
 /* View/selection model only. A DOM subtitle or this class is NOT a save permission. */
+import {foldSearchPunctuation} from './study-data.js';
 import {parseTimedText} from './vendor/kiss/youtube-caption-source.js';
 
 export const STUDY_BILINGUAL_VTT = 'WEBVTT\n\nNOTE Yomitan bilingual ';
@@ -238,8 +239,7 @@ export class SubtitleSession {
      * @returns {{rows: SubtitleCue[], ranges: Map<string, SubtitleSearchRange>}}
      */
     search(text) {
-        const normalize = (/** @type {string} */ value) => value
-            .normalize('NFKC')
+        const normalize = (/** @type {string} */ value) => foldSearchPunctuation(value.normalize('NFKC'))
             .toLowerCase()
             .trim()
             .replace(/\s+/g, ' ');

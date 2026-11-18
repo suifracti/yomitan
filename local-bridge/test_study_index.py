@@ -199,7 +199,8 @@ class RecordIndexTests(AutoSyncTests):
             return self.library.handle({'action': 'librarySave', 'makeCard': False,
                                         'entry': {'word': word, 'sentence': sentence, 'meaning': meaning,
                                                   'url': 'https://example.test/film', 'title': 'Coastal journeys'}})
-        old = save('harbor', 'We finally reached the harbor.', '避风港')
+        original = 'We’re back at the deep‑water harbor.'
+        old = save('harbor', original, '避风港')
         for i in range(12):
             save(f'beacon{i}', f'Another harbor light number {i}.', '灯塔')
         def lookup(**params):
@@ -215,6 +216,8 @@ class RecordIndexTests(AutoSyncTests):
             self.assertEqual(len(lookup(query='harbor', offset=10)['items']), 3)
             self.assertEqual([r['id'] for r in lookup(query='HARBOR 避风港')['items']], [old['id']])
             self.assertEqual(lookup(query='beacon1 避风港')['items'], [])
+            typed = lookup(query="WE'RE BACK AT THE DEEP-WATER HARBOR")['items']
+            self.assertEqual([(row['id'], row['searchHit']['text']) for row in typed], [(old['id'], original)])
             self.assertEqual(lookup(query='vaultSaved')['total'], 0)
         self.assertEqual(self.calls, [])
 
