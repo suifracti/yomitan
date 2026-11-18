@@ -6,16 +6,12 @@ import pathlib
 import re
 import time
 
-from study_library import entry_id, paragraph, text, source_url
+from study_library import entry_id, entry_lemma as canonical, paragraph, text, source_url
 from study_sync import CARD_STAGES
 
 MISS_KINDS = ('newSense', 'collocation', 'structure', 'recall')
 MATURE = {'familiar', 'known'}
 MONTH = 30 * 86400
-
-
-def canonical(entry):
-    return (entry.get('lemma') or entry['word']).strip().casefold()
 
 
 def sense_key(entry):
@@ -126,10 +122,26 @@ def groups(records):
     return result
 
 
+def word_aliases(entries):
+    """Only join spellings that the learner's entries actually linked to a lemma."""
+    aliases, heads = {}, set()
+    for entry in entries:
+        if entry.get('kind') in ('expression', 'sentence'):
+            continue
+        form, head = entry['word'].casefold(), canonical(entry)
+        heads.add(head)
+        aliases[form] = head if aliases.get(form, head) == head else None
+    aliases.update((head, head) for head in heads)
+    return aliases
+
+
 def word_rows(library, word):
-    key = word.casefold()
-    return [row for _lib, _path, row in library.indexed()[1].values()
-            if key in {canonical(row['entry']), row['entry']['word'].casefold(), row['entry'].get('baseWord', '').casefold()}]
+    rows = [row for _, _, row in library.indexed()[1].values() if row['entry'].get('kind') != 'sentence']
+    aliases = word_aliases(row['entry'] for row in rows)
+    key = aliases.get(word.casefold()) or word.casefold()
+    forms = {form for form, lemma in aliases.items() if lemma == key} | {key}
+    return [row for row in rows if canonical(row['entry']) == key or
+            (row['entry'].get('kind') == 'expression' and row['entry'].get('baseWord', '').casefold() in forms)]
 
 
 def senses(library, word, now=None):
@@ -179,11 +191,12 @@ def known_words(library, patch=None):
 def mark_known(library, word, known):
     records = list(library.indexed()[1].values())
     wanted = word.strip().casefold()
-    keys = {canonical(r['entry']) for _lib, _path, r in records
-            if wanted in (r['entry']['word'].casefold(), canonical(r['entry']))}
+    aliases = word_aliases(row['entry'] for _, _, row in records)
+    head = aliases.get(wanted) or wanted
+    forms = sorted({form for form, lemma in aliases.items() if lemma == head} | {wanted})
     updated = set()
     for lib, path, row in records:
-        if canonical(row['entry']) not in keys or path in updated:
+        if row['entry'].get('kind') == 'sentence' or canonical(row['entry']) != head or path in updated:
             continue
         record, body, version = lib.read(row['id'])
         if re.search(r'--w[a-f0-9]{32}\.md$', path.name):
@@ -192,7 +205,9 @@ def mark_known(library, word, known):
             record['manualKnown'] = known
             lib.write(record, body, expected=version)
         updated.add(path)
-    known_words(library, {'known': {'add' if known else 'remove': [wanted]}})
+    # Remove old per-spelling marks on this explicit change, not when reading/opening a page.
+    known_words(library, {'known': {'add': [head] if known else [], 'remove': forms},
+                          **({'ignored': {'remove': forms}} if known else {})})
     return {'word': word, 'manualKnown': known, 'updated': len(updated)}
 
 
@@ -208,6 +223,7 @@ def word_status(library, now=None):
         else:
             by_word.setdefault(canonical(entry), []).append(row)
     words, phrase_values = {}, {}
+    aliases = word_aliases(r['entry'] for rows in by_word.values() for r in rows)
     for _key, rows in by_word.items():
         states = [status_for(contexts, snapshot, now)[0] for contexts in groups(rows).values()]
         state = 'partial' if any(s in MATURE for s in states) and any(s not in MATURE for s in states) else (
@@ -220,15 +236,16 @@ def word_status(library, now=None):
             value['newSense'] = True
         for row in rows:
             for alias in {row['entry']['word'].casefold(), canonical(row['entry'])}:
-                words[alias] = value
+                if aliases.get(alias) == _key:
+                    words[alias] = value
     for word, rows in phrases.items():
         phrase_values[word] = {'s': 'known' if any(r.get('manualKnown') for r in rows) else status_for(rows, snapshot, now)[0],
                                'manualKnown': any(r.get('manualKnown') for r in rows), 'gloss': gloss(rows[0]['entry'])}
     manual = known_words(library)
     for word in manual['known']:
-        words[word] = {**words.get(word, {}), 's': 'known', 'manualKnown': True}
+        words.setdefault(word, {}).update(s='known', manualKnown=True)
     for word in manual['ignored']:
-        words[word] = {**words.get(word, {}), 's': 'ignored'}
+        words.setdefault(word, {}).update(s='ignored')
     return {'version': 2, 'words': words, 'phrases': phrase_values}
 
 

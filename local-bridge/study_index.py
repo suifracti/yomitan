@@ -72,6 +72,7 @@ class RecordIndex:
         return files, changed or files.keys() != previous.keys()
 
     def parse(self, path):
+        from study_library_core import entry_lemma
         from study_sources import media_key_of
         from study_sync import CARD_STAGES
         lib = self.library
@@ -86,8 +87,9 @@ class RecordIndex:
         rows = []
         for ident, record, body, version in contexts:
             result = lib.result_from(record, body, version, path)
-            result['manualKnown'] = root_metadata.get('manualKnown', record.get('manualKnown', False)) is True
             entry = result['entry']
+            default_known = root_metadata.get('manualKnown', record.get('manualKnown', False))
+            result['manualKnown'] = root_metadata.get('manualKnownByLemma', {}).get(entry_lemma(entry), default_known) is True
             rows.append({'id': ident, 'targetId': record.get('targetId'), 'word': entry['word'],
                          'lemma': entry.get('lemma', ''), 'media_key': media_key_of(entry.get('url')),
                          'videoTime': entry.get('videoTime'), 'mastery': record.get('mastery', ''),

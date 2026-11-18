@@ -30,6 +30,14 @@ class SenseTests(AutoSyncTests):
         self.assertEqual(self.library.handle({'action': 'libraryWordStatus'})['words']['run']['s'], 'new')
         self.assertEqual(self.library.handle({'action': 'libraryList', 'scope': 'manual-known', 'url': '', 'title': ''})['total'], 0)
         self.assertEqual(self.calls, [])
+        verb = self.save_word('saw', 'I saw it.', lemma='see', meaning='看见')
+        noun = self.save_word('saw', 'This saw is sharp.', meaning='锯')
+        self.assertEqual(verb['path'], noun['path'])
+        self.library.handle({'action': 'libraryMarkKnown', 'word': 'see', 'known': True})
+        words = self.library.word_status()['words']
+        self.assertEqual((words['see']['s'], words['saw']['s']), ('known', 'new'))
+        listed = self.library.handle({'action': 'libraryList', 'scope': 'manual-known', 'url': '', 'title': ''})
+        self.assertEqual([row['id'] for row in listed['items']], [verb['id']])
 
     def test_known_and_ignored_words_live_outside_vault_and_undo_without_anki(self):
         self.calls.clear()
@@ -45,6 +53,32 @@ class SenseTests(AutoSyncTests):
         self.library.handle({'action': 'libraryMarkKnown', 'word': 'architecture', 'known': False})
         self.assertNotIn('architecture', self.library.handle({'action': 'libraryWordStatus'})['words'])
         self.assertEqual(list(self.vault.rglob('*.md')), [])
+        self.assertEqual(self.calls, [])
+
+    def test_inflected_lookup_and_cross_form_undo_keep_both_senses(self):
+        old = self.save_word('charge', 'Banks charge fees.', meaning='收费', sense={'key': 'new', 'gloss': '收费'})
+        self.library.handle({'action': 'libraryCardsAdd', 'id': old['id'],
+                             'cards': [{'kind': 'meaning', 'front': 'charge', 'back': '收费'}]})
+        self.save_word('Charges', 'Two charges were dropped.', lemma='charge', meaning='指控', sense={'key': 'new', 'gloss': '指控'})
+        api = self.library.anki
+        self.library.anki = lambda a, p: [{**c, 'interval': 33} for c in api(a, p)] if a == 'cardsInfo' else api(a, p)
+        self.library.auto_sync()
+        self.calls.clear()
+        senses = self.library.handle({'action': 'libraryWordSenses', 'word': 'charges'})['senses']
+        self.assertEqual({r['gloss']: r['s'] for r in senses}, {'收费': 'familiar', '指控': 'new'})
+        before = self.library.word_status()['words']
+        self.assertEqual(before['charge']['s'], 'partial')
+        self.library.handle({'action': 'libraryMarkKnown', 'word': 'charges', 'known': True})
+        marked = self.library.word_status()['words']
+        self.assertEqual(marked['charge'], marked['charges'])
+        self.assertEqual((marked['charges']['s'], marked['charges']['iv']), ('known', 33))
+        # Older bridges could also leave the clicked spelling in the manual list.
+        self.library.handle({'action': 'knownWords', 'known': {'add': ['charges']}})
+        self.library.handle({'action': 'libraryMarkKnown', 'word': 'charge', 'known': False})
+        self.assertEqual(self.library.word_status()['words'], before)
+        self.library.handle({'action': 'knownWords', 'ignored': {'add': ['charges']}})
+        ignored = self.library.word_status()['words']
+        self.assertEqual((ignored['charge']['s'], ignored['charges']['s']), ('ignored', 'ignored'))
         self.assertEqual(self.calls, [])
 
     def test_selected_sentence_uses_existing_note_save_without_anki_or_word_marks(self):
@@ -80,7 +114,7 @@ class SenseTests(AutoSyncTests):
 
     def test_phrase_and_context_misses_are_recorded_without_cards(self):
         word = self.save_word(sense={'key': 'new', 'gloss': '跑'})
-        phrase = self.save_word(word='run into', sentence='I run into an old friend.', kind='expression', baseWord='run', meaning='偶遇')
+        phrase = self.save_word(word='run into', sentence='I run into an old friend.', kind='expression', baseWord='run', lemma='run', meaning='偶遇')
         self.assertIn('关联原词：[run](obsidian://open?', (self.vault / phrase['path']).read_text())
         key = word['entry']['sense']['key']
         for kind in ['newSense', 'collocation', 'structure', 'recall']:
@@ -97,6 +131,9 @@ class SenseTests(AutoSyncTests):
         self.assertIn('run into', status['phrases'])
         self.assertNotIn('run into', status['words'])
         self.assertEqual(self.library.locate(phrase['id']).result(phrase['id'])['entry']['baseWord'], 'run')
+        self.assertEqual(self.library.handle({'action': 'libraryWordSenses', 'word': 'run into'})['phrases'][0]['recordId'], phrase['id'])
+        self.library.handle({'action': 'libraryMarkKnown', 'word': 'run', 'known': True})
+        self.assertEqual(self.library.word_status()['phrases']['run into']['s'], 'new')
 
     def test_mastery_uses_actual_intervals_and_recent_again_not_just_card_stage(self):
         ident = self.make_card()
@@ -113,7 +150,7 @@ class SenseTests(AutoSyncTests):
         self.library.anki = anki
         self.library.auto_sync()
         result = self.library.handle({'action': 'libraryWordStatus'})['words']['brick']
-        self.assertEqual(result, {'s': 'familiar', 'iv': 30, 'lapses': 4, 'senses': 1, 'gloss': '砖'})
+        self.assertEqual(result, {'s': 'familiar', 'manualKnown': False, 'iv': 30, 'lapses': 4, 'senses': 1, 'gloss': '砖'})
         self.library.handle({'action': 'libraryContextMiss', 'word': 'brick', 'kind': 'structure'})
         self.assertEqual(self.library.word_status()['words']['brick']['s'], 'familiar')
         again.append(note_id * 10)
@@ -172,7 +209,7 @@ class SenseTests(AutoSyncTests):
         self.save_word(word='Runs', sentence='She runs daily.', lemma='run', sense={'key': 'new', 'gloss': '跑'})
         words = self.library.word_status()['words']
         self.assertEqual(words['run'], words['runs'])
-        self.assertEqual(set(words['run']), {'s', 'senses', 'gloss'})
+        self.assertEqual(words['run'], {'s': 'new', 'manualKnown': False, 'senses': 1, 'gloss': '跑'})
         row = {'entry': {'word': 'run'}, 'cards': [{'id': 'use', 'kind': 'produce', 'noteId': 1, 'state': 'synced'}]}
         snapshot = {'notes': {'1': [{'id': 10, 'iv': 30, 'lapses': 0}]}, 'at': time.time(), 'again': []}
         self.assertEqual(status_for([row], snapshot, time.time())[0], 'known')

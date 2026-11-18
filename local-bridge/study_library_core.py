@@ -399,6 +399,12 @@ def _normalize_request(p):
     raise ValueError('不支持的学习库操作或字段。')
 
 
+def entry_lemma(entry):
+    if entry.get('kind') == 'expression':
+        return entry['word'].strip().casefold()  # The saved lemma belongs to the word the phrase was opened from.
+    return (entry.get('lemma') or entry['word']).strip().casefold()
+
+
 def entry_id(e):
     identity = [e['word'].casefold(), e['sentence'], e['url'], e['title'] if not e['url'] else '', e.get('videoTime')]
     if e.get('subtitleSource'):
@@ -618,7 +624,7 @@ class StudyLibrary:
             content = self.file_content(p)
             root = re.search(r'^<!-- english-study-word-v1:(.+) -->$', content, re.M)
             metadata = json.loads(root[1])
-            metadata['manualKnown'] = word_known
+            metadata.setdefault('manualKnownByLemma', {})[entry_lemma(record['entry'])] = word_known
             value = content[:root.start(1)] + self.metadata(metadata) + content[root.end(1):]
             expected = hashlib.sha256(content.encode()).hexdigest()
         elif re.search(r'--w[a-f0-9]{32}\.md$', p.name):
