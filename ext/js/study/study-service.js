@@ -17,7 +17,7 @@
  */
 
 import {mediaKeyOf, timedUrl, videoListenUrl} from './media-key.js';
-import {BILIBILI_HOST} from './media-rules.js';
+import {BILIBILI_HOST, FILE_DURATION_KEY} from './media-rules.js';
 import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
@@ -1217,6 +1217,19 @@ export function prepareStudyService(lookupDictionary = null) {
         // The document URL can lag behind history.pushState; text directives are not visible in location.href.
         return url?.replace(/(#.*?):~:.*$/, (_fragment, anchor) => (anchor === '#' ? '' : anchor));
     };
+    /**
+     * File identity comes from this tab. Only the duration comes from the reader's key.
+     * @param {string} url
+     * @param {unknown} key
+     * @returns {string}
+     */
+    const localVideoSource = (url, key) => {
+        const duration = typeof key === 'string' ? /^file:.+\|([0-9]+)$/.exec(key)?.[1] : '';
+        if (!url.startsWith('file:///') || !duration) { return ''; }
+        const source = new URL(url);
+        source.hash = `${FILE_DURATION_KEY}=${duration}`;
+        return source.href.length <= 2000 && mediaKeyOf(source.href) === key ? source.href : '';
+    };
     // Near-real-time Obsidian↔Anki sync while the browser runs; each pass only touches what changed.
     if (chrome.alarms?.create) {
         void chrome.alarms.create('study-auto-sync', {periodInMinutes: 0.5});
@@ -1384,7 +1397,8 @@ export function prepareStudyService(lookupDictionary = null) {
                 // A reader may remember progress or look up words for its own video only.
                 if (studyAction === 'libraryVideoWords' || studyAction === 'videoStateUpdate') {
                     const asked = /** @type {{mediaKey?: unknown}} */ (data ?? {}).mediaKey;
-                    const url = (studyAction === 'libraryVideoWords' ? pageUrl(sender) : sender.url) ?? '';
+                    const local = sender.url?.startsWith('file:');
+                    const url = (studyAction === 'libraryVideoWords' && !local ? pageUrl(sender) : sender.url) ?? '';
                     const own = url.startsWith('file:') && typeof asked === 'string' && /^file:.+\|[0-9]+$/.test(asked) ? asked : mediaKeyOf(url);
                     if (!own || asked !== own) { throw new Error(studyAction === 'videoStateUpdate' ? '只能记住当前视频的进度。' : '只能读取当前视频的生词。'); }
                     if (studyAction === 'videoStateUpdate') {
@@ -1395,18 +1409,22 @@ export function prepareStudyService(lookupDictionary = null) {
                     }
                     if (Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
                     const source = new URL(url);
-                    if ((source.hostname === BILIBILI_HOST || source.hostname.endsWith(`.${BILIBILI_HOST}`)) && source.pathname.startsWith('/video/')) {
+                    if (source.protocol === 'file:') {
+                        const sourceUrl = localVideoSource(url, asked);
+                        if (!sourceUrl) { throw new Error('请直接打开要学习的本地视频，再读取它的生词。'); }
+                        forwarded = {mediaKey: own, sourceUrl};
+                    } else if ((source.hostname === BILIBILI_HOST || source.hostname.endsWith(`.${BILIBILI_HOST}`)) && source.pathname.startsWith('/video/')) {
                         forwarded = {mediaKey: own, sourceUrl: source.href};
                     }
                 }
                 // The summary's video URL comes from the sender, never from the page's message.
                 if (studyAction === 'libraryVideoSummary') {
                     const local = sender.url?.startsWith('file:');
-                    const localUrl = /** @type {{url?: string}} */ (data).url;
-                    const url = local && typeof localUrl === 'string' && localUrl.startsWith('file:') ? localUrl : /** @type {string} */ (sender.url);
+                    const {mediaKey, title, url: localUrl} = /** @type {{mediaKey?: unknown, title?: unknown, url?: unknown}} */ (data ?? {});
+                    const current = sender.url ?? '';
+                    const url = local ? localVideoSource(current, mediaKey) : current;
                     const own = mediaKeyOf(url);
-                    const {mediaKey, title} = /** @type {{mediaKey?: unknown, title?: unknown}} */ (data ?? {});
-                    if (!own || mediaKey !== own || typeof title !== 'string' || Object.keys(/** @type {object} */ (data ?? {})).length !== (local ? 3 : 2)) { throw new Error('只能为当前视频写小结。'); }
+                    if (!own || mediaKey !== own || (local && localUrl !== url) || typeof title !== 'string' || Object.keys(/** @type {object} */ (data ?? {})).length !== (local ? 3 : 2)) { throw new Error('只能为当前视频写小结。'); }
                     forwarded = {mediaKey: own, url: url.slice(0, 2000), title: title.slice(0, 300)};
                 }
                 // Only the model and Apple translation go through the local bridge.
@@ -1419,8 +1437,13 @@ export function prepareStudyService(lookupDictionary = null) {
                     return await service.handle(action, forwarded);
                 } catch (error) {
                     // An older bridge only accepts the reader's original one-field query.
-                    if (action === 'libraryVideoWords' && forwarded.sourceUrl && error instanceof Error && error.message === '视频编号无效。') {
-                        return await service.handle(action, {mediaKey: forwarded.mediaKey});
+                    if (action === 'libraryVideoWords' && typeof forwarded.sourceUrl === 'string' && error instanceof Error) {
+                        if (forwarded.sourceUrl.startsWith('file:') && ['视频编号无效。', '这不是当前视频的来源。'].includes(error.message)) {
+                            throw new Error('本机桥还不能区分同名视频。请先更新本机桥，再打开这页。');
+                        }
+                        if (error.message === '视频编号无效。') {
+                            return await service.handle(action, {mediaKey: forwarded.mediaKey});
+                        }
                     }
                     throw error;
                 }

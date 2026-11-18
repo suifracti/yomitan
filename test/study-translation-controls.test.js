@@ -26,7 +26,7 @@ import {writeSubtitlePrefs} from '../ext/js/study/subtitle-prefs.js';
 import {prepareStudyFocus} from '../ext/js/display/study-focus.js';
 import {bindStudyWordTabs} from '../ext/js/display/study-word-tabs.js';
 
-test('Bilibili saved words use the current part from the browser, with legacy exact-key fallback', async () => {
+test('video lists and summaries use the browser source, with fallback only when it does not mix local files', async () => {
     /** @typedef {{id: string, frameId: number, url: string, tab: {url: string}}} VideoSender */
     /** @typedef {(message: object, sender: VideoSender, reply: (value: unknown) => void) => boolean} ReceiveVideo */
     /** @type {ReceiveVideo} */
@@ -44,7 +44,7 @@ test('Bilibili saved words use the current part from the browser, with legacy ex
     const url = 'https://www.bilibili.com/video/BV1xx411c7mD?p=2';
     const mediaKey = 'web:www.bilibili.com/video/BV1xx411c7mD?p=2';
     const sender = {id: 'test', frameId: 0, url: url.replace('p=2', 'p=1'), tab: {url}};
-    const ask = (/** @type {object} */ data) => new Promise((resolve) => { receive({studyAction: 'libraryVideoWords', data}, sender, resolve); });
+    const ask = (/** @type {object} */ data, from = sender, studyAction = 'libraryVideoWords') => new Promise((resolve) => { receive({studyAction, data}, from, resolve); });
     try {
         prepareStudyService();
         expect(await ask({mediaKey})).toEqual({ok: true, value: {items: [{word: 'chime'}]}});
@@ -54,6 +54,22 @@ test('Bilibili saved words use the current part from the browser, with legacy ex
         read.mockRejectedValueOnce(new Error('视频编号无效。')).mockResolvedValueOnce({items: [{word: 'ring'}]});
         expect(await ask({mediaKey})).toEqual({ok: true, value: {items: [{word: 'ring'}]}});
         expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey});
+
+        const local = 'file:///examples/folder-a/lesson%20one.mp4';
+        const sourceUrl = `${local}#study-duration=120`;
+        const localMedia = 'file:lesson one.mp4|120';
+        const fileSender = {...sender, url: local, tab: {url: local}};
+        expect(await ask({mediaKey: localMedia}, fileSender)).toMatchObject({ok: true});
+        expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey: localMedia, sourceUrl});
+        read.mockClear().mockRejectedValueOnce(new Error('这不是当前视频的来源。'));
+        expect(await ask({mediaKey: localMedia}, fileSender)).toEqual({ok: false, error: '本机桥还不能区分同名视频。请先更新本机桥，再打开这页。'});
+        expect(read).toHaveBeenCalledOnce();
+
+        const summary = {mediaKey: localMedia, url: sourceUrl, title: 'Lesson one'};
+        expect(await ask({...summary, url: sourceUrl.replace('folder-a', 'folder-b')}, fileSender, 'libraryVideoSummary')).toMatchObject({ok: false});
+        expect(read).toHaveBeenCalledOnce();
+        expect(await ask(summary, fileSender, 'libraryVideoSummary')).toMatchObject({ok: true});
+        expect(read).toHaveBeenLastCalledWith('libraryVideoSummary', summary);
     } finally {
         read.mockRestore();
         vi.unstubAllGlobals();

@@ -271,7 +271,7 @@ def _normalize_request(p):
             raise ValueError('视频编号无效。')
         if 'sourceUrl' in p:
             url = source_url(p['sourceUrl'])
-            if not url.startswith(('https://', 'http://')) or media_key_of(url) != p['mediaKey']:
+            if not url.startswith(('https://', 'http://', 'file:///')) or media_key_of(url) != p['mediaKey']:
                 raise ValueError('这不是当前视频的来源。')
             return {**p, 'sourceUrl': url}
         return p

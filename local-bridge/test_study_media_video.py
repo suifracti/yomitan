@@ -181,6 +181,27 @@ class VideoMediaTests(unittest.TestCase):
         self.assertEqual(time_link('https://www.bilibili.com/video/BV1xx411c7mD?p=2', 72), '[1:12](https://www.bilibili.com/video/BV1xx411c7mD?p=2&t=72)')
         self.assertEqual(time_link('https://course.example.org/watch?id=7#chapter-2', 72), '[1:12](https://course.example.org/watch?id=7#chapter-2)')
 
+    def test_same_name_local_videos_only_include_words_from_their_exact_source(self):
+        first = 'file:///examples/folder-a/lesson%20one.mp4#study-duration=120'
+        second = first.replace('folder-a', 'folder-b')
+        media_key = 'file:lesson one.mp4|120'
+        for word, url in [('brick', first), ('mortar', second)]:
+            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'We found {word}.',
+                                 'url': url, 'videoTime': 12}, 'makeCard': False})
+        paths = set()
+        for url, expected, outside in [(first, 'brick', 'mortar'), (second, 'mortar', 'brick')]:
+            summary = self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': media_key, 'url': url, 'title': 'Lesson one'})
+            paths.add(summary['path'])
+            body = (self.vault / summary['path']).read_text()
+            self.assertEqual(summary['words'], 1)
+            self.assertIn(f'**{expected}**', body)
+            self.assertNotIn(f'**{outside}**', body)
+            rows = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': media_key, 'sourceUrl': url})['items']
+            self.assertEqual([row['word'] for row in rows], [expected])
+            listed = self.library.handle({'action': 'libraryList', 'scope': 'source', 'url': url, 'title': ''})['items']
+            self.assertEqual([row['id'] for row in rows], [row['id'] for row in listed])
+        self.assertEqual(len(paths), 2)
+
     def test_study_summary_goes_into_one_marked_block_of_the_video_note(self):
         url = 'https://www.youtube.com/watch?v=abcdefghijk'
         with self.assertRaises(ValueError):

@@ -536,7 +536,7 @@ class YomitanLibrary:
         if action == 'libraryVideoSummary':
             from study_sources import BILIBILI_HOST, page_source_key
             from study_video import VideoLibrary
-            source_url = p['url'] if page_source_key(p['url']).startswith(f'web:{BILIBILI_HOST}/video/') else ''
+            source_url = p['url'] if page_source_key(p['url']).startswith(('file:///', f'web:{BILIBILI_HOST}/video/')) else ''
             rows = self.video_words(p['mediaKey'], source_url)[:300]
             if not rows:
                 raise ValueError('这个视频还没有记住的词，先选词「记住它」。')
