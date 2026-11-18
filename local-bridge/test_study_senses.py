@@ -95,6 +95,12 @@ class SenseTests(AutoSyncTests):
         self.library.handle({'action': 'knownWords', 'known': {'add': ['charges']}})
         self.library.handle({'action': 'libraryMarkKnown', 'word': 'charge', 'known': False})
         self.assertEqual(self.library.word_status()['words'], before)
+        manual_file = self.library.config_path.parent / 'known-words.json'
+        mtime = manual_file.stat().st_mtime_ns
+        with patch('study_library.StudyLibrary.write', side_effect=AssertionError('unchanged word wrote a note')):
+            again = self.library.handle({'action': 'libraryMarkKnown', 'word': 'charges', 'known': False})
+        self.assertEqual(again['updated'], 0)
+        self.assertEqual(manual_file.stat().st_mtime_ns, mtime)
         self.library.handle({'action': 'knownWords', 'ignored': {'add': ['charges']}})
         ignored = self.library.word_status()['words']
         self.assertEqual((ignored['charge']['s'], ignored['charges']['s']), ('ignored', 'ignored'))

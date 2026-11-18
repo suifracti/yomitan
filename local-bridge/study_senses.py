@@ -243,6 +243,7 @@ def known_words(library, patch=None):
         fcntl.flock(lock, fcntl.LOCK_EX)
         values = json.loads(path.read_text()) if path.exists() else {'known': [], 'ignored': []}
         if patch and any(key in patch for key in ('known', 'ignored')):
+            before = values.copy()
             for key in ('known', 'ignored'):
                 change = patch.get(key, {})
                 current = set(values[key]) - set(change.get('remove', []))
@@ -250,6 +251,8 @@ def known_words(library, patch=None):
                 values[key] = sorted(current)
                 other = 'ignored' if key == 'known' else 'known'
                 values[other] = sorted(set(values[other]) - set(change.get('add', [])))
+            if values == before:
+                return values
             fd, name = tempfile.mkstemp(prefix='.known-words-', dir=path.parent)
             try:
                 with os.fdopen(fd, 'w') as stream: json.dump(values, stream, ensure_ascii=False)
@@ -268,6 +271,8 @@ def mark_known(library, word, known):
     updated = set()
     for lib, path, row in records:
         if row['entry'].get('kind') == 'sentence' or canonical(row['entry']) != head or path in updated:
+            continue
+        if row.get('manualKnown', False) == known:
             continue
         record, body, version = lib.read(row['id'])
         if re.search(r'--w[a-f0-9]{32}\.md$', path.name):
