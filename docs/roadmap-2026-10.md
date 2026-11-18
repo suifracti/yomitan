@@ -70,6 +70,7 @@
   - 每条记录存：mtime、size、word、lemma、media_key（复用 `media_key_of`）、videoTime、mastery、各卡阶段、noteId、义项键。
   - 按 mtime 增量更新。
   - Anki 侧仍只为当天编辑和未关联候选读笔记详情。对已经读到的字段与关联比较内容，不依赖秒级或缺失的修改时间；没变化不反复改笔记，首次建立基线不回写。
+  - 已关联记录改过但断线或核对失败，要留到下一轮，成功后才清除。只记原目标和记录编号；不重建已删笔记、不为纯笔记制卡，不自动处理两边的冲突。
   - `word_status`、`video_words`、`auto_sync` 的变化检测、`libraryList` 改读索引；接口不变。
   - 性能：2000 条记录，一轮自动同步 < 300 ms。
 - **B2 真实掌握度**：随自动同步，用 `cardsInfo` 读 interval 和 lapses，填入下面约定的 `libraryWordStatus` v2；不新增轮询。

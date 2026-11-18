@@ -109,6 +109,29 @@ class AutoSyncTests(unittest.TestCase):
         self.assertIn('updateNoteFields', self.calls)
         self.assertIn('砖头（Obsidian 里改的）', next(iter(self.notes.values()))['fields']['Definition'])
 
+    def test_offline_edit_retries_until_the_original_card_is_updated(self):
+        from unittest.mock import patch
+        ident = self.make_card()
+        note_id = next(iter(self.notes))
+        self.library.auto_sync()
+        path = next(self.vault.rglob('*brick*.md'))
+        original = path.read_text()
+        start = original.index('##### 答案')
+        path.write_text(original[:start] + original[start:].replace('> 砖', '> 离线改好的答案', 1))
+        def disconnected(action, params): raise ConnectionError('offline')
+        self.library.anki = disconnected
+        self.assertTrue(self.library.auto_sync()['paused'])
+        self.library.anki = self.anki
+        with patch('study_sync.reconcile', side_effect=ValueError('请稍后再试')) as retry:
+            self.assertEqual(self.library.auto_sync()['errors'], ['请稍后再试'])
+            self.assertEqual(retry.call_args.args[1]['id'], ident)
+        self.calls.clear()
+        self.assertEqual(self.library.auto_sync()['synced'], 1)
+        self.assertIn('离线改好的答案', self.notes[note_id]['fields']['Definition'])
+        self.assertEqual(self.library.auto_sync()['synced'], 0)
+        self.assertEqual(set(self.notes), {note_id})
+        self.assertNotIn('addNote', self.calls)
+
     def test_word_status_marks_words_with_use_cards_as_known(self):
         self.make_card()
         entry = {'word': 'Mortar', 'sentence': 'Brick and mortar.', 'meaning': '灰浆', 'url': 'https://example.com/b'}

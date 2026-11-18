@@ -332,7 +332,9 @@ class YomitanLibrary:
         notes = state.get('notes') if isinstance(state.get('notes'), dict) else {}
         current_files, records = self.indexed()
         libraries = {lib.target_id: lib for lib, _path, _row in records.values()}
-        owner, changed = {}, []
+        owner = {}
+        changed = [(target, ident) for ident, target in state.get('retryRecords', {}).items()
+                   if ident in records and records[ident][0].target_id == target]
         for ident, (lib, path, record) in records.items():
             if not first and files.get(str(path)) != current_files[str(path)]:
                 changed.append((lib.target_id, ident))
@@ -372,9 +374,9 @@ class YomitanLibrary:
                         changed.extend(owner[tag] for tag in tags if tag in owner)
                     notes[nid] = stamp
             except Exception:
-                paused = 'Anki 未打开，只检查了笔记一侧。'
+                paused = '这次没能读完 Anki。请确认 Anki 已打开，改过的笔记会在下次同步时重试。'
         synced, conflicts, errors = 0, 0, []
-        done = set()
+        done, retry = set(), {}
         for target_id, ident in changed:
             if (target_id, ident) in done:
                 continue
@@ -382,13 +384,20 @@ class YomitanLibrary:
             lib = libraries[target_id]
             try:
                 record = records[ident][2]
-                if not (record.get('cards') or record.get('noteId')) or not lib.anki_enabled or paused:
+                if not (record.get('cards') or record.get('noteId')):
+                    continue
+                if not lib.anki_enabled or paused:
+                    retry[ident] = target_id
                     continue
                 result = study_sync.reconcile(lib, {'id': ident})
+                if result.get('syncState') == 'paused':
+                    retry[ident] = target_id
+                    continue
                 synced += 1
                 if result.get('conflicts'):
                     conflicts += 1
             except Exception as error:
+                retry[ident] = target_id
                 errors.append(str(error)[:120] if isinstance(error, ValueError) else '同步未完成')
         # Only re-stat records we attempted; quiet passes never reopen note bodies.
         for _target_id, ident in done:
@@ -415,7 +424,7 @@ class YomitanLibrary:
                 pass
         from study_senses import refresh_metrics
         state['mastery'] = refresh_metrics(self.anki, records, state.get('mastery', {}), now) if anki_ok and not paused else state.get('mastery', {})
-        state.update({'files': files, 'notes': notes, 'upgrade': upgrade, 'at': now, 'synced': synced, 'conflicts': conflicts})
+        state.update({'files': files, 'notes': notes, 'retryRecords': retry, 'upgrade': upgrade, 'at': now, 'synced': synced, 'conflicts': conflicts})
         state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = state_path.with_suffix('.tmp')
         temporary.write_text(json.dumps(state))
