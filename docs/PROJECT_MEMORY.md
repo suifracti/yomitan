@@ -25,6 +25,7 @@
 | 在原视频不看字幕，先听自己保存的句子；听完回哪一条笔记 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play、openStudyRecord |
 | 想只重听刚才没听清的句子 | L-007；YoutubeReader._beginListening 的本轮队列 |
 | 从学习库回原视频听这一句，不只是跳到秒数 | L-007；videoListenUrl、openVideoListening、claimVideoListening |
+| 同一视频记了很多句，想按时间一起回听 | L-007；openVideoListening 的 wholeVideo、libraryVideoWords 的 sourceUrl |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章或同一视频选集，想找同来源的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选、page_source_key |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
@@ -165,6 +166,8 @@
 **只重练没听清的原句**：练习有明确末尾，不在最后一句之后悄悄循环。用现有字幕行 ID 暂记本人主动标出的句子，不拿英文文本或词义去重，也不从没播放、跳过或看答案推断掌握。下一轮仅重播这些行，并从空标记开始；换轨、退出、改偏移仍丢掉本轮状态，不写第二套学习记录。见[集中重听](youtube-study-wiring.md#2026-11-18-只重听自己标过没听清的句子)。
 
 **学习库回视频听这一句**：`videoListenUrl` 只去掉已知站点的跳时参数，不动选集等来源标记。后端按原记录号读取，交接暂存扩展会话、绑定新标签及原视频的 media key；网址不带笔记资料。字幕偏移恢复后复用原句和保存秒数的唯一匹配，准备好不等于已经播放。没对上的读者可以先切轨或改偏移；受保护来源、已存记录号、制卡和排程不改。见[学习库到单句回听](youtube-study-wiring.md#2026-11-18-从学习库回原视频听这一句)。
+
+**整个视频回听不从学习库当前页拼**：`openVideoListening` 用记录确认来源，整轮才由后台给 `libraryVideoWords` 提供 `sourceUrl`。桥把它与视频 key 核对后用同来源规则取有时间的原句，保留既有上限；网页原本的已记词请求仍按当前媒体 key、不能传额外来源。回听队列按已确认字幕行的真实时间排序，重复台词也必须对回原来的时间。见[从同来源进入整轮回听](youtube-study-wiring.md#2026-11-18-从同来源原句回视频练一轮)。
 
 **来源链接和记录编号不是同一回事。** 改视频分组键时看 `study_sources.py`（浏览器站点表由同一文件生成）；不能因此改 `entry_id` 或归档笔记的编号。没有实际播放时间就保留原链接：曾将分享地址的 83 秒写成 0 秒，也会把普通页面的章节锚点丢掉。只有确实知道时间，才为 YouTube/B站生成跳时链接；普通网页不加时间参数，本地文件在来源行只显示文件名。见[临时笔记复现](youtube-study-wiring.md#2026-11-18-来源链接不再从零秒开始)。
 

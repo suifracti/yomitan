@@ -529,6 +529,7 @@ async function initializePage() {
         const more = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-more'));
         const practiceButton = byId('study-library-practice-button');
         const clozeButton = byId('study-library-cloze-button');
+        const listenSource = /** @type {HTMLButtonElement} */ (byId('study-library-listen-source'));
         const practice = byId('study-library-practice');
         let lookupWarning = '';
         /** @param {string} text */
@@ -604,6 +605,14 @@ async function initializePage() {
         let cloze = [];
         /** @type {HTMLElement|null} */
         let activePractice = null;
+        let sourceVideoId = '';
+        listenSource.addEventListener('click', () => {
+            if (!sourceVideoId) { return; }
+            listenSource.disabled = true;
+            void studyCall('openVideoListening', {id: sourceVideoId, wholeVideo: true})
+                .catch((error) => setStatus(error instanceof Error ? error.message : '没能打开原视频。'))
+                .finally(() => { listenSource.disabled = false; });
+        });
 
         /** @returns {void} */
         function closePractice() {
@@ -629,6 +638,7 @@ async function initializePage() {
             }
             activePractice = button;
             list.hidden = status.hidden = more.hidden = true;
+            listenSource.hidden = true;
             search.hidden = button === clozeButton;
             if (searchLabel) { searchLabel.hidden = search.hidden; }
             button.textContent = button === clozeButton ? '返回学习库' : '返回搜索结果';
@@ -1060,9 +1070,13 @@ listedQuery :
             const waiting = canSearch && (query !== listedQuery || category !== listedCategory);
             practiceButton.hidden = waiting || Boolean(listError) || category !== 'all' || practicePair.length !== 2;
             const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
+            sourceVideoId = category === 'source' && !loading && !listError ?
+                rows.find((row) => matchesCategory(row, 'saved') && videoListenUrl(row.entry))?.id ?? '' :
+                '';
             cloze = loading || listError ? [] : clozePrompts(rows);
             clozeButton.hidden = cloze.length === 0;
             if (activePractice?.hidden) { closePractice(); }
+            listenSource.hidden = !sourceVideoId || !practice.hidden;
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
             if (rows.length + localRows.length === 0) {
                 const empty = document.createElement('p');

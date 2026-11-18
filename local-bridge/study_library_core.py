@@ -263,8 +263,13 @@ def _normalize_request(p):
         # Older readers send a YouTube videoId; newer ones send the shared media key.
         if set(p) == {'action', 'videoId'} and isinstance(p['videoId'], str) and re.fullmatch(r'[A-Za-z0-9_-]{11}', p['videoId']):
             return {'action': action, 'mediaKey': 'youtube:' + p['videoId']}
-        if set(p) != {'action', 'mediaKey'} or not isinstance(p['mediaKey'], str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400}|file:[^\r\n]{1,350}\|[0-9]+)', p['mediaKey']):
+        if set(p) not in ({'action', 'mediaKey'}, {'action', 'mediaKey', 'sourceUrl'}) or not isinstance(p['mediaKey'], str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400}|file:[^\r\n]{1,350}\|[0-9]+)', p['mediaKey']):
             raise ValueError('视频编号无效。')
+        if 'sourceUrl' in p:
+            url = source_url(p['sourceUrl'])
+            if not url.startswith(('https://', 'http://')) or media_key_of(url) != p['mediaKey']:
+                raise ValueError('这不是当前视频的来源。')
+            return {**p, 'sourceUrl': url}
         return p
     if action == 'libraryVideoSummary':
         if set(p) != {'action', 'mediaKey', 'url', 'title'} or not all(isinstance(p[k], str) for k in ('mediaKey', 'url', 'title')) \

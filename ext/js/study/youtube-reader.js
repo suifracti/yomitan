@@ -87,7 +87,7 @@ export class YoutubeReader extends EventTarget {
         this._restoreReplay = null;
         /** @type {{panel: HTMLElement, listHidden: boolean, wordsHidden: boolean, cancel?: () => void}|null} */
         this._listen = null;
-        /** @type {SavedPlayback|null} */
+        /** @type {SavedPlayback[]|null} */
         this._libraryListening = null;
         /** @type {number} */
         this._shadowTimer = 0;
@@ -955,9 +955,9 @@ export class YoutubeReader extends EventTarget {
     /** @param {number} generation */
     async _claimLibraryListening(generation) {
         if (window !== window.top || !/^https?:$/.test(location.protocol)) { return; }
-        const item = /** @type {SavedPlayback|null} */ (await this._call('claimVideoListening').catch(() => null));
-        if (!item?.id || generation !== this._generation) { return; }
-        this._libraryListening = item;
+        const items = /** @type {SavedPlayback[]|null} */ (await this._call('claimVideoListening').catch(() => null));
+        if (!items?.length || generation !== this._generation) { return; }
+        this._libraryListening = items;
         this._site.toggleDock(true);
         this._tryLibraryListening();
     }
@@ -965,7 +965,7 @@ export class YoutubeReader extends EventTarget {
     /** */
     _tryLibraryListening() {
         if (this._libraryListening && this._session && this._video && !this._restoringVideoState && !this._listen) {
-            this._beginListening([this._libraryListening]);
+            this._beginListening(this._libraryListening, true);
         }
     }
 
@@ -1734,8 +1734,11 @@ export class YoutubeReader extends EventTarget {
     /** @returns {boolean} */
     get listening() { return this._listen !== null; }
 
-    /** @param {SavedPlayback[]} items */
-    _beginListening(items) {
+    /**
+     * @param {SavedPlayback[]} items
+     * @param {boolean} [chronological]
+     */
+    _beginListening(items, chronological = false) {
         const view = this._view;
         const session = this._session;
         if (!view || !this._video || !/^en(?:-|$)/i.test(session?.source.language || '')) {
@@ -1764,7 +1767,7 @@ export class YoutubeReader extends EventTarget {
             records.push(item);
             savedByCue.set(id, records);
         }
-        let queue = [...savedByCue.keys()];
+        let queue = chronological ? [...this._rowInfo.keys()].filter((id) => savedByCue.has(id)) : [...savedByCue.keys()];
         if (queue.length === 0) {
             this._status('当前字幕对不上已记下的原句和时间。切回原来的字幕或偏移再试。');
             return;

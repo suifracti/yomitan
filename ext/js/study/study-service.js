@@ -1349,7 +1349,7 @@ export function prepareStudyService(lookupDictionary = null) {
             const key = listeningKey(sender.tab.id);
             const own = mediaKeyOf(pageUrl(sender) ?? '');
             void (async () => {
-                const {[key]: pending} = /** @type {Record<string, {mediaKey: string, until: number, item: import('study').SavedVideoListening}|undefined>} */ (await chrome.storage.session.get(key));
+                const {[key]: pending} = /** @type {Record<string, {mediaKey: string, until: number, items: import('study').SavedVideoListening[]}|undefined>} */ (await chrome.storage.session.get(key));
                 if (!pending) { return null; }
                 if (pending.until < Date.now()) {
                     await chrome.storage.session.remove(key);
@@ -1357,7 +1357,7 @@ export function prepareStudyService(lookupDictionary = null) {
                 }
                 if (pending.mediaKey !== own) { return null; }
                 await chrome.storage.session.remove(key);
-                return pending.item;
+                return pending.items;
             })().then((value) => reply({ok: true, value}), () => reply({ok: true, value: null}));
             return true;
         }
@@ -1417,7 +1417,7 @@ export function prepareStudyService(lookupDictionary = null) {
             return false;
         }
         if (studyAction === 'openVideoListening' && pathname === 'study-library.html') {
-            const {id} = /** @type {{id?: string}} */ (data ?? {});
+            const {id, wholeVideo} = /** @type {{id?: string, wholeVideo?: boolean}} */ (data ?? {});
             void (async () => {
                 if (!id || !/^[a-f0-9]{32}$/.test(id)) { throw new Error('没读到这条原句，请刷新学习库。'); }
                 if (!(await service.subtitlePrefs()).enabled) { throw new Error('请先在扩展菜单打开「视频字幕学习」。'); }
@@ -1425,11 +1425,20 @@ export function prepareStudyService(lookupDictionary = null) {
                 const entry = items?.find((item) => item.id === id && item.record?.id === id)?.record?.entry;
                 const url = videoListenUrl(entry);
                 if (!url || !entry) { throw new Error('这条记录没有可回听的网页视频。可试试原来的来源链接。'); }
+                const mediaKey = mediaKeyOf(url.href);
                 const {word, sentence, sense, videoTime} = entry;
+                /** @type {import('study').SavedVideoListening[]} */
+                let listening = [{id, word, sentence, sense, videoTime: videoTime ?? null}];
+                if (wholeVideo === true) {
+                    const result = /** @type {{items: import('study').SavedVideoListening[]}} */ (await service.handle('libraryVideoWords', {mediaKey, sourceUrl: url.href})
+                        .catch(() => { throw new Error('没能读到本视频的原句。可以先回视频听一条，或到设置检查本机连接。'); }));
+                    listening = result.items;
+                    if (listening.length === 0) { throw new Error('没找到本视频可回听的原句。'); }
+                }
                 const {id: tabId} = await chrome.tabs.create({url: 'about:blank'});
                 if (typeof tabId !== 'number') { throw new Error('没能打开视频，请再试一次。'); }
                 try {
-                    const pending = {mediaKey: mediaKeyOf(url.href), until: Date.now() + 120_000, item: {id, word, sentence, sense, videoTime}};
+                    const pending = {mediaKey, until: Date.now() + 120_000, items: listening};
                     await chrome.storage.session.set({[listeningKey(tabId)]: pending});
                     await chrome.tabs.update(tabId, {url: url.href});
                 } catch (error) {

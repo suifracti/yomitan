@@ -65,6 +65,7 @@ function makePageDom() {
             <button id="study-library-refresh"></button>
             <button id="study-library-practice-button" hidden>用旧原句辨词义</button>
             <button id="study-library-cloze-button" hidden>练原句填空</button>
+            <button id="study-library-listen-source" hidden>回视频练一轮</button>
             <section id="study-library-practice" hidden></section>
             <button id="study-library-export-saved">导出已收集收藏</button>
             <button id="study-library-clear-saved">清空已收集收藏</button>

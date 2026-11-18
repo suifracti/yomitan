@@ -446,14 +446,18 @@ class YomitanLibrary:
         return {'first': first, 'checked': len(files), 'synced': synced, 'conflicts': conflicts,
                 'errors': errors[:5], 'paused': paused, 'upgrade': upgrade}
 
-    def video_words(self, media_key):
-        """Saved words from one video (any site, see media_key_of), oldest position first; read-only."""
-        from study_sources import media_key_of
+    def video_words(self, media_key, source_url=''):
+        """Read saved words in playback order, using a reader key or a source group."""
+        from study_sources import media_key_of, page_source_key
 
+        source = page_source_key(source_url) if source_url else ''
         rows = []
         for lib, _path, row in self.indexed()[1].values():
             entry = row['entry']
-            if media_key_of(entry.get('url')) != media_key:
+            if source:
+                if entry.get('videoTime') is None or page_source_key(entry.get('url', '')) != source:
+                    continue
+            elif media_key_of(entry.get('url')) != media_key:
                 continue
             progress = card_progress(row)
             hint = {'missing': '有卡片已被删除，请到学习库处理', 'ambiguous': '有卡片对应不上，请到学习库核对',
@@ -465,7 +469,8 @@ class YomitanLibrary:
             rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', ''),
                          'path': row.get('path', ''), 'vault': str(lib.vault),
                          'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
-                         'cards': progress['confirmed'], 'stage': progress['stage'], **({'cardHint': hint} if hint else {})})
+                         'cards': progress['confirmed'], 'stage': progress['stage'], **({'cardHint': hint} if hint else {}),
+                         **({'sense': entry['sense']} if entry.get('sense') else {})})
         rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
         return rows
 
@@ -525,7 +530,7 @@ class YomitanLibrary:
             lib = self.locate(ident) or self.library_for(p.get('targetId', self.active_id))
             return lib.handle(p)
         if action == 'libraryVideoWords':
-            items = self.video_words(p['mediaKey'])
+            items = self.video_words(p['mediaKey'], p.get('sourceUrl', ''))
             return {'items': [{k: v for k, v in r.items() if k not in ('path', 'vault')} for r in items[:300]],
                     'cardContexts': [{'word': r['word'], 'sentence': r['sentence']} for r in items if r['cards'] or r.get('cardHint')]}
         if action == 'libraryVideoSummary':

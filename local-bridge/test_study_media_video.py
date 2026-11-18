@@ -69,10 +69,18 @@ class VideoMediaTests(unittest.TestCase):
             self.library.handle({'action': 'libraryVideoWords', 'videoId': '../etc'})
 
     def test_video_words_on_other_sites_use_the_media_key(self):
-        for word, url, t in [('ring', 'https://www.bilibili.com/video/BV1xx411c7mD/?p=2&spm=abc', 30), ('bell', 'https://www.bilibili.com/video/BV1xx411c7mD?p=1', 4), ('lamp', 'https://course.example.org/watch?id=7&utm=x', 9)]:
+        for word, url, t in [('ring', 'https://www.bilibili.com/video/BV1xx411c7mD/?p=2&spm=abc', 30),
+                             ('chime', 'https://m.bilibili.com/video/BV1xx411c7mD?p=2&t=12', 12),
+                             ('bell', 'https://www.bilibili.com/video/BV1xx411c7mD?p=1', 4),
+                             ('lamp', 'https://course.example.org/watch?id=7&utm=x', 9)]:
             self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} here.', 'meaning': '义', 'url': url, 'videoTime': t}, 'makeCard': False})
         rows = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'web:www.bilibili.com/video/BV1xx411c7mD?p=2'})['items']
         self.assertEqual([r['word'] for r in rows], ['ring'])
+        source = {'action': 'libraryVideoWords', 'mediaKey': 'web:www.bilibili.com/video/BV1xx411c7mD?p=2',
+                  'sourceUrl': 'https://www.bilibili.com/video/BV1xx411c7mD?p=2'}
+        self.assertEqual([r['word'] for r in self.library.handle(source)['items']], ['chime', 'ring'])
+        with self.assertRaises(ValueError):
+            self.library.handle({**source, 'sourceUrl': source['sourceUrl'].replace('p=2', 'p=1')})
         rows = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'web:course.example.org/watch?id=7'})['items']
         self.assertEqual([r['word'] for r in rows], ['lamp'])
         with self.assertRaises(ValueError):

@@ -114,7 +114,7 @@ test('explains saved video words, opens uncarded words for card selection, and r
     } finally { reader._reset(); youtubeStudyContext.openCard = null; vi.unstubAllGlobals(); await env.teardown(global); }
 });
 
-test('a library handoff starts blind listening in the new video tab at the saved occurrence', async () => {
+test('a library video handoff keeps the saved occurrence and can prepare a full round in order', async () => {
     const url = 'https://www.youtube.com/watch?v=abcdefghijk';
     const id = '4'.repeat(32);
     const sentence = 'A successful project needs patient work from the whole team.';
@@ -146,7 +146,14 @@ test('a library handoff starts blind listening in the new video tab at the saved
             onChanged: {addListener() {}, removeListener() {}},
         },
     });
-    const handle = vi.spyOn(StudyService.prototype, 'handle').mockResolvedValue({items: [{id, record}]});
+    const handle = vi.spyOn(StudyService.prototype, 'handle').mockImplementation(async (action) => {
+        if (action === 'libraryRead') { return {items: [{id, record}]}; }
+        return {items: [
+            {id, word: 'successful', sentence, videoTime: 25},
+            {id: '5'.repeat(32), word: 'project', sentence, videoTime: 1},
+            {id: '6'.repeat(32), word: 'missing', sentence: 'A sentence from the old subtitle.', videoTime: 8},
+        ]};
+    });
     const events = [0, 24500].map((tStartMs) => ({tStartMs, dDurationMs: 4000, segs: [{utf8: sentence}]}));
     vi.stubGlobal('fetch', async () => ({ok: true, text: async () => JSON.stringify({events})}));
     const sender = {id: 'test', frameId: 0, url, tab: {id: 41, url}};
@@ -168,7 +175,11 @@ test('a library handoff starts blind listening in the new video tab at the saved
     const reader = new YoutubeReader({prefs: {merge: false}, call});
     try {
         prepareStudyService();
-        await request('openVideoListening', {id: 'test', url: 'chrome-extension://test/study-library.html'}, {id});
+        const libraryPage = {id: 'test', url: 'chrome-extension://test/study-library.html'};
+        await request('openVideoListening', libraryPage, {id});
+        expect(await request('claimVideoListening', sender)).toMatchObject({ok: true, value: [{id}]});
+        await request('openVideoListening', libraryPage, {id, wholeVideo: true});
+        expect(handle).toHaveBeenCalledWith('libraryVideoWords', {mediaKey: 'youtube:abcdefghijk', sourceUrl: url});
         expect(update).toHaveBeenCalledWith(41, {url});
         const otherVideo = 'https://www.youtube.com/watch?v=01234567890';
         expect(await request('claimVideoListening', {...sender, url: otherVideo, tab: {...sender.tab, url: otherVideo}})).toEqual({ok: true, value: null});
@@ -178,10 +189,13 @@ test('a library handoff starts blind listening in the new video tab at the saved
         vi.spyOn(video, 'pause').mockImplementation(() => {});
         reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
         reader.start();
-        await vi.waitFor(() => expect(document.querySelector('.r-listen-practice strong')?.textContent).toContain('1/1'));
+        await vi.waitFor(() => expect(document.querySelector('.r-listen-practice strong')?.textContent).toContain('1/2'));
         expect(session.size).toBe(0);
         expect(play).not.toHaveBeenCalled();
         expect(document.querySelector('.r-listen-practice')?.textContent).not.toContain(sentence);
+        /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-play]')).click();
+        expect(video.currentTime).toBe(1);
+        /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-next]')).click();
         /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-play]')).click();
         expect(video.currentTime).toBe(25.5);
     } finally {
