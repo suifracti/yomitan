@@ -40,7 +40,7 @@ const SOURCES_UPDATE_BRIDGE = '当前的本机桥还不能按素材查看。可�
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
 /** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}, translation?: string}}} SensePracticeItem */
-/** @typedef {'cloze'|'dictation'|'recall'} PracticeMode */
+/** @typedef {'cloze'|'dictation'|'recall'|'translation'} PracticeMode */
 /** @typedef {{row: StudyLibraryRecord, kind: 'cloze'|'dictation'|'read', text: string, answer: string, hint: string}} SentencePrompt */
 /** @typedef {{prompts: SentencePrompt[], hasMore: boolean}} DictationRound */
 /** @typedef {{url: string, title: string, records: number, audio: number, recall?: number}} SourceShelfItem */
@@ -431,6 +431,12 @@ function sentencePrompts(rows, picked, mode, limit = SENTENCE_PRACTICE_LIMIT) {
         if (!matchesCategory(row, 'saved') || !entry?.sentence || !entry.word || !/^en(?:-|$)/i.test(entry.language || 'en')) { continue; }
         const hasAudio = (recall || mode === 'dictation') && savedAudioAttachment(row);
         const sentenceKey = recall ? row.id : entry.sentence;
+        if (mode === 'translation') {
+            if (entry.kind !== 'sentence' || !entry.translation?.trim() || seen.has(sentenceKey)) { continue; }
+            seen.add(sentenceKey);
+            prompts.push({row, kind: 'read', text: entry.sentence, answer: '', hint: ''});
+            continue;
+        }
         if (hasAudio) {
             if (seen.has(sentenceKey)) { continue; }
             seen.add(sentenceKey);
@@ -439,7 +445,7 @@ function sentencePrompts(rows, picked, mode, limit = SENTENCE_PRACTICE_LIMIT) {
         }
         if (mode === 'dictation') { continue; }
         const facts = {word: entry.word, sentence: entry.sentence, forms: []};
-        const {text, answers} = blankStudyWord(facts);
+        const {text, answers} = entry.kind === 'sentence' ? {text: entry.sentence, answers: []} : blankStudyWord(facts);
         const key = recall ? row.id : text;
         if (seen.has(key)) { continue; }
         if (answers.length !== 1) {
@@ -538,6 +544,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
     const heading = document.createElement('h2');
     heading.tabIndex = -1;
     const recall = mode === 'recall';
+    const translating = mode === 'translation';
     const retryLabel = recall ? '再练没对上的' : '重听没对上的';
     let queue = prompts;
     let index = 0;
@@ -604,14 +611,18 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
         const dictation = kind === 'dictation';
         const reading = kind === 'read';
         const meaning = recall ? row.entry.sense?.gloss || row.entry.meaning : '';
-        const title = dictation ? '练原声听写' : '练原句填空';
+        const title = dictation ? '练原声听写' : (translating ? '练整句理解' : '练原句填空');
         heading.textContent = `${retrying ? retryLabel : (recall ? '复习最近卡点' : title)} · ${index + 1} / ${queue.length}`;
         const quote = document.createElement('p');
         quote.lang = 'en';
         quote.className = 'study-library-practice-quote';
         quote.textContent = text;
         const clue = Object.assign(document.createElement('p'), {textContent: dictation ? '先听录音，写下听到的整句。大小写和标点不计。' : (hint ? `你当时的提示：${hint}` : '想想你当时在这里读到的用法。')});
-        if (reading) { clue.textContent = '先读原句，回想这个词在这里的意思。'; }
+        if (translating) {
+            clue.textContent = '先读原句，想想整句是什么意思。';
+        } else if (reading) {
+            clue.textContent = '先读原句，回想这个词在这里的意思。';
+        }
         const form = document.createElement('form');
         form.className = 'study-library-practice-choices';
         const label = Object.assign(document.createElement('label'), {htmlFor: 'study-library-cloze-answer', textContent: dictation ? '写下听到的原句' : '填原句里的词或短语'});
@@ -625,7 +636,11 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
         input.setAttribute('autocapitalize', 'none');
         const check = Object.assign(document.createElement('button'), {type: 'submit', textContent: '核对原文'});
         const reveal = Object.assign(document.createElement('button'), {type: 'button', textContent: dictation ? '直接看原句' : '直接看答案'});
-        if (reading) { reveal.textContent = meaning ? '看当时的释义' : '看当时的记录'; }
+        if (translating) {
+            reveal.textContent = '看保存的译文';
+        } else if (reading) {
+            reveal.textContent = meaning ? '看当时的释义' : '看当时的记录';
+        }
         const advance = () => {
             stopAudio();
             ++index;
@@ -661,11 +676,11 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
                 } else {
                     form.before(quote);
                 }
-            } else {
+            } else if (!translating) {
                 writeSentence(quote, row.entry.sentence, reading ? row.entry.word : answer, true);
             }
-            if ((dictation || recall) && row.entry.translation) { form.before(Object.assign(document.createElement('p'), {textContent: row.entry.translation})); }
-            if (recall) {
+            if ((dictation || recall || translating) && row.entry.translation) { form.before(Object.assign(document.createElement('p'), {textContent: row.entry.translation})); }
+            if (recall || translating) {
                 if (meaning) { form.before(Object.assign(document.createElement('p'), {textContent: `当时记下的意思：${meaning}`})); }
                 const source = createSourceLine(row.entry, row.entry.title || '', row.articleHref);
                 if (source) { form.before(source); }
@@ -676,7 +691,11 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
             feedback.tabIndex = -1;
             feedback.className = 'study-library-practice-answer';
             feedback.textContent = dictation ? (prefix || '这是这段录音对应的原句。') : `${prefix}原句用的是「${answer}」。`;
-            if (reading) { feedback.textContent = '这是你当时保存的原句。'; }
+            if (translating) {
+                feedback.textContent = '这是你当时保存的译文。';
+            } else if (reading) {
+                feedback.textContent = '这是你当时保存的原句。';
+            }
             const actions = document.createElement('div');
             actions.className = 'study-library-practice-choices';
             const resume = document.createElement('a');
@@ -830,6 +849,7 @@ async function initializePage() {
         const more = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-more'));
         const practiceButton = byId('study-library-practice-button');
         const clozeButton = byId('study-library-cloze-button');
+        const translationButton = byId('study-library-translation-button');
         const dictationButton = byId('study-library-dictation-button');
         const sourceRecallButton = byId('study-library-source-recall');
         const listenSource = /** @type {HTMLButtonElement} */ (byId('study-library-listen-source'));
@@ -1016,17 +1036,20 @@ async function initializePage() {
         let compareExamples = false;
         const practiceLabel = () => (compareExamples ? '用旧原句看用法' : '用旧原句辨词义');
         const clozeLabel = () => (category === 'recent-recall' ? '复习最近卡点' : '练原句填空');
+        const translationLabel = '练整句理解';
         /** @type {SentencePrompt[]} */
         let cloze = [];
         /** @type {StudyLibraryRecord[]|null} */
         let recallRound = null;
         /** @type {SentencePrompt[]} */
         let dictation = [];
+        /** @type {SentencePrompt[]} */
+        let translations = [];
         /** @type {{button: HTMLElement, label: string} | null} */
         let sentenceSearch = null;
         /** @type {SentencePrompt[]} */
         let sourceRecall = [];
-        const sentenceButtons = [clozeButton, dictationButton, sourceRecallButton];
+        const sentenceButtons = [clozeButton, dictationButton, translationButton, sourceRecallButton];
         const moreScopedPrompts = () => {
             if (!['source', 'word', 'recent-recall'].includes(category) || loading || listError || offset >= total) { return false; }
             return listedCategory === category && (!canSearch || listedQuery === search.value.trim());
@@ -1058,6 +1081,7 @@ async function initializePage() {
             practiceButton.textContent = practiceLabel();
             clozeButton.textContent = clozeLabel();
             dictationButton.textContent = '练原声听写';
+            translationButton.textContent = translationLabel;
             sourceRecallButton.textContent = '复习本素材卡点';
             for (const button of [practiceButton, ...sentenceButtons]) { button.setAttribute('aria-expanded', 'false'); }
         }
@@ -1097,8 +1121,11 @@ async function initializePage() {
             }
             cancelSentenceSearch();
             const listening = button === dictationButton;
+            const translating = button === translationButton;
             /** @type {PracticeMode} */
-            const mode = listening ? 'dictation' : (category === 'recent-recall' ? 'recall' : 'cloze');
+            let mode = category === 'recent-recall' ? 'recall' : 'cloze';
+            if (listening) { mode = 'dictation'; }
+            if (translating) { mode = 'translation'; }
             /** @type {(() => Promise<DictationRound>) | undefined} */
             let loadNextRound;
             /**
@@ -1106,12 +1133,12 @@ async function initializePage() {
              * @returns {void}
              */
             const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, mode, makeSavedAudioButton, clearSavedAudio, loadNextRound));
-            let prompts = listening ? dictation : cloze;
+            let prompts = listening ? dictation : (translating ? translations : cloze);
             if (activePractice === button || (mode === 'recall' && recallRound) || (!listening && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
                 open(prompts);
                 return;
             }
-            const request = {button, label: listening ? '练原声听写' : clozeLabel()};
+            const request = {button, label: listening ? '练原声听写' : (translating ? translationLabel : clozeLabel())};
             sentenceSearch = request;
             button.textContent = '取消找题';
             setStatus(listening ? '正在找带原声的原句…' : '正在找可练的原句…');
@@ -1158,6 +1185,8 @@ async function initializePage() {
                 open(prompts);
             } else if (listening) {
                 setStatus(failed ? '暂时没能查到更多录音。可多加载一些记录，再试听写。' : '这里没有能练听写的录音。可以换个分类或清空搜索再试。');
+            } else if (translating && !failed) {
+                setStatus('这里还没有带译文的整句。划词翻译后，可以点「记住这句」。');
             } else {
                 setStatus(failed ? '后面的原句没有读到，可以再试一次。' : '这次没找到能练的原句，可以继续看记录。');
             }
@@ -1165,7 +1194,7 @@ async function initializePage() {
         sourceRecallButton.addEventListener('click', () => {
             togglePractice(sourceRecallButton, () => showSentencePractice(practice, sourceRecall, 'recall', makeSavedAudioButton, clearSavedAudio));
         });
-        for (const button of [clozeButton, dictationButton]) {
+        for (const button of [clozeButton, dictationButton, translationButton]) {
             button.addEventListener('click', () => { void startSentencePractice(button); });
         }
 
@@ -1623,6 +1652,9 @@ listedQuery :
             const practiceRows = !waiting && recall && recallRound ? recallRound : rows;
             cloze = loading || listError ? [] : sentencePrompts(practiceRows, [], recall ? 'recall' : 'cloze');
             dictation = recall || loading || listError ? [] : sentencePrompts(rows, [], 'dictation');
+            translations = waiting || loading || listError ? [] : sentencePrompts(rows, [], 'translation');
+            const canFindTranslation = translations.length > 0 || activePractice === translationButton || (category === 'source' && moreScopedPrompts());
+            translationButton.hidden = waiting || loading || Boolean(listError) || !['all', 'saved', 'source'].includes(category) || !canFindTranslation;
             if (activePractice !== clozeButton && sentenceSearch?.button !== clozeButton) { clozeButton.textContent = clozeLabel(); }
             clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
             const canOfferDictation = total > 0 || dictation.length > 0 || activePractice === dictationButton;

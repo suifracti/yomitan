@@ -73,6 +73,7 @@ function makePageDom() {
             <button id="study-library-refresh"></button>
             <button id="study-library-practice-button" hidden>用旧原句辨词义</button>
             <button id="study-library-cloze-button" hidden>练原句填空</button>
+            <button id="study-library-translation-button" hidden>练整句理解</button>
             <button id="study-library-dictation-button" hidden>练原声听写</button>
             <button id="study-library-source-recall" hidden>复习本素材卡点</button>
             <button id="study-library-listen-source" hidden>回视频练一轮</button>
@@ -85,6 +86,59 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('practises saved whole sentences from the same source without making word cloze questions', async () => {
+        vi.resetModules();
+        makePageDom();
+        const url = 'https://example.test/reading';
+        const first = {
+            id: 'a'.repeat(32),
+            vaultSaved: true,
+            ankiState: 'not-requested',
+            entry: {kind: 'sentence', word: 'The stairs were steep.', sentence: 'The stairs were steep.', translation: '楼梯很陡。', language: 'en', title: 'Reading practice', url},
+            articleHref: `${url}#:~:text=The%20stairs`,
+        };
+        const second = {
+            ...first,
+            id: 'b'.repeat(32),
+            entry: {...first.entry, word: 'The air was cold.', sentence: 'The air was cold.', translation: '空气很冷。'},
+        };
+        const noTranslation = {...first, id: 'c'.repeat(32), entry: {...first.entry, word: 'Another saved sentence.', sentence: 'Another saved sentence.', translation: ''}};
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}, storage: {local: {get: async () => ({})}}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action !== 'libraryList') { return []; }
+            return {items: payload.offset ? [second] : [first, noTranslation], total: 3, canSearch: true};
+        });
+        const old = location.href;
+        history.replaceState(null, '', `?source=${encodeURIComponent(url)}`);
+        try {
+            await import('../ext/js/pages/study-library.js');
+            const button = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-translation-button'));
+            const panel = /** @type {HTMLElement} */ (document.getElementById('study-library-practice'));
+            const press = (/** @type {string} */ text) => [...panel.querySelectorAll('button')].find((b) => b.textContent === text)?.click();
+            await vi.waitFor(() => expect(button.hidden).toBe(false));
+            button.click();
+            await vi.waitFor(() => expect(panel.textContent).toContain('The stairs were steep.'));
+            expect(panel.textContent).toContain('1 / 2');
+            expect(panel.textContent).not.toContain('楼梯很陡。');
+            expect(panel.querySelector('input, textarea')).toBeNull();
+            press('看保存的译文');
+            expect(panel.textContent).toContain('楼梯很陡。');
+            expect(panel.querySelector('[href*="studyRecordId"]')?.href).toContain(first.id);
+            expect(panel.querySelector('[href*=":~:text"]')?.href).toBe(first.articleHref);
+            press('下一句');
+            expect(panel.textContent).toContain('The air was cold.');
+            expect(panel.textContent).not.toContain('空气很冷。');
+            expect(panel.textContent).not.toContain('楼梯很陡。');
+            button.click();
+            expect(panel.hidden).toBe(true);
+            expect(mocks.studyCall.mock.calls).toEqual([
+                ['libraryList', {language: 'en', scope: 'source', url, title: '', offset: 0}],
+                ['libraryList', {language: 'en', scope: 'source', url, title: '', offset: 2}],
+            ]);
+        } finally { history.replaceState(null, '', old); }
+    });
+
     test('the lookup practice link opens an old sentence for the same word, not a search hit for a different word', async () => {
         vi.resetModules();
         vi.stubGlobal('chrome', {
