@@ -231,11 +231,12 @@ describe('study library page', () => {
             {id: '1'.repeat(32), vaultSaved: true, entry: {word: 'silent', sentence: 'A silent record.'}},
             {id: '2'.repeat(32), vaultSaved: true, audioContextChanged: true, entry: {word: 'edited', sentence: 'An edited record.'}, media: {audio: {name: 'old.webm'}}},
             {id: '3'.repeat(32), vaultSaved: true, entry: {word: 'on', sentence: 'We went on and on!', translation: '我们接着说个不停！'}, media: {audio: {name: 'exact.webm'}}},
+            {id: '4'.repeat(32), vaultSaved: true, entry: {word: 'loud', sentence: 'It was not only loud, but clear.'}, media: {audio: {name: 'later.webm'}}},
         ];
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         mocks.studyCall.mockImplementation(async (action, payload) => {
             if (action === 'libraryList') {
-                if (payload.practice === 'dictation') { return {items: [items[1], items[2]], total: 2}; }
+                if (payload.practice === 'dictation') { return {items: items.slice(1), total: 3}; }
                 return {items: items.slice(0, 2), total: items.length, canSearch: true};
             }
             if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
@@ -247,24 +248,44 @@ describe('study library page', () => {
         await vi.waitFor(() => expect(start.hidden).toBe(false));
         const baseline = mocks.studyCall.mock.calls.length;
         start.click();
-        await vi.waitFor(() => expect(panel.textContent).toContain('1 / 1'));
+        await vi.waitFor(() => expect(panel.textContent).toContain('1 / 2'));
         expect(panel.textContent).not.toContain('We went');
         expect(panel.textContent).not.toContain('我们接着');
         const find = ['libraryList', {language: 'en', scope: 'all', url: '', title: '', practice: 'dictation'}];
         expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find]);
         /** @type {HTMLButtonElement} */ (panel.querySelector('button')).click();
         await vi.waitFor(() => expect(startAudio).toHaveBeenCalledOnce());
-        const field = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
-        field.value = 'we went on and on';
-        field.form?.dispatchEvent(new Event('submit', {cancelable: true}));
+        const submit = (/** @type {string} */ answer) => {
+            const field = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
+            field.value = answer;
+            field.form?.dispatchEvent(new Event('submit', {cancelable: true}));
+        };
+        const next = () => { /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click(); };
+        submit('we went on and on');
         expect(panel.textContent).toContain('和原句一致');
         expect(panel.textContent).toContain('We went on and on!');
         expect(panel.textContent).toContain('我们接着说个不停！');
         const link = /** @type {HTMLAnchorElement} */ (panel.querySelector('a'));
         expect(new URL(link.href).searchParams.get('studyRecordId')).toBe(items[2].id);
-        /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
+        next();
+        expect(panel.textContent).toContain('2 / 2');
+        expect(panel.textContent).not.toContain('but clear');
+        submit('It was only loud but clearer');
+        expect([...panel.querySelectorAll('mark')].map((mark) => mark.textContent)).toEqual(['clearer', 'not', 'clear']);
+        expect(panel.textContent).toContain('It was not only loud, but clear.');
+        next();
         expect(panel.textContent).toContain('本轮结束');
         expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find, ['libraryAudioRead', {id: items[2].id}]]);
+        [...panel.querySelectorAll('button')].find((b) => b.textContent === '重听没对上的 1 句')?.click();
+        expect(panel.textContent).toContain('重听没对上的 · 1 / 1');
+        expect(panel.textContent).not.toContain('but clear');
+        /** @type {HTMLButtonElement} */ (panel.querySelector('button')).click();
+        await vi.waitFor(() => expect(startAudio).toHaveBeenCalledTimes(2));
+        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([find, ['libraryAudioRead', {id: items[2].id}], ['libraryAudioRead', {id: items[3].id}]]);
+        submit('it was not only loud but clear');
+        expect(panel.textContent).toContain('和原句一致');
+        next();
+        expect(panel.textContent).not.toContain('重听没对上的');
     });
 
     test('uses saved sentences for a short cloze without grading or changing the records', async () => {

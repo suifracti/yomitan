@@ -380,6 +380,56 @@ function sentencePrompts(rows, picked, dictation) {
 }
 
 /**
+ * Align matching words in order so one omission does not mark the rest of the sentence.
+ * @param {string} written
+ * @param {string} original
+ * @returns {{written: {start: number, end: number}[], original: {start: number, end: number}[]}}
+ */
+function differingWords(written, original) {
+    const words = (/** @type {string} */ text) => Array.from(text.matchAll(/[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*/gu), (hit) => {
+        const [word] = hit;
+        const start = hit.index;
+        return {start, end: start + word.length, key: word.normalize('NFC').toLowerCase().replaceAll('’', "'")};
+    });
+    const left = words(written);
+    const right = words(original);
+    const result = {written: /** @type {{start: number, end: number}[]} */ ([]), original: /** @type {{start: number, end: number}[]} */ ([])};
+    if (left.length === right.length && left.every(({key}, i) => key === right[i].key)) { return result; }
+    const shared = Array.from({length: left.length + 1}, () => new Uint16Array(right.length + 1));
+    for (let i = left.length - 1; i >= 0; --i) {
+        for (let j = right.length - 1; j >= 0; --j) {
+            shared[i][j] = left[i].key === right[j].key ? 1 + shared[i + 1][j + 1] : Math.max(shared[i + 1][j], shared[i][j + 1]);
+        }
+    }
+    for (let i = 0, j = 0; i < left.length || j < right.length;) {
+        if (i < left.length && j < right.length && left[i].key === right[j].key) {
+            ++i;
+            ++j;
+        } else if (j === right.length || (i < left.length && shared[i + 1][j] >= shared[i][j + 1])) {
+            result.written.push(left[i++]);
+        } else {
+            result.original.push(right[j++]);
+        }
+    }
+    return result;
+}
+
+/**
+ * @param {HTMLElement} line
+ * @param {string} text
+ * @param {{start: number, end: number}[]} offsets
+ */
+function markDictation(line, text, offsets) {
+    line.replaceChildren();
+    let at = 0;
+    for (const {start, end} of offsets) {
+        line.append(text.slice(at, start), Object.assign(document.createElement('mark'), {textContent: text.slice(start, end)}));
+        at = end;
+    }
+    line.append(text.slice(at));
+}
+
+/**
  * @param {HTMLElement} panel
  * @param {SentencePrompt[]} prompts
  * @param {boolean} dictation
@@ -389,21 +439,38 @@ function sentencePrompts(rows, picked, dictation) {
 function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAudio) {
     const heading = document.createElement('h2');
     heading.tabIndex = -1;
+    let queue = prompts;
     let index = 0;
+    let retrying = false;
+    /** @type {Set<SentencePrompt>} */
+    const missed = new Set();
     const show = () => {
-        if (index === prompts.length) {
+        if (index === queue.length) {
             heading.textContent = '本轮结束';
             panel.replaceChildren(heading, Object.assign(document.createElement('p'), {textContent: '可返回学习库继续找原句。这轮不保存成绩。'}));
+            if (missed.size > 0) {
+                const retry = Object.assign(document.createElement('button'), {type: 'button', textContent: `重听没对上的 ${missed.size} 句`});
+                retry.onclick = () => {
+                    queue = [...missed];
+                    missed.clear();
+                    index = 0;
+                    retrying = true;
+                    show();
+                };
+                panel.append(retry);
+            }
             heading.focus();
             return;
         }
-        const {row, text, answer, hint} = prompts[index];
-        heading.textContent = `${dictation ? '练原声听写' : '练原句填空'} · ${index + 1} / ${prompts.length}`;
+        const prompt = queue[index];
+        const {row, text, answer, hint} = prompt;
+        const title = dictation ? '练原声听写' : '练原句填空';
+        heading.textContent = `${retrying ? '重听没对上的' : title} · ${index + 1} / ${queue.length}`;
         const quote = document.createElement('p');
         quote.lang = 'en';
         quote.className = 'study-library-practice-quote';
         quote.textContent = text;
-        const clue = Object.assign(document.createElement('p'), {textContent: dictation ? '先听录音，写下听到的整句。大小写和句末标点不计。' : (hint ? `你当时的提示：${hint}` : '想想你当时在这里读到的用法。')});
+        const clue = Object.assign(document.createElement('p'), {textContent: dictation ? '先听录音，写下听到的整句。大小写和标点不计。' : (hint ? `你当时的提示：${hint}` : '想想你当时在这里读到的用法。')});
         const form = document.createElement('form');
         form.className = 'study-library-practice-choices';
         const label = Object.assign(document.createElement('label'), {htmlFor: 'study-library-cloze-answer', textContent: dictation ? '写下听到的原句' : '填原句里的词或短语'});
@@ -413,6 +480,7 @@ function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAu
         input.autocomplete = 'off';
         input.required = true;
         input.spellcheck = false;
+        if (dictation) { input.maxLength = 2400; }
         input.setAttribute('autocapitalize', 'none');
         const check = Object.assign(document.createElement('button'), {type: 'submit', textContent: '核对原文'});
         const reveal = Object.assign(document.createElement('button'), {type: 'button', textContent: dictation ? '直接看原句' : '直接看答案'});
@@ -422,20 +490,36 @@ function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAu
             show();
         };
         const showAnswer = (/** @type {string} */ guess = '') => {
-            const normalize = (/** @type {string} */ value) => {
-                const clean = value.trim().toLowerCase()
-                    .replaceAll('’', "'")
-                    .replaceAll(/\s+/g, ' ');
-                return dictation ? clean.replace(/[.!?]+$/, '') : clean;
-            };
+            const normalize = (/** @type {string} */ value) => value.trim().toLowerCase()
+                .replaceAll('’', "'")
+                .replaceAll(/\s+/g, ' ');
+            const difference = dictation && guess ? differingWords(guess, answer) : null;
+            const agrees = Boolean(guess) && (difference ? difference.written.length + difference.original.length === 0 : normalize(guess) === normalize(answer));
             if (dictation) {
-                form.before(quote);
+                if (difference && !agrees) {
+                    missed.add(prompt);
+                    const comparison = document.createElement('div');
+                    comparison.className = 'study-library-dictation';
+                    const written = document.createElement('p');
+                    written.className = quote.className;
+                    written.lang = 'en';
+                    markDictation(written, guess, difference.written);
+                    markDictation(quote, answer, difference.original);
+                    comparison.append(
+                        Object.assign(document.createElement('small'), {textContent: '你的听写'}),
+                        written,
+                        Object.assign(document.createElement('small'), {textContent: '原句'}),
+                        quote,
+                    );
+                    form.before(comparison);
+                } else {
+                    form.before(quote);
+                }
                 if (row.entry.translation) { form.before(Object.assign(document.createElement('p'), {textContent: row.entry.translation})); }
             } else {
                 writeSentence(quote, row.entry.sentence, answer, true);
             }
-            const agrees = Boolean(guess) && normalize(guess) === normalize(answer);
-            const different = dictation ? '和原句有不同，可对照着再听一次。' : '和原句用词不同。';
+            const different = dictation ? '划线的是两边没对上的词，可以再听一次。' : '和原句用词不同。';
             const prefix = guess ? (agrees ? '和原句一致。' : different) : '';
             const feedback = document.createElement('p');
             feedback.tabIndex = -1;
@@ -448,19 +532,17 @@ function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAu
             resume.href = createResumeUrl(row, chrome.runtime.getURL('/search.html'));
             resume.target = '_blank';
             resume.rel = 'noopener noreferrer';
-            const next = Object.assign(document.createElement('button'), {type: 'button', textContent: index + 1 === prompts.length ? '完成这轮' : '下一句'});
+            const next = Object.assign(document.createElement('button'), {type: 'button', textContent: index + 1 === queue.length ? '完成这轮' : '下一句'});
             next.dataset.clozeNext = '';
             next.onclick = advance;
             actions.append(next, resume);
             form.replaceWith(feedback, actions);
-            if (dictation && guess && !agrees) {
-                feedback.before(Object.assign(document.createElement('p'), {textContent: `你写的：${guess.trim()}`}));
-            }
             feedback.focus();
         };
         form.onsubmit = (event) => {
             event.preventDefault();
-            if (input.value.trim()) { showAnswer(input.value); }
+            const guess = input.value.trim();
+            if (guess) { showAnswer(guess); }
         };
         reveal.onclick = () => showAnswer();
         form.append(label, input, check, reveal);
