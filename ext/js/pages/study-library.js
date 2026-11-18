@@ -461,6 +461,7 @@ async function initializePage() {
         const records = new Map();
         /** @type {LocalSavedWord[]} */
         let savedWords = [];
+        let savedRead = 0;
         let savedReadError = '';
         let syncPendingError = '';
         let pendingSyncCount = 0;
@@ -512,15 +513,19 @@ async function initializePage() {
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
+            const request = ++savedRead;
             try {
+                const next = normalizeSavedWords(await studyCall('saved'));
+                if (request !== savedRead) { return; }
                 const previous = savedWords;
-                savedWords = normalizeSavedWords(await studyCall('saved'));
+                savedWords = next;
                 for (const saved of previous) {
                     if (!savedWords.some((row) => row.id === saved.id)) { updateLoadedFavorite(saved, false); }
                 }
                 for (const saved of savedWords) { updateLoadedFavorite(saved, true); }
                 savedReadError = '';
             } catch (error) {
+                if (request !== savedRead) { return; }
                 savedReadError = error instanceof Error ? error.message : '本地收藏读取失败。';
             }
             render();
@@ -1009,18 +1014,20 @@ listedQuery :
             render();
             const start = reset ? 0 : offset;
             syncPendingError = '';
-            if (!readOnly) {
-                try {
-                    const result = await studyCall('syncPending');
-                    const pending = /** @type {import('study').PendingSyncTask[]} */ (Array.isArray(result) ? result : []);
-                    showOldUpdates(pending);
-                    pendingSyncCount = pending.filter((task) => !task.reviewOnly).length;
-                } catch (error) {
-                    syncPendingError = error instanceof Error ? error.message : '待同步队列检查失败。';
-                }
-            }
-            if ((!loaded || !readOnly) && tab !== 'source') { await refreshSavedWords(); }
             try {
+                if (!readOnly) {
+                    try {
+                        const result = await studyCall('syncPending');
+                        const pending = /** @type {import('study').PendingSyncTask[]} */ (Array.isArray(result) ? result : []);
+                        showOldUpdates(pending);
+                        pendingSyncCount = pending.filter((task) => !task.reviewOnly).length;
+                    } catch (error) {
+                        syncPendingError = error instanceof Error ? error.message : '待同步队列检查失败。';
+                    }
+                }
+                if (obsolete()) { return; }
+                if ((!loaded || !readOnly) && tab !== 'source') { await refreshSavedWords(); }
+                if (obsolete()) { return; }
                 const scope = indexed || ['pending', 'anki-only', 'manual-known', 'source'].includes(tab) ? tab : 'all';
                 const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? articleUrl : '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
                 const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[]}|null} */ (value);
@@ -1062,6 +1069,7 @@ listedQuery :
                         if (!reconciled) { throw new Error('刷新没有返回这条记录。'); }
                         records.set(record.id, {...reconciled, manualKnown: record.manualKnown, reconcileState: 'verified'});
                     } catch (error) {
+                        if (obsolete()) { return; }
                         records.set(record.id, {...record, reconcileState: 'failed', reconcileError: error instanceof Error ? error.message : '刷新失败。'});
                     }
                     render();

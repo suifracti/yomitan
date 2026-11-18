@@ -91,7 +91,7 @@ describe('study library page', () => {
         }
     });
 
-    test('keeps a pending-filter click made while the previous page is loading', async () => {
+    test('drops outdated list work but keeps the pending filter selected during loading', async () => {
         vi.resetModules();
         makePageDom();
         vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
@@ -104,8 +104,13 @@ describe('study library page', () => {
         /** @type {() => void} */
         let release = () => {};
         const first = new Promise((resolve) => { release = () => resolve({items: [], total: 0}); });
+        /** @type {() => void} */
+        let releaseSync = () => {};
+        const secondSync = new Promise((resolve) => { releaseSync = () => resolve([]); });
+        let syncs = 0;
         mocks.studyCall.mockImplementation(async (action, value) => {
-            if (action === 'syncPending' || action === 'saved') { return []; }
+            if (action === 'syncPending') { return ++syncs === 2 ? secondSync : []; }
+            if (action === 'saved') { return []; }
             if (action === 'libraryList') { return value.scope === 'pending' ? {items: [pending], total: 1, needsAttention: 1} : first; }
             if (action === 'libraryReconcile') { return pending; }
             if (action === 'ankiToday') { return {paused: true}; }
@@ -113,10 +118,14 @@ describe('study library page', () => {
         });
         await import('../ext/js/pages/study-library.js');
         await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryList', expect.objectContaining({scope: 'all'})));
-        document.querySelector('[data-library-category="pending"]').click();
+        document.querySelector('[data-library-category="favorites"]').click();
         release();
+        await vi.waitFor(() => expect(syncs).toBe(2));
+        document.querySelector('[data-library-category="pending"]').click();
+        releaseSync();
         await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryList', expect.objectContaining({scope: 'pending'})));
         await vi.waitFor(() => expect(document.querySelector('[data-record-id] h2')?.textContent).toBe('brick'));
+        expect(mocks.studyCall.mock.calls.filter(([action]) => action === 'libraryList')).toHaveLength(2);
         expect(document.querySelector('[data-library-category="pending"]').getAttribute('aria-pressed')).toBe('true');
         expect(document.querySelector('[data-library-category="pending"]').textContent).toBe('需处理 1');
     });
@@ -126,26 +135,42 @@ describe('study library page', () => {
         makePageDom();
         let changed;
         let rows = [];
+        /** @type {Promise<unknown>|null} */
+        let delayed = null;
         vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}, storage: {onChanged: {addListener: /** @param {(changes: Record<string, unknown>, area: string) => void} listener */ (listener) => { changed = listener; }}}});
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         mocks.studyCall.mockImplementation(async (action) => {
-            if (action === 'saved') { return rows; }
+            if (action === 'saved') {
+                const result = delayed ?? rows;
+                delayed = null;
+                return result;
+            }
             if (action === 'syncPending') { return []; }
-            if (action === 'libraryList') { return {items: [], total: 0}; }
+            if (action === 'ankiToday') { return {paused: true}; }
+            if (action === 'libraryList') { return {items: [], total: 0, canSearch: true}; }
             throw new Error(`Unexpected call: ${action}`);
         });
         await import('../ext/js/pages/study-library.js');
         await vi.waitFor(() => expect(document.querySelector('.study-library-empty')?.textContent).toContain('没有已读取'));
         document.querySelector('[data-library-category="favorites"]').click();
+        await vi.waitFor(() => expect(document.querySelector('#study-library-status')?.textContent).toContain('本页 0 条已逐条核对'));
         expect(changed).toBeTypeOf('function');
         mocks.studyCall.mockClear();
         rows = [{id: 'new-star', word: 'absolutely', sentence: 'A public fixture.', url: '', title: ''}];
         changed({studySavedWordsV1: {}}, 'local');
         await vi.waitFor(() => expect(document.querySelector('[data-record-id="new-star"] h2')?.textContent).toBe('absolutely'));
+        const snapshot = rows;
+        /** @type {() => void} */
+        let finishOld = () => {};
+        delayed = new Promise((resolve) => { finishOld = () => resolve(snapshot); });
+        changed({studySavedWordsV1: {}}, 'local');
         rows = [];
         changed({studySavedWordsV1: {}}, 'local');
         await vi.waitFor(() => expect(document.querySelector('[data-record-id="new-star"]')).toBeNull());
-        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['saved', 'saved']);
+        finishOld();
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        expect(document.querySelector('[data-record-id="new-star"]')).toBeNull();
+        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['saved', 'saved', 'saved']);
     });
 
     test('previews use cards for the exact saved sentence without rating the learner or adding a card', async () => {
@@ -187,6 +212,7 @@ describe('study library page', () => {
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(application));
         mocks.studyCall.mockImplementation(async (actionValue) => {
             switch (String(actionValue)) {
+                case 'ankiToday': return {paused: true};
                 case 'syncPending': return [];
                 case 'saved': return [];
                 case 'libraryList': return {items: [], total: 0};
@@ -220,7 +246,7 @@ describe('study library page', () => {
         }));
         expect(mocks.Frontend.mock.calls[0][0].hotkeyHandler).toBe(mocks.HotkeyHandler.mock.results[0].value);
         expect(mocks.Frontend.mock.results[0].value.prepare).toHaveBeenCalledOnce();
-        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['syncPending', 'saved', 'libraryList']);
+        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['ankiToday', 'syncPending', 'saved', 'libraryList']);
     });
 
     test('keeps library loading when the lookup frontend cannot start', async () => {
@@ -232,6 +258,7 @@ describe('study library page', () => {
         mocks.Frontend.mockImplementationOnce(() => ({prepare: vi.fn().mockRejectedValue(new Error('lookup init failed'))}));
         mocks.studyCall.mockImplementation(async (actionValue) => {
             switch (String(actionValue)) {
+                case 'ankiToday': return {paused: true};
                 case 'syncPending': return [];
                 case 'saved': return [];
                 case 'libraryList': return {items: [], total: 0};
@@ -242,7 +269,7 @@ describe('study library page', () => {
         await import('../ext/js/pages/study-library.js');
         await vi.waitFor(() => expect(document.querySelector('.study-library-empty')?.textContent).toContain('没有已读取'));
         await vi.waitFor(() => expect(document.querySelector('#study-library-status')?.textContent).toContain('lookup init failed'));
-        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['syncPending', 'saved', 'libraryList']);
+        expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['ankiToday', 'syncPending', 'saved', 'libraryList']);
     });
     test('filters actual save state and keeps favorite-only rows out of learned saves', async () => {
         makePageDom();
@@ -568,12 +595,14 @@ describe('study library page', () => {
                 const payload = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (payloadValue));
                 calls.push({action, payload});
                 switch (action) {
+                    case 'ankiToday': return {paused: true};
                     case 'syncPending': return [];
                     case 'saved': return [...savedRows];
                     case 'libraryList': return {items: [record], total: 1};
                     case 'libraryReconcile': return record;
                     case 'removeWord':
                         if (payload.id === 'failing-fav') { throw new Error('收藏暂时无法移除'); }
+                        if (payload.id === 'sync-fav') { record.favorite = false; }
                         savedRows = savedRows.filter((row) => row.id !== payload.id);
                         return true;
                     default: throw new Error(`Unexpected call: ${action}`);
@@ -605,9 +634,11 @@ describe('study library page', () => {
         expect(clearedRecord?.textContent).toContain('Anki 查看');
         expect(clearedRecord?.querySelector('[aria-pressed="false"]')?.textContent).toBe('☆ 收藏');
         document.querySelector('[data-library-category="favorites"]').click();
+        await vi.waitFor(() => expect(document.getElementById('study-library-status').textContent).toContain('本页 1 条已逐条核对'));
         expect(document.querySelector('[data-record-id="kept-library-record"]')).toBeNull();
         expect(document.querySelector('[data-record-id="failing-fav"]')).not.toBeNull();
         document.querySelector('[data-library-category="all"]').click();
+        await vi.waitFor(() => expect(document.getElementById('study-library-status').textContent).toContain('本页 1 条已逐条核对'));
         expect(document.querySelector('[data-record-id="kept-library-record"]')?.textContent).toContain('Anki 查看');
         expect(savedRows.map((row) => row.id)).toEqual(['failing-fav']);
         expect(downloadClick).toHaveBeenCalledOnce();

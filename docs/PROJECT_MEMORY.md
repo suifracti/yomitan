@@ -12,6 +12,7 @@
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
 | Anki 换了账户，一批已有的卡突然显示被删 | L-002；study_settings.auto_sync、study_sync.sync_profile |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
+| 切分类还在读上一个分类；取消的收藏又出现 | L-002；study-library.js 的 loadPage、refreshSavedWords |
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
@@ -90,7 +91,7 @@
 
 “卡已恢复却一直提示被删除”：自动同步原先只在记录还不是missing时比较ID是否消失；处于missing的记录即使同一Anki ID重新出现也不会核对，且mod未变时edited:1无法补触发。现复用每轮已有的带学习标签ID清单，关联ID缺失状态与记录missing状态不一致时才reconcile；恢复后安静轮次不再重复核对。新增临时删除→同ID/同mod返回→清除missing→安静一轮用例通过，原2000卡notesInfo只读当日编辑与候选用例也通过。没有实测Anki撤销按钮，不把替身情景冒充正式库行为；未新增扫描或改变排程。
 
-“点需处理没反应／切分类后空白”：学习库loadPage在loading时直接return，分类按钮先改category，因此前一次列表慢响应时会丢失新分类查询。现仅记住一个待刷新请求，旧列表返回后不提交过期快照，完成后读取当前所选分类；不加计时器或并发拉取。study-library-page.test.js新增慢列表期间切pending的DOM场景通过，原收藏/同步/冲突选择场景也通过；旧用例最初把已有ankiToday调用算进固定四次流程，现只从该断言排除今日条，保留原四步与载荷断言。JS及测试lint均0，未实测Chrome。
+“点需处理没反应／切分类后空白”：学习库 `loadPage` 在加载时只保留最新待刷新请求，旧列表返回后不提交过期快照；等待同步或本地收藏时换分类，则不再发错误分类的列表请求。收藏读取也按发起顺序丢掉旧回应，避免慢回执盖掉后来取消的星标。复用原分类队列与本地收藏监听，不新建第二套加载或同步。见[延迟切分类及星标反例](youtube-study-wiring.md#2026-11-18-快速切分类和取消收藏只采用最新读取)。
 
 **听音练习的题目是声音，不是题面文字（2026-11-18）**。若两个语境都用“听原声，拼写这个词。”考 just，纯文本的学习点指纹会相同，旧桥会返回已同步，却让第二条也关联第一张卡和第一段音频。新建听原声→意思、视频声音字幕、听音拼写卡时只认这条记录自己的卡片标签；不拿题面/答案查重替代对录音的选择。丢回执仍用原标签找回，不重复送卡。文字卡仍可跨例句关联同一学习点；不批量改过去的关联、媒体、模板或排程。复现与边界见[原声卡记录](youtube-study-wiring.md#2026-11-18-相同题面不同原声的听写卡)。
 
