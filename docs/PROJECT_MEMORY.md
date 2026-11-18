@@ -60,6 +60,7 @@
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
+| 另一个标签拖动悬浮球后，显示方式或本站显隐变回去 | L-010；page-prefs.js、StudyService 的设置写队列 |
 | 长句翻完后改字幕显示，结果又空了／刷新想继续读译文 | L-010；study-translation 的 prepareParallelSentence、paintSentenceTranslation |
 | 问过 AI 后手动点「记住它」，笔记的原句译文变了 | L-010；study-translation 的 translationFor |
 | 翻译中途切轨后「翻译全文」一直灰色；确认条留着不走 | L-010；YoutubeReader._finishTranslation、confirmTranslation |
@@ -322,6 +323,8 @@
 **打开词卡不另翻正在翻译的字幕**：已经有译文时直接显示；正在请求时先打开词卡，借该行原有私有令牌和原句等同一批返回，不按英文串猜。取消、失败或等待超时则留「翻译本句」，不因设置通知自动补发；还没交给服务的字幕不挡住词卡翻译。复用的译文可随原句保存，不记作新的翻译轮次。见[浏览器双轨与请求数](youtube-study-wiring.md#2026-11-18-正在翻译的字幕与词卡共享结果)。
 
 **免费请求不能因中途切设置变成付费**：整页翻译以同一个引擎快照做确认、缓存和发请求；后台以实际准备使用的全局引擎核 `expectedEngine`，改了就保留原文，提示重试，不自动改投。模型确认让当前页排队段落共用；本人点的单句仍不弹确认。见[切换竞态与替身验证](youtube-study-wiring.md#2026-11-19-整页翻译切服务不跳过费用确认)。
+
+**网页翻译设置只交这次改动**：`page-prefs.js` 沿同一后台写队列合并，不用页面手头的整份设置重写。拖动、隐藏、恢复修改同站的独立字段；扩展菜单单站自动翻译只改这一站。旧设置不用迁移，翻译服务仍由原全局入口管理。见[跨标签交错写入](youtube-study-wiring.md#2026-11-19-三个入口不再互相盖掉网页翻译设置)。
 
 **只看译文不等于不能用原网页的链接**：悬停的原文只是提示，不可点击。含链接或可用按钮的段落才给就地展开入口，靠原节点的隐藏类切换；不复制链接或改写地址和监听。键盘展开后把焦点送到原控件。纯文本、双语、单句和失败状态不多一个入口。见[原链接和键盘操作](youtube-study-wiring.md#2026-11-19-只看译文也能用原网页的链接)。
 

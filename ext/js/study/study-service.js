@@ -28,6 +28,7 @@ import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
 import {NATIVE_ROUTES} from './native-routes.js';
+import {storePagePatch} from './page-prefs.js';
 import {mergeVideoState, storeSubtitlePatch, subtitlePrefsFrom, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY, VIDEO_STATE_KEY, videoStateScope} from './subtitle-prefs.js';
 
 /** @type {WeakSet<object>} */
@@ -755,8 +756,14 @@ export class StudyService {
         }
 
 
-        if (action === 'subtitlePrefsUpdate') {
-            const update = this.writes.then(() => storeSubtitlePatch(this.storage, /** @type {Partial<import('./subtitle-prefs.js').SubtitlePrefs>} */ (value ?? {})));
+        if (action === 'subtitlePrefsUpdate' || action === 'pagePrefsUpdate') {
+            const update = this.writes.then(async () => {
+                if (action === 'pagePrefsUpdate') {
+                    await storePagePatch(this.storage, /** @type {import('./page-prefs.js').PagePrefsPatch} */ (value ?? {}));
+                    return;
+                }
+                return await storeSubtitlePatch(this.storage, /** @type {Partial<import('./subtitle-prefs.js').SubtitlePrefs>} */ (value ?? {}));
+            });
             this.writes = update.then(() => {}, () => {});
             return await update;
         }
@@ -1430,6 +1437,17 @@ export function prepareStudyService(lookupDictionary = null) {
                 await chrome.storage.session.remove(key);
                 return pending.items;
             })().then((value) => reply({ok: true, value}), () => reply({ok: true, value: null}));
+            return true;
+        }
+        if (studyAction === 'pagePrefsUpdate' && sender.id === chrome.runtime.id && sender.frameId === 0 && /^(?:https?|file):/.test(sender.url ?? '')) {
+            const patch = /** @type {import('./page-prefs.js').PagePrefsPatch} */ (data ?? {});
+            const host = new URL(/** @type {string} */ (sender.url)).hostname;
+            if (Object.keys(patch).some((key) => key !== 'mode' && key !== 'ballSite') ||
+            (patch.ballSite && patch.ballSite.host !== host)) {
+                reply({ok: false, error: '只能更改翻译显示方式和这个网站的悬浮球。'});
+                return false;
+            }
+            void service.handle(studyAction, patch).then((value) => reply({ok: true, value}), () => reply({ok: false, error: '没能保存网页翻译设置，请再试一次。'}));
             return true;
         }
         // Readers run in their own web frame or a top-level local file. Remembering

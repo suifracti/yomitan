@@ -26,31 +26,17 @@ import {TextToSpeechAudio} from '../media/text-to-speech-audio.js';
 import {menuSelect} from './study-ui.js';
 import {confirmTranslation} from './translation-confirm.js';
 import {mountTranslationBall} from './translation-ball.js';
+import {DEFAULT_PAGE_PREFS, PAGE_PREFS_KEY, readPagePrefs, writePagePrefs} from './page-prefs.js';
 import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY} from './study-data.js';
 
 /** @typedef {import('./subtitle-prefs.js').SubtitleEngine} SubtitleEngine */
 /** @typedef {Pick<import('study').StudyConfig, 'model'|'effort'>} TranslationModel */
 
-export const PAGE_PREFS_KEY = 'studyPageTranslation';
-
-/** @typedef {{mode:'bilingual'|'translation',sites:string[],auto:boolean,selection:'button'|'auto'|'off',hoverKey:string,selectionDisplay:'inline'|'card',ball:boolean,ballSites:Record<string,{hidden?:boolean,y?:number}>}} PagePrefs */
-/** @type {PagePrefs} */
-const DEFAULTS = {mode: 'bilingual', sites: [], auto: false, selection: 'button', hoverKey: 'Alt', selectionDisplay: 'inline', ball: true, ballSites: {}};
+/** @typedef {import('./page-prefs.js').PagePrefs} PagePrefs */
 const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
 const ORIGINAL_CONTROLS = 'a[href],button:not([disabled])';
 const ORIGINAL_TOGGLE_STYLE = '.study-page-original-toggle{margin-inline-start:.5em;padding:0 .35em;font:inherit;font-size:.85em;line-height:1.4;background:var(--st-paper,#fbfaf7);color:var(--st-accent,#505ead);border:1px solid var(--st-line,#dce2eb);border-radius:4px;cursor:pointer}';
 const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:24px;height:24px;padding:0}.study-selection-trigger button{display:block;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--st-accent,#505ead);color:white;font:12px sans-serif;cursor:pointer}.study-selection-translation{border-left:2px solid var(--st-line,#dce2eb);padding-left:10px}.study-selection-actions{display:none;gap:2px;float:right}.study-selection-translation:hover .study-selection-actions,.study-selection-translation:focus-within .study-selection-actions,.study-selection-card .study-selection-actions{display:inline-flex}.study-selection-actions button,.study-selection-card header>button{all:unset;cursor:pointer;font:14px/1.4 sans-serif;padding:4px}.study-selection-card{width:360px;box-sizing:border-box;max-width:calc(100vw - 16px)}.study-selection-card header{display:flex;align-items:center;gap:4px}.study-selection-card .study-ui-select{flex:1;min-width:0}.study-selection-source{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;color:var(--st-muted,#6b7280)}.study-selection-source.is-expanded{display:block}.study-selection-card .study-page-translation{font-size:15px;color:var(--st-ink,#263248)}.study-page-flash{animation:study-page-flash .9s ease-out}@keyframes study-page-flash{from{background:var(--st-accent-soft,#e8eaff)}to{background:transparent}}.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
-
-/** @returns {Promise<PagePrefs>} */
-export async function readPagePrefs() {
-    const prefs = /** @type {Partial<PagePrefs>} */ ((await chrome.storage.local.get(PAGE_PREFS_KEY))[PAGE_PREFS_KEY]);
-    return {...DEFAULTS, ...prefs};
-}
-
-/** @param {Partial<PagePrefs>} patch */
-export async function writePagePrefs(patch) {
-    await chrome.storage.local.set({[PAGE_PREFS_KEY]: {...await readPagePrefs(), ...patch}});
-}
 
 /**
  * The same translation engine used by captions and sentence cards.
@@ -106,7 +92,7 @@ export class PageTranslate {
         /**
          *
          */
-        this.prefs = {...DEFAULTS};
+        this.prefs = {...DEFAULT_PAGE_PREFS};
         /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,manual:boolean,originalToggle?:HTMLButtonElement}>} */
         this.rows = new Map();
         /** @type {Map<string,Promise<string>>} */
@@ -156,7 +142,7 @@ export class PageTranslate {
         document.head.append(style);
         this.prefs = await readPagePrefs();
         this.bindSelection();
-        mountTranslationBall(this, writePagePrefs);
+        mountTranslationBall(this);
         onSubtitlePrefsChanged((prefs) => {
             const select = /** @type {HTMLSelectElement|null|undefined} */ (this.selectionCard?.querySelector('select'));
             if (select) { fillEngineSelect(select, prefs.engine); }
@@ -174,7 +160,7 @@ export class PageTranslate {
         chrome.storage.onChanged.addListener((changes, area) => {
             if (area !== 'local' || !changes[PAGE_PREFS_KEY]) { return; }
             const prefs = /** @type {PagePrefs} */ (changes[PAGE_PREFS_KEY].newValue);
-            this.prefs = {...DEFAULTS, ...prefs};
+            this.prefs = {...DEFAULT_PAGE_PREFS, ...prefs};
             this.paint();
             document.dispatchEvent(new Event('study-page-change'));
             if (this.prefs.selection === 'off') {
@@ -745,17 +731,10 @@ export async function preparePageControls(root, tab) {
     ballRestore?.addEventListener('click', (event) => {
         if (ballRestore.dataset.restore !== 'true') { return; }
         event.preventDefault();
-        void readPagePrefs().then((current) => {
-            const siteState = current.ballSites[host];
-            if (!siteState) { return; }
-            // Keep the dragged position; only the per-site hiding mark goes away.
-            const rest = {...siteState};
-            delete rest.hidden;
-            return writePagePrefs({ballSites: {...current.ballSites, [host]: rest}});
-        });
+        void writePagePrefs({ballSite: {host, hidden: false}});
     });
     auto?.addEventListener('change', () => { void writePagePrefs({auto: auto.checked}); });
-    site?.addEventListener('change', () => { void readPagePrefs().then((p) => writePagePrefs({sites: [...p.sites.filter((s) => s !== host), ...(site.checked ? [host] : [])]})); });
+    site?.addEventListener('change', () => { void writePagePrefs({alwaysSite: {host, enabled: site.checked}}); });
     sites?.addEventListener('change', () => { void writePagePrefs({sites: sites.value.split(/\s+/).filter(Boolean)}); });
     marks?.addEventListener('change', () => {
         void chrome.storage.local.get(WORD_MARKS_KEY).then((data) => {

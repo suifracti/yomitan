@@ -18,13 +18,13 @@
 import {menuSelect} from './study-ui.js';
 import {studyCall} from './study-client.js';
 import {translateText} from './page-translate.js';
+import {writePagePrefs} from './page-prefs.js';
 
 /**
  * The page's small, draggable entry point; uses the same controller and preferences.
  * @param {import('./page-translate.js').PageTranslate} page
- * @param {typeof import('./page-translate.js').writePagePrefs} save
  */
-export function mountTranslationBall(page, save) {
+export function mountTranslationBall(page) {
     if (window.top !== window || !/^https?:|^file:/.test(location.protocol)) { return; }
     const host = location.hostname;
     const root = document.createElement('aside');
@@ -45,7 +45,7 @@ export function mountTranslationBall(page, save) {
     }
     menu.append(mode);
     menuSelect(mode);
-    mode.onchange = () => { void save({mode: /** @type {'bilingual'|'translation'} */ (mode.value)}); };
+    mode.onchange = () => { void writePagePrefs({mode: /** @type {'bilingual'|'translation'} */ (mode.value)}); };
     const words = Object.assign(document.createElement('button'), {type: 'button', className: 'ball-row'});
     const count = (open = false) => {
         const detail = {count: 0, open};
@@ -89,7 +89,7 @@ export function mountTranslationBall(page, save) {
             if (label === '设置') {
                 void studyCall('openStudySettings');
             } else {
-                void save({ballSites: {...page.prefs.ballSites, [host]: {...page.prefs.ballSites[host], hidden: true}}});
+                void writePagePrefs({ballSite: {host, hidden: true}});
             }
         };
         menu.append(button);
@@ -120,7 +120,7 @@ export function mountTranslationBall(page, save) {
     };
     ball.onpointerup = () => {
         if (moved) {
-            void save({ballSites: {...page.prefs.ballSites, [host]: {...page.prefs.ballSites[host], y: Number.parseFloat(root.style.top) / innerHeight}}});
+            void writePagePrefs({ballSite: {host, y: Number.parseFloat(root.style.top) / innerHeight}});
         }
     };
     ball.onclick = () => {
