@@ -23,6 +23,12 @@ import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKind
 import {explainWordForm} from './study-word-forms.js';
 import {mountStuckHint} from './study-stuck.js';
 
+/** @typedef {Partial<import('study').LibraryEntry> & Record<string, unknown>} CardEntryExtras */
+/** @typedef {Required<import('study').CardDraft> & {deck: string, selected: boolean, useDefaultDeck: boolean}} EditableCardDraft */
+/** @typedef {{rows: EditableCardDraft[], open: boolean, mastery: import('./study-card-kinds.js').Mastery|'', draftedKinds: string[], entryExtras: CardEntryExtras}} CardEditorDraft */
+/** @type {WeakMap<HTMLElement, {snapshot: () => CardEditorDraft|undefined, restore: (draft: CardEditorDraft) => void}>} */
+export const studyCardEditors = new WeakMap();
+
 /**
  * @param {unknown} value
  * @returns {value is string}
@@ -40,7 +46,7 @@ const validLibraryId = (value) => typeof value === 'string' && /^[a-f0-9]{32}$/.
 export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const d = container.ownerDocument;
     const supplementAudio = media.supplementAudio === true;
-    /** @type {Partial<import('study').LibraryEntry> & Record<string, unknown>} Set by the "stuck" hint: a new sense or a phrase. */
+    /** @type {CardEntryExtras} Set by the "stuck" hint: a new sense or a phrase. */
     let entryExtras = {};
     /** @returns {import('study').LibraryEntry} */
     const entryOf = () => /** @type {import('study').LibraryEntry} */ ({...getEntry(), ...entryExtras});
@@ -157,6 +163,14 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const masteryLabel = d.createElement('span');
     masteryLabel.textContent = '掌握程度';
     masteryRow.append(masteryLabel);
+    const paintMastery = () => {
+        for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (masteryRow.querySelectorAll('[data-study-mastery]'))) {
+            button.setAttribute('aria-checked', String(button.dataset.studyMastery === mastery));
+        }
+        const recommended = mastery ? recommendedKinds(mastery, cardFacts()) : [];
+        for (const [kind, choice] of choiceButtons) { choice.classList.toggle('is-recommended', recommended.includes(kind)); }
+        return recommended;
+    };
     for (const [value, label] of /** @type {[import('./study-card-kinds.js').Mastery, string][]} */ (Object.entries(MASTERY_LABELS))) {
         const option = d.createElement('button');
         option.type = 'button';
@@ -167,10 +181,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         option.textContent = label;
         option.addEventListener('click', () => {
             mastery = value;
-            for (const button of masteryRow.querySelectorAll('[data-study-mastery]')) { button.setAttribute('aria-checked', String(button === option)); }
-            const recommended = recommendedKinds(value, cardFacts());
-            for (const [kind, choice] of choiceButtons) { choice.classList.toggle('is-recommended', recommended.includes(kind)); }
-            for (const kind of recommended) {
+            for (const kind of paintMastery()) {
                 if (!draftedKinds.has(kind)) { draftKind(kind); }
             }
         });
@@ -254,17 +265,25 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     draftCards.className = 'study-card-draft-list';
     const manualCards = d.createElement('div');
     manualCards.className = 'study-card-manual-list';
-    /** @type {HTMLFieldSetElement[]} */
-    const manualRows = [];
-    /** @param {Partial<import('study').CardDraft> & {deck?: string}} card */
-    const addManualRow = (card = {}) => {
+    /** @type {Map<HTMLFieldSetElement, () => EditableCardDraft>} */
+    const manualRows = new Map();
+    /** @param {HTMLTextAreaElement} field */
+    const growCardField = (field) => {
+        field.style.height = 'auto';
+        if (field.scrollHeight > 0) { field.style.height = `${field.scrollHeight}px`; }
+    };
+    /**
+     * @param {Partial<EditableCardDraft>} card
+     * @param {boolean} focus
+     */
+    const addManualRow = (card = {}, focus = true) => {
         const row = d.createElement('fieldset');
         row.className = 'study-card-editor';
         const selectedLabel = d.createElement('label');
         selectedLabel.className = 'study-card-select-label';
         const selected = d.createElement('input');
         selected.type = 'checkbox';
-        selected.checked = true;
+        selected.checked = card.selected ?? true;
         selected.dataset.studyCardSelect = '';
         selected.className = 'scan-disable';
         selectedLabel.append(selected, d.createTextNode('加入'));
@@ -302,7 +321,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         deck.dataset.studyCardDeck = '';
         deck.maxLength = 200;
         const selectedDeck = () => configuredDeck(/** @type {import('study').CardKind} */ (kind.value));
-        let useDefaultDeck = card.deck === void 0;
+        let useDefaultDeck = card.useDefaultDeck ?? card.deck === void 0;
         deck.value = card.deck ?? selectedDeck();
         deck.addEventListener('input', () => { useDefaultDeck = !deck.value.trim(); });
         kind.addEventListener('change', () => {
@@ -315,12 +334,19 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         remove.textContent = '移除';
         remove.addEventListener('click', () => {
             row.remove();
+            manualRows.delete(row);
             updateSubmitState();
         });
         frontLabel.append(front);
         backLabel.append(back);
         row.append(selectedLabel, kindLabel, frontLabel, backLabel, deckLabel, remove);
-        manualCards.append(row); manualRows.push(row);
+        manualCards.append(row);
+        manualRows.set(row, () => ({front: front.value,
+            back: back.value,
+            kind: /** @type {import('study').CardKind} */ (kind.value),
+            deck: deck.value,
+            selected: selected.checked,
+            useDefaultDeck}));
         void practiceReady.then((config) => {
             if (!config?.practiceEnabled || disposed || !isCurrent()) { return; }
             const practice = d.createElement('div');
@@ -375,19 +401,14 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             });
         });
 
-        /** @param {HTMLTextAreaElement} field */
-        const grow = (field) => {
-            field.style.height = 'auto';
-            field.style.height = `${field.scrollHeight}px`;
-        };
         for (const field of [front, back]) {
-            grow(field);
-            field.addEventListener('input', () => { grow(field); });
+            growCardField(field);
+            field.addEventListener('input', () => { growCardField(field); });
         }
         row.addEventListener('input', updateSubmitState);
         row.addEventListener('change', updateSubmitState);
         updateSubmitState();
-        front.focus();
+        if (focus) { front.focus(); }
     };
     const addRow = d.createElement('button');
     addRow.type = 'button';
@@ -473,7 +494,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     /** @returns {void} */
     function updateSubmitState() {
         const draftsSelected = draftCards.querySelectorAll('input[data-study-review-card]:checked').length > 0;
-        const manualSelected = manualRows.some((row) => row.isConnected && (/** @type {HTMLInputElement|null} */ (row.querySelector('input[data-study-card-select]')))?.checked);
+        const manualSelected = [...manualRows.values()].some((read) => read().selected);
         submitCards.disabled = !draftsSelected && !manualSelected;
     }
     // Show the verified Anki result separately from the durable Obsidian note.
@@ -771,6 +792,11 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const togglePanel = () => {
         setPanelOpen(cardPanel.hidden);
         updateChoices();
+        if (!cardPanel.hidden) {
+            for (const field of manualCards.querySelectorAll('textarea[data-study-card-front], textarea[data-study-card-back]')) {
+                growCardField(/** @type {HTMLTextAreaElement} */ (field));
+            }
+        }
         if (!cardPanel.hidden && typeof cardPanel.scrollIntoView === 'function') {
             d.defaultView?.requestAnimationFrame(() => {
                 if (isCurrent()) { cardPanel.scrollIntoView({block: 'nearest'}); }
@@ -790,12 +816,9 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         for (const row of /** @type {NodeListOf<HTMLInputElement>} */ (draftCards.querySelectorAll('input[data-study-review-card]:checked'))) {
             cards.push({front: row.dataset.front || '', back: row.dataset.back || '', kind: row.dataset.kind || 'meaning', ...(row.dataset.deck ? {deck: row.dataset.deck} : {})});
         }
-        for (const row of manualRows.filter((item) => item.isConnected && (/** @type {HTMLInputElement|null} */ (item.querySelector('input[data-study-card-select]')))?.checked)) {
-            const front = (/** @type {HTMLTextAreaElement|null} */ (row.querySelector('textarea[data-study-card-front]')))?.value.trim() ?? '';
-            const back = (/** @type {HTMLTextAreaElement|null} */ (row.querySelector('textarea[data-study-card-back]')))?.value.trim() ?? '';
-            const kind = (/** @type {HTMLSelectElement|null} */ (row.querySelector('select[data-study-card-kind]')))?.value || 'meaning';
-            const deck = (/** @type {HTMLInputElement|null} */ (row.querySelector('input[data-study-card-deck]')))?.value.trim() ?? '';
-            cards.push({front, back, kind, ...(deck ? {deck} : {})});
+        for (const read of manualRows.values()) {
+            const {front, back, kind, deck, selected} = read();
+            if (selected) { cards.push({front: front.trim(), back: back.trim(), kind, ...(deck.trim() ? {deck: deck.trim()} : {})}); }
         }
         if (cards.length === 0 || cards.some((card) => !card.front || !card.back)) {
             addStatus.textContent = '请为每张已选卡片填写正面和背面。';
@@ -839,7 +862,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             cardPanel.hidden = true;
             container.closest('.study-focus-shell')?.classList.remove('sf-card-editor-open');
             addCard.textContent = receipt.needsAttention ? '制卡' : '再加一张卡';
-            manualRows.splice(0, manualRows.length);
+            manualRows.clear();
             draftedKinds.clear();
             manualCards.replaceChildren();
             for (const input of /** @type {NodeListOf<HTMLInputElement>} */ (draftCards.querySelectorAll('input[data-study-review-card]'))) { input.checked = false; }
@@ -903,6 +926,21 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         updatePanelControls();
         togglePanel();
     }
+    studyCardEditors.set(container, {
+        snapshot: () => {
+            if (manualRows.size === 0) { return void 0; }
+            return {rows: [...manualRows.values()].map((read) => read()), open: !cardPanel.hidden, mastery, draftedKinds: [...draftedKinds], entryExtras};
+        },
+        restore: (draft) => {
+            entryExtras = draft.entryExtras;
+            mastery = draft.mastery;
+            for (const kind of draft.draftedKinds) { draftedKinds.add(kind); }
+            setPanelOpen(draft.open && !ankiUnavailable());
+            for (const row of draft.rows) { addManualRow(row, false); }
+            paintMastery();
+            updateChoices();
+        },
+    });
     if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
         void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
             if (!isCurrent() || disposed) { return; }
@@ -912,6 +950,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     }
     void refreshPending().catch(() => {});
     return () => {
+        studyCardEditors.delete(container);
         disposed = true;
         mediaOperation++;
         void media.cancelCapture?.().catch(() => {});

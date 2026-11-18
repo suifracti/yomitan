@@ -90,6 +90,7 @@ export type HistoryState = {
     studyMediaRange?: import('study').MediaRange;
     studySentenceTranslation?: string;
     studyOpenCard?: boolean | 'audio';
+    studyAddCard?: boolean;
     /** What was the cause of the navigation. */
     cause?: 'queryParser';
     /** The sentence context. */

@@ -17,8 +17,9 @@
  */
 
 import {savedStudyRecordId} from '../study/study-data.js';
+import {studyCardEditors} from './study-library.js';
 
-/** @typedef {{question: string, editors: string[], editOpen: boolean, page: string}} Draft */
+/** @typedef {{question: string, editors: string[], editOpen: boolean, page: string, cards?: import('./study-library.js').CardEditorDraft}} Draft */
 /** @typedef {{word: string, identity: string, parked: boolean, details: import('display').ContentDetails, draft?: Draft}} WordTab */
 /** @typedef {{tabs: WordTab[], current?: WordTab, pending?: WordTab}} WordSession */
 /** @type {WeakMap<object, WordSession>} */
@@ -59,6 +60,10 @@ export function bindStudyWordTabs(display, nav, reveal) {
     if (!tab) {
         const params = Object.fromEntries(new URLSearchParams(location.search));
         params.type ??= 'terms'; params.query = display.query;
+        const tabState = {...state};
+        // A request to open the editor on first lookup must not toggle a restored draft.
+        delete tabState.studyAddCard;
+        if (tabState.studyOpenCard === true) { delete tabState.studyOpenCard; }
         tab = {word: display.query,
             identity,
             parked: false,
@@ -66,7 +71,7 @@ export function bindStudyWordTabs(display, nav, reveal) {
                 focus: true,
                 historyMode: 'overwrite',
                 params,
-                state: {...state},
+                state: tabState,
                 content: {...display.history.content},
             }};
         store.tabs.push(tab);
@@ -74,6 +79,7 @@ export function bindStudyWordTabs(display, nav, reveal) {
     store.current = tab;
     const current = tab;
     const draft = current.draft;
+    const context = nav.ownerDocument.getElementById('study-context');
     if (draft) {
         const question = document.querySelector('.study-followup');
         if (question instanceof HTMLTextAreaElement) {
@@ -89,6 +95,7 @@ export function bindStudyWordTabs(display, nav, reveal) {
             }
         }
         if (draft.page === '2') { document.querySelector('.sf-tabs button:last-child')?.dispatchEvent(new MouseEvent('click', {bubbles: true})); }
+        if (context && draft.cards) { studyCardEditors.get(context)?.restore(draft.cards); }
     }
     const render = () => {
         nav.replaceChildren();
@@ -134,7 +141,6 @@ export function bindStudyWordTabs(display, nav, reveal) {
             nav.append(group);
         }
     };
-    const context = nav.ownerDocument.getElementById('study-context');
     /** @param {Event} event */
     const confirmed = (event) => {
         const row = /** @type {CustomEvent<import('study').LibraryRecord | undefined>} */ (event).detail;
@@ -173,10 +179,12 @@ function capture(display) {
     const question = document.querySelector('.study-followup');
     const edit = document.querySelector('.study-more-actions');
     if (!(question instanceof HTMLTextAreaElement) && !(edit instanceof HTMLDetailsElement)) { return; }
+    const context = document.getElementById('study-context');
     current.draft = {
         question: question instanceof HTMLTextAreaElement ? question.value : '',
         editors: [...document.querySelectorAll('.study-more-actions textarea')].map((field) => /** @type {HTMLTextAreaElement} */ (field).value),
         editOpen: edit instanceof HTMLDetailsElement && edit.open,
         page: document.querySelector('.study-focus-shell')?.getAttribute('data-panel') ?? '0',
+        cards: context ? studyCardEditors.get(context)?.snapshot() : void 0,
     };
 }

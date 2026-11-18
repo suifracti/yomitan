@@ -70,7 +70,7 @@
 | 等待补交期间又改了同一条笔记；重连后旧改动不该覆盖 | L-002；StudySync 现有队列、study_sync.update 的 ifUnchanged |
 | 自动同步还在读 Anki，Obsidian 里再改了一次，旧答案却送到了卡上 | L-002；study_sync.reconcile 在 updateNoteFields 前核原语境版本 |
 | 问 AI 之后笔记原来的解释被换掉 | L-002；StudySync.learned、study_sync.update 的 fillMissing |
-| 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
+| 收起后同词同句只剩一个标签，或者切回时追问、手编卡题面丢了 | L-002；study-word-tabs.js、study-library.js、study-data.js 的 savedStudyRecordId |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
@@ -159,6 +159,8 @@
 **自动追问留在历史，只从空白处补足摘要**：以前 `StudySync.learned` 把生成字段当作普通改动提交，原解释因而被替换。现在原队列区分明确改动与 `fillMissing`，桥在写入前判断含义、译文、学习提示是否仍为空；已有值保留。旧 v2 合并项只有携带原值的字段才算主动修改，剩余生成建议按补空白交付。从同一张词卡主动「记住它」仍可保存本轮答案。这不改旧笔记格式或卡片创建规则。见[自动与手动的对照](youtube-study-wiring.md#2026-11-18-追问只补空白和历史)。
 
 **已保存的两个义项不能共用一枚弹窗标签**：旧标签身份只看词、原句、网址和视频位置，切回会恢复第一条笔记和草稿。现在标签、词卡和记录页都从 `savedStudyRecordId` 取明确身份，标签加短义。捕获草稿不再把 DOM 中自动匹配的候选笔记当作恢复对象；只有当前同来源的明确保存回执才刷新该标签的笔记、词义和轮次。正常词卡与受校验字幕不互相套用授权。见[两条草稿的切换验证](youtube-study-wiring.md#2026-11-18-收起词卡后不同义项各自保留草稿)。
+
+**切词卡标签保留还没提交的制卡编辑**：以往只存追问和原句编辑；重建词卡时手编题面会消失。同一标签现在额外保留可编辑卡的正反面、卡型、牌组、勾选、自评及对应的新意思／短语，回到标签不再重放初次「打开制卡」的动作。只用该窗口内存，关闭标签后不留；不恢复采集或批改，不自动保存或制卡。见[回到原标签继续编辑](youtube-study-wiring.md#2026-11-19-回到原标签继续编辑制卡草稿)。
 
 依据：既有 Vault 阶段反馈和当前项目保护约定。笔记保存不能隐式覆盖用户手工卡片或复习排程；同词不同原句/来源不能误归属。临时 Vault/FakeAnki、模拟字幕与真实 Profile 分层记录，图片或视频网址不能代替原声音频证据。
 
