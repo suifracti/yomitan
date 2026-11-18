@@ -252,7 +252,8 @@ describe('study library page', () => {
     test('loads local favorites, flushes pending work, reconciles listed records, and submits field choices', async () => {
         vi.resetModules();
         makePageDom();
-        vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
+        let changed;
+        vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}, storage: {onChanged: {addListener: /** @param {Function} f */ (f) => { changed = f; }}}});
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         const nativeRecord = {
             id: 'native-record-id',
@@ -331,6 +332,10 @@ describe('study library page', () => {
         document.querySelector('[data-library-category="all"]').click();
         const localChoice = document.querySelector('.study-library-conflicts input[value="local"]');
         localChoice.checked = true;
+        localChoice.focus();
+        changed({studyWordStatus: {newValue: {words: {linger: {s: 'known', manualKnown: true}}}}}, 'local');
+        expect(document.activeElement).toBe(localChoice);
+        expect(document.querySelector('.study-library-conflicts input:checked')).toBe(localChoice);
         document.querySelector('.study-library-conflicts button').click();
         await vi.waitFor(() => expect(calls.some((call) => call.action === 'libraryReconcile' && Boolean(call.payload.resolutions))).toBe(true));
         const submission = calls.find((call) => call.action === 'libraryReconcile' && call.payload.resolutions);

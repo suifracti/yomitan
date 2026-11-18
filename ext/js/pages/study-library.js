@@ -25,7 +25,7 @@ import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl} from '../study/media-key.js';
 import {YOUTUBE_HOSTS} from '../study/media-rules.js';
-import {markWordKnown, wordInfo} from '../study/word-marks.js';
+import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
 import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
@@ -524,24 +524,25 @@ async function initializePage() {
             useLink.dataset.useCardFor = record.id;
             useLink.hidden = !canOfferUseCard(record, upgrades);
             actions.append(useLink);
-            if (record.manualKnown) {
-                const reset = document.createElement('button'); reset.type = 'button';
-                reset.textContent = '改回在学';
-                reset.onclick = () => {
-                    reset.disabled = true;
-                    void markWordKnown(record.entry.word, false).then(() => {
-                        for (const row of records.values()) {
-                            if ((row.entry.lemma || row.entry.word).toLowerCase() === (record.entry.lemma || record.entry.word).toLowerCase()) { row.manualKnown = false; }
-                        }
-                        if (category === 'manual-known') {
-                            void loadPage(true);
-                        } else { render(); }
-                    }).catch((error) => {
-                        setStatus(error instanceof Error ? error.message : '标记没有保存，请重试。'); reset.disabled = false;
-                    });
-                };
-                actions.append(reset);
-            }
+            const reset = document.createElement('button'); reset.type = 'button';
+            reset.textContent = '改回在学';
+            reset.dataset.resetKnown = '';
+            reset.hidden = !record.manualKnown;
+            reset.onclick = () => {
+                reset.disabled = true;
+                void markWordKnown(record.entry.word, false).then(() => {
+                    for (const row of records.values()) {
+                        if ((row.entry.lemma || row.entry.word).toLowerCase() === (record.entry.lemma || record.entry.word).toLowerCase()) { row.manualKnown = false; }
+                    }
+                    if (category === 'manual-known') {
+                        void loadPage(true);
+                    } else { paintLearningActions(); }
+                }).catch((error) => {
+                    setStatus(error instanceof Error ? error.message : '标记没有保存，请重试。');
+                })
+                    .finally(() => { reset.disabled = false; });
+            };
+            actions.append(reset);
             if (record.openUrl) {
                 const note = document.createElement('a');
                 note.href = record.openUrl;
@@ -944,21 +945,35 @@ async function initializePage() {
         search.addEventListener('input', render);
         more.addEventListener('click', () => { void loadPage(false); });
         document.getElementById('study-library-refresh')?.addEventListener('click', () => { void loadPage(true); });
+        /**
+         * Keep the row and its inputs in place when only a learning action changes.
+         * @returns {void}
+         */
+        function paintLearningActions() {
+            for (const article of /** @type {NodeListOf<HTMLElement>} */ (list.querySelectorAll('article[data-record-id]'))) {
+                const row = records.get(article.dataset.recordId || '');
+                if (!row) { continue; }
+                const useLink = /** @type {?HTMLAnchorElement} */ (article.querySelector('a[data-use-card-for]'));
+                const reset = /** @type {?HTMLButtonElement} */ (article.querySelector('button[data-reset-known]'));
+                if (useLink) { useLink.hidden = !canOfferUseCard(row, upgrades); }
+                if (reset) { reset.hidden = !row.manualKnown; }
+            }
+        }
         chrome.storage?.onChanged?.addListener((changes, area) => {
             if (area === 'local' && changes[AUTO_SYNC_STATE_KEY]) {
                 upgrades = changes[AUTO_SYNC_STATE_KEY].newValue;
-                for (const link of /** @type {NodeListOf<HTMLAnchorElement>} */ (list.querySelectorAll('a[data-use-card-for]'))) {
-                    const record = records.get(link.dataset.useCardFor || '');
-                    link.hidden = !record || !canOfferUseCard(record, upgrades);
-                }
+                paintLearningActions();
             }
             if (area === 'local' && changes[WORD_STATUS_KEY]) {
-                const state = /** @type {{words?: Record<string, unknown>}|undefined} */ (changes[WORD_STATUS_KEY].newValue);
-                const words = state?.words || {};
+                const change = /** @type {{oldValue?: {words?: Record<string, unknown>}, newValue?: {words?: Record<string, unknown>}}} */ (changes[WORD_STATUS_KEY]);
+                const words = change.newValue?.words || {};
                 for (const row of records.values()) { row.manualKnown = wordInfo(row.entry?.word || '', words)?.manualKnown === true; }
                 if (category === 'manual-known') {
-                    void loadPage(true);
-                } else { render(); }
+                    const before = change.oldValue?.words || {};
+                    const membershipChanged = Object.keys({...before, ...words}).some((word) => Boolean(normalizeInfo(before[word])?.manualKnown) !== Boolean(normalizeInfo(words[word])?.manualKnown));
+                    if (membershipChanged) { void loadPage(true); }
+                }
+                paintLearningActions();
             }
             if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, 'studySavedWordsV1')) {
                 void refreshSavedWords();
