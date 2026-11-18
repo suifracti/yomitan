@@ -38,6 +38,7 @@
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章或同一视频选集，想找同来源的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选、page_source_key |
 | 本地视频的已记词、小结和听写混入别处的同名文件 | L-007；学习库的 librarySource、study_sources.page_source_key、StudyService 的 localVideoSource |
+| 普通本地文件被当成视频来源；合法本地视频存不进笔记 | L-007；study_library_core.source_url、study_sources.media_key_of |
 | 想按看过的文章或视频找原句、原声，或只复习这份素材的卡点 | L-007；学习库「按素材」、study_index.indexed_sources / indexed_page |
 | 课程在同一播放器切章节，上一课字幕或词表还在／小结混课 | L-007；media-key.pageSourceKey、YoutubeReader._sync、StudyService 的 libraryVideoWords |
 | 在视频里想直接打开已记的原句；倒着记的句子，复习想按视频顺序 | L-007；openPageLibrary 和 study_index.indexed_page |
@@ -247,6 +248,8 @@
 **回听不该拖到下一句开头**：实际播放器的 `timeupdate` 不是句尾精确时钟。保留事件兜底，但按剩余媒体时间和倍速只安排一个句尾定时；播放、跳转完成、变速时重算，换媒体、退出或结束仍清除。独立 Chromium 同一音轨原先晚约 0.22–0.25 秒，改后本次晚不到 0.02 秒。没有增加持续轮询，也不追移用户的播放进度。见[实际整轮点播与读回](youtube-study-wiring.md#2026-11-18-独立浏览器串起整轮回听并缩短句尾延迟)。
 
 **来源链接和记录编号不是同一回事。** 改视频分组键时看 `study_sources.py`（浏览器站点表由同一文件生成）；不能因此改 `entry_id` 或归档笔记的编号。没有实际播放时间就保留原链接：曾将分享地址的 83 秒写成 0 秒，也会把普通页面的章节锚点丢掉。只有确实知道时间，才为 YouTube/B站生成跳时链接；普通网页不加时间参数，本地文件在来源行只显示文件名。见[临时笔记复现](youtube-study-wiring.md#2026-11-18-来源链接不再从零秒开始)。
+
+**本地文件地址不等于本地视频来源**：桥在 `source_url` 复用 `media_key_of`，要求本地文件名和现行时长标记；F5 放行普通 `file:` 导致的两组旧拒绝用例已恢复。格式不能代替播放器／字幕授权，不访问该文件。已有记录编号、正文、可读性与同名不同目录的隔离不变。见[拒绝与有效输入](youtube-study-wiring.md#2026-11-19-本地视频记笔记沿用同一份来源规则)。
 
 **本地素材按完整来源集中复习**：学习库保留文件名纯文本，另给「同来源原句」内部入口。完整本地地址（含目录和已存时长标记）是索引范围，不是文件跳转目标；笔记、听写、播放器已记词、制卡排重与小结共用。播放器后台只从浏览器报告的本地文件地址加上时长标记，不接受另一个目录传入；旧桥不支持时提示更新，不用同名碰撞的短 key 猜。播放进度与原有小结文件位置未迁移，不读视频正文。见[学习库范围](youtube-study-wiring.md#2026-11-18-本地视频可以按原素材集中复习)与[侧栏和小结验证](youtube-study-wiring.md#2026-11-18-同名本地视频不再写进彼此的小结)。
 

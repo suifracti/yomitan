@@ -56,10 +56,12 @@ def source_url(value):
     value = text(value, 2000)
     if value:
         parsed = urllib.parse.urlsplit(value)
-        if parsed.scheme == 'file' and parsed.path.startswith('/') and not parsed.netloc:
-            return value
+        if parsed.scheme == 'file':
+            if not parsed.netloc and parsed.path.startswith('/') and not parsed.path.endswith('/') and media_key_of(value):
+                return value
+            raise ValueError('本地来源只支持从播放器记下的带时长标记的视频。')
         if parsed.scheme not in ('https', 'http') or not parsed.netloc or parsed.username or parsed.password:
-            raise ValueError('来源只允许无凭据的网页地址或本地 file 地址。')
+            raise ValueError('来源只允许无凭据的网页地址或本地视频。')
     return value
 
 
