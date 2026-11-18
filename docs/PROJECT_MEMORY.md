@@ -10,6 +10,7 @@
 |---|---|
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
+| 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
@@ -51,6 +52,8 @@
 ## L-002 记笔记、选择制卡与真实同步是不同动作
 
 依据：既有 Vault 阶段反馈和当前项目保护约定。笔记保存不能隐式覆盖用户手工卡片或复习排程；同词不同原句/来源不能误归属。临时 Vault/FakeAnki、模拟字幕与真实 Profile 分层记录，图片或视频网址不能代替原声音频证据。
+
+**记得「避风港」，想找回当时那句话**：学习库的 `libraryList` 在原有学习索引里先按分类和线索过滤，再每十条分页。空格连接的线索必须同属一条记录，词头或原形全字匹配、连续短语优先；结果保留原记录号、原句和来源时间。不要对整个记录做 JSON 字符串匹配，也不要为搜索逐条核对 Anki。旧桥只筛已读页；仅在浏览器的收藏仍可在「收藏」里找。见[临时库验证](youtube-study-wiring.md#2026-11-18-用中文意思或几段线索找回旧原句)。
 
 下次：先查当前产品规格和保存链，而不是重新增加一个同步系统。保留具体版本、对象 ID 与冲突/删除语义；缺真实证据写未知。此前仅为要求与历史证据边界，2026-11-11以下新增临时链证据不代表正式库通过。
 

@@ -87,6 +87,8 @@ button:hover:not(:disabled) { filter: none; border-color: var(--lib-accent); bac
 .study-library-record h2 { grid-area: word; align-self: start; color: var(--lib-text); font-family: var(--st-serif); font-size: 18px; font-weight: 600; line-height: 1.4; }
 .study-library-sentence { grid-area: sentence; display: -webkit-box; margin: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-family: var(--st-serif); font-size: 15px; line-height: 1.55; white-space: normal; }
 .study-library-sentence mark { padding: 0 1px; border-radius: 2px; background: var(--st-mark); color: inherit; }
+.study-library-match { display: block; color: var(--lib-text); }
+.study-library-match mark { background: var(--st-mark); color: inherit; }
 .study-library-source { grid-area: meta; margin: 2px 0 0; font-size: 12px; }
 .study-library-source strong { font-weight: 500; }
 .study-library-state { grid-area: state; max-width: none; margin: 2px 0 0; color: var(--lib-muted); font-size: 12px; text-align: left; }

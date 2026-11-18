@@ -156,7 +156,16 @@ function normalizeRecord(value, id) {
  */
 function matchesSearch(record, query) {
     if (!query) { return true; }
-    return JSON.stringify(record).toLocaleLowerCase().includes(query.toLocaleLowerCase());
+    // Local-only favorites, or a bridge too old to search its index.
+    const entry = 'entry' in record ? record.entry : record;
+    const fields = [entry.word, entry.sentence, entry.title, (entry.url || '').split(/[?#]/, 1)[0]];
+    if ('entry' in record) {
+        const e = record.entry;
+        const legacy = parseLegacySourceLocator(e.context);
+        fields.push(e.lemma, e.sense?.gloss, e.meaning, e.translation, legacy ? plainText(legacy.title) : e.context, record.path);
+    }
+    const values = fields.map((value) => (value || '').toLocaleLowerCase());
+    return query.toLocaleLowerCase().split(/\s+/u).every((part) => values.some((value) => value.includes(part)));
 }
 
 /**
@@ -360,9 +369,14 @@ async function initializePage() {
         let needsAttention = 0;
         let offset = 0;
         let loading = false;
-        let reloadRequested = false;
+        /** @type {boolean|null} Latest queued reset; true for a read-only search. */
+        let queuedSearch = null;
         let loaded = false;
         let category = 'all';
+        let canSearch = false;
+        let listedQuery = '';
+        let listedCategory = 'all';
+        let searchTimer = 0;
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
@@ -486,12 +500,24 @@ async function initializePage() {
             const state = document.createElement('p');
             state.className = 'study-library-state';
             state.textContent = stateSummary(record);
+            const hit = record.searchHit;
+            const snippet = hit?.text.toLocaleLowerCase() || '';
+            const hitWord = snippet.includes(listedQuery.toLocaleLowerCase()) ?
+listedQuery :
+                listedQuery.split(/\s+/u).find((part) => snippet.includes(part.toLocaleLowerCase())) || '';
+            if (hit && !['单词', '原形'].includes(hit.label) && hit.text !== record.entry?.sentence && hit.text !== record.entry?.title) {
+                const clue = document.createElement('span');
+                clue.className = 'study-library-match';
+                writeSentence(clue, hit.text, hitWord);
+                clue.prepend(`${hit.label}：`);
+                state.prepend(clue);
+            }
             top.append(title, state);
             article.append(top);
             if (record.entry?.sentence) {
                 const sentence = document.createElement('p');
                 sentence.className = 'study-library-sentence';
-                writeSentence(sentence, record.entry.sentence, record.entry.word || '');
+                writeSentence(sentence, record.entry.sentence, hit?.label === '原句' ? hitWord : record.entry.word || '');
                 article.append(sentence);
             }
             const legacyLocator = parseLegacySourceLocator(record.entry?.context);
@@ -754,7 +780,8 @@ async function initializePage() {
         function render() {
             list.replaceChildren();
             const query = search.value.trim();
-            const rows = [...records.values()].filter((record) => matchesCategory(record, category) && matchesSearch(record, query));
+            const waiting = canSearch && (query !== listedQuery || category !== listedCategory);
+            const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
             if (rows.length + localRows.length === 0) {
                 const empty = document.createElement('p');
@@ -763,8 +790,10 @@ async function initializePage() {
                     empty.textContent = `本地收藏读取失败，不能确认是否为空：${savedReadError}`;
                 } else if (listError) {
                     empty.textContent = `学习库未能核对，不能确认此分类为空：${listError}`;
+                } else if (waiting) {
+                    empty.textContent = '正在学习库里找…';
                 } else if (loaded) {
-                    empty.textContent = query ? '当前已加载记录中没有匹配结果。' : '这个分类暂时没有已读取的记录。';
+                    empty.textContent = query && canSearch ? '这个分类没有匹配的记录。试试单词、中文义或原句。' : (query ? '已加载的记录里没有匹配结果。' : '这个分类暂时没有已读取的记录。');
                 } else {
                     empty.textContent = '正在读取学习库…';
                 }
@@ -775,10 +804,17 @@ async function initializePage() {
             }
             const pending = document.querySelector('[data-library-category=pending]');
             if (pending) { pending.textContent = `需处理 ${Math.max(needsAttention, [...records.values()].filter((row) => matchesCategory(row, 'pending')).length)}`; }
-            more.hidden = loading || offset >= total;
+            more.hidden = loading || waiting || offset >= total;
             more.disabled = loading;
-            const loadedLabel = `已读取 ${records.size} / ${total} 条`;
-            if (query && offset < total) { setStatus(`${loadedLabel} · 搜索范围仅包含已读取部分，继续加载可扩大搜索。`); }
+            if (query && !listError) {
+                if (!canSearch && loaded) {
+                    setStatus(offset < total ? '当前只能搜索已加载的记录。可加载更多，或更新本机桥后搜索整个学习库。' : '已搜索当前分类中读到的所有记录。');
+                } else if (waiting) {
+                    setStatus('正在学习库里找…');
+                } else if (loaded) {
+                    setStatus(`当前分类找到 ${total} 条，已显示 ${rows.length} 条${localRows.length > 0 ? `，另有 ${localRows.length} 条本地收藏` : ''}。`);
+                }
+            }
         }
 
         /**
@@ -804,20 +840,28 @@ async function initializePage() {
             }
         }
 
-        /** @param {boolean} reset */
-        async function loadPage(reset) {
+        /**
+         * @param {boolean} reset
+         * @param {boolean} [searchOnly] Typing or clearing a search never reconciles notes.
+         */
+        async function loadPage(reset, searchOnly = false) {
             if (loading) {
-                if (reset) { reloadRequested = true; }
+                if (reset) { queuedSearch = searchOnly; }
                 return;
             }
             loading = true;
-            if (reset && category !== 'manual-known') { void refreshToday(); }
+            const query = search.value.trim();
+            const tab = category;
+            const indexed = canSearch;
+            const readOnly = searchOnly || Boolean(query) || tab === 'manual-known';
+            const obsolete = () => queuedSearch !== null || tab !== category || (canSearch && query !== search.value.trim());
+            if (reset && !readOnly) { void refreshToday(); }
             more.disabled = true;
             setStatus(reset ? '正在读取学习库…' : '正在读取下一页…');
             render();
             const start = reset ? 0 : offset;
             syncPendingError = '';
-            if (category !== 'manual-known') {
+            if (!readOnly) {
                 try {
                     const pending = await studyCall('syncPending');
                     pendingSyncCount = Array.isArray(pending) ? pending.length : 0;
@@ -825,30 +869,41 @@ async function initializePage() {
                     syncPendingError = error instanceof Error ? error.message : '待同步队列检查失败。';
                 }
             }
-            await refreshSavedWords();
+            if (!loaded || !readOnly) { await refreshSavedWords(); }
             try {
-                const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope: ['pending', 'anki-only', 'manual-known'].includes(category) ? category : 'all', offset: start});
-                if (reloadRequested) { return; }
+                const scope = indexed || ['pending', 'anki-only', 'manual-known'].includes(tab) ? tab : 'all';
+                const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean}|null} */ (value);
+                canSearch = result?.canSearch === true;
+                if (!indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }
+                if (obsolete()) { return; }
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
                 if (reset) { records.clear(); }
+                listedQuery = query;
+                listedCategory = tab;
                 for (const record of page) {
-                    if (record && typeof record.id === 'string') { records.set(record.id, {...record, reconcileState: category === 'manual-known' ? void 0 : 'checking'}); }
+                    if (record && typeof record.id === 'string') { records.set(record.id, readOnly ? record : {...record, reconcileState: 'checking'}); }
                 }
-                const result = value && typeof value === 'object' ? /** @type {{total?: unknown, needsAttention?: number}} */ (value) : {};
-                total = typeof result.total === 'number' && Number.isFinite(result.total) ? result.total : start + page.length;
-                needsAttention = result.needsAttention ?? 0;
+                total = typeof result?.total === 'number' && Number.isFinite(result.total) ? result.total : start + page.length;
+                needsAttention = result?.needsAttention ?? 0;
                 offset = start + page.length;
                 loaded = true;
                 listError = '';
                 const target = value && typeof value === 'object' ? /** @type {{target?: {deck?: string, model?: string}}} */ (value).target : null;
                 render();
+                if (readOnly) {
+                    if (!query) { setStatus(`已读取 ${records.size} / ${total} 条。`); }
+                    return;
+                }
                 for (const record of page) {
+                    if (obsolete()) { return; }
                     if (!record || typeof record.id !== 'string') { continue; }
                     if (record.syncState === 'anki-only' || category === 'manual-known') {
                         records.set(record.id, record); continue;
                     }
                     try {
                         const latest = await studyCall('libraryReconcile', {id: record.id, language: record.entry?.language ?? 'en'});
+                        if (obsolete()) { return; }
                         const reconciled = normalizeRecord(latest, record.id);
                         if (!reconciled) { throw new Error('刷新没有返回这条记录。'); }
                         records.set(record.id, {...reconciled, manualKnown: record.manualKnown, reconcileState: 'verified'});
@@ -867,14 +922,16 @@ async function initializePage() {
                 const checkLabel = unchecked > 0 ? `本页 ${unchecked} 条未核对最新状态` : `本页 ${page.length} 条已逐条核对`;
                 setStatus(`已读取 ${records.size} / ${total} 条 · ${syncLabel} · ${checkLabel}${target?.deck ? ` · 牌组：${target.deck}` : ''}${target?.model ? ` · 模板：${target.model}` : ''}${savedReadError ? ` · 本地收藏读取失败：${savedReadError}` : ''}`);
             } catch (error) {
+                if (obsolete()) { return; }
                 listError = error instanceof Error ? error.message : '学习库读取失败。';
                 setStatus(`${listError}${loaded ? ' 上次已读取的记录仍保留。' : ' 未读到记录，不代表学习库为空。'}${savedWords.length > 0 ? ` 本地收藏仍有 ${savedWords.length} 条。` : ''}`);
             } finally {
                 loading = false;
                 render();
-                if (reloadRequested) {
-                    reloadRequested = false;
-                    void loadPage(true);
+                if (queuedSearch !== null) {
+                    const read = queuedSearch;
+                    queuedSearch = null;
+                    void loadPage(true, read);
                 }
             }
         }
@@ -942,7 +999,13 @@ async function initializePage() {
                 void loadPage(true);
             });
         }
-        search.addEventListener('input', render);
+        search.addEventListener('input', (event) => {
+            window.clearTimeout(searchTimer);
+            render();
+            if (canSearch && !(/** @type {InputEvent} */ (event)).isComposing) {
+                searchTimer = window.setTimeout(() => { void loadPage(true, true); }, 180);
+            }
+        });
         more.addEventListener('click', () => { void loadPage(false); });
         document.getElementById('study-library-refresh')?.addEventListener('click', () => { void loadPage(true); });
         /**

@@ -850,7 +850,7 @@ export class StudyService {
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
             if (action === 'libraryMarkKnown' || (action === 'knownWords' && ('known' in value || 'ignored' in value))) { await this.refreshWordStatus(); }
-            if (action === 'libraryList' || action === 'libraryMemory') {
+            if ((action === 'libraryList' && !('query' in value)) || action === 'libraryMemory') {
                 const items = /** @type {{items?: import('study').LibraryRecord[]}} */ (response.library).items;
                 if (Array.isArray(items)) { await this.sync.favoritesFrom(items.filter((r) => r.entry && r.vaultSaved !== false)); }
             }

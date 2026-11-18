@@ -9,6 +9,72 @@ import pathlib
 import re
 import tempfile
 
+from study_cards import linked_note_ids, with_card_progress
+
+
+def needs_attention(row):
+    return row.get('syncState') in ('pending', 'missing', 'ambiguous', 'conflict', 'error', 'failed', 'anki-only') or row.get('ankiState') == 'pending'
+
+
+def search_hit(row, query):
+    e = row['entry']
+    title, context = e.get('title', ''), e.get('context', '')
+    if context.lstrip().startswith('{'):
+        try:
+            locator = json.loads(context)
+        except ValueError:
+            locator = None
+        if isinstance(locator, dict) and locator.get('kind') == 'article' and {'position', 'locator'} <= locator.keys():
+            title, context = title or locator.get('title', ''), ''
+    fields = [('单词', e.get('word')), ('原形', e.get('lemma')), ('词义', e.get('sense', {}).get('gloss')),
+              ('词义', e.get('meaning')), ('原句', e.get('sentence')), ('译文', e.get('translation')), ('来源', title),
+              ('语境', context), ('来源', e.get('url', '').partition('?')[0].partition('#')[0]), ('笔记路径', row.get('path'))]
+    remaining = set(query.split())
+    match = None
+    for label, value in fields:
+        value = ' '.join((value or '').split())
+        folded = value.casefold()
+        if query in folded:
+            rank = 2 if query in ((e.get('word') or '').casefold(), (e.get('lemma') or '').casefold()) else 1
+            match = (rank, label, value, folded.index(query), len(query))
+            break
+        if ' ' in query and remaining:
+            found = [part for part in remaining if part in folded]
+            if found:
+                part = min(found, key=folded.index)
+                match = (0, label, value, folded.index(part), len(part))
+                remaining.difference_update(found)
+    if match is None or (not match[0] and remaining):
+        return None
+    rank, label, value, at, length = match
+    start, end = max(0, at - 28), at + length + 54
+    return rank, {'label': label, 'text': ('…' if start else '') + value[start:end] + ('…' if end < len(value) else '')}
+
+
+def indexed_page(rows, p):
+    scope = p.get('scope', 'source')
+    query = ' '.join(p.get('query', '').casefold().split())
+    matches = []
+    for row in rows:
+        e = row['entry']
+        if scope == 'source' and (e['url'] != p['url'] or (not p['url'] and e['title'] != p['title'])): continue
+        if scope == 'pending' and not needs_attention(row): continue
+        if scope == 'anki-only' and row.get('syncState') != 'anki-only': continue
+        if scope == 'manual-known' and not row.get('manualKnown'): continue
+        if scope == 'favorites' and not row.get('favorite'): continue
+        if scope == 'saved' and (not row.get('vaultSaved') or row.get('learningState') == 'favorite-only'): continue
+        if scope == 'linked' and row.get('ankiState') != 'linked' and not linked_note_ids((row,)): continue
+        rank = 0
+        if query:
+            match = search_hit(row, query)
+            if not match: continue
+            rank, hit = match
+            row = {**row, 'searchHit': hit}
+        matches.append((rank, row))
+    matches.sort(key=lambda x: (x[0], x[1]['created']), reverse=True)
+    offset = p.get('offset', 0)
+    return {'items': [with_card_progress(row) for _, row in matches[offset:offset + 10]], 'total': len(matches), 'canSearch': True}
+
 
 class RecordIndex:
     def __init__(self, library):

@@ -17,6 +17,7 @@ import urllib.parse
 import urllib.request
 
 from study_cards import MASTERY_LABELS, card_key, with_card_progress
+from study_index import indexed_page
 from study_protocol import SETTINGS_ACTIONS
 from study_sources import media_key_of, source_link, time_link
 
@@ -379,11 +380,12 @@ def _normalize_request(p):
                 if 'kind' in card and not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', text(card['kind'], 40, True)):
                     raise ValueError('卡片类型无效。')
         return p
-    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope'}:
+    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query'}:
         scope = p.get('scope', 'source')
-        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all', 'anki-only', 'manual-known'):
+        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites'):
             raise ValueError('学习列表范围无效。')
-        return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300)}
+        return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),
+                **({'query': text(p['query'], 240)} if 'query' in p else {})}
     if action in ('librarySync', 'libraryRead') and set(p) == {'action', 'ids'} and isinstance(p['ids'], list) and 1 <= len(p['ids']) <= 10:
         if len(set(p['ids'])) != len(p['ids']) or any(not isinstance(i, str) or not ID_RE.fullmatch(i) for i in p['ids']):
             raise ValueError('学习记录编号无效。')
@@ -995,7 +997,7 @@ class StudyLibrary:
             return {'items': [self.result(i) for i in ids], 'ankiEnabled': False}
         if p['action'] == 'libraryList' and not self.records.exists():
             self.check_path(self.records)
-            return {'items': [], 'total': 0, 'target': {'deck': self.deck, 'model': self.model}}
+            return {**indexed_page([], p), 'target': {'deck': self.deck, 'model': self.model}}
         with self.locked():
             # The live source proof is acquired on first save. Saved IDs use the ordinary
             # card/sync path; a supplied internal proof must still identify this exact record.
@@ -1173,17 +1175,8 @@ class StudyLibrary:
                     self.write(old, body, version)
                 return self.sync(ident) if p['makeCard'] else self.result(ident)
             if p['action'] == 'libraryList':
-                rows = []
-                cached = [item for stamp in self.indexed_files().values() for item in stamp['rows']]
-                for item in cached:
-                    r = {**item['result'], 'target': self.target_details()}
-                    e = r['entry']
-                    match = True if p.get('scope') == 'all' else (r['ankiState'] == 'pending' if p.get('scope') == 'pending' else e['url'] == p['url'] and (p['url'] or e['title'] == p['title']))
-                    if match:
-                        rows.append(r)
-                rows.sort(key=lambda r: r['created'], reverse=True)
-                offset = p.get('offset', 0)
-                return {'items': [with_card_progress(r) for r in rows[offset:offset + 10]], 'total': len(rows), 'target': {'deck': self.deck, 'model': self.model}}
+                rows = ({**item['result'], 'target': self.target_details()} for stamp in self.indexed_files().values() for item in stamp['rows'])
+                return {**indexed_page(rows, p), 'target': {'deck': self.deck, 'model': self.model}}
             if p['action'] == 'librarySync':
                 return {'items': [self.sync(i) for i in p['ids']]}
             staged = []

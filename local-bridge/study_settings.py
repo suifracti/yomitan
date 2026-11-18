@@ -11,7 +11,8 @@ import subprocess
 import tempfile
 
 from study_protocol import SETTINGS_ACTIONS
-from study_cards import REVIEW_FIELDS as FIELDS, card_progress, linked_note_ids, read_review_view, review_view_state, with_card_progress
+from study_index import indexed_page, needs_attention
+from study_cards import REVIEW_FIELDS as FIELDS, card_progress, linked_note_ids, read_review_view, review_view_state
 from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, normalize_entry, normalize_request, text
 
 EDITABLE = {'ankiEnabled', 'vault', 'directory', 'deck', 'model'}
@@ -550,17 +551,9 @@ class YomitanLibrary:
                 if row.get('targetId') not in self.targets:
                     target = self.targets[self.active_id]
                     row['confirmRestoreTo'] = {'targetId': self.active_id, 'path': str(pathlib.Path(target['vault']) / target['directory'])}
-            attention = ('pending', 'missing', 'ambiguous', 'conflict', 'error', 'failed', 'anki-only')
-            needs = sum(row.get('syncState') in attention or row.get('ankiState') == 'pending' for row in rows) + len(orphans)
-            scope = p.get('scope')
-            if scope in ('all', 'pending', 'anki-only'): rows += orphans
-            if scope == 'pending': rows = [r for r in rows if r.get('syncState') in attention or r.get('ankiState') == 'pending']
-            elif scope == 'anki-only': rows = [r for r in rows if r.get('syncState') == 'anki-only']
-            elif scope == 'manual-known': rows = [r for r in rows if r.get('manualKnown') is True]
-            elif scope != 'all': rows = [r for r in rows if r['entry']['url'] == p['url'] and (p['url'] or r['entry']['title'] == p['title'])]
-            rows.sort(key=lambda row: row['created'], reverse=True)
-            offset = p.get('offset', 0)
-            return {'items': [with_card_progress(r) for r in rows[offset:offset + 10]], 'total': len(rows), 'needsAttention': needs, 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
+            needs = sum(needs_attention(row) for row in rows) + len(orphans)
+            if p.get('scope') in ('all', 'pending', 'anki-only', 'linked'): rows += orphans
+            return {**indexed_page(rows, p), 'needsAttention': needs, 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
         ids = p.get('ids', []) or [r['id'] for r in p.get('items', [])] or ([p['id']] if p.get('id') else [])
         if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite','libraryRepair'):
             # Split mixed destinations while preserving caller ordering and per-record versions.

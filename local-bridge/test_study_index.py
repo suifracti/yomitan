@@ -10,6 +10,30 @@ from test_study_auto_sync import AutoSyncTests
 
 
 class RecordIndexTests(AutoSyncTests):
+    def test_find_an_older_sentence_by_meaning_or_word_before_paging(self):
+        def save(word, sentence, meaning):
+            return self.library.handle({'action': 'librarySave', 'makeCard': False,
+                                        'entry': {'word': word, 'sentence': sentence, 'meaning': meaning,
+                                                  'url': 'https://example.test/film', 'title': 'Coastal journeys'}})
+        old = save('harbor', 'We finally reached the harbor.', '避风港')
+        for i in range(12):
+            save(f'beacon{i}', f'Another harbor light number {i}.', '灯塔')
+        def lookup(**params):
+            return self.library.handle({'action': 'libraryList', 'scope': 'all', 'url': '', 'title': '', **params})
+        self.assertNotIn(old['id'], {row['id'] for row in lookup()['items']})
+        self.calls.clear()
+        with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('search reopened a note')):
+            found = lookup(query='避风港')
+            self.assertEqual([(r['id'], r['searchHit']['text']) for r in found['items']], [(old['id'], '避风港')])
+            page = lookup(query='HARBOR')
+            self.assertEqual((page['total'], len(page['items']), page['items'][0]['id']), (13, 10, old['id']))
+            self.assertEqual(page['items'][1]['searchHit']['label'], '原句')
+            self.assertEqual(len(lookup(query='harbor', offset=10)['items']), 3)
+            self.assertEqual([r['id'] for r in lookup(query='HARBOR 避风港')['items']], [old['id']])
+            self.assertEqual(lookup(query='beacon1 避风港')['items'], [])
+            self.assertEqual(lookup(query='vaultSaved')['total'], 0)
+        self.assertEqual(self.calls, [])
+
     def test_queries_reuse_index_across_native_processes(self):
         self.make_card()
         self.library.handle({'action': 'libraryAutoSync'})
