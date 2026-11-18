@@ -908,7 +908,11 @@ export class StudyService {
         if (action === 'draftCards') {
             const {ids, language = 'en', automatic = false} = /** @type {{ids: string[], language?: string, automatic?: boolean}} */ (value ?? {});
             if (!Array.isArray(ids) || ids.length === 0 || ids.length > 5 || new Set(ids).size !== ids.length || ids.some((id) => !/^[a-f0-9]{32}$/.test(id))) { throw new Error('每批生成 1–5 条记录的制卡草稿。'); }
-            const read = await this.native({action: 'libraryRead', ids, language}).promise;
+            const request = {action: 'libraryRead', ids, language};
+            let read = await this.native({...request, includeRelated: true}).promise;
+            if (!read.ok && read.error === '不支持的学习库操作或字段。') {
+                read = await this.native(request).promise;
+            }
             if (!read.ok || !read.library) { throw new Error(read.error ?? '笔记读取未完成。'); }
             const {items: materials} = /** @type {{items: import('study').LearningMaterial[]}} */ (read.library);
             if (!Array.isArray(materials) || materials.length !== ids.length || materials.some((r, i) => r.id !== ids[i])) { throw new Error('笔记读取关联不一致。'); }

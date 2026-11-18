@@ -364,8 +364,10 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     assert.equal(other.ok, true, other.error);
     assert.notEqual(other.library.id, id);
     assert.equal(other.library.path, seeded.library.path, 'the two notes share a grouped Markdown file');
+    const beforeOpen = await latestState(h.bridge);
     const saved = await readStudyRecord(id, 'en');
     assert.deepEqual(saved.savedTurns, [{...archived, saved: true}], 'the exact note is the source of history when the browser has no copy');
+    assert.deepEqual((await latestState(h.bridge)).calls, beforeOpen.calls, 'reopening the exact note must not query Anki');
     const source = {...saved.entry, recordId: id, savedTurnIds: saved.turnIds ?? [], savedTurns: saved.savedTurns, contextSelected: true};
     const {dom, container, view} = mountUi(SENTENCE, source);
     t.after(() => { view.cancel(); dom.window.close(); });

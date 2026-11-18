@@ -426,6 +426,8 @@ def _normalize_request(p):
                 **({'word': text(p['word'], 128, True)} if scope == 'word' else {})}
     if action == 'libraryRead' and set(p) == {'action', 'ids', 'includeTurns'} and p['includeTurns'] is True and isinstance(p['ids'], list) and len(p['ids']) == 1:
         return {**_normalize_request({'action': action, 'ids': p['ids']}), 'includeTurns': True}
+    if action == 'libraryRead' and set(p) == {'action', 'ids', 'includeRelated'} and p['includeRelated'] is True:
+        return {**_normalize_request({'action': action, 'ids': p['ids']}), 'includeRelated': True}
     if action in ('librarySync', 'libraryRead') and set(p) == {'action', 'ids'} and isinstance(p['ids'], list) and 1 <= len(p['ids']) <= 10:
         if len(set(p['ids'])) != len(p['ids']) or any(not isinstance(i, str) or not ID_RE.fullmatch(i) for i in p['ids']):
             raise ValueError('学习记录编号无效。')
@@ -833,11 +835,15 @@ class StudyLibrary:
             details.update({'targetId': self.target_id, 'vault': str(self.vault), 'directory': str(self.relative), 'ankiEnabled': self.anki_enabled})
         return details
 
-    def result(self, ident):
+    def record_snapshot(self, ident):
         from study_media import with_audio_context
         path = self.path(ident)
         r, body, version = self.read_file(path, ident)
-        return with_article_href(with_card_progress(with_audio_context(self.result_from(r, body, version, path))))
+        record = with_article_href(with_card_progress(with_audio_context(self.result_from(r, body, version, path))))
+        return record, (r, body, version)
+
+    def result(self, ident):
+        return self.record_snapshot(ident)[0]
 
     def indexed_files(self):
         from study_index import RecordIndex
@@ -938,8 +944,8 @@ class StudyLibrary:
         self.write(r, body, version)
         return self.result(ident)
 
-    def material(self, ident, *, include_turns=False):
-        r, body, version = self.read(ident)
+    def material(self, ident, *, include_turns=False, snapshot=None):
+        r, body, version = self.read(ident) if snapshot is None else snapshot
         body = self.without_draft(r, body)
         confirmed = '已确认复习卡（本记录，非全Anki库）：\n' + '\n'.join(c['front'] + ' → ' + c['back'] + ' [' + c['state'] + ']' for c in r.get('cards', [])[-8:])
         if r.get('noteId') and not r.get('cards'):
@@ -1090,18 +1096,24 @@ class StudyLibrary:
                 from study_media import attach
                 return attach(self, {k: v for k, v in p.items() if k != 'language'})
             if p['action'] == 'libraryRead':
-                from study_memory import memory, compact
-                self.memory_deadline = time.monotonic() + 1.2
+                include_related = p.get('includeRelated', False)
+                if include_related:
+                    from study_memory import memory, compact
+                    self.memory_deadline = time.monotonic() + 1.2
                 try:
                     items = []
                     for i in p['ids']:
-                        record = self.result(i)
-                        e = record['entry']
-                        evidence = {'unavailable': True} if e.get('subtitleSource') or not self.anki_enabled else memory(self, e['word'], e.get('lemma', ''))
-                        items.append({**self.material(i, include_turns=p.get('includeTurns', False)), 'record': record, 'relatedMemory': compact(evidence)})
+                        record, snapshot = self.record_snapshot(i)
+                        item = {**self.material(i, include_turns=p.get('includeTurns', False), snapshot=snapshot), 'record': record}
+                        if include_related:
+                            e = record['entry']
+                            evidence = {'unavailable': True} if e.get('subtitleSource') or not self.anki_enabled else memory(self, e['word'], e.get('lemma', ''))
+                            item['relatedMemory'] = compact(evidence)
+                        items.append(item)
                     return {'items': items, **({'ankiEnabled': self.anki_enabled} if self.target_id else {})}
                 finally:
-                    del self.memory_deadline
+                    if include_related:
+                        del self.memory_deadline
             if p['action'] in ('libraryCardsAdd', 'libraryUpdate', 'libraryFavorite', 'libraryReconcile', 'libraryRepair'):
                 import study_sync
                 return study_sync.handle(self, p)

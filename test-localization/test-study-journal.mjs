@@ -191,12 +191,14 @@ test('ordinary peek has zero library/Anki calls; English lemma and bounded evide
     service.native = (p) => ({cancel() {},
         promise: Promise.resolve().then(() => {
             sent.push(p);
+            if (p.action === 'libraryRead' && p.includeRelated) { return {ok: false, error: '不支持的学习库操作或字段。'}; }
             if (p.action === 'libraryRead') { return {ok: true, library: {items: [{id, version, word: 'went', text: '正文'.repeat(3000), confirmedCards: '旧卡'.repeat(1200), relatedMemory: 'Anki：noteId=101，复习3次，不代表掌握', record: {id, version}}]}}; }
             if (p.action === 'cards') { return {ok: true, result: {items: [{id, reason: '已有卡不重复', cards: []}]}}; }
             if (p.action === 'libraryDraftSave') { return {ok: true, library: {items: [{id, version, reviewDraft: {id, reason: '已有卡不重复', cards: []}}]}}; }
             throw new Error(p.action);
         })});
     await service.handle('draftCards', {ids: [id]});
+    assert.deepEqual(sent.filter((p) => p.action === 'libraryRead').map((p) => p.includeRelated), [true, undefined]);
     const payload = sent.find((p) => p.action === 'cards').items[0].text;
     assert.match(payload, /noteId=101/); assert.ok(payload.length <= 6500);
     assert.equal(sent.some((p) => p.action === 'libraryDraftCommit'), false);
