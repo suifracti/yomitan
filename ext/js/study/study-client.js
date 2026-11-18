@@ -46,14 +46,16 @@ export async function readStudyRecord(id, language) {
 
 /** @type {import('study').NativeCall} */
 export function nativeStudyCall(payload) {
-    if (!('action' in payload) || payload.action !== 'libraryVideoWords') {
-        return openNativePort(payload);
-    }
-    let call = openNativePort({...payload, videoWordsFrames: true}, true);
+    const action = 'action' in payload ? payload.action : '';
+    const videoWords = action === 'libraryVideoWords';
+    if (!videoWords && action !== 'libraryWordStatus') { return openNativePort(payload); }
+    const flag = videoWords ? 'videoWordsFrames' : 'wordStatusFrames';
+    const legacyError = videoWords ? '视频编号无效。' : '词汇状态请求无效。';
+    let call = openNativePort({...payload, [flag]: true}, true);
     return {
         promise: call.promise.then((reply) => {
             // Older bridges reject the opt-in field before reading any records.
-            if (reply.ok === false && reply.error === '视频编号无效。') {
+            if (reply.ok === false && reply.error === legacyError) {
                 call = openNativePort(payload);
                 return call.promise;
             }
@@ -65,11 +67,11 @@ export function nativeStudyCall(payload) {
 
 /**
  * @param {object} payload
- * @param {boolean} [videoWordsFrames]
+ * @param {boolean} [splitLibrary]
  * @returns {ReturnType<import('study').NativeCall>}
  * @throws {Error} If native messaging is not available.
  */
-function openNativePort(payload, videoWordsFrames = false) {
+function openNativePort(payload, splitLibrary = false) {
     if (typeof chrome.runtime.connectNative !== 'function') {
         throw new Error('本机通信接口尚未就绪；请先授予权限。若刚完成首次授权，请重新加载扩展并刷新网页，无需再次授权。');
     }
@@ -96,18 +98,31 @@ function openNativePort(payload, videoWordsFrames = false) {
         finish(value);
         port.disconnect();
     }
-    /** @type {{items: unknown[], cardContexts: unknown[]} | undefined} */
-    let videoWords;
+    /** @type {Record<string, unknown> | undefined} */
+    let library;
     /** @param {unknown} value */
     const receive = (value) => {
         const reply = /** @type {import('study').NativeResult & {more?: boolean}} */ (value);
-        if (videoWordsFrames && reply.ok && (reply.more || videoWords)) {
-            const part = /** @type {{items: unknown[], cardContexts: unknown[]}} */ (reply.library);
-            videoWords ??= {items: [], cardContexts: []};
-            videoWords.items.push(...part.items);
-            videoWords.cardContexts.push(...part.cardContexts);
+        if (splitLibrary && reply.ok && (reply.more || library)) {
+            const part = /** @type {Record<string, unknown>} */ (reply.library);
+            if (library) {
+                for (const [key, section] of Object.entries(part)) {
+                    const prior = library[key];
+                    if (Array.isArray(section)) {
+                        /** @type {unknown[]} */
+                        const rows = section;
+                        library[key] = [...(/** @type {unknown[]} */ (prior)), ...rows];
+                    } else if (section && typeof section === 'object') {
+                        library[key] = {...(/** @type {object} */ (prior)), ...section};
+                    } else {
+                        library[key] = section;
+                    }
+                }
+            } else {
+                library = part;
+            }
             if (reply.more) { return; }
-            done({ok: true, library: videoWords});
+            done({ok: true, library});
             return;
         }
         done(reply);

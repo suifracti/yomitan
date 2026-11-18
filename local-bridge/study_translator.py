@@ -299,19 +299,23 @@ def read_frame(stream):
     return value
 
 
-def write_frame(stream, value, *, split_video_words=False):
+def write_frame(stream, value, *, sections=()):
     data = json.dumps(value, ensure_ascii=False).encode('utf-8')
     if len(data) > 900000:
-        if split_video_words:
+        if sections:
             library = value['library']
-            key = max(library, key=lambda name: len(library[name]))
+            key = max(sections, key=lambda name: len(library[name]))
             rows = library[key]
             middle = len(rows) // 2
             if middle:
-                first = {name: [] for name in library}
-                first[key] = rows[:middle]
-                write_frame(stream, {'ok': True, 'library': first, 'more': True}, split_video_words=True)
-                write_frame(stream, {**value, 'library': {**library, key: rows[middle:]}}, split_video_words=True)
+                first = {**library, **{name: type(library[name])() for name in sections}}
+                if isinstance(rows, dict):
+                    pairs = list(rows.items())
+                    first[key], tail = dict(pairs[:middle]), dict(pairs[middle:])
+                else:
+                    first[key], tail = rows[:middle], rows[middle:]
+                write_frame(stream, {'ok': True, 'library': first, 'more': True}, sections=sections)
+                write_frame(stream, {**value, 'library': {**library, key: tail}}, sections=sections)
                 return
         raise ValueError('响应过大。')
     stream.write(struct.pack('=I', len(data)) + data)
@@ -630,8 +634,12 @@ def main():
         return 1
     try:
         request = read_frame(sys.stdin.buffer)
-        split_video_words = (isinstance(request, dict) and request.get('action') == 'libraryVideoWords'
-                             and request.pop('videoWordsFrames', False) is True)
+        sections = ()
+        if isinstance(request, dict):
+            if request.get('action') == 'libraryVideoWords' and request.pop('videoWordsFrames', False) is True:
+                sections = ('items', 'cardContexts')
+            elif request.get('action') == 'libraryWordStatus' and request.pop('wordStatusFrames', False) is True:
+                sections = ('words', 'phrases')
         payload = normalize_request(request)
         if sys.argv[1] == ASB_ORIGIN and not payload['action'].startswith('video'):
             raise ValueError('asbplayer 只允许视频字幕记录，不允许词库/Anki/任意模型动作。')
@@ -721,7 +729,7 @@ def main():
             from study_settings import YomitanLibrary
             result = YomitanLibrary(pathlib.Path(__file__).parent / 'bridge-config.json',
                                    cache_dir=pathlib.Path(__file__).parent / 'learning-cache').handle(payload)
-            write_frame(sys.stdout.buffer, {'ok': True, 'library': result}, split_video_words=split_video_words)
+            write_frame(sys.stdout.buffer, {'ok': True, 'library': result}, sections=sections)
             return 0
         codex = configured_codex()
         codex_home = pathlib.Path(__file__).parent / 'codex-home'

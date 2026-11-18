@@ -40,6 +40,7 @@
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
+| 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
 | 想用旧原句辨义，或对照同一个意思在两句话里的用法 | L-012；study_senses.practice_material、study-library.js |
 | 想用自己的旧原句练填空，但不想制卡 | L-012；study-library.js 的 clozePrompts、study-card-kinds.js 的 blankStudyWord |
 | 卡间隔已超过 21 天却一直在学；读题面拖慢自动同步 | L-012；study_senses.refresh_metrics、study_library_core.anki_call |
@@ -241,6 +242,8 @@
 **不制卡也可以用原句练填空**：「练原句填空」与辨词义共用现有练习区，只取当前已读结果中已存的英语笔记；`blankStudyWord` 与填空卡合用单词边界，练习只取有唯一空位的题目，不从词形猜新题。遮去提示中的原词，核对的是原文用法而非判定语法或掌握；答案揭晓后能继续打开原记录，不调模型或写复习结果。见[原句用词核对](youtube-study-wiring.md#2026-11-18-用已保存的原句练一小轮填空)。
 
 如果「刚撤销，颜色又变回去」，先查后台发布顺序，不要改复习阈值。后台只发布最后一次 `refreshWordStatus`，网页、词卡和字幕共用桥已合并人工标记的 v2；旧的 `studyKnownWords` 只解释 v1 及更早的缓存。见[逆序返回案例](youtube-study-wiring.md#2026-11-18-刚撤销认识了旧刷新又把词标回去)。
+
+**词积累多了，网页标色和字幕一起停在旧结果**：6,000 合成词头加真实形态的别名与短语，v2 约 1.34 MB，旧桥整次拒绝。与视频词表共用本机分帧，完整字典才写同一缓存；不裁词形、不改认识状态或原来的刷新周期。相同内容即使返回键顺序不同也不重写，否则每次刷新会让已打开的页重标并让字幕重算推荐。见[大词表验证](youtube-study-wiring.md#2026-11-18-词积累多了标色也能继续更新)。
 
 一篇文章批量保存生词时，逐条等笔记确认，批次结束只取一次标色。中断时保留已确认数量，用户可在原页补存剩余词；整个回执丢失先查「本页记过的原句」，不自动重传。顶部网页历史切换后，Chrome 的发信文档网址可能仍是上一页；批量保存和本页原句共用浏览器给的当前网址，去掉 JS 本来就看不到的文字定位片段，保留普通锚点。标色失败不算未保存，单独切换「认识了」不延迟。见[批量保存中断案例](youtube-study-wiring.md#2026-11-18-记词中断后只补存剩下的词)。
 

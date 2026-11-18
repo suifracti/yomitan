@@ -15,7 +15,7 @@ h=AutoSyncTests();h.setUp()
 try:
  h.make_card()
  original=h.library.anki
- h.library.anki=lambda a,p: [{'cardId':c,'deckName':'外语','interval':30,'lapses':0} for c in p['cards']] if a=='cardsInfo' else original(a,p)
+ h.library.anki=lambda a,p: [{**row,'interval':30} for row in original(a,p)] if a=='cardsInfo' else original(a,p)
  h.library.auto_sync()
  h.library.handle({'action':'librarySave','makeCard':False,'entry':{'word':'brick wall','kind':'expression','baseWord':'brick','sentence':'A brick wall.','meaning':'砖墙','url':'https://example.test'}})
  print(json.dumps(h.library.handle(json.loads(sys.argv[2])),ensure_ascii=False))

@@ -21,6 +21,7 @@ import {BILIBILI_HOST} from './media-rules.js';
 import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
+import {deepEqual} from '../core/utilities.js';
 import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, createSourceLibraryUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
 import {StudyJournal, conversationRecordId, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
@@ -118,7 +119,15 @@ export class StudyService {
             const library = /** @type {{words?: unknown, phrases?: unknown, version?: unknown}|undefined} */ (response.library);
             const words = library?.words;
             const phrases = library?.phrases && typeof library.phrases === 'object' ? library.phrases : {};
-            if (response.ok && words && typeof words === 'object') { await this.write(WORD_STATUS_KEY, () => ({at: Date.now(), version: library?.version === 2 ? 2 : 1, words, phrases})); }
+            if (response.ok && words && typeof words === 'object') {
+                const next = {version: library?.version === 2 ? 2 : 1, words, phrases};
+                await this.write(WORD_STATUS_KEY, (value) => {
+                    if (request !== this.#wordStatusRequest) { return value; }
+                    const old = /** @type {{version?: number, words?: unknown, phrases?: unknown} | undefined} */ (value);
+                    if (old?.version === next.version && deepEqual(old.words, words) && deepEqual(old.phrases, phrases)) { return value; }
+                    return {at: Date.now(), ...next};
+                });
+            }
         } catch { /* Keep the last list; colouring is optional. */ }
     }
 
@@ -536,6 +545,7 @@ export class StudyService {
         const operation = this.writes.then(async () => {
             const value = (await this.storage.get(key))[key];
             const next = await change(value);
+            if (key === WORD_STATUS_KEY && next === value) { return; }
             if (guard && !guard()) { throw new Error('字幕请求已取消或失效，未写入迟到回答。'); }
             await this.storage.set({[key]: next});
         });

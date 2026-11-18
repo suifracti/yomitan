@@ -136,7 +136,7 @@
 
 ### `libraryWordStatus` v2（B2 + B8 → F3 / F4 / F9）
 
-后台一次读取包含手动认识/忽略的 `libraryWordStatus`，存到 `chrome.storage.local.studyWordStatus`，格式为 `{at, version, words, phrases}`。网页、词卡和字幕都用这一份结果；较早发起的刷新不能盖掉较晚的撤销。断连保留上次成功的结果。
+后台读取包含手动认识/忽略的 `libraryWordStatus`，存到 `chrome.storage.local.studyWordStatus`，格式为 `{at, version, words, phrases}`。网页、词卡和字幕都用这一份结果；较早发起的刷新不能盖掉较晚的撤销，状态相同不重写也不触发重标。与视频词表共用本机分帧；这个动作通过 `wordStatusFrames: true` 协商，旧桥拒绝则沿用原请求。所有词和搭配收齐才发布，断连保留上次成功的结果。
 
 ```json
 {
