@@ -156,6 +156,7 @@ def indexed_page(rows, p, *, complete=True):
                 focus_ids.add(row['id'])
     if focus:
         matches.sort(key=lambda match: (match[2]['id'] != focus.get('id'), match[2]['id'] not in focus_ids))
+    translation_matches = matches if translating else ()
     if practice and not recalling:
         unique = {}
         for match in matches:
@@ -169,13 +170,25 @@ def indexed_page(rows, p, *, complete=True):
         matches = list(unique.values())
     extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not practice and not focus and p.get('language', 'en') == 'en' else {}
     page = [row for _, _, row in matches[offset:offset + PAGE_SIZE]]
+    primary_translations = {row['entry']['sentence']: row['entry']['translation'].strip() for row in page} if translating else {}
+    alternates = {sentence: {} for sentence in primary_translations}
+    for _, _, row in translation_matches:
+        entry = row['entry']
+        sentence = entry['sentence']
+        if sentence in alternates and len(alternates[sentence]) < 3:
+            text = entry['translation'].strip()
+            if text != primary_translations[sentence]:
+                alternates[sentence].setdefault(text, {'text': text, 'title': entry['title']})
     if focus and scope == 'word':
         extras.update(focusIds=[row['id'] for row in page if row['id'] in focus_ids], focusTotal=len(focus_ids),
                       focusComplete=complete,
                       ankiNoteIds=sorted({ident for row in page for ident, _ in card_receipts(row) if ident is not None}))
 
     def list_item(row):
-        return with_article_href(with_card_progress(with_audio_context(row)))
+        item = with_article_href(with_card_progress(with_audio_context(row)))
+        if alternatives := alternates.get(row['entry']['sentence']):
+            item = {**item, 'translationAlternates': list(alternatives.values())}
+        return item
 
     if recalling or (scope == 'recent-recall' and not offset) or source_recall:
         ranked = matches

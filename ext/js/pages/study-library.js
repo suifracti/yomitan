@@ -702,6 +702,12 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
                     Object.assign(document.createElement('small'), {textContent: reconstruct ? '保存的原句' : '保存的译文'}),
                     Object.assign(document.createElement('p'), {className: quote.className, textContent: reconstruct ? text : row.entry.translation}),
                 );
+                for (const {text: alternate, title: alternateTitle} of row.translationAlternates ?? []) {
+                    comparison.append(
+                        Object.assign(document.createElement('small'), {textContent: alternateTitle ? `另一份译文 · ${alternateTitle}` : '另一份译文'}),
+                        Object.assign(document.createElement('p'), {className: quote.className, lang: 'zh-CN', textContent: alternate}),
+                    );
+                }
                 form.before(comparison);
             } else if ((dictation || recall) && row.entry.translation) {
                 form.before(Object.assign(document.createElement('p'), {textContent: row.entry.translation}));

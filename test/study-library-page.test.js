@@ -108,7 +108,8 @@ describe('study library page', () => {
             if (action !== 'libraryList') { return []; }
             if (payload.practice === 'translation') {
                 if (oldBridge) { throw new Error('练习类型无效。'); }
-                return {items: payload.offset ? [others[4]] : [first, ...others.slice(0, 4)], total: 6, canSearch: true};
+                const withAlternative = {...first, translationAlternates: [{text: '这段阶梯坡度很大。', title: '另一次阅读'}]};
+                return {items: payload.offset ? [others[4]] : [withAlternative, ...others.slice(0, 4)], total: 6, canSearch: true};
             }
             return {items: [first], total: 30, canSearch: true};
         });
@@ -121,12 +122,14 @@ describe('study library page', () => {
         await vi.waitFor(() => expect(panel.textContent).toContain('The stairs were steep.'));
         expect(panel.textContent).toContain('1 / 5');
         expect(panel.textContent).not.toContain('楼梯很陡。');
+        expect(panel.textContent).not.toContain('这段阶梯坡度很大。');
         const draft = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
         expect(draft?.required).toBe(false);
         draft.value = '这段楼梯坡度很大。';
         press('看保存的译文');
         expect(panel.textContent).toContain('你的理解这段楼梯坡度很大。');
         expect(panel.textContent).toContain('保存的译文楼梯很陡。');
+        expect(panel.textContent).toContain('另一份译文 · 另一次阅读这段阶梯坡度很大。');
         expect(panel.querySelector('[href*="studyRecordId"]')?.href).toContain(first.id);
         expect(panel.querySelector('[href*=":~:text"]')?.href).toBe(first.articleHref);
         press('这句再练一次');
@@ -166,6 +169,7 @@ describe('study library page', () => {
         reconstruct.click();
         await vi.waitFor(() => expect(panel.textContent).toContain('楼梯很陡。'));
         expect(panel.textContent).not.toContain('The stairs were steep.');
+        expect(panel.textContent).not.toContain('这段阶梯坡度很大。');
         expect(panel.textContent).not.toContain('播放已存原声');
         const answer = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
         expect(answer.lang).toBe('en');
@@ -173,6 +177,7 @@ describe('study library page', () => {
         press('看保存的原句');
         expect(panel.textContent).toContain('你写的英文Those steps were very steep.');
         expect(panel.textContent).toContain('保存的原句The stairs were steep.');
+        expect(panel.textContent).toContain('这段阶梯坡度很大。');
         expect(panel.textContent).not.toContain('和原句用词不同');
         expect(panel.querySelector('[href*="studyRecordId"]')?.href).toContain(first.id);
         expect(panel.textContent).toContain('播放已存原声');

@@ -110,9 +110,9 @@ class RecordIndexTests(AutoSyncTests):
         self.assertEqual(self.library.handle(request)['total'], normal['total'])
 
     def test_translation_practice_finds_saved_contexts_before_paging(self):
-        def save(sentence, url, whole=False, translation='', meaning='', word=None):
+        def save(sentence, url, whole=False, translation='', meaning='', word=None, title=''):
             entry = {'word': sentence if whole else sentence.split()[0], 'sentence': sentence,
-                     'url': url, 'translation': translation, 'meaning': meaning,
+                     'url': url, 'translation': translation, 'meaning': meaning, 'title': title,
                      **({'kind': 'sentence'} if whole else {})}
             if word: entry['word'] = word
             return self.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})
@@ -120,7 +120,10 @@ class RecordIndexTests(AutoSyncTests):
         source = 'https://example.test/coast'
         old = save('We finally reached the harbor.', source, True, '我们终于到达港口。')
         old_word = save('The boats waited at the harbor until sunrise.', source, translation='船只在港口等到日出。', word='sunrise')
-        save(old['entry']['sentence'], source, translation='有这句的另一版港口译文。', word='finally')
+        alternate = '有这句的另一版港口译文。'
+        save(old['entry']['sentence'], source, translation=alternate, word='finally', title='海岸一课')
+        save(old['entry']['sentence'], source, translation=alternate, word='reached', title='海岸一课')
+        save(old['entry']['sentence'], source + '/another', translation='别的材料里译成港口。', word='harbor')
         save('The harbor was quiet.', source, True)
         save('Ships were near the harbor.', source + '/another', True, '船在港口附近。')
         for i in range(12):
@@ -135,6 +138,8 @@ class RecordIndexTests(AutoSyncTests):
         self.assertEqual(result['total'], 2)
         self.assertEqual({r['id']: r['entry']['translation'] for r in result['items']},
                          {row['id']: row['entry']['translation'] for row in (old, old_word)})
+        self.assertEqual({r['id']: r.get('translationAlternates') for r in result['items']},
+                         {old['id']: [{'text': alternate, 'title': '海岸一课'}], old_word['id']: None})
         self.assertEqual(self.calls, [])
 
         sentence = 'The lighthouse stood above the shore.'

@@ -81,6 +81,8 @@ export type LibraryRecord = {
     localSyncIncomplete?: true;
     searchHit?: {label: string, text: string};
     articleHref?: string;
+    /** Alternate saved answers to the same English sentence, only in translation practice. */
+    translationAlternates?: {text: string; title: string}[];
     cardProgress?: {confirmed: number, waiting: number, stage?: number};
     turnIds?: string[];
     manualKnown?: boolean;
