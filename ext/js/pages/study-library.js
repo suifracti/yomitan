@@ -546,7 +546,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
     const recall = mode === 'recall';
     const translating = mode === 'translation';
     const roundMaterial = mode === 'dictation' ? '可练的原声' : (translating ? '带译文的原句' : '可练的原句');
-    const retryLabel = recall ? '再练没对上的' : '重听没对上的';
+    const retryLabel = translating ? '重练标记的' : (recall ? '再练没对上的' : '重听没对上的');
     let queue = prompts;
     let index = 0;
     let retrying = false;
@@ -620,25 +620,26 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
         quote.textContent = text;
         const clue = Object.assign(document.createElement('p'), {textContent: dictation ? '先听录音，写下听到的整句。大小写和标点不计。' : (hint ? `你当时的提示：${hint}` : '想想你当时在这里读到的用法。')});
         if (translating) {
-            clue.textContent = '先读原句，想想整句是什么意思。';
+            clue.textContent = '先读原句，可以在心里想，也可以写下来再对照。';
         } else if (reading) {
             clue.textContent = '先读原句，回想这个词在这里的意思。';
         }
         const form = document.createElement('form');
         form.className = 'study-library-practice-choices';
-        const label = Object.assign(document.createElement('label'), {htmlFor: 'study-library-cloze-answer', textContent: dictation ? '写下听到的原句' : '填原句里的词或短语'});
-        const input = dictation ? Object.assign(document.createElement('textarea'), {rows: 3}) : Object.assign(document.createElement('input'), {type: 'text'});
+        const label = Object.assign(document.createElement('label'), {htmlFor: 'study-library-cloze-answer', textContent: translating ? '写下你的理解（可不填）' : (dictation ? '写下听到的原句' : '填原句里的词或短语')});
+        const input = dictation || translating ? Object.assign(document.createElement('textarea'), {rows: translating ? 2 : 3}) : Object.assign(document.createElement('input'), {type: 'text'});
         input.id = label.htmlFor;
-        input.lang = 'en';
+        input.lang = translating ? 'zh-CN' : 'en';
         input.autocomplete = 'off';
-        input.required = true;
+        input.required = !translating;
         input.spellcheck = false;
-        if (dictation) { input.maxLength = 2400; }
+        if (dictation || translating) { input.maxLength = 2400; }
         input.setAttribute('autocapitalize', 'none');
         const check = Object.assign(document.createElement('button'), {type: 'submit', textContent: '核对原文'});
         const reveal = Object.assign(document.createElement('button'), {type: 'button', textContent: dictation ? '直接看原句' : '直接看答案'});
         if (translating) {
             reveal.textContent = '看保存的译文';
+            reveal.type = 'submit';
         } else if (reading) {
             reveal.textContent = meaning ? '看当时的释义' : '看当时的记录';
         }
@@ -656,7 +657,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
                 .replaceAll('’', "'")
                 .replaceAll(/\s+/g, ' ');
             const difference = dictation && guess ? differingWords(guess, answer) : null;
-            const agrees = Boolean(guess) && (difference ? difference.written.length + difference.original.length === 0 : normalize(guess) === normalize(answer));
+            const agrees = !translating && Boolean(guess) && (difference ? difference.written.length + difference.original.length === 0 : normalize(guess) === normalize(answer));
             if (guess && !agrees && (dictation || recall)) { missed.add(prompt); }
             if (dictation) {
                 if (difference && !agrees) {
@@ -680,7 +681,24 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
             } else if (!translating) {
                 writeSentence(quote, row.entry.sentence, reading ? row.entry.word : answer, true);
             }
-            if ((dictation || recall || translating) && row.entry.translation) { form.before(Object.assign(document.createElement('p'), {textContent: row.entry.translation})); }
+            if (translating) {
+                const comparison = document.createElement('div');
+                comparison.className = 'study-library-translation-compare';
+                comparison.lang = 'zh-CN';
+                if (guess) {
+                    comparison.append(
+                        Object.assign(document.createElement('small'), {textContent: '你的理解'}),
+                        Object.assign(document.createElement('p'), {className: quote.className, textContent: guess}),
+                    );
+                }
+                comparison.append(
+                    Object.assign(document.createElement('small'), {textContent: '保存的译文'}),
+                    Object.assign(document.createElement('p'), {className: quote.className, textContent: row.entry.translation}),
+                );
+                form.before(comparison);
+            } else if ((dictation || recall) && row.entry.translation) {
+                form.before(Object.assign(document.createElement('p'), {textContent: row.entry.translation}));
+            }
             if (recall || translating) {
                 if (meaning) { form.before(Object.assign(document.createElement('p'), {textContent: `当时记下的意思：${meaning}`})); }
                 const source = createSourceLine(row.entry, row.entry.title || '', row.articleHref);
@@ -693,7 +711,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
             feedback.className = 'study-library-practice-answer';
             feedback.textContent = dictation ? (prefix || '这是这段录音对应的原句。') : `${prefix}原句用的是「${answer}」。`;
             if (translating) {
-                feedback.textContent = '这是你当时保存的译文。';
+                feedback.textContent = '对照意思就好，不必一字一样。';
             } else if (reading) {
                 feedback.textContent = '这是你当时保存的原句。';
             }
@@ -707,7 +725,19 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
             const next = Object.assign(document.createElement('button'), {type: 'button', textContent: index + 1 === queue.length ? '完成这轮' : '下一句'});
             next.dataset.clozeNext = '';
             next.onclick = advance;
-            actions.append(next, resume);
+            actions.append(next);
+            if (translating) {
+                const retry = Object.assign(document.createElement('button'), {type: 'button', textContent: '这句再练一次'});
+                retry.setAttribute('aria-pressed', 'false');
+                retry.onclick = () => {
+                    const marked = !missed.delete(prompt);
+                    if (marked) { missed.add(prompt); }
+                    retry.setAttribute('aria-pressed', String(marked));
+                    retry.textContent = marked ? '取消重练这句' : '这句再练一次';
+                };
+                actions.append(retry);
+            }
+            actions.append(resume);
             if (!listen) {
                 const listenVideo = makeVideoListenButton(row, report);
                 if (listenVideo) { actions.append(listenVideo, audioStatus); }
@@ -718,10 +748,14 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
         form.onsubmit = (event) => {
             event.preventDefault();
             const guess = input.value.trim();
-            if (guess) { showAnswer(guess); }
+            if (guess || translating) { showAnswer(guess); }
         };
-        reveal.onclick = () => showAnswer();
-        if (!reading) { form.append(label, input, check); }
+        if (!translating) { reveal.onclick = () => showAnswer(); }
+        if (translating) {
+            form.append(label, input);
+        } else if (!reading) {
+            form.append(label, input, check);
+        }
         form.append(reveal);
         if (dictation) {
             form.append(Object.assign(document.createElement('button'), {type: 'button', textContent: '跳过', onclick: advance}));

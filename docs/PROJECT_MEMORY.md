@@ -80,6 +80,7 @@
 | 想直接对照这个词在视频、文章里的旧原句，不想先做题 | L-012；study-focus.js「我的记录」、libraryList 的 word 范围 |
 | 想用自己的旧原句练填空，但不想制卡；首页没有可练的题 | L-012；study_index.indexed_page 的 practice:cloze、study-library.js 的 sentencePrompts、study-card-kinds.js 的 blankStudyWord |
 | 网页记下一整句后想自己先猜意思；旧整句在首页练不到 | L-012；study-library.js 的 sentencePrompts、study_index.indexed_page 的 practice:translation |
+| 想写下自己的中译再对照，或只重练刚才没想清的整句 | L-012；study-library.js 的 showSentencePractice、同一组的重练队列 |
 | 不开原网页，想先听自己存的录音再写整句 | L-012；study-library.js 的 sentencePrompts、showSentencePractice |
 | 学习库第一页没有录音，后面才有，听写入口找不到 | L-012；study_index.indexed_page 的 practice:dictation |
 | 存了十几句原声，练完却总回到前五句 | L-012；study-library.js 的 startSentencePractice 和 showSentencePractice |
@@ -358,6 +359,8 @@
 **不制卡也可以用原句练填空**：「练原句填空」与辨词义共用现有练习区。能找题的桥先在同一筛选内用 `libraryList(practice: 'cloze')` 找可能的旧词句；`blankStudyWord` 仍与填空卡合用单词边界，只取有唯一空位的题，不从词形猜。同一句可有不同目标词，同一题面一轮练习只出现一次；已积累的候选留到下一组、不替普通列表翻页。旧桥用已读结果和原有源内分页。答案揭晓仍可打开原记录，不调模型或写复习结果。见[跨页填空](youtube-study-wiring.md#2026-11-19-练旧原句填空也不用先翻列表)。
 
 **保存整句和记词是两种练习材料**：`kind:'sentence'` 是网页「记住这句」的既有记录，不用整句话作为一个词挖空。`libraryList(practice: 'translation')` 在当前分类内查有译文的英语整句，先去重再分页，不要求普通列表先读到。每组最多五句，先读再揭晓，保留来源和记录号；继续下一组才查后续。旧桥用已显示的候选，素材范围保留普通分页，不调用模型或保存自评。见[旧句跨页与旧桥](youtube-study-wiring.md#2026-11-19-旧整句不用先翻到那一页)。
+
+**整句理解用自己的话练，不按措辞判对错**：写不写都能看旧译文；若已输入，则原句、自己的理解和保存的译文同时留在当前题。组末可用原练习队列重练手动标记的句子，重练从空白开始，不读取新题或提前翻页。作答、标记和这组进度均不写回，不评熟悉度。见[作答对照与重练](youtube-study-wiring.md#2026-11-19-拿自己的理解和旧译文对照)。
 
 **同一来源多页的练习不要停在列表第一页**：同来源不足五题时，只有点练习才继续读当前来源、搜索条件下的下一页；复用 `sentencePrompts` 去掉重复题，够五题或读完就停，不改可见列表的分页。取消、换分类或搜索后丢弃迟到页，不请求原声。见[跨页找题](youtube-study-wiring.md#2026-11-18-同来源原句能到下一页找题)。
 

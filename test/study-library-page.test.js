@@ -120,16 +120,28 @@ describe('study library page', () => {
         await vi.waitFor(() => expect(panel.textContent).toContain('The stairs were steep.'));
         expect(panel.textContent).toContain('1 / 5');
         expect(panel.textContent).not.toContain('楼梯很陡。');
-        expect(panel.querySelector('input, textarea')).toBeNull();
+        const draft = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
+        expect(draft?.required).toBe(false);
+        draft.value = '这段楼梯坡度很大。';
         press('看保存的译文');
-        expect(panel.textContent).toContain('楼梯很陡。');
+        expect(panel.textContent).toContain('你的理解这段楼梯坡度很大。');
+        expect(panel.textContent).toContain('保存的译文楼梯很陡。');
         expect(panel.querySelector('[href*="studyRecordId"]')?.href).toContain(first.id);
         expect(panel.querySelector('[href*=":~:text"]')?.href).toBe(first.articleHref);
+        press('这句再练一次');
+        expect(panel.querySelector('button[aria-pressed=true]')?.textContent).toBe('取消重练这句');
         press('下一句');
         for (let i = 0; i < 4; ++i) {
             press('看保存的译文');
             press(i === 3 ? '完成这轮' : '下一句');
         }
+        press('重练标记的 1 句');
+        expect(panel.textContent).toContain('The stairs were steep.');
+        expect(panel.textContent).not.toContain('楼梯很陡。');
+        expect(panel.querySelector('textarea')?.value).toBe('');
+        press('看保存的译文');
+        expect(panel.textContent).not.toContain('你的理解');
+        press('完成这轮');
         const request = {language: 'en', scope: 'all', url: '', title: ''};
         const lists = () => mocks.studyCall.mock.calls.filter(([action]) => action === 'libraryList');
         expect(lists()).toEqual([['libraryList', {...request, offset: 0}], ['libraryList', {...request, practice: 'translation'}]]);
