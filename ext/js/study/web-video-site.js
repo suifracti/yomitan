@@ -283,7 +283,14 @@ export class WebVideoSite {
             const language = hint || languageHint(name);
             sources.push({id: `url:${url}`, label: `${name.slice(0, 60)}（页面字幕文件）`, language, read: (signal) => fetchSubtitle(url, signal)});
         }
-        const rank = (/** @type {WebSource} */ source) => (source.language === learning ? 0 : (source.language ? 2 : 1));
+        const target = learning.toLowerCase();
+        const base = target.split('-')[0];
+        const rank = (/** @type {WebSource} */ source) => {
+            const language = source.language.toLowerCase();
+            if (!language) { return 2; }
+            if (language === target) { return 0; }
+            return language.split('-')[0] === base ? 1 : 3;
+        };
         return sources.map((source, order) => ({source, order})).sort((a, b) => rank(a.source) - rank(b.source) || a.order - b.order).map((row) => row.source);
     }
 
@@ -305,8 +312,6 @@ export class WebVideoSite {
                 const cues = await source.read(signal);
                 if (cues.length === 0) { continue; }
                 const language = source.language || guessLanguage(cues);
-                // Without a chosen source, skip a track in another language when the learning language may follow.
-                if (!sourceId && source !== preferred && language !== learning && sources.some((other) => other !== source && other.language === learning)) { continue; }
                 return {cues, language, label: source.label, id: source.id, all};
             } catch { /* try the next one */ }
         }

@@ -90,6 +90,34 @@ function fakeSite(found) {
     };
 }
 
+test('web captions prefer regional English and fall back only for automatic selection', async () => {
+    const video = document.createElement('video');
+    video.style.opacity = '1';
+    video.getBoundingClientRect = () => new DOMRect(0, 0, 640, 360);
+    const track = (/** @type {string} */ language, /** @type {string} */ text) => ({
+        language,
+        kind: 'subtitles',
+        label: language || 'CC',
+        mode: 'disabled',
+        cues: [{startTime: 0, endTime: 2, text}],
+    });
+    const english = track('en-GB', 'Keep learning at your own pace.');
+    Object.defineProperty(video, 'textTracks', {value: [track('', '我们现在准备开始学习这一节课程。'), track('fr', 'Commençons par lire.'), english]});
+    document.body.append(video);
+    try {
+        const site = new WebVideoSite();
+        const signal = new AbortController().signal;
+        expect(await site.load({signal})).toMatchObject({id: 'track:2', language: 'en-GB'});
+        expect(await site.load({signal, sourceId: 'track:1'})).toMatchObject({id: 'track:1', language: 'fr'});
+        english.language = 'en';
+        english.cues[0].endTime = 0;
+        expect(await site.load({signal, sourceId: 'track:2'})).toBeNull();
+        expect(await site.load({signal})).toMatchObject({id: 'track:0', language: 'zh'});
+    } finally {
+        video.remove();
+    }
+});
+
 test('other sites: page subtitles load, a bilingual file brings its translations, and the panel is a launcher', async () => {
     const cues = [{id: '0', sourceIndex: 0, startMs: 0, endMs: 1500, text: 'The brain can change.'}, {id: '1', sourceIndex: 1, startMs: 2000, endMs: 3000, text: 'Keep going.'}];
     const site = fakeSite({cues, language: 'en', label: 'English（播放器字幕）', id: 'track:0', all: [{id: 'track:0', label: 'English（播放器字幕）'}, {id: 'track:1', label: '中文（播放器字幕）'}]});
