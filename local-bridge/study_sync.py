@@ -112,6 +112,8 @@ def local_fields(record, body):
 def with_local_fields(body, values):
     from study_library import paragraph
     content = '### 同步内容\n\n修改下列内容会更新关联卡片；上方保留保存时的学习过程。\n\n'
+    if any(card.get('kind') in AUDIO_KINDS for card in values.get('cards', [])):
+        content += '原声卡只同步问题和答案。要改原声卡的字幕、译文或来源，请直接在 Anki 里改。\n\n'
     for key, label in FIELD_LABELS.items():
         content += '#### ' + label + '\n\n' + paragraph(values.get(key, '')) + '\n\n'
     content += '#### 收藏\n\n> ' + ('是' if values.get('favorite') else '否') + '\n\n'
@@ -135,10 +137,14 @@ def definition_field(answer, values):
     return ''.join('<div data-study-sync="' + key + '">' + (label + '<br>' if label else '') + _field_html(value) + '</div>' for key,label,value in sections if value or key == 'answer')
 
 
+def _definition_section(value, key):
+    return re.search(r'<div\s+data-study-sync=[\"\x27]' + key + r'[\"\x27]\s*>(.*?)</div>', value or '', re.I | re.S)
+
+
 def parse_definition(value, fallback):
     sections = {}
     for key, label in [('answer',''),('meaning','本句含义'),('translation','原句译文')]:
-        match = re.search(r'<div\s+data-study-sync=[\"\x27]' + key + r'[\"\x27]\s*>(.*?)</div>', value or '', re.I | re.S)
+        match = _definition_section(value, key)
         if match:
             text = _plain(match[1])
             if label and text.startswith(label): text = text[len(label):].lstrip('\n :：')
@@ -467,13 +473,14 @@ def reconcile(lib, p):
         title_meta.update({k: explanation[k] for k in ('meaning','translation')})
         common = {'sentence': _plain(raw.get('Sentence') or ''), 'title':title_meta['title'], 'url':_plain(raw.get('URL') or ''),
                   'meaning':title_meta['meaning'], 'translation':title_meta['translation']}
-        if not review_only:
+        keep_clip = card.get('kind') in AUDIO_KINDS or bool(QUESTION_CLIP.search(raw.get('Word') or ''))
+        if not (review_only or keep_clip):
             for key, value in common.items():
                 remote_by_card[key].append((card, value))
         local_card = local_cards.get(card['id'], {'front':card['front'], 'back':card.get('back', '')})
         front = _plain(raw.get('Word') or '')
         back = explanation['answer']
-        card_updates.append((card, note_id, raw, common, front, back, actual_deck, local_card))
+        card_updates.append((card, note_id, raw, common, front, back, actual_deck, local_card, keep_clip))
     merged = dict(fields)
     base_after = dict(baseline)
     for key in SYNC_KEYS:
@@ -509,7 +516,7 @@ def reconcile(lib, p):
                     for card, remote in values:
                         conflicts.append({'key': key + ':' + card['id'], 'local': fields.get(key,''), 'remote': remote})
     merged_cards = {}
-    for card, note_id, raw, common, front, back, actual_deck, local_card in card_updates:
+    for card, note_id, raw, common, front, back, actual_deck, local_card, keep_clip in card_updates:
         for key, local, remote in [('front', local_card['front'], front), ('back', local_card['back'], back)]:
             baseline_key = 'card.' + card['id'] + '.' + key
             value, base = _merge(baseline_key, local, remote, baseline.get(baseline_key), resolutions, conflicts)
@@ -520,23 +527,35 @@ def reconcile(lib, p):
         lib.write(r, body, version)
         return {**lib.result(ident), 'syncState':'conflict', 'conflicts':conflicts}
     # Update all linked Anki notes only after every conflict has a user choice.
-    for card, note_id, raw, common, front, back, actual_deck, local_card in card_updates:
+    for card, note_id, raw, common, front, back, actual_deck, local_card, keep_clip in card_updates:
         # Only maintain the question-side replay on notes made with it; never retrofit old notes.
-        has_replay = card.get('kind') in AUDIO_KINDS and QUESTION_CLIP.search(raw.get('Word') or '')
+        has_replay = QUESTION_CLIP.search(raw.get('Word') or '')
         question_audio = (raw.get('Audio') or '') if has_replay else None
-        wanted = {'Word':question_field(merged_cards[(card['id'], 'front')], question_audio),
-                  'Definition':definition_field(merged_cards[(card['id'], 'back')], common if card.get('reviewOnly') else merged),
-                  'Sentence':_field_html(merged['sentence']),
-                  'Source':source_field(lib, r, merged, note_origin(raw.get('Source') or '')), 'URL':html.escape(merged['url'])}
-        if card.get('reviewOnly'):
-            # Keep the learner's markup/media when it is their card that supplied the text.
-            edited = {}
-            if merged_cards[(card['id'], 'front')] != front:
-                edited['Word'] = wanted['Word']
-            answer = merged_cards[(card['id'], 'back')]
+        answer = merged_cards[(card['id'], 'back')]
+        question = merged_cards[(card['id'], 'front')]
+        if keep_clip:
+            # Only these individually editable fields belong to Obsidian as well.
+            wanted = {}
+            if question != front:
+                wanted['Word'] = question_field(question, question_audio)
+            elif has_replay:
+                wanted['Word'] = raw['Word'][:has_replay.start()] + question_field('', question_audio)
             if answer != back:
-                edited['Definition'] = wanted['Definition'] if 'data-study-sync=' in (raw.get('Definition') or '') else _field_html(answer)
-            wanted = edited
+                definition = raw['Definition']
+                section = _definition_section(definition, 'answer')
+                value = _field_html(answer)
+                wanted['Definition'] = definition[:section.start(1)] + value + definition[section.end(1):] if section else value
+        elif card.get('reviewOnly'):
+            # Keep the learner's markup/media when it is their card that supplied the text.
+            wanted = {}
+            if question != front:
+                wanted['Word'] = _field_html(question)
+            if answer != back:
+                wanted['Definition'] = definition_field(answer, common) if 'data-study-sync=' in raw['Definition'] else _field_html(answer)
+        else:
+            wanted = {'Word':_field_html(question), 'Definition':definition_field(answer, merged),
+                      'Sentence':_field_html(merged['sentence']), 'URL':html.escape(merged['url']),
+                      'Source':source_field(lib, r, merged, note_origin(raw.get('Source') or ''))}
         changed = {k:v for k,v in wanted.items() if raw.get(k) != v}
         if changed:
             lib.anki('updateNoteFields', {'note':{'id':note_id,'fields':changed}})
@@ -557,7 +576,7 @@ def reconcile(lib, p):
     r['favorite'] = merged.get('favorite', r.get('favorite', False))
     for key in SYNC_KEYS:
         r['entry'][key] = merged[key]
-    merged['cards'] = [{'id':card_id, 'front':merged_cards[(card_id, 'front')], 'back':merged_cards[(card_id, 'back')]}
+    merged['cards'] = [{**local_cards[card_id], 'front':merged_cards[(card_id, 'front')], 'back':merged_cards[(card_id, 'back')]}
                        for card_id in local_cards if (card_id, 'front') in merged_cards]
     baseline.clear(); baseline.update(base_after)
     body = with_local_fields(body, merged)

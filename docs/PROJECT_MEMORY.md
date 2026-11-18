@@ -29,6 +29,7 @@
 | 原网页打不开，想播放已附在笔记里的原声 | L-007；study_media.read_audio、libraryAudioRead |
 | 录音后说已保存却不能制卡，或点取消时附件其实已送出 | L-007；display/study-library.js 的采集和保存阶段、savedAudioAttachment |
 | 笔记已经改句，却还播放或用旧原声制卡 | L-007；study_media.context_matches、require_audio、audioContextChanged |
+| 同步改了一张已送达原声卡的字幕，或把该卡的手改变成整条笔记的原句 | L-002；study_sync.reconcile、QUESTION_CLIP |
 | 同一视频记了很多句，想按时间一起回听 | L-007；openVideoListening 的 wholeVideo、libraryVideoWords 的 sourceUrl |
 | 视频记了很多长句后，已记词、推荐或整轮回听读不到 | L-007；study_translator.write_frame、study-client.nativeStudyCall |
 | 回听完一句却多播了下一句开头 | L-007；YoutubeStudyContext.play 的媒体时钟与句尾定时 |
@@ -110,6 +111,8 @@
 **制卡回执**：原生端 `study_cards.card_progress` 从实际卡片回执计算张数及已到达的阶段，不把这些派生数写回学习数据。词卡/学习库用 `study-data.cardReceipt` 显示，旧桥快照仍可读，视频栏与学习小结取同一计数；“未确认”不能写成“Anki 没有这张卡”。两张卡有一张回执丢失时，应同时看到一张已确认、一张未确认；重新确认只送既有记录 ID，不重写笔记或生成草稿。若连本批题面和答案被笔记接受的回执都没有，保留编辑框。旧 ID 仍可用于打开卡，不拿它冒充刚刚核实的送卡结果。已知已删除或关联不明的那张不计数，其他有回执的保留，视频栏提示去学习库处理。未核对不代表从未制卡，不另推荐同句。见[中断补交](youtube-study-wiring.md#2026-11-18-词卡与学习库使用同一份制卡回执)和[视频词表回执](youtube-study-wiring.md#2026-11-18-视频词表和学习小结也按制卡回执计数)。
 
 **听写正面没声音，或者还没想就看见字幕**：题面的文字在 `study-card-kinds.js`，真正复习的正背面在 `assets/study-review/`；改草稿不等于改了 Anki 画面。新制听力卡在题面 HTML 末尾带不显示的 `data-study-clip`，文件名取自这一张卡实际的 Audio；双向同步比较的是题目正文，不把文件名写进笔记问题，换录音后按 Audio 更新引用。普通文字卡不会因为同一条笔记附了录音就播放。七字段和旧卡保留；已有模型只有用户主动采用新视图才改变。见[临时 Anki 渲染与原声验证](youtube-study-wiring.md#2026-11-18-听写可以先听再翻面)。
+
+**已送达的原声卡不共享字幕与译文**：同一条笔记的普通文字卡仍交换原句、含义、译文和来源；原声卡的这组内容属于自己的录音，不参与合并，也不被同步覆盖。在 Anki 单独修改原声卡的内容不会传给笔记或其他卡。问题与答案仍双向同步；改答案只换答案区，保留手改的译文和标记；既有播放标记继续跟卡自己的 Audio。笔记、卡号和排程不迁移。见[同条笔记两种卡的验证](youtube-study-wiring.md#2026-11-18-已送达的原声卡保留自己的字幕)。
 
 **设置说“兼容”但复习时还是旧画面**：制卡字段和题面是两个检查。设置和自愿更换工具共用 `study_cards.read_review_view / review_view_state`，只读所选类型的正背面和 CSS，不查笔记或排程。正背面相同但只改过样式也能认出，不按模板名或扩展版本猜已采用。没有返回外观的旧桥仍能检查保存目标。见[临时 Anki 集合和设置页](youtube-study-wiring.md#2026-11-18-看清已有-anki-卡现在用哪套题面)。
 

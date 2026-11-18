@@ -702,6 +702,44 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(updated['entry']['translation'], '远端更新的译文')
         self.assertIn('> 远端更新的译文', path.read_text())
 
+    def test_delivered_listening_card_does_not_exchange_its_clip_context(self):
+        saved = self.save({**ENTRY, 'videoTime': 12})
+        request = self.lib.handle
+        ident = saved['id']
+        request({'action':'libraryMedia','id':ident,'version':saved['version'],'origin':'capture',
+                 'start':12,'end':15,'assets':[{'kind':'audio','mime':'audio/webm',
+                 'data':base64.b64encode(b'\x1aE\xdf\xa3' + bytes(64)).decode()}]})
+        row = request({'action':'libraryCardsAdd','id':ident,'cards':[
+            {'front':'听这句','back':'公正的','kind':'listening'},
+            {'front':'读这句','back':'公正的','kind':'context'}]})
+        listening, text = [self.cards[c['noteId']]['fields'] for c in row['cards']]
+        context_fields = ('Sentence', 'Source', 'URL', 'Audio')
+        original = {key:listening[key] for key in context_fields}
+        listening['Definition'] = listening['Definition'].replace(ENTRY['translation'], '<em>自己改过的原声译文</em>')
+        path = self.vault / row['path']
+        request({'action':'libraryUpdate','id':ident,'entry':{'sentence':'It was a just outcome.',
+                 'translation':'这是公正的结果。','title':'New source','url':'https://example.com/other'}})
+        path.write_text(path.read_text().replace('##### 答案\n\n> 公正的', '##### 答案\n\n> 得当的', 1))
+        reconcile = {'action':'libraryReconcile','id':ident}
+        self.assertEqual(request(reconcile)['syncState'], 'synced')
+        self.assertEqual({key:listening[key] for key in context_fields}, original)
+        self.assertIn('<em>自己改过的原声译文</em>', listening['Definition'])
+        self.assertIn('得当的', listening['Definition'])
+        self.assertEqual(text['Sentence'], 'It was a just outcome.')
+        self.assertIn('这是公正的结果。', text['Definition'])
+
+        listening['Sentence'] = 'It is a <b>fair</b> decision.'  # Edit only this card in Anki.
+        listening['Word'] = listening['Word'].replace('听这句', '<i>再听一句</i>')
+        listening['Audio'] = '[sound:my-corrected-clip.webm]'
+        synced = request(reconcile)
+        self.assertEqual(synced['entry']['sentence'], 'It was a just outcome.')
+        self.assertEqual(text['Sentence'], synced['entry']['sentence'])
+        self.assertEqual(listening['Sentence'], 'It is a <b>fair</b> decision.')
+        self.assertIn('<i>再听一句</i>', listening['Word'])
+        self.assertIn('data-study-clip="my-corrected-clip.webm"', listening['Word'])
+        self.assertEqual(synced['cards'][0]['front'], '再听一句')
+        self.assertEqual(len(self.cards), 2)
+
     def test_blank_optional_routes_keep_legacy_target_identity(self):
         from study_settings import target_fields
         original = {'vault':str(self.vault),'directory':'study','deck':'Default','model':'Study'}
