@@ -333,6 +333,7 @@ class YomitanLibrary:
         current_files, records = self.indexed()
         libraries = {lib.target_id: lib for lib, _path, _row in records.values()}
         owner = {}
+        personal = {}  # Explicit links can point to an Anki note with no study tags.
         changed = [(target, ident) for ident, target in state.get('retryRecords', {}).items()
                    if ident in records and records[ident][0].target_id == target]
         for ident, (lib, path, record) in records.items():
@@ -341,16 +342,24 @@ class YomitanLibrary:
             owner['study_' + ident] = (lib.target_id, ident)
             for card in record.get('cards', []):
                 owner['studycard_' + card['id']] = (lib.target_id, ident)
+            for link in (record, *record.get('cards', [])):
+                if link.get('linkedExisting') and link.get('noteId'):
+                    personal.setdefault(link['noteId'], set()).add((lib.target_id, ident))
         files = current_files
         anki_ok = self.anki_enabled
         paused = ''
         if anki_ok:
             try:
-                edited = self.anki('findNotes', {'query': '(tag:english_study OR tag:japanese_study) edited:1'})
+                edit_scope = 'tag:english_study OR tag:japanese_study'
+                if personal:
+                    edit_scope += ' OR nid:' + ','.join(map(str, personal))
+                edited = self.anki('findNotes', {'query': '(' + edit_scope + ') edited:1'})
                 ignored_path = pathlib.Path(self.cache_dir) / 'anki-ignored.json'
                 ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
                 linked = linked_note_ids(r for _, _, r in records.values())
                 live = set(self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'}))
+                untagged = personal.keys() - live
+                personal_live = set(self.anki('findNotes', {'query': 'nid:' + ','.join(map(str, untagged))})) if untagged else set()
                 candidates = live - linked - set(ignored)
                 requested = sorted(set(edited) | candidates)
                 info = self.anki('notesInfo', {'notes': requested}) if requested else []
@@ -360,7 +369,8 @@ class YomitanLibrary:
                                     and not any(t in owner for t in n.get('tags', []))
                                     and any(re.fullmatch(r'study(?:card)?_[a-f0-9]{32}', t) for t in n.get('tags', []))]
                 for ident, (lib, _path, r) in records.items():
-                    missing = any(n not in live for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n)
+                    missing = any(n not in live and not (n in personal_live and (lib.target_id, ident) in personal[n])
+                                  for n in linked_note_ids([r]))
                     if (r.get('syncState') == 'missing') != missing:
                         changed.append((lib.target_id, ident))
                 for note in info if isinstance(info, list) else []:
@@ -372,6 +382,7 @@ class YomitanLibrary:
                     # Older caches hold seconds. Adopt an unchanged legacy stamp without rewriting the note.
                     if not first and previous != stamp and not (type(previous) is int and previous == note.get('mod')):
                         changed.extend(owner[tag] for tag in tags if tag in owner)
+                        changed.extend(personal.get(note['noteId'], ()))
                     notes[nid] = stamp
             except Exception:
                 paused = '这次没能读完 Anki。请确认 Anki 已打开，改过的笔记会在下次同步时重试。'

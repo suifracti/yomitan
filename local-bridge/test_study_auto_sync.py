@@ -213,6 +213,48 @@ class AutoSyncTests(unittest.TestCase):
             {'id': f'{2:032x}', 'word': 'mortar'}, {'id': f'{3:032x}', 'word': 'wall'}])
         self.assertEqual(bodies, [])
 
+    def test_personal_link_without_study_tags_stays_quiet_and_keeps_its_html(self):
+        import copy
+        import re
+        ident = self.make_card()
+        self.notes[2000] = copy.deepcopy(self.notes[1000])
+        self.library.handle({'action': 'libraryReconcile', 'id': ident})
+        self.library.handle({'action': 'libraryRepair', 'id': ident, 'choice': 'select', 'noteId': 1000})
+        self.notes[1000]['tags'] = ['personal']
+        fields = self.notes[1000]['fields']
+        fields.update(Word='<b>brick</b>', Definition='<i>砖</i>', Sentence='My example.')
+        reads = []
+        def lookup(action, p):
+            if action == 'findNotes':
+                q = p['query']
+                nid = re.search(r'nid:([\d,]+)', q)
+                chosen = {int(n) for n in nid[1].split(',')} if nid else set()
+                if 'edited:1' in q:
+                    return [n for n in self.edited if n in chosen or 'english_study' in self.notes[n]['tags']]
+                if nid: return list(chosen & self.notes.keys())
+                if q == '(tag:study_* OR tag:studycard_*)': return [2000]
+            if action == 'notesInfo':
+                reads.extend(p['notes'])
+                p = {'notes': [n for n in p['notes'] if n in self.notes]}
+            return self.anki(action, p)
+        self.library.anki = lookup
+        self.library.auto_sync()
+        self.calls.clear()
+        reads.clear()
+        self.assertEqual(self.library.auto_sync()['synced'], 0)
+        self.assertNotIn(1000, reads)  # The other tagged copy is still an unlinked candidate.
+        self.assertEqual(fields['Definition'], '<i>砖</i>')
+        self.edited = [1000]
+        fields['Definition'] = '<i>砖块</i>'
+        self.assertEqual(self.library.auto_sync()['synced'], 1)
+        self.assertEqual(self.library.locate(ident).result(ident)['cards'][0]['back'], '砖块')
+        self.assertEqual((fields['Word'], fields['Definition'], fields['Sentence']), ('<b>brick</b>', '<i>砖块</i>', 'My example.'))
+        self.assertNotIn('updateNoteFields', self.calls)
+        self.edited = []
+        del self.notes[1000]
+        self.library.auto_sync()
+        self.assertEqual(self.library.locate(ident).result(ident)['syncState'], 'missing')
+
     def test_restored_card_clears_missing_without_an_edit_timestamp_change(self):
         import copy
         ident = self.make_card()

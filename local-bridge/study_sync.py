@@ -380,8 +380,9 @@ def _merge(key, local, remote, baseline, resolutions, conflicts):
     return local, baseline
 
 
-def _note_values(lib, note_id, record, fields, review_only=False):
-    info = lib.anki('notesInfo', {'notes':[note_id]})
+def _note_values(lib, note_id, record, fields, review_only=False, info=None):
+    if info is None:
+        info = lib.anki('notesInfo', {'notes':[note_id]})
     if not isinstance(info, list) or len(info) != 1 or info[0].get('noteId') != note_id:
         raise ValueError('Anki 笔记读回无效。')
     row = info[0]
@@ -418,9 +419,13 @@ def reconcile(lib, p):
     for card in cards:
         note_id = card.get('noteId')
         tag = 'study_' + ident if card['id'] == 'legacy' else 'studycard_' + card['id']
-        found = lib.anki('findNotes', {'query':'tag:' + tag})
-        if (card.get('linkedExisting') or (card['id'] == 'legacy' and r.get('linkedExisting'))) and note_id:
-            found = [note_id] if any(n.get('noteId') == note_id for n in lib.anki('notesInfo', {'notes': [note_id]})) else []
+        review_only = card.get('linkedExisting') or (card['id'] == 'legacy' and r.get('linkedExisting'))
+        info = None
+        if review_only and note_id:
+            info = lib.anki('notesInfo', {'notes': [note_id]})
+            found = [note_id] if any(n.get('noteId') == note_id for n in info) else []
+        else:
+            found = lib.anki('findNotes', {'query':'tag:' + tag})
         if len(found) != 1 or (note_id and note_id not in found):
             r['ankiState'] = 'pending'
             r['syncState'] = 'missing' if not found else 'ambiguous'
@@ -431,9 +436,8 @@ def reconcile(lib, p):
             lib.write(r, body, version)
             return {**lib.result(ident), 'conflicts': []}
         note_id = found[0]
-        review_only = card.get('linkedExisting') or (card['id'] == 'legacy' and r.get('linkedExisting'))
         card['reviewOnly'] = bool(review_only)
-        row, raw = _note_values(lib, note_id, r, fields, review_only)
+        row, raw = _note_values(lib, note_id, r, fields, review_only, info)
         actual_deck = _actual_deck(lib, row, (card.get('target') or {}).get('deck', card.get('deck', lib.deck)))
         if card['id'] != 'legacy':
             target = copy.deepcopy(card.get('target') or lib.target_details())
@@ -445,8 +449,6 @@ def reconcile(lib, p):
         title_meta.update({k: explanation[k] for k in ('meaning','translation')})
         common = {'sentence': _plain(raw.get('Sentence') or ''), 'title':title_meta['title'], 'url':_plain(raw.get('URL') or ''),
                   'meaning':title_meta['meaning'], 'translation':title_meta['translation']}
-        review_only = card.get('linkedExisting') or (card['id'] == 'legacy' and r.get('linkedExisting'))
-        card['reviewOnly'] = bool(review_only)
         if not review_only:
             for key, value in common.items():
                 remote_by_card[key].append((card, value))
@@ -509,7 +511,14 @@ def reconcile(lib, p):
                   'Sentence':_field_html(merged['sentence']),
                   'Source':source_field(lib, r, merged, note_origin(raw.get('Source') or '')), 'URL':html.escape(merged['url'])}
         if card.get('reviewOnly'):
-            wanted = {k:v for k,v in wanted.items() if k in ('Word', 'Definition')}
+            # Keep the learner's markup/media when it is their card that supplied the text.
+            edited = {}
+            if merged_cards[(card['id'], 'front')] != front:
+                edited['Word'] = wanted['Word']
+            answer = merged_cards[(card['id'], 'back')]
+            if answer != back:
+                edited['Definition'] = wanted['Definition'] if 'data-study-sync=' in (raw.get('Definition') or '') else _field_html(answer)
+            wanted = edited
         changed = {k:v for k,v in wanted.items() if raw.get(k) != v}
         if changed:
             lib.anki('updateNoteFields', {'note':{'id':note_id,'fields':changed}})
