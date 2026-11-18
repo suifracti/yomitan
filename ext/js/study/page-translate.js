@@ -39,6 +39,26 @@ const ORIGINAL_TOGGLE_STYLE = '.study-page-original-toggle{margin-inline-start:.
 const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:24px;height:24px;padding:0}.study-selection-trigger button{display:block;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--st-accent,#505ead);color:white;font:12px sans-serif;cursor:pointer}.study-selection-translation{border-left:2px solid var(--st-line,#dce2eb);padding-left:10px}.study-selection-actions{display:none;gap:2px;float:right}.study-selection-translation:hover .study-selection-actions,.study-selection-translation:focus-within .study-selection-actions,.study-selection-card .study-selection-actions{display:inline-flex}.study-selection-actions button,.study-selection-card header>button{all:unset;cursor:pointer;font:14px/1.4 sans-serif;padding:4px}.study-selection-card{width:360px;box-sizing:border-box;max-width:calc(100vw - 16px)}.study-selection-card header{display:flex;align-items:center;gap:4px}.study-selection-card .study-ui-select{flex:1;min-width:0}.study-selection-source{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;color:var(--st-muted,#6b7280)}.study-selection-source.is-expanded{display:block}.study-selection-card .study-page-translation{font-size:15px;color:var(--st-ink,#263248)}.study-page-flash{animation:study-page-flash .9s ease-out}@keyframes study-page-flash{from{background:var(--st-accent-soft,#e8eaff)}to{background:transparent}}.study-original-hidden{display:none!important}.study-page-translation{color:var(--st-muted,#6b7280);font-size:.92em;line-height:1.6;margin:4px 0 10px;white-space:pre-wrap}.study-page-translation{position:relative}.study-page-translation[data-only=true]:hover:before{content:attr(data-original);position:absolute;bottom:100%;left:0;z-index:2147482999;max-width:90vw;width:max-content;box-sizing:border-box;padding:8px 12px;border:1px solid #dce2eb;border-radius:8px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);font-size:14px;white-space:normal;box-shadow:0 3px 16px #0003;pointer-events:none}.study-page-error{cursor:pointer}.study-page-tools{position:fixed;z-index:2147483000;padding:10px;border:1px solid #dce2eb;border-radius:10px;background:var(--st-paper,#fbfaf7);color:var(--st-ink,#263248);box-shadow:0 4px 20px #0003;font:14px/1.6 sans-serif;max-width:min(420px,90vw)}.study-page-tools button{font:inherit;cursor:pointer;margin:3px}';
 
 /**
+ * The language declared for the text, not necessarily the site's interface language.
+ * @param {Element} element
+ * @returns {string}
+ */
+function pageLanguage(element) {
+    const declared = element.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang;
+    const base = declared.split('-')[0].toLowerCase();
+    return !base || ['zh', 'cmn', 'yue'].includes(base) ? 'en' : base;
+}
+
+/**
+ * @param {string} text
+ * @param {string} language
+ * @returns {boolean}
+ */
+function translatableBlock(text, language) {
+    return language === 'en' ? /[A-Za-z]{2,}/.test(text) && (text.match(/[\u3400-\u9fff]/g)?.length || 0) <= text.length / 5 : /\p{L}.*\p{L}/u.test(text);
+}
+
+/**
  * The same translation engine used by captions and sentence cards.
  * @param {string} text
  * @param {{language?:string,target?:string,engine?:SubtitleEngine,config?:TranslationModel}} [options]
@@ -47,8 +67,7 @@ const STYLE = '.study-selection-trigger{position:fixed;z-index:2147483000;width:
 async function translateText(text, {language, target = 'zh', engine, config} = {}) {
     engine ??= (await readSubtitlePrefs()).engine;
     config ??= /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
-    const declared = document.documentElement.lang.split('-')[0] || 'en';
-    language ||= declared === 'zh' ? 'en' : declared;
+    language ||= pageLanguage(document.documentElement);
     const result = [];
     for (let offset = 0; offset < text.length; offset += 2200) {
         const part = text.slice(offset, offset + 2200);
@@ -123,12 +142,8 @@ export class PageTranslate {
         this.selectionUi = null;
         /** @type {HTMLElement|null} */
         this.selectionCard = null;
-        /**
-         *
-         */
-        this.selectionText = '';
-        /** Web app navigation can leave the same selection text on another page. */
-        this.selectionSource = '';
+        /** @type {{url: string, text: string, element: Element}|null} */
+        this.selectionSource = null;
         /**
          *
          */
@@ -251,7 +266,7 @@ export class PageTranslate {
             let node = leaf;
             while (node.parentElement && ['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(node).display)) { node = node.parentElement; }
             if (node === document.body || [...node.children].some((child) => !child.matches(SKIP) && !['none', '', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(child).display))) { return; }
-            if (!this.rows.has(node) && (collect || !this.pending.has(node)) && /[A-Za-z]{2,}/.test(this.source(node))) {
+            if (!this.rows.has(node) && (collect || !this.pending.has(node)) && translatableBlock(this.source(node), pageLanguage(node))) {
                 if (collect) {
                     collect(node);
                 } else {
@@ -321,16 +336,17 @@ export class PageTranslate {
 
     /**
      * @param {string} text
+     * @param {string} language
      * @param {SubtitleEngine} [engine]
      * @returns {Promise<string>}
      */
-    async requestText(text, engine) {
+    async requestText(text, language, engine) {
         engine ??= (await readSubtitlePrefs()).engine;
         const config = /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
-        const key = JSON.stringify([text, engine, config.model, config.effort]);
+        const key = JSON.stringify([text, language, engine, config.model, config.effort]);
         let task = this.cache.get(key);
         if (!task) {
-            task = this.translate(text, {engine, config});
+            task = this.translate(text, {language, engine, config});
             this.cache.set(key, task);
             task.catch(() => this.cache.delete(key));
         }
@@ -343,7 +359,9 @@ export class PageTranslate {
      */
     async translateNode(original, manual = false) {
         const text = this.source(original);
-        if (!text || !/[A-Za-z]{2,}/.test(text) || (text.match(/[\u3400-\u9fff]/g)?.length || 0) > text.length / 5 || this.pending.has(original)) { return; }
+        const language = pageLanguage(original);
+        if (!translatableBlock(text, language) || this.pending.has(original)) { return; }
+        const sameSource = () => pageLanguage(original) === language && this.source(original) === text;
         this.pending.add(original);
         ++this.busy;
         document.dispatchEvent(new Event('study-page-change'));
@@ -356,10 +374,10 @@ export class PageTranslate {
                 return;
             }
             if (version !== this.version || !original.isConnected) { return; }
-            const result = await this.requestText(text, engine);
-            if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) { this.render(original, text, result, manual); }
+            const result = await this.requestText(text, language, engine);
+            if ((this.active || manual) && version === this.version && original.isConnected && sameSource()) { this.render(original, text, result, manual); }
         } catch (error) {
-            if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) {
+            if ((this.active || manual) && version === this.version && original.isConnected && sameSource()) {
                 const node = this.render(original, text, `这段没翻译成功：${reasonOf(error)} · 点击重试`, manual, true);
                 node.onclick = () => { void this.translateNode(original, manual); };
             }
@@ -367,7 +385,7 @@ export class PageTranslate {
             this.pending.delete(original);
             --this.busy;
             document.dispatchEvent(new Event('study-page-change'));
-            if (this.active && original.isConnected && this.source(original) !== text) { this.scan(original); }
+            if (this.active && original.isConnected && !sameSource()) { this.scan(original); }
         }
     }
 
@@ -422,9 +440,9 @@ export class PageTranslate {
         const element = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
         if (!element || element.closest(SKIP) || this.editing(selection.anchorNode?.parentElement || null) || this.editing(selection.focusNode?.parentElement || null)) { return; }
         const source = location.href;
-        if (source === this.selectionSource && text === this.selectionText && this.selectionUi?.isConnected) { return; }
-        this.selectionText = text;
-        this.selectionSource = source;
+        const previous = this.selectionSource;
+        if (previous?.element === element && previous.url === source && previous.text === text && this.selectionUi?.isConnected) { return; }
+        this.selectionSource = {url: source, text, element};
         this.selectionUi?.remove();
         const ui = document.createElement('div');
         ui.className = 'study-selection-trigger scan-disable';
@@ -440,7 +458,7 @@ export class PageTranslate {
         trigger.textContent = '译';
         trigger.title = '翻译选中文字';
         trigger.setAttribute('aria-label', trigger.title);
-        trigger.onclick = () => { void this.openSelection(text, ui, original, source); };
+        trigger.onclick = () => { void this.openSelection(text, ui, original, source, element); };
         ui.append(trigger);
         if (this.prefs.selection === 'auto') { trigger.click(); }
     }
@@ -459,11 +477,13 @@ export class PageTranslate {
      * @param {HTMLElement} ui
      * @param {Element} original
      * @param {string} [sourceUrl]
+     * @param {Element} [languageElement]
      */
-    async openSelection(text, ui, original, sourceUrl = location.href) {
+    async openSelection(text, ui, original, sourceUrl = location.href, languageElement = original) {
         const sourceNode = original;
         const originalText = this.source(sourceNode);
-        const isCurrent = () => sourceUrl === location.href && sourceNode.isConnected && this.source(sourceNode) === originalText;
+        const language = pageLanguage(languageElement);
+        const isCurrent = () => sourceUrl === location.href && sourceNode.isConnected && languageElement.isConnected && pageLanguage(languageElement) === language && this.source(sourceNode) === originalText;
         if (!isCurrent()) {
             ui.remove();
             return;
@@ -521,7 +541,7 @@ export class PageTranslate {
         this.render(original, text, '翻译中…', true);
         const waiting = this.rows.get(original);
         try {
-            const translation = await this.requestText(text);
+            const translation = await this.requestText(text, language);
             if (!original.isConnected || this.rows.get(original) !== waiting) { return; }
             if (!isCurrent()) {
                 if (inline) {
@@ -536,6 +556,7 @@ export class PageTranslate {
             const tools = document.createElement('span');
             tools.className = 'study-selection-actions';
             for (const [icon, label] of [['🔊', '朗读'], ['⧉', '复制'], ['☆', '记住这句'], ['✕', '收起']]) {
+                if (label === '记住这句' && language !== 'en') { continue; }
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.textContent = icon;
@@ -549,11 +570,11 @@ export class PageTranslate {
                             button.textContent = '✓';
                         }
                         if (label === '朗读') {
-                            const voice = speechSynthesis.getVoices().find((v) => /^en/i.test(v.lang));
+                            const voice = speechSynthesis.getVoices().find((v) => v.lang.split('-')[0].toLowerCase() === language);
                             if (voice) {
                                 await new TextToSpeechAudio(text, voice).play();
                             } else {
-                                button.title = '英语声音还没准备好，请再点一次';
+                                button.title = '这个语言的朗读声音还没准备好，请再点一次';
                             }
                         }
                         if (label === '记住这句') {

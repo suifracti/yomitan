@@ -18,6 +18,53 @@
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 
+test('mixed-language blocks and selections use their source language, including in the page cache', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<html lang="en-GB"><body><p id="english">Pain</p><section lang="fr-CA"><p id="french">Pain</p></section><p lang="ru" id="russian">Привет, мир.</p><p>Quote: <span lang="fr" id="quote">Le pain</span></p></body></html>',
+        url: 'https://example.test/article',
+    }});
+    /** @type {Element[]} */
+    const observed = [];
+    vi.stubGlobal('IntersectionObserver', class {
+        /** @param {Element} target */
+        observe(target) { observed.push(target); }
+        /** */
+        disconnect() {}
+    });
+    vi.stubGlobal('chrome', {runtime: {sendMessage: async () => ({ok: true, value: {model: 'fixture', effort: 'low'}})}, storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'google'}})}}});
+    const {PageTranslate} = await import('../ext/js/study/page-translate.js');
+    const translate = vi.fn(async (/** @type {string} */ text, /** @type {{language?: string}} */ options) => `${options.language}:${text}`);
+    const controller = new PageTranslate({translate});
+    try {
+        await controller.toggle();
+        const english = /** @type {HTMLElement} */ (document.getElementById('english'));
+        const french = /** @type {HTMLElement} */ (document.getElementById('french'));
+        const russian = /** @type {HTMLElement} */ (document.getElementById('russian'));
+        expect(observed).toContain(russian);
+        await controller.translateNode(english);
+        await controller.translateNode(french);
+        await controller.translateNode(russian);
+        expect(english.nextElementSibling?.textContent).toBe('en:Pain');
+        expect(french.nextElementSibling?.textContent).toBe('fr:Pain');
+        expect(russian.nextElementSibling?.textContent).toBe('ru:Привет, мир.');
+        const quote = /** @type {HTMLElement} */ (document.getElementById('quote'));
+        const range = document.createRange();
+        range.selectNodeContents(quote);
+        Range.prototype.getBoundingClientRect = () => ({left: 10, right: 200, bottom: 20});
+        Range.prototype.getClientRects = () => [];
+        window.getSelection()?.addRange(range);
+        controller.showSelection();
+        controller.selectionUi?.querySelector('button')?.click();
+        await vi.waitFor(() => expect(quote.parentElement?.nextElementSibling?.textContent).toContain('fr:Le pain'));
+        expect(quote.parentElement?.nextElementSibling?.querySelector('[aria-label="记住这句"]')).toBeNull();
+        expect(translate).toHaveBeenCalledTimes(4);
+    } finally {
+        controller.stop();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 test('switching the global service cannot turn a free page request into an unconfirmed model request', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
         html: '<p>First paragraph.</p><p>Second paragraph.</p><p>Third paragraph.</p>', url: 'https://example.test/article',
