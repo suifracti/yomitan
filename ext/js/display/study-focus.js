@@ -59,6 +59,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const original = cleanText(sentenceState?.text) || word;
         const subtitleSource = Boolean(sentenceState?.studySubtitle);
         const savedRecordId = savedStudyRecordId(display.history?.state, word);
+        const savedEntry = savedRecordId ? display.history?.state?.savedRecordEntry : null;
+        const savedWithoutDictionary = savedEntry && display.dictionaryEntries?.length === 0;
+        const savedMeaning = savedWithoutDictionary ? savedEntry.meaning?.trim() || savedEntry.sense?.gloss?.trim() || '' : '';
+        const savedNotes = savedWithoutDictionary ? savedEntry.notes?.trim() || '' : '';
         const sourceUrlCurrent = cleanText(display.history?.state?.url);
         const sourceTitleCurrent = cleanText(display.history?.state?.documentTitle) || cleanText(display.history?.state?.title);
         const sourceTimeCurrent = display.history?.state?.videoTime;
@@ -287,6 +291,17 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             }
         }
         dictionaryScroll.append(dictionaryForms, dictionaryInfo, dictionaryReference, dictionaryEtymology);
+        if (savedWithoutDictionary) {
+            const hint = d.createElement('p');
+            hint.className = 'sf-gloss-unavailable scan-disable';
+            const settings = d.createElement('a');
+            settings.href = '/settings.html#lookup';
+            settings.textContent = '词典设置 ↗';
+            settings.target = '_blank';
+            settings.rel = 'noopener noreferrer';
+            hint.append('词典没找到这个词。', settings);
+            dictionaryScroll.prepend(hint);
+        }
         const formNodes = entryHeader?.querySelectorAll('[data-study-meta-role="forms"], [data-sc-study-role="forms"]') || [];
         const formText = [...formNodes].map((node) => {
             const items = [...node.querySelectorAll('.study-form-item')];
@@ -697,7 +712,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             glossSignature = signature;
             host.replaceChildren();
             if (!senses.length) {
-                host.append(make('p', 'sf-gloss-unavailable', '暂无中文释义'));
+                if (!savedMeaning && !savedNotes) { host.append(make('p', 'sf-gloss-unavailable', '暂无中文释义')); }
                 return;
             }
             const appendRow = (parent, {pos, text}) => {
@@ -722,18 +737,19 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         };
         const updateAnswer = () => {
             if (!current()) { return; }
-            const turns = [...(output?.querySelectorAll('.study-conversation-turn') || [])];
+            const turns = /** @type {HTMLElement[]} */ ([...(output?.querySelectorAll('.study-conversation-turn') || [])]);
             /** @param {Element} node */
             const isTranslationTurn = (node) => node.getAttribute('data-study-mode') === 'translate';
-            const questionTurns = turns.filter((node) => !isTranslationTurn(node));
+            const questionTurns = turns.filter((node) => !isTranslationTurn(node) && (!savedWithoutDictionary || typeof node.dataset.studyRestored === 'undefined'));
             const turn = [...questionTurns].reverse().find((node) => node.querySelector('.study-turn-answer')) || questionTurns.at(-1);
             const prior = turns.filter((node) => node !== turn);
             const answer = turn?.querySelector('.study-turn-answer');
             const meaningText = answer?.querySelector('.study-ai-meaning')?.textContent?.trim() || '';
             const noteText = answer?.querySelector('.study-ai-notes')?.textContent?.trim() || '';
             const mine = turn?.querySelector('.study-user-question')?.textContent || '';
-            answerHeading.hidden = !turn;
-            answerHeading.textContent = '在这句话里';
+            const showSaved = !turn && Boolean(savedMeaning || savedNotes);
+            answerHeading.hidden = !turn && !showSaved;
+            answerHeading.textContent = showSaved ? '已保存的解释' : '在这句话里';
             paintDictionaryHint(shortGloss);
             // The lexical meaning stays visible whether or not an AI answer exists.
             // It is labeled separately from the contextual interpretation.
@@ -742,10 +758,10 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             // The question reads as a heading over the full-width answer.
             asked.textContent = mine.replace(/^\s*我[:：]\s*/, '你问：');
             asked.hidden = !mine || mine === '我：请解释这句话和这个词的用法';
-            meaning.textContent = meaningText;
-            meaning.hidden = !meaningText;
-            notes.textContent = noteText;
-            notes.hidden = !noteText || noteText === meaningText;
+            meaning.textContent = showSaved ? savedMeaning : meaningText;
+            meaning.hidden = !meaning.textContent;
+            notes.textContent = showSaved ? savedNotes : noteText;
+            notes.hidden = !notes.textContent || notes.textContent === meaning.textContent;
             feedback.replaceChildren();
             for (const originalButton of turn?.querySelectorAll('.study-feedback button') || []) {
                 const proxy = button(originalButton.textContent || '反馈');
@@ -1032,7 +1048,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const link = make('a', 'sf-link scan-disable', label); link.href = href;
             link.target = '_blank'; link.rel = 'noopener noreferrer'; sourceFooter.append(link);
         }
-        const relatedSource = savedRecordId ? librarySource(display.history.state?.savedRecordEntry?.url ?? '') : '';
+        const relatedSource = librarySource(savedEntry?.url ?? '');
         if (relatedSource) {
             const related = d.createElement('a');
             related.className = 'sf-link scan-disable';

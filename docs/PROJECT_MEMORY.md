@@ -42,6 +42,7 @@
 | 在视频里想直接打开已记的原句；倒着记的句子，复习想按视频顺序 | L-007；openPageLibrary 和 study_index.indexed_page |
 | 字幕播到这句，想找当时记的哪个词义，不想翻完整词表 | L-007；YoutubeReader._addCueNotes、libraryVideoWords 的 cue |
 | 已经从字幕打开旧笔记，怎样不退回视频就开始同素材复习 | L-007；study-focus 的来源区、createSourceLibraryUrl |
+| 没装词典或查不到词，已存笔记却写「暂无中文释义」 | L-007；study-focus 的已保存解释、study-translation 的恢复轮次 |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
@@ -224,6 +225,8 @@
 **在字幕行直接看当时记的义项**：点「笔记」才发 `libraryVideoWords(cue)`；浏览器给出当前素材，桥再按原文和保存整秒读取，只显示旧词表已有的词与短义。一个词的两个义项仍是两个笔记入口；同文同秒在当前轨不能区分时不读，改偏移、换轨或切素材不沿用原结果。不发播放、制卡或写笔记请求；旧桥拒绝时不把整份词表冒充这句。见[重复台词和不同选集的验证](youtube-study-wiring.md#2026-11-18-在字幕这一句找回已存词义)。
 
 **从一条已读回的笔记直接复习同来源**：词卡的来源区新增「同来源原句」，依据已读回的原笔记地址，而非当前网页或未保存的查询。使用学习库既有 `librarySource` 与 `createSourceLibraryUrl`，普通查词不显示，本地文件也只用来筛选、不导航到文件。独立 Chromium 加载工作树扩展、临时词典和只读桥，已实际从第二次台词打开原笔记、进入同来源时间线并播完同条附件。见[跨页串验](youtube-study-wiring.md#2026-11-18-字幕笔记到同来源听写实测)。
+
+**没有词典结果，不等于笔记没有释义**：已按编号读回的笔记零命中时，在原词卡的语境答复区展示「已保存的解释」，保留原句、译文、本人说明及同来源入口。用翻译视图已有的本次轮次判断区分恢复历史，旧问答不会替代笔记内容；本次明确发起的新问答仍照旧显示。无词典提示不再盖住笔记，详细词典仍可去设置，普通查词不改。见[实际 Chromium 空词典和无命中](youtube-study-wiring.md#2026-11-18-词典查不到仍能读自己的解释)。
 
 **翻译是对照，不是原文的一部分**：整页及下方单句译文虽然没有改原 DOM，插入的 `.study-page-translation` 仍会被句子扫描走进，抢走真正邻句。原文扫描跳过这个生成的节点，不增换行，保留原句和选词位置；不按语言把网页原生中文段落删掉。见[开译文前后对照](youtube-study-wiring.md#2026-11-18-打开网页译文不再把邻句换成中文)。
 

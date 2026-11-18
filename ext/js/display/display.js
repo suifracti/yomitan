@@ -37,7 +37,7 @@ import {TextScanner} from '../language/text-scanner.js';
 import {checkPopupPreviewURL} from '../pages/settings/popup-preview-controller.js';
 import {readStudyRecord} from '../study/study-client.js';
 import {mediaKeyOf} from '../study/media-key.js';
-import {studyResumeParams} from '../study/study-data.js';
+import {savedStudyRecordId, studyResumeParams} from '../study/study-data.js';
 import {DisplayContentManager} from './display-content-manager.js';
 import {DisplayGenerator} from './display-generator.js';
 import {DisplayHistory} from './display-history.js';
@@ -1506,8 +1506,9 @@ export class Display extends EventDispatcher {
         safePerformance.mark('display:updateNavigationAuto:end');
         safePerformance.measure('display:updateNavigationAuto', 'display:updateNavigationAuto:start', 'display:updateNavigationAuto:end');
 
-        this._setNoContentVisible(hasEnabledDictionaries && dictionaryEntries.length === 0 && lookup);
-        this._setNoDictionariesVisible(!hasEnabledDictionaries);
+        const savedWithoutDictionary = dictionaryEntries.length === 0 && state.savedRecordEntry && savedStudyRecordId(state, query);
+        this._setNoContentVisible(!savedWithoutDictionary && hasEnabledDictionaries && dictionaryEntries.length === 0 && lookup);
+        this._setNoDictionariesVisible(!savedWithoutDictionary && !hasEnabledDictionaries);
 
         const container = this._container;
         container.textContent = '';

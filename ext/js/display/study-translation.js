@@ -696,6 +696,7 @@ export function prepareStudyTranslation() {
                     const panel = d.createElement('details');
                     panel.className = 'study-conversation-turn';
                     panel.dataset.turnId = turn.id;
+                    if (!currentAnswer(turn)) { panel.dataset.studyRestored = ''; }
                     const isTranslation = turn.mode === 'translate';
                     panel.dataset.studyMode = isTranslation ? 'translate' : 'explain';
                     panel.open = opened.has(turn.id) || (index === turns.length - 1 && oldLast !== turn.id);
