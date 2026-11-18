@@ -10,6 +10,15 @@ FILE_DURATION_KEY = 'study-duration'
 VIDEO_QUERY_KEYS = ('v', 'p', 'id', 'vid', 'ep', 'episode', 'video', 'list', 'index')
 
 
+def page_source_key(url):
+    """Group chapter/text anchors for browsing without changing saved source identity."""
+    if not url.startswith(('http://', 'https://')):
+        return url
+    page, _, fragment = url.partition('#')
+    anchor = fragment.split(':~:', 1)[0]
+    return page + '#' + anchor if anchor.startswith(('/', '!')) or '=' in anchor else page
+
+
 def media_key_of(url):
     """Stable reader/index key, not a note ID or a source link."""
     try:

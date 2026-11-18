@@ -440,7 +440,15 @@ async function initializePage() {
         /** @type {boolean|null} Latest queued reset; true for a read-only search. */
         let queuedSearch = null;
         let loaded = false;
-        let category = 'all';
+        const requestedSource = new URL(location.href).searchParams.get('source') || '';
+        const sourceTab = /** @type {?HTMLButtonElement} */ (document.querySelector('[data-library-category="source"]'));
+        const articleUrl = /^https?:\/\//.test(requestedSource) && requestedSource.length <= 2000 ? requestedSource : '';
+        let category = articleUrl ? 'source' : 'all';
+        if (articleUrl && sourceTab) {
+            sourceTab.hidden = false;
+            sourceTab.setAttribute('aria-pressed', 'true');
+            document.querySelector('[data-library-category="all"]')?.setAttribute('aria-pressed', 'false');
+        }
         let canSearch = false;
         let listedQuery = '';
         let listedCategory = 'all';
@@ -884,6 +892,8 @@ listedQuery :
                     empty.textContent = `学习库未能核对，不能确认此分类为空：${listError}`;
                 } else if (waiting) {
                     empty.textContent = '正在学习库里找…';
+                } else if (loaded && category === 'source' && !query) {
+                    empty.textContent = '还没有在这页记过的原句。读到想留下的句子时，可以点词卡里的「记住它」。';
                 } else if (loaded) {
                     empty.textContent = query && canSearch ? '这个分类没有匹配的记录。试试单词、中文义或原句。' : (query ? '已加载的记录里没有匹配结果。' : '这个分类暂时没有已读取的记录。');
                 } else {
@@ -945,7 +955,7 @@ listedQuery :
             const query = search.value.trim();
             const tab = category;
             const indexed = canSearch;
-            const readOnly = searchOnly || Boolean(query) || tab === 'manual-known';
+            const readOnly = searchOnly || Boolean(query) || tab === 'manual-known' || tab === 'source';
             const obsolete = () => queuedSearch !== null || tab !== category || (canSearch && query !== search.value.trim());
             if (reset && !readOnly) { void refreshToday(); }
             more.disabled = true;
@@ -961,10 +971,10 @@ listedQuery :
                     syncPendingError = error instanceof Error ? error.message : '待同步队列检查失败。';
                 }
             }
-            if (!loaded || !readOnly) { await refreshSavedWords(); }
+            if ((!loaded || !readOnly) && tab !== 'source') { await refreshSavedWords(); }
             try {
-                const scope = indexed || ['pending', 'anki-only', 'manual-known'].includes(tab) ? tab : 'all';
-                const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
+                const scope = indexed || ['pending', 'anki-only', 'manual-known', 'source'].includes(tab) ? tab : 'all';
+                const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? articleUrl : '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
                 const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[]}|null} */ (value);
                 canSearch = result?.canSearch === true;
                 if (!indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }

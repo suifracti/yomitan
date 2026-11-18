@@ -850,7 +850,7 @@ export class StudyService {
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
             if (action === 'libraryMarkKnown' || (action === 'knownWords' && ('known' in value || 'ignored' in value))) { await this.refreshWordStatus(); }
-            if ((action === 'libraryList' && !('query' in value)) || action === 'libraryMemory') {
+            if ((action === 'libraryList' && !('query' in value) && !('scope' in value && value.scope === 'source')) || action === 'libraryMemory') {
                 const items = /** @type {{items?: import('study').LibraryRecord[]}} */ (response.library).items;
                 if (Array.isArray(items)) { await this.sync.favoritesFrom(items.filter((r) => r.entry && r.vaultSaved !== false)); }
             }
@@ -1276,6 +1276,12 @@ export function prepareStudyService(lookupDictionary = null) {
         (/^(?:https?|file):/.test(sender.url || '') || sender.url?.startsWith(chrome.runtime.getURL('')))) {
             const section = /** @type {{section?: string}} */ (data || {}).section === 'save' ? 'save' : 'ai';
             void chrome.tabs.create({url: chrome.runtime.getURL(`settings.html#${section}`)}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '设置没有打开，请从扩展图标里打开设置。'}));
+            return true;
+        }
+        if (studyAction === 'openPageLibrary' && sender.id === chrome.runtime.id && sender.frameId === 0 && /^https?:\/\//.test(sender.url || '')) {
+            const url = new URL(chrome.runtime.getURL('study-library.html'));
+            url.searchParams.set('source', sender.url || '');
+            void chrome.tabs.create({url: url.href}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '没有打开学习库。'}));
             return true;
         }
         if (studyAction === 'openStudyRecord' && sender.id === chrome.runtime.id && /^(?:https?|file):/.test(sender.url || '')) {

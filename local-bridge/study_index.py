@@ -10,7 +10,7 @@ import re
 import tempfile
 
 from study_cards import linked_note_ids, with_card_progress
-from study_sources import with_article_href
+from study_sources import page_source_key, with_article_href
 
 
 def needs_attention(row):
@@ -54,11 +54,12 @@ def search_hit(row, query):
 
 def indexed_page(rows, p):
     scope = p.get('scope', 'source')
+    source = page_source_key(p['url']) if scope == 'source' else ''
     query = ' '.join(p.get('query', '').casefold().split())
     matches = []
     for row in rows:
         e = row['entry']
-        if scope == 'source' and (e['url'] != p['url'] or (not p['url'] and e['title'] != p['title'])): continue
+        if scope == 'source' and (page_source_key(e['url']) != source or (not source and e['title'] != p['title'])): continue
         if scope == 'pending' and not needs_attention(row): continue
         if scope == 'anki-only' and row.get('syncState') != 'anki-only': continue
         if scope == 'manual-known' and not row.get('manualKnown'): continue

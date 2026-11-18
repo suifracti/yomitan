@@ -22,6 +22,7 @@
 | 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
+| 读回同一篇文章，想看上次记过的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选 |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
@@ -142,6 +143,8 @@
 **来源链接和记录编号不是同一回事。** 改视频分组键时看 `study_sources.py`（浏览器站点表由同一文件生成）；不能因此改 `entry_id` 或归档笔记的编号。没有实际播放时间就保留原链接：曾将分享地址的 83 秒写成 0 秒，也会把普通页面的章节锚点丢掉。只有确实知道时间，才为 YouTube/B站生成跳时链接；普通网页不加时间参数，本地文件在来源行只显示文件名。见[临时笔记复现](youtube-study-wiring.md#2026-11-18-来源链接不再从零秒开始)。
 
 **文章来源直达原句**：`study_sources.article_href` 用原句生成浏览器文本片段，合适的是不含已有锚点或视频时间的 HTTP(S) 页面（不含 YouTube/B 站，原文 3 词以上、最多 400 字符）。学习库、辨词义和新笔记共用派生链接，不用它替换保存的 URL 或编号。明确的章节锚点优先；浏览器找不到原句仍能打开页面，重复文本不能保证是哪一次。见[浏览器实际点击](youtube-study-wiring.md#2026-11-18-普通网页的出处也能回到原句)。
+
+**在原网页找回本页笔记**：「本页生词」的入口只让后台按顶层消息来源打开学习库，不把笔记结果返回网页。学习库用原有 `source` 分类和分页只读索引；同文的章节或文本定位不分组，查询参数、哈希路由仍分开。不动原 URL、记录号或制卡来源。见[12 条的浏览器往返](youtube-study-wiring.md#2026-11-18-从本页生词找回这篇文章的原句)。
 
 **翻译是对照，不是原文的一部分**：整页及下方单句译文虽然没有改原 DOM，插入的 `.study-page-translation` 仍会被句子扫描走进，抢走真正邻句。原文扫描跳过这个生成的节点，不增换行，保留原句和选词位置；不按语言把网页原生中文段落删掉。见[开译文前后对照](youtube-study-wiring.md#2026-11-18-打开网页译文不再把邻句换成中文)。
 

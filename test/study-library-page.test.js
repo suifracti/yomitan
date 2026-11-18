@@ -55,6 +55,7 @@ function makePageDom() {
             <p id="study-library-today"></p>
             <button id="study-library-open-anki"></button>
             <button data-library-category="all" aria-pressed="true">全部</button>
+            <button data-library-category="source" hidden>本页原句</button>
             <button data-library-category="favorites" aria-pressed="false">收藏</button>
             <button data-library-category="saved" aria-pressed="false">已保存</button>
             <button data-library-category="linked" aria-pressed="false">关联卡</button>
@@ -71,6 +72,25 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('opening the library from an article reads only that source before any user action', async () => {
+        vi.resetModules();
+        makePageDom();
+        const previousUrl = location.href;
+        const url = 'https://reading.example/story?id=31#chapter';
+        history.replaceState(null, '', `?source=${encodeURIComponent(url)}`);
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        mocks.studyCall.mockResolvedValue({items: [], total: 0, canSearch: true});
+        try {
+            await import('../ext/js/pages/study-library.js');
+            await vi.waitFor(() => expect(document.querySelector('#study-library-list').textContent).toContain('还没有在这页记过的原句'));
+            expect(document.querySelector('[data-library-category="source"]').getAttribute('aria-pressed')).toBe('true');
+            expect(mocks.studyCall.mock.calls).toEqual([['libraryList', {language: 'en', url, title: '', scope: 'source', offset: 0}]]);
+        } finally {
+            history.replaceState(null, '', previousUrl);
+        }
+    });
+
     test('keeps a pending-filter click made while the previous page is loading', async () => {
         vi.resetModules();
         makePageDom();

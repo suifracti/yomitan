@@ -911,7 +911,17 @@ export class WordMarks {
         close.onclick = () => panel.remove();
         const note = document.createElement('p');
         note.textContent = '只勾不认识的，其余会标为认识。忽略的词以后不再提示。';
-        panel.append(title, close, note);
+        const saved = document.createElement('button');
+        saved.type = 'button';
+        saved.textContent = '本页记过的原句 ↗';
+        saved.onclick = async () => {
+            try {
+                await studyCall('openPageLibrary');
+            } catch {
+                note.textContent = '没能打开本页原句，请从扩展图标打开学习库。';
+            }
+        };
+        panel.append(title, close, saved, note);
         const rows = this.pageWords();
         for (const row of rows) {
             row.meaning = this._glosses[row.word] || row.meaning;
