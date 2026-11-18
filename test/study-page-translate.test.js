@@ -259,6 +259,52 @@ test('translates visible blocks and restores the exact original nodes in both mo
     }
 });
 
+test('removes standalone inline translations when dynamic pages replace or move their source', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<p id="source">The first comment.</p><p id="other">A different comment.</p><section></section>',
+        url: 'https://example.test/article',
+    }});
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage: async () => ({ok: true, value: {model: 'fixture', effort: 'low'}})},
+        storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'google'}})}},
+    });
+    const {PageTranslate} = await import('../ext/js/study/page-translate.js');
+    const translate = vi.fn(async () => '临时译文');
+    const page = new PageTranslate({translate});
+    const original = /** @type {HTMLElement} */ (document.getElementById('source'));
+    const other = /** @type {HTMLElement} */ (document.getElementById('other'));
+    const open = async (/** @type {HTMLElement} */ source) => {
+        const trigger = document.createElement('div');
+        document.body.append(trigger);
+        const range = document.createRange();
+        range.selectNodeContents(source);
+        await page.openSelection(range.toString(), trigger, source, {url: location.href, element: source, range, language: 'en'});
+        return source.nextElementSibling;
+    };
+    try {
+        const first = await open(original);
+        const untouched = await open(other);
+        expect(first?.textContent).toContain('临时译文');
+        original.textContent = 'The page reused this comment.';
+        await vi.waitFor(() => expect(first?.isConnected).toBe(false));
+        expect(other.nextElementSibling).toBe(untouched);
+        expect(translate).toHaveBeenCalledTimes(2);
+
+        const second = await open(original);
+        const destination = document.querySelector('section');
+        destination?.append(original);
+        await vi.waitFor(() => expect(second?.isConnected).toBe(false));
+        expect(destination?.firstElementChild).toBe(original);
+        expect(original.textContent).toBe('The page reused this comment.');
+        expect(other.nextElementSibling).toBe(untouched);
+        expect(translate).toHaveBeenCalledTimes(3);
+    } finally {
+        page.stop();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 test('checks and runs Chrome translation in the language direction the caller asked for', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<!DOCTYPE html><html lang="zh-CN"><body></body></html>', url: 'https://example.test/article'}});
     /** @type {string[]} */

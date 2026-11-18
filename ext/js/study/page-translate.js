@@ -112,7 +112,7 @@ export class PageTranslate {
          *
          */
         this.prefs = {...DEFAULT_PAGE_PREFS};
-        /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,language:string,manual:boolean,originalToggle?:HTMLButtonElement}>} */
+        /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,language:string,manual:boolean,originalToggle?:HTMLButtonElement,sourceIsCurrent?:()=>boolean}>} */
         this.rows = new Map();
         /** @type {Map<string,Promise<string>>} */
         this.cache = new Map();
@@ -293,6 +293,10 @@ export class PageTranslate {
         this.rows.get(original)?.node.remove();
         this.rows.delete(original);
         original.classList.remove('study-original-hidden');
+        if (!this.active && this.rows.size === 0) {
+            this.mo?.disconnect();
+            this.mo = null;
+        }
     }
 
     /**
@@ -301,9 +305,10 @@ export class PageTranslate {
      * @param {string} translation
      * @param {boolean} [manual]
      * @param {boolean} [failed]
+     * @param {()=>boolean} [sourceIsCurrent] Applies to standalone inline sentence translations.
      * @returns {HTMLElement}
      */
-    render(original, text, translation, manual = false, failed = false) {
+    render(original, text, translation, manual = false, failed = false, sourceIsCurrent) {
         this.restore(original);
         const node = document.createElement('div');
         node.className = 'study-page-translation scan-disable';
@@ -329,7 +334,8 @@ export class PageTranslate {
             originalToggle = button;
             node.append(button);
         }
-        this.rows.set(original, {node, text, snapshot: this.source(original), language: pageLanguage(original), manual, originalToggle});
+        this.rows.set(original, {node, text, snapshot: this.source(original), language: pageLanguage(original), manual, originalToggle, sourceIsCurrent});
+        if (sourceIsCurrent) { this.watchChanges(); }
         this.paint();
         return node;
     }
@@ -572,12 +578,15 @@ export class PageTranslate {
                 this.closeSelectionCard();
             }
         };
+        const renderSelection = (/** @type {string} */ content) => {
+            return this.render(original, text, content, true, false, inline ? isCurrent : void 0);
+        };
         const attempt = async (/** @type {SubtitleEngine|undefined} */ expectedEngine = void 0) => {
             if (!original.isConnected || !isCurrent()) {
                 dismiss();
                 return;
             }
-            const pending = this.render(original, text, '翻译中…', true);
+            const pending = renderSelection('翻译中…');
             const waiting = () => original.isConnected && this.rows.get(original)?.node === pending;
             try {
                 await settingsReady;
@@ -597,7 +606,7 @@ export class PageTranslate {
                     dismiss();
                     return;
                 }
-                const node = this.render(original, text, translation, true);
+                const node = renderSelection(translation);
                 if (inline) { node.classList.add('study-selection-translation'); }
                 const tools = document.createElement('span');
                 tools.className = 'study-selection-actions';
@@ -688,15 +697,23 @@ export class PageTranslate {
                 }
             }
         });
+        this.watchChanges();
+        this.scan(document.body);
+    }
+
+    /** Keep rendered translations attached to the original text in either mode. */
+    watchChanges() {
+        if (this.mo) { return; }
         this.mo = new MutationObserver((records) => {
             /** @type {Set<Element>} */
             const roots = new Set();
             for (const [original, row] of this.rows) {
-                if (original.isConnected && row.node.previousElementSibling === original) { continue; }
+                if (original.isConnected && row.node.previousElementSibling === original && row.sourceIsCurrent?.() !== false) { continue; }
                 // A page can move a paragraph or remove its translation without replacing the original.
                 this.restore(original);
                 if (original.isConnected && !row.manual) { roots.add(original); }
             }
+            if (!this.active) { return; }
             for (const record of records) {
                 const root = record.target instanceof Element ? record.target : record.target.parentElement;
                 if (!root || root.closest(SKIP)) { continue; }
@@ -732,7 +749,6 @@ export class PageTranslate {
         });
         this.mo.observe(document.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'open', 'lang']});
         this.mo.observe(document.documentElement, {attributes: true, attributeFilter: ['lang']});
-        this.scan(document.body);
     }
 
     /** Restore page markup; late translation replies cannot reinsert content. */
@@ -744,6 +760,7 @@ export class PageTranslate {
         ++this.version;
         this.io?.disconnect();
         this.mo?.disconnect();
+        this.mo = null;
         for (const original of this.rows.keys()) { this.restore(original); }
         this.pending = new WeakSet();
         this.selectionUi?.remove();
