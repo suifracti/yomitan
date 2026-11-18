@@ -40,6 +40,7 @@ const SOURCES_UPDATE_BRIDGE = '当前的本机桥还不能按素材查看。可�
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
 /** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
 /** @typedef {{row: StudyLibraryRecord, text: string, answer: string, hint: string}} SentencePrompt */
+/** @typedef {{prompts: SentencePrompt[], hasMore: boolean}} DictationRound */
 /** @typedef {{url: string, title: string, records: number, audio: number}} SourceShelfItem */
 
 /**
@@ -410,13 +411,14 @@ function showSensePractice(panel, pair, examples = false) {
  * @param {StudyLibraryRecord[]} rows
  * @param {SentencePrompt[]} picked
  * @param {boolean} dictation
+ * @param {number} [limit]
  * @returns {SentencePrompt[]}
  */
-function sentencePrompts(rows, picked, dictation) {
+function sentencePrompts(rows, picked, dictation, limit = SENTENCE_PRACTICE_LIMIT) {
     const prompts = [...picked];
     const seen = new Set(picked.map(({text}) => text));
     for (const row of rows) {
-        if (prompts.length >= SENTENCE_PRACTICE_LIMIT) { break; }
+        if (prompts.length >= limit) { break; }
         const {entry} = row;
         if (!matchesCategory(row, 'saved') || !entry?.sentence || !entry.word || !/^en(?:-|$)/i.test(entry.language || 'en')) { continue; }
         if (dictation) {
@@ -491,8 +493,9 @@ function markDictation(line, text, offsets) {
  * @param {boolean} dictation
  * @param {(row: StudyLibraryRecord, report?: (message: string) => void) => HTMLButtonElement | null} makeAudioButton
  * @param {() => void} stopAudio
+ * @param {() => Promise<DictationRound>} [loadNextRound]
  */
-function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAudio) {
+function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAudio, loadNextRound) {
     const heading = document.createElement('h2');
     heading.tabIndex = -1;
     let queue = prompts;
@@ -503,9 +506,45 @@ function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAu
     const show = () => {
         if (index === queue.length) {
             heading.textContent = '本轮结束';
-            panel.replaceChildren(heading, Object.assign(document.createElement('p'), {textContent: '可返回学习库继续找原句。这轮不保存成绩。'}));
-            if (missed.size > 0) {
-                const retry = Object.assign(document.createElement('button'), {type: 'button', textContent: `重听没对上的 ${missed.size} 句`});
+            const message = Object.assign(document.createElement('p'), {textContent: loadNextRound ? '还有可练的原声。这组的作答不会保存。' : '可返回学习库继续找原句。这轮不保存成绩。'});
+            panel.replaceChildren(heading, message);
+            const actions = document.createElement('div');
+            actions.className = 'study-library-practice-choices';
+            const load = loadNextRound ? Object.assign(document.createElement('button'), {type: 'button', textContent: '练下一组'}) : null;
+            const retry = missed.size > 0 ? Object.assign(document.createElement('button'), {type: 'button', textContent: `重听没对上的 ${missed.size} 句`}) : null;
+            if (load) {
+                load.onclick = async () => {
+                    if (!loadNextRound) { return; }
+                    load.disabled = true;
+                    if (retry) { retry.disabled = true; }
+                    message.textContent = '正在找下一组…';
+                    try {
+                        const {prompts: next, hasMore} = await loadNextRound();
+                        if (!panel.contains(load)) { return; }
+                        if (!hasMore) { loadNextRound = void 0; }
+                        if (next.length === 0) {
+                            load.remove();
+                            message.textContent = '目前没有更多可练的原声了。';
+                            heading.focus();
+                            return;
+                        }
+                        queue = next;
+                        missed.clear();
+                        index = 0;
+                        retrying = false;
+                        show();
+                    } catch {
+                        if (!panel.contains(load)) { return; }
+                        message.textContent = '没能读到下一组，可以再试一次。';
+                        load.focus();
+                    } finally {
+                        load.disabled = false;
+                        if (retry) { retry.disabled = false; }
+                    }
+                };
+                actions.append(load);
+            }
+            if (retry) {
                 retry.onclick = () => {
                     queue = [...missed];
                     missed.clear();
@@ -513,8 +552,9 @@ function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAu
                     retrying = true;
                     show();
                 };
-                panel.append(retry);
+                actions.append(retry);
             }
+            if (actions.childElementCount) { panel.append(actions); }
             heading.focus();
             return;
         }
@@ -955,11 +995,13 @@ async function initializePage() {
             }
             cancelSentenceSearch();
             const listening = button === dictationButton;
+            /** @type {(() => Promise<DictationRound>) | undefined} */
+            let loadNextRound;
             /**
              * @param {SentencePrompt[]} prompts
              * @returns {void}
              */
-            const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, listening, makeSavedAudioButton, clearSavedAudio));
+            const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, listening, makeSavedAudioButton, clearSavedAudio, loadNextRound));
             let prompts = listening ? dictation : cloze;
             if (activePractice === button || (!listening && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
                 open(prompts);
@@ -977,8 +1019,24 @@ async function initializePage() {
             let failed = false;
             try {
                 if (listening) {
-                    const found = await studyCall('libraryList', {...base, practice: 'dictation', ...(query ? {query} : {})});
-                    prompts = sentencePrompts(normalizeRecords(found), [], true);
+                    const payload = {...base, practice: 'dictation', ...(query ? {query} : {})};
+                    let nextOffset = 0;
+                    let available = Number.POSITIVE_INFINITY;
+                    /** @type {SentencePrompt[]} */
+                    const waiting = [];
+                    const readRound = async () => {
+                        if (waiting.length < SENTENCE_PRACTICE_LIMIT && nextOffset < available) {
+                            const found = await studyCall('libraryList', {...payload, ...(nextOffset ? {offset: nextOffset} : {})});
+                            const rows = normalizeRecords(found);
+                            nextOffset += rows.length;
+                            available = rows.length > 0 ? (/** @type {{total?: number}} */ (found).total ?? nextOffset) : nextOffset;
+                            waiting.push(...sentencePrompts(rows, [], true, PAGE_SIZE));
+                        }
+                        return {prompts: waiting.splice(0, SENTENCE_PRACTICE_LIMIT), hasMore: waiting.length > 0 || nextOffset < available};
+                    };
+                    const first = await readRound();
+                    prompts = first.prompts;
+                    if (first.hasMore) { loadNextRound = readRound; }
                 } else {
                     const end = total;
                     let next = offset;

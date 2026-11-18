@@ -289,6 +289,52 @@ describe('study library page', () => {
         expect(panel.textContent).not.toContain('重听没对上的');
     });
 
+    test('continues dictation beyond the first five recordings without prefetching or autoplay', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        const items = Array.from({length: 11}, (_, i) => ({
+            id: (i + 1).toString(16).padStart(32, '0'),
+            vaultSaved: true,
+            entry: {word: 'recording', sentence: `This is recording ${i + 1}.`},
+            media: {audio: {name: 'clip.webm'}},
+        }));
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action !== 'libraryList') { return []; }
+            const start = Number(payload.offset ?? 0);
+            return {items: items.slice(start, start + 10), total: items.length, canSearch: true};
+        });
+        await import('../ext/js/pages/study-library.js');
+        const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-dictation-button'));
+        const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+        const button = (/** @type {string} */ label) => [...panel.querySelectorAll('button')].find((item) => item.textContent === label);
+        const offsets = () => mocks.studyCall.mock.calls
+            .filter(([action, payload]) => action === 'libraryList' && payload.practice === 'dictation')
+            .map(([, payload]) => payload.offset ?? 0);
+        await vi.waitFor(() => expect(start.hidden).toBe(false));
+        start.click();
+        await vi.waitFor(() => expect(panel.textContent).toContain('练原声听写 · 1 / 5'));
+        for (let i = 0; i < 5; ++i) { button('跳过')?.click(); }
+        expect(offsets()).toEqual([0]);
+        expect(button('练下一组')).toBeDefined();
+        button('练下一组')?.click();
+        await vi.waitFor(() => expect(panel.textContent).toContain('练原声听写 · 1 / 5'));
+        button('直接看原句')?.click();
+        expect(panel.textContent).toContain('This is recording 6.');
+        button('下一句')?.click();
+        for (let i = 0; i < 4; ++i) { button('跳过')?.click(); }
+        expect(offsets()).toEqual([0]);
+        button('练下一组')?.click();
+        await vi.waitFor(() => expect(panel.textContent).toContain('练原声听写 · 1 / 1'));
+        button('直接看原句')?.click();
+        expect(panel.textContent).toContain('This is recording 11.');
+        button('完成这轮')?.click();
+        expect(button('练下一组')).toBeUndefined();
+        expect(offsets()).toEqual([0, 10]);
+        expect(mocks.studyCall.mock.calls.some(([action]) => action === 'libraryAudioRead')).toBe(false);
+    });
+
     test('uses saved sentences for a short cloze without grading or changing the records', async () => {
         vi.resetModules();
         makePageDom();
