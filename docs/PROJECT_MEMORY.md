@@ -59,6 +59,7 @@
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
 | 长句翻完后改字幕显示，结果又空了／刷新想继续读译文 | L-010；study-translation 的 prepareParallelSentence、paintSentenceTranslation |
+| 问过 AI 后手动点「记住它」，笔记的原句译文变了 | L-010；study-translation 的 translationFor |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
@@ -302,6 +303,8 @@
 实际反例：同一时刻选择 Microsoft、关视频内字幕、开自动翻译，旧写法把前两项还原成 Google 和显示字幕。新写法三项都保留。不增加设置项、轮询或另一个存储，不因为换设置就调用所选服务。见[全局翻译选项验证](youtube-study-wiring.md#2026-11-18-翻译服务与字幕设置统一写入)。
 
 **字幕偏好与已译原句分开**：在关闭自动翻译时手动翻长句，字幕外观通知会重绘段落，旧实现把成品清空。现在同一句已完成的译文保留；整张卡重绘时，只有现有按服务／语言／片段的内存缓存合起来等于已恢复译文，才恢复逐段排版，不再记一轮。重载丢失内存分段时仍显示已存整句译文。没开始翻不展示空框，换原句不继承旧译文；翻译服务、缓存和问答同步仍是原来源。见[逐段到重载的验证](youtube-study-wiring.md#2026-11-18-翻译完不因改字幕显示而丢译文)。
+
+**原句旁显示什么，就保存什么**：同一句先用笔记读回或字幕带来的现成译文，再用实际已完成的分段／单句翻译，最后才用本句问答附带的译文。问答里可以有不同译法，但不会借「记住它」或制卡覆盖原句旁已有译文；仍可正常保存新解释，也不为已译原句重发请求。原有自动同步仍只补空字段。见[临时笔记读回验证](youtube-study-wiring.md#2026-11-18-保存原句旁显示的译文)。
 
 ## L-011 同步到日常使用的版本可以原样再跑一次
 

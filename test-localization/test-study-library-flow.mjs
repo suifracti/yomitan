@@ -412,27 +412,46 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     assert.equal(read.library.items[0].record.entry.notes, answer.notes);
 
     const manual = '笔记里后来核对过的含义。';
-    await h.native({action: 'libraryUpdate', id, entry: {meaning: manual}}).promise;
+    const manualTranslation = '这是我后来手工核对过的译文。';
+    await h.native({action: 'libraryUpdate', id, entry: {meaning: manual, translation: manualTranslation}}).promise;
     await h.storage.set({studyLearningJournalV1: []});
     const current = await readStudyRecord(id, 'en');
     view.cancel();
     container.replaceChildren();
+    container.innerHTML = `<div class="study-source"><span class="study-source-label">当前原句</span><p>${SENTENCE}</p></div>`;
+    const previousCustomEvent = globalThis.CustomEvent;
+    globalThis.CustomEvent = dom.window.CustomEvent;
+    t.after(() => { globalThis.CustomEvent = previousCustomEvent; });
     view.render(container, SENTENCE, 'just', {...current.entry, recordId: id, savedTurnIds: current.turnIds, savedTurns: current.savedTurns, contextSelected: true});
     await waitFor(() => container.querySelectorAll('.study-conversation-turn[data-study-restored]').length === 2, 'both saved answers with no browser history beside the fresh note snapshot');
     container.querySelector('[data-study-save="note"]').click();
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存') && !container.querySelector('[data-study-save="note"]').disabled, 'save without reverting to the old cached answer');
     read = await h.native({action: 'libraryRead', ids: [id]}).promise;
     assert.equal(read.library.items[0].record.entry.meaning, manual);
+    const inline = container.querySelector('.study-source-translation');
+    assert.equal(inline.textContent, manualTranslation);
+    assert.equal(inline.hidden, false);
+    assert.equal(h.modelCalls.filter((call) => call.action === 'explain').length, 1, 'reopening must not translate it again');
+    const nextQuestion = 'How is the word used compared to fair?';
+    container.querySelector('.study-followup').value = nextQuestion;
+    container.querySelector('[data-study-translate="explain"]').click();
+    await waitFor(() => [...container.querySelectorAll('.study-conversation-turn')].some((turn) => turn.textContent.includes(nextQuestion)) &&
+        !container.querySelector('[data-study-translate="explain"]').disabled, 'another completed answer with a different translation');
+    assert.equal(inline.textContent, manualTranslation, 'the text next to the sentence remains the manual translation');
+    container.querySelector('[data-study-save="note"]').click();
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存') &&
+        !container.querySelector('[data-study-save="note"]').disabled, 'save the answer from the reopened card');
+    assert.equal((await readStudyRecord(id, 'en')).entry.translation, manualTranslation, 'save must use the same translation as the card shows');
     const state = await latestState(h.bridge);
     assert.equal(state.markdownFiles.length, 1);
     assert.deepEqual(state.notes, {});
-    assert.equal(h.modelCalls.filter((call) => call.action === 'explain').length, 1);
+    assert.equal(h.modelCalls.filter((call) => call.action === 'explain').length, 2);
     assert.equal(h.modelCalls.some((call) => call.action === 'cards'), false);
     const upgradedBridge = globalThis.chrome.runtime.sendMessage;
     globalThis.chrome.runtime.sendMessage = async (message) => message.data?.includeTurns ?
         {ok: false, error: '不支持的学习库操作或字段。'} : upgradedBridge(message);
     const legacy = await readStudyRecord(id, 'en');
-    assert.equal(legacy.entry.meaning, manual);
+    assert.equal(legacy.entry.translation, manualTranslation);
     assert.equal(legacy.savedTurns, undefined);
     view.cancel();
     await waitFor(() => h.bridge.pending.size === 0, 'outstanding readback before closing the temporary bridge');

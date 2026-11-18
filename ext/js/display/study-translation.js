@@ -594,13 +594,11 @@ export function prepareStudyTranslation() {
                 row.append(translateSentence, sentenceChinese);
                 sourceBox?.append(row);
             }
-            /** @param {import('study').LearningTurn[]} turns */
-            const paintSentenceTranslation = (turns) => {
+            const paintSentenceTranslation = () => {
                 if (!sentenceChinese || !translateSentence) { return; }
                 const originalText = editor.value.trim();
-                const answer = [...turns].reverse().find((turn) => currentAnswer(turn) && turn.mode === 'translate' && typeof turn.translation === 'string' && turn.translation.trim());
-                const text = answer?.translation?.trim() || (originalText === sentence.trim() ? source.translation || '' : '');
-                const segmentReady = sourceBox?.dataset.studySegmentSentence === originalText && Boolean(sourceBox?.dataset.studySegmentTranslation);
+                const text = translationFor();
+                const segmentReady = Boolean(text) && sourceBox?.dataset.studySegmentSentence === originalText && sourceBox.dataset.studySegmentTranslation === text;
                 sentenceChinese.dataset.studyTranslationFor = originalText;
                 sentenceChinese.textContent = text;
                 const parallel = /** @type {HTMLElement|null|undefined} */ (sourceBox?.querySelector('.sf-parallel-sentence'));
@@ -643,8 +641,8 @@ export function prepareStudyTranslation() {
             tokenLabel.title = '展开查看用量；不会调用模型。';
             let busy = false,
                 requestId = 0;
-            /** @type {?import('study').Result} */
-            let latest = null;
+            let latestTranslation = '';
+            let translatedSourceSentence = sentence.trim();
             /** @type {import('study').LearningTurn|null} */
             let latestExplanation = null;
             let latestSource = '';
@@ -653,6 +651,12 @@ export function prepareStudyTranslation() {
             let activePayload = null;
             // Draft input is NOT conversation identity. Typing a new question never erases the previous answer.
             const identity = () => JSON.stringify({...lookup(), question: ''});
+            const translationFor = () => {
+                const originalText = editor.value.trim();
+                const existing = originalText === translatedSourceSentence ? source.translation : '';
+                const segmented = sourceBox?.dataset.studySegmentSentence === originalText ? sourceBox.dataset.studySegmentTranslation : '';
+                return existing || segmented || (latestSource === identity() ? latestTranslation : '');
+            };
             /** @param {boolean} value */
             const lock = (value) => {
                 busy = value;
@@ -729,11 +733,12 @@ export function prepareStudyTranslation() {
                     }
                     historyInitialized = true;
                 }
-                const currentTurns = turns.filter(currentAnswer);
-                latest = currentTurns.at(-1) ?? null;
-                latestExplanation = [...currentTurns].reverse().find((turn) => turn.mode !== 'translate' && (turn.meaning?.trim() || turn.notes?.trim())) ?? null;
+                const currentTurns = turns.filter(currentAnswer).reverse();
+                const translatedTurns = currentTurns.filter((turn) => turn.translation?.trim());
+                latestTranslation = (translatedTurns.find((turn) => turn.mode === 'translate') ?? translatedTurns[0])?.translation?.trim() ?? '';
+                latestExplanation = currentTurns.find((turn) => turn.mode !== 'translate' && (turn.meaning?.trim() || turn.notes?.trim())) ?? null;
                 latestSource = identity();
-                paintSentenceTranslation(turns);
+                paintSentenceTranslation();
                 updatePinnedExplanation(latestExplanation ?? (source.recordId && source.explanationSource?.includes('AI 辅助解释') ? {meaning: source.meaning, notes: source.notes} : null));
                 for (const [index, turn] of turns.entries()) {
                     const panel = d.createElement('details');
@@ -979,6 +984,7 @@ export function prepareStudyTranslation() {
                         source.notes = row.entry.notes;
                         source.explanationSource = row.entry.explanationSource;
                         source.translation = row.entry.translation;
+                        translatedSourceSentence = row.entry.sentence.trim();
                     }
                     void refresh().catch(() => {});
                     if (!globalButton.disabled && globalBody.textContent) {
@@ -1013,13 +1019,12 @@ export function prepareStudyTranslation() {
             footer.append(hint, tokens);
             container.append(actions, status, history, question, footer, more);
             const disposeLibrary = mountStudyLibrary(container, () => {
-                const current = latestSource === identity() ? latest : null;
                 const explanation = latestSource === identity() ? latestExplanation : null;
                 const english = container.closest('.study-entry')?.querySelector('.study-primary-english');
                 const translated = english?.querySelector('[data-study-translated=true]')?.textContent;
                 const dictionaryTranslation = translated ? `词典英文：${english?.querySelector('.study-english-original')?.textContent ?? ''}\nAI 辅助中文：${translated}` : '';
 
-                return {word, ...(recordId ? {recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: (sourceBox?.dataset.studySegmentSentence === editor.value.trim() ? sourceBox.dataset.studySegmentTranslation : '') || current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? source.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : source.explanationSource ?? '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
+                return {word, ...(recordId ? {recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: translationFor(), notes: explanation?.notes ?? source.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : source.explanationSource ?? '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
             }, isCurrent, {capture: source.capture,
                 cancelCapture: source.cancelCapture,
                 range: source.mediaRange,
@@ -1034,7 +1039,7 @@ export function prepareStudyTranslation() {
             for (const control of container.querySelectorAll('button, input, textarea, select, summary')) {
                 control.classList.add('scan-disable');
             }
-            paintSentenceTranslation([]);
+            paintSentenceTranslation();
             const initialHistoryReady = restore();
         }};
 }
