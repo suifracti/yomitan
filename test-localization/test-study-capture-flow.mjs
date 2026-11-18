@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {mountStudyLibrary} from '../ext/js/display/study-library.js';
 const tick=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
-function setup({capture=async()=>({assets:[{kind:'audio',mime:'audio/webm',data:'real'}],warnings:[]}),isSourceCurrent=()=>true,ankiEnabled=true,
+function setup({capture=async()=>({assets:[{kind:'audio',mime:'audio/webm',data:'real'}],warnings:[]}),isSourceCurrent=()=>true,ankiEnabled=true,supplementAudio=false,
     attach=async (row)=>({...row,media:{audio:{name:'study-media-real.webm',start:1,end:3,origin:'capture',mime:'audio/webm'}}})}={}){
  const dom=new JSDOM('<section id="host"></section>'),d=dom.window.document,calls=[];let cancelled=0;
  const entry={word:'improve',sentence:'We improve daily.',context:'',language:'en',translation:'我们每天进步。',meaning:'',notes:'',url:'https://www.youtube.com/watch?v=abcdefghijk&t=1s',title:'Fixture',videoTime:1};
- const row={id:'a'.repeat(32),entry,version:'b'.repeat(64),ankiEnabled,cards:[],ankiState:'saved'};
+ const row={id:'a'.repeat(32),entry,version:'b'.repeat(64),vaultSaved:true,ankiEnabled,cards:[],ankiState:'saved'};
  globalThis.chrome={storage:{local:{get:async(key)=>({[key]:{ankiEnabled}})}},permissions:{request:async()=>true},runtime:{sendMessage:async({studyAction,data})=>{calls.push([studyAction,data]);let value={};
  if(studyAction==='pendingPeek')value={count:0};if(studyAction==='rememberEntry')value=row;
  if(studyAction==='libraryRead')value={items:[{record:row}]};
  if(studyAction==='libraryMedia')value=await attach(row);return {ok:true,value};}}};
- const dispose=mountStudyLibrary(d.querySelector('#host'),()=>entry,()=>true,{capture,cancelCapture:async()=>{cancelled++;},range:{start:1,end:3},isSourceCurrent});
+ const dispose=mountStudyLibrary(d.querySelector('#host'),()=>supplementAudio ? {...entry, recordId:row.id, meaning:'不应覆盖本人词义的草稿'} : entry,()=>true,{capture,cancelCapture:async()=>{cancelled++;},range:{start:1,end:3},isSourceCurrent,supplementAudio});
  return {d,calls,dispose,get cancelled(){return cancelled;}};
 }
 test('explicit real capture saves a note then attaches audio, but never creates a card',async()=>{
@@ -74,4 +74,18 @@ test('an attachment in flight cannot be reported as cancelled or saved without a
 test('edited source is not silently recorded as its former cue',async()=>{
  const h=setup({isSourceCurrent:()=>false});h.d.querySelector('[data-study-add-card]').click();h.d.querySelector('[data-study-capture]').click();await tick();
  assert.equal(h.calls.some(([a])=>['libraryMedia','rememberEntry'].includes(a)),false);h.dispose();
+});
+test('supplementing a saved subtitle attaches audio to the original version without saving text or creating cards',async()=>{
+ const h=setup({supplementAudio:true});await tick();
+ const capture=h.d.querySelector('[data-study-capture]');
+ assert.ok(!capture.closest('[hidden]'));
+ assert.ok(h.d.querySelector('[data-study-cards-submit]').closest('[hidden]'));
+ assert.equal(h.calls.some(([action])=>action==='libraryMedia'),false);
+ capture.click();await tick();
+ assert.deepEqual(h.calls.filter(([action])=>action==='libraryRead'||action==='libraryMedia').map(([action])=>action),['libraryRead','libraryMedia']);
+ const writes=h.calls.filter(([action])=>['rememberEntry','libraryUpdate','libraryMedia','libraryCardsAdd'].includes(action));
+ assert.deepEqual(writes.map(([action])=>action),['libraryMedia']);
+ assert.equal(writes[0][1].id,'a'.repeat(32));assert.equal(writes[0][1].version,'b'.repeat(64));
+ assert.equal(h.d.querySelector('.study-card-audio-state').dataset.state,'ready');
+ h.dispose();
 });

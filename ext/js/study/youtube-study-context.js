@@ -32,7 +32,7 @@ export class YoutubeStudyContext {
         this.active = new Map();
         /** @type {((reason: 'ended'|'cancelled'|'failed') => void)|null} Stops the current replay listeners. */
         this.replay = null;
-        /** @type {((range: Range, openPanel?: boolean, recordId?: string) => Promise<void>)|null} Opens the existing scanner and card panel. */
+        /** @type {((range: Range, openPanel?: boolean|'audio', recordId?: string) => Promise<void>)|null} Opens the existing scanner and card panel. */
         this.openCard = null;
     }
 

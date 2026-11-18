@@ -22,7 +22,7 @@ import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
 import {deepEqual} from '../core/utilities.js';
-import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, createSourceLibraryUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
+import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, createSourceLibraryUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL, canSupplementAudio} from './study-data.js';
 import {StudyJournal, conversationRecordId, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
@@ -1474,13 +1474,13 @@ export function prepareStudyService(lookupDictionary = null) {
                 if (!id || !/^[a-f0-9]{32}$/.test(id)) { throw new Error('没读到这条原句，请刷新学习库。'); }
                 if (!(await service.subtitlePrefs()).enabled) { throw new Error('请先在扩展菜单打开「视频字幕学习」。'); }
                 const {items} = /** @type {{items?: import('study').LearningMaterial[]}} */ (await service.handle('libraryRead', {ids: [id], language: 'en'}));
-                const entry = items?.find((item) => item.id === id && item.record?.id === id)?.record?.entry;
-                const url = videoListenUrl(entry);
-                if (!url || !entry) { throw new Error('这条记录没有可回听的网页视频。可试试原来的来源链接。'); }
+                const record = items?.find((item) => item.id === id && item.record?.id === id)?.record;
+                const url = videoListenUrl(record?.entry);
+                if (!url || !record) { throw new Error('这条记录没有可回听的网页视频。可试试原来的来源链接。'); }
                 const mediaKey = mediaKeyOf(url.href);
-                const {word, sentence, sense, videoTime} = entry;
+                const {word, sentence, sense, videoTime} = record.entry;
                 /** @type {import('study').SavedVideoListening[]} */
-                let listening = [{id, word, sentence, sense, videoTime: videoTime ?? null}];
+                let listening = [{id, word, sentence, sense, videoTime: videoTime ?? null, ...(canSupplementAudio(record) ? {supplementAudio: true} : {})}];
                 if (wholeVideo === true) {
                     const result = /** @type {{items: import('study').SavedVideoListening[]}} */ (await service.handle('libraryVideoWords', {mediaKey, sourceUrl: url.href})
                         .catch(() => { throw new Error('没能读到本视频的原句。可以先回视频听一条，或到设置检查本机连接。'); }));

@@ -118,7 +118,7 @@ test('a library video handoff keeps the saved occurrence and can prepare a full 
     const url = 'https://www.youtube.com/watch?v=abcdefghijk';
     const id = '4'.repeat(32);
     const sentence = 'A successful project needs patient work from the whole team.';
-    const record = {id, entry: {url: `${url}&t=25s`, videoTime: 25, sentence, word: 'successful', language: 'en'}};
+    const record = {id, vaultSaved: true, entry: {url: `${url}&t=25s`, videoTime: 25, sentence, word: 'successful', language: 'en'}};
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>', url}});
     const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
     /** @type {Map<string, unknown>} */
@@ -177,7 +177,7 @@ test('a library video handoff keeps the saved occurrence and can prepare a full 
         prepareStudyService();
         const libraryPage = {id: 'test', url: 'chrome-extension://test/study-library.html'};
         await request('openVideoListening', libraryPage, {id});
-        expect(await request('claimVideoListening', sender)).toMatchObject({ok: true, value: [{id}]});
+        expect(await request('claimVideoListening', sender)).toMatchObject({ok: true, value: [{id, supplementAudio: true}]});
         await request('openVideoListening', libraryPage, {id, wholeVideo: true});
         expect(handle).toHaveBeenCalledWith('libraryVideoWords', {mediaKey: 'youtube:abcdefghijk', sourceUrl: url});
         expect(update).toHaveBeenCalledWith(41, {url});
@@ -198,6 +198,24 @@ test('a library video handoff keeps the saved occurrence and can prepare a full 
         /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-next]')).click();
         /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-play]')).click();
         expect(video.currentTime).toBe(25.5);
+        const {youtubeStudyContext} = await import('../ext/js/study/youtube-study-context.js');
+        const open = vi.fn(async (/** @type {Range} */ range, /** @type {boolean|'audio'} */ panel, /** @type {string} */ recordId) => {
+            return {word: range.toString(), panel, recordId, at: youtubeStudyContext.read(range)?.videoTime};
+        });
+        youtubeStudyContext.openCard = open;
+        reader.setPrefs({...reader.prefs, enabled: false});
+        await request('openVideoListening', libraryPage, {id});
+        reader.setPrefs({...reader.prefs, enabled: true});
+        await vi.waitFor(() => expect(document.querySelector('[data-listen-reveal]')).not.toBeNull());
+        /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-reveal]')).click();
+        const supplement = /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-audio]'));
+        expect(supplement.textContent).toBe('补存原声');
+        const plays = play.mock.calls.length;
+        supplement.click();
+        expect(await open.mock.results[0].value).toEqual({word: 'successful', panel: 'audio', recordId: id, at: 25.5});
+        expect(play).toHaveBeenCalledTimes(plays);
+        expect(document.querySelector('.r-listen-practice')).toBeNull();
+        youtubeStudyContext.openCard = null;
     } finally {
         reader.setPrefs({...reader.prefs, enabled: false});
         handle.mockRestore();

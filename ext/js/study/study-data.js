@@ -50,6 +50,14 @@ export function savedAudioAttachment(record) {
     return audio?.name && !record?.audioContextChanged ? audio : void 0;
 }
 
+/**
+ * @param {import('study').LibraryRecord} record
+ * @returns {boolean}
+ */
+export function canSupplementAudio(record) {
+    return record.vaultSaved === true && record.learningState !== 'favorite-only' && !record.entry?.subtitleSource && !savedAudioAttachment(record);
+}
+
 export const DETAIL_KEY = 'studyDetailSnapshotsV1';
 
 export const DICTIONARY_CACHE_KEY = 'studyDictionaryCacheV1';

@@ -622,7 +622,7 @@ export class YoutubeReader extends EventTarget {
      * Open the existing lookup with this exact caption as its context.
      * @param {string} id
      * @param {string} [word]
-     * @param {boolean} [openPanel]
+     * @param {boolean|'audio'} [openPanel]
      * @param {string} [recordId]
      * @returns {Promise<boolean|undefined>}
      */
@@ -637,6 +637,10 @@ export class YoutubeReader extends EventTarget {
         const range = document.createRange();
         const match = word ? [...info.text.matchAll(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)].find((m) => (recordId ? m[0].toLowerCase() === word.toLowerCase() : wordForms(m[0]).includes(word.toLowerCase()))) : null;
         if (word && !match) { return false; }
+        if (openPanel === 'audio') {
+            /** @type {HTMLButtonElement|null|undefined} */ (this._view?.root.querySelector('[data-tab="captions"]'))?.click();
+            this.revealRow(id);
+        }
         range.setStart(text.firstChild, match?.index ?? 0); range.setEnd(text.firstChild, match ? match.index + match[0].length : info.text.length);
         await youtubeStudyContext.openCard(range, openPanel, recordId); return true;
     }
@@ -1849,7 +1853,7 @@ export class YoutubeReader extends EventTarget {
             answer.textContent = [this._rowInfo.get(id)?.text, session?.translation(id)].filter(Boolean).join('\n');
             answer.hidden = false;
             reveal.hidden = true;
-            for (const {id: recordId, word, sentence, sense} of savedByCue.get(id) ?? []) {
+            for (const {id: recordId, word, sentence, sense, supplementAudio} of savedByCue.get(id) ?? []) {
                 const label = [word, sense?.gloss].filter(Boolean).join(' · ');
                 const resume = this._button(`继续学习：${label}`, () => {
                     practice.cancel?.();
@@ -1859,6 +1863,16 @@ export class YoutubeReader extends EventTarget {
                 });
                 resume.dataset.listenNote = '';
                 notes.append(resume);
+                if (supplementAudio) {
+                    const audio = this._button('补存原声', () => {
+                        practice.cancel?.();
+                        void this.lookupCaption(id, word, 'audio', recordId).then((opened) => {
+                            if (!opened) { this._status('这句暂时不能补录；请确认原词和英语字幕还对得上。'); }
+                        }).catch(() => { this._status('没能打开原声面板，可以再试一次。'); });
+                    });
+                    audio.dataset.listenAudio = '';
+                    notes.append(audio);
+                }
             }
             answer.after(notes);
         });

@@ -28,7 +28,7 @@ import {sourceKey} from '../study/study-journal.js';
 import {timedUrl, videoListenUrl} from '../study/media-key.js';
 import {BILIBILI_HOST, YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, canSupplementAudio, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
 
@@ -1234,7 +1234,7 @@ listedQuery :
             if (record.syncState !== 'anki-only' && videoListenUrl(record.entry)) {
                 const listen = document.createElement('button');
                 listen.type = 'button';
-                listen.textContent = '回视频听这句';
+                listen.textContent = canSupplementAudio(record) ? '回视频听／补原声' : '回视频听这句';
                 listen.onclick = () => {
                     listen.disabled = true;
                     void studyCall('openVideoListening', {id: record.id})

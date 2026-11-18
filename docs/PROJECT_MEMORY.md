@@ -26,6 +26,7 @@
 | 在原视频不看字幕，先听自己保存的句子；听完回哪一条笔记 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play、openStudyRecord |
 | 想只重听刚才没听清的句子 | L-007；YoutubeReader._beginListening 的本轮队列 |
 | 从学习库回原视频听这一句，不只是跳到秒数 | L-007；videoListenUrl、openVideoListening、claimVideoListening |
+| 词已经记了，却没录当时的原声；补录时不想改自己的解释 | L-007；canSupplementAudio、YoutubeReader.lookupCaption、mountStudyLibrary |
 | 原网页打不开，想播放已附在笔记里的原声 | L-007；study_media.read_audio、libraryAudioRead |
 | 录音后说已保存却不能制卡，或点取消时附件其实已送出 | L-007；display/study-library.js 的采集和保存阶段、savedAudioAttachment |
 | 只用学习库听写，不启用 Anki 时怎样保存原声 | L-007；display/study-library.js 的 openAudio 和 captureAudio |
@@ -186,6 +187,8 @@
 **只重练没听清的原句**：练习有明确末尾，不在最后一句之后悄悄循环。用现有字幕行 ID 暂记本人主动标出的句子，不拿英文文本或词义去重，也不从没播放、跳过或看答案推断掌握。下一轮仅重播这些行，并从空标记开始；换轨、退出、改偏移仍丢掉本轮状态，不写第二套学习记录。见[集中重听](youtube-study-wiring.md#2026-11-18-只重听自己标过没听清的句子)。
 
 **学习库回视频听这一句**：`videoListenUrl` 只去掉已知站点的跳时参数，不动选集等来源标记。后端按原记录号读取，交接暂存扩展会话、绑定新标签及原视频的 media key；网址不带笔记资料。字幕偏移恢复后复用原句和保存秒数的唯一匹配，准备好不等于已经播放。没对上的读者可以先切轨或改偏移；受保护来源、已存记录号、制卡和排程不改。见[学习库到单句回听](youtube-study-wiring.md#2026-11-18-从学习库回原视频听这一句)。
+
+**给旧笔记补原声，不重新保存文字**：「回视频听／补原声」仍走原视频单句交接。揭晓后只从已对上的英语字幕按原词与原记录号打开原声面板；切到别的素材、失去来源、已有可用录音或属于受保护字幕时不能借用。点录音前读这条笔记的版本，之后只发原 `libraryMedia`，不经过 `rememberEntry`，也不用录完后才读的版本覆盖中途改动。默认不带视频或截图。见[回听及附件边界](youtube-study-wiring.md#2026-11-18-从学习库给旧笔记补原声)。
 
 **原网页打不开，已存的本句音频仍可听**：学习库「详情 → 播放已存原声」只给确有本条音频附件的笔记。按照原记录号及历史目标找附件，复用已有附件名、路径、大小与内容校验；不从视频文件、相似句或 Anki 的其他卡借音。音频过大就复用本机分帧，完整收齐后只在学习库内存解码；不新增缓存、站点权限或附件写入。见[已有音频的独立播放](youtube-study-wiring.md#2026-11-18-原网页打不开也能播放已存原声)。
 

@@ -304,7 +304,7 @@ export function updateStudySourcePreview(target, text) {
 }
 
 /**
- * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, savedTurnIds?: string[], meaning?: string, notes?: string, explanationSource?: string}) => void}}
+ * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, supplementAudio?: boolean, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, savedTurnIds?: string[], meaning?: string, notes?: string, explanationSource?: string}) => void}}
  */
 export function prepareStudyTranslation() {
     let generation = 0;
@@ -974,6 +974,7 @@ export function prepareStudyTranslation() {
             }, isCurrent, {capture: source.capture,
                 cancelCapture: source.cancelCapture,
                 range: source.mediaRange,
+                supplementAudio: source.supplementAudio,
                 isSourceCurrent: () => editor.value.trim() === sentence.trim()});
             const previousCleanup = cleanup;
             cleanup = () => {

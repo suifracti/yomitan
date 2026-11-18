@@ -17,7 +17,7 @@
  */
 
 import {CARD_CATALOG} from '../study/card-catalog.js';
-import {AUTO_SYNC_STATE_KEY, LOCAL_SYNC_INCOMPLETE_TEXT, SAVE_TARGETS_KEY, canOfferUseCard, cardReceipt, savedAudioAttachment} from '../study/study-data.js';
+import {AUTO_SYNC_STATE_KEY, LOCAL_SYNC_INCOMPLETE_TEXT, SAVE_TARGETS_KEY, canOfferUseCard, canSupplementAudio, cardReceipt, savedAudioAttachment} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
 import {explainWordForm} from './study-word-forms.js';
@@ -34,11 +34,12 @@ const validLibraryId = (value) => typeof value === 'string' && /^[a-f0-9]{32}$/.
  * @param {HTMLElement} container
  * @param {() => import('study').LibraryEntry} getEntry
  * @param {() => boolean} isCurrent
- * @param {{capture?: import('study').CaptureMedia, cancelCapture?: () => Promise<void>, range?: import('study').MediaRange, isSourceCurrent?: () => boolean}} [media]
+ * @param {{capture?: import('study').CaptureMedia, cancelCapture?: () => Promise<void>, range?: import('study').MediaRange, isSourceCurrent?: () => boolean, supplementAudio?: boolean}} [media]
  * @returns {() => void}
  */
 export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const d = container.ownerDocument;
+    const supplementAudio = media.supplementAudio === true;
     /** @type {Partial<import('study').LibraryEntry> & Record<string, unknown>} Set by the "stuck" hint: a new sense or a phrase. */
     let entryExtras = {};
     /** @returns {import('study').LibraryEntry} */
@@ -426,7 +427,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         captureOptions.append(wrap);
         return box;
     };
-    const keepFrame = captureOption('同时保存画面截图', true);
+    const keepFrame = captureOption('同时保存画面截图', !supplementAudio);
     const keepVideo = captureOption('附带原句视频片段（较大）', false);
     const cancelCapture = d.createElement('button');
     cancelCapture.type = 'button'; cancelCapture.className = 'scan-disable';
@@ -496,13 +497,13 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     };
     const updatePanelControls = () => {
         const unavailable = ankiUnavailable();
-        const audioOnly = unavailable && !captureAudio.hidden;
-        addCard.disabled = busy || unavailable;
+        const audioOnly = (unavailable || supplementAudio) && !captureAudio.hidden;
+        addCard.disabled = busy || unavailable || audioOnly;
         addCard.hidden = audioOnly;
         addCard.title = unavailable ? 'Anki 制卡尚未启用，请在学习设置的保存与复习中启用。' : cardTitle;
         openAudio.hidden = !audioOnly;
         openAudio.disabled = busy;
-        cardSetup.hidden = cardSubmission.hidden = unavailable;
+        cardSetup.hidden = cardSubmission.hidden = unavailable || audioOnly;
         cardPanel.setAttribute('aria-label', audioOnly ? '保存本句原声' : '选择学习内容并制卡');
         if (unavailable && !audioOnly) { setPanelOpen(false); }
         if (language !== 'ja') { destination.textContent = unavailable ? 'Obsidian · 英语 · Anki 未启用' : 'Obsidian · 英语笔记'; }
@@ -610,6 +611,25 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         if (isCurrent() && !disposed) { showAnkiStatus(row); }
         return row;
     };
+    /**
+     * @param {string} id
+     * @returns {Promise<import('study').LibraryRecord>}
+     */
+    const readMediaRecord = async (id) => {
+        const read = /** @type {{items: {record: import('study').LibraryRecord}[]}} */ (await studyCall('libraryRead', {ids: [id], language}));
+        const fresh = read.items?.[0]?.record;
+        const entry = entryOf();
+        if (!fresh || fresh.id !== id || fresh.entry.sentence !== entry.sentence) {
+            throw new Error('这条笔记的原句或来源已改变，请从学习库重新打开。');
+        }
+        if (supplementAudio) {
+            if (fresh.entry.url !== entry.url || fresh.entry.videoTime !== entry.videoTime || fresh.entry.word.toLowerCase() !== entry.word.toLowerCase()) {
+                throw new Error('这条笔记的来源或单词已改变，请从学习库重新打开。');
+            }
+            if (!canSupplementAudio(fresh)) { throw new Error('这条笔记已有原声，或不能从网页补录；没有覆盖。'); }
+        }
+        return fresh;
+    };
     captureAudio.addEventListener('click', () => {
         const range = media.range;
         const capture = media.capture;
@@ -629,17 +649,16 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             captureAudio.disabled = true; cancelCapture.hidden = false;
             setAudioState('capturing');
             try {
-                const saved = await ensureNote();
+                const saved = supplementAudio ? await readMediaRecord(initialRecordId ?? '') : await ensureNote();
                 if (!live()) { return; }
                 if (saved.cards?.some((card) => !card.noteId)) { throw new Error('请先完成已有卡片的补交，再采集下一句原声。'); }
                 addStatus.textContent = '正在定位并采集本句原声…';
                 const recorded = await capture(range.start, range.end - range.start, {withFrame: keepFrame.checked, withVideo: keepVideo.checked});
                 if (!live()) { return; }
                 if (!recorded.assets.some((asset) => asset.kind === 'audio' && asset.data)) { throw new Error('没有取得真实音轨，未附加媒体。'); }
-                const read = /** @type {{items: {record: import('study').LibraryRecord}[]}} */ (await studyCall('libraryRead', {ids: [saved.id], language}));
+                // For a supplement keep the version from before capture. A later edit must not receive the recording.
+                const fresh = supplementAudio ? saved : await readMediaRecord(saved.id);
                 if (!live()) { return; }
-                const fresh = read.items?.[0]?.record;
-                if (!fresh || fresh.id !== saved.id || fresh.entry.sentence !== entryOf().sentence) { throw new Error('记录语境已改变，请重新确认保存后采集。'); }
                 cancelCapture.hidden = true;
                 setAudioState('saving');
                 addStatus.textContent = '正在将原声保存到这条笔记…';
@@ -863,6 +882,10 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         primary.after(destination, openNote, status, ankiRow, recovery, addCard, openAudio, cardPanel);
     } else {
         container.append(stuck, actions, destination, openNote, status, ankiRow, recovery, addCard, openAudio, cardPanel);
+    }
+    if (supplementAudio && !captureAudio.hidden) {
+        updatePanelControls();
+        togglePanel();
     }
     if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
         void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
