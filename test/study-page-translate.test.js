@@ -36,6 +36,7 @@ test('mixed-language blocks and selections use their source language, including 
     const translate = vi.fn(async (/** @type {string} */ text, /** @type {{language?: string}} */ options) => `${options.language}:${text}`);
     const controller = new PageTranslate({translate});
     try {
+        controller.prefs.mode = 'translation';
         await controller.toggle();
         const english = /** @type {HTMLElement} */ (document.getElementById('english'));
         const french = /** @type {HTMLElement} */ (document.getElementById('french'));
@@ -58,6 +59,28 @@ test('mixed-language blocks and selections use their source language, including 
         await vi.waitFor(() => expect(quote.parentElement?.nextElementSibling?.textContent).toContain('fr:Le pain'));
         expect(quote.parentElement?.nextElementSibling?.querySelector('[aria-label="记住这句"]')).toBeNull();
         expect(translate).toHaveBeenCalledTimes(4);
+
+        observed.length = 0;
+        const oldFrench = french.nextElementSibling;
+        /** @type {HTMLElement} */ (french.parentElement).lang = 'de';
+        await vi.waitFor(() => expect(oldFrench?.isConnected).toBe(false));
+        expect(french.classList.contains('study-original-hidden')).toBe(false);
+        expect(observed).toContain(french);
+        await controller.translateNode(french);
+        const german = french.nextElementSibling;
+        expect(german?.textContent).toBe('de:Pain');
+        expect(english.nextElementSibling?.textContent).toBe('en:Pain');
+
+        const oldEnglish = english.nextElementSibling;
+        observed.length = 0;
+        document.documentElement.lang = 'fr';
+        await vi.waitFor(() => expect(oldEnglish?.isConnected).toBe(false));
+        expect(english.classList.contains('study-original-hidden')).toBe(false);
+        expect(observed).toContain(english);
+        expect(french.nextElementSibling).toBe(german);
+        await controller.translateNode(english);
+        expect(english.nextElementSibling?.textContent).toBe('fr:Pain');
+        expect(translate).toHaveBeenCalledTimes(5);
     } finally {
         controller.stop();
         vi.unstubAllGlobals();

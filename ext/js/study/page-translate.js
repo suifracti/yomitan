@@ -112,7 +112,7 @@ export class PageTranslate {
          *
          */
         this.prefs = {...DEFAULT_PAGE_PREFS};
-        /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,manual:boolean,originalToggle?:HTMLButtonElement}>} */
+        /** @type {Map<Element,{node:HTMLElement,text:string,snapshot:string,language:string,manual:boolean,originalToggle?:HTMLButtonElement}>} */
         this.rows = new Map();
         /** @type {Map<string,Promise<string>>} */
         this.cache = new Map();
@@ -329,7 +329,7 @@ export class PageTranslate {
             originalToggle = button;
             node.append(button);
         }
-        this.rows.set(original, {node, text, snapshot: this.source(original), manual, originalToggle});
+        this.rows.set(original, {node, text, snapshot: this.source(original), language: pageLanguage(original), manual, originalToggle});
         this.paint();
         return node;
     }
@@ -640,6 +640,16 @@ export class PageTranslate {
             for (const record of records) {
                 const root = record.target instanceof Element ? record.target : record.target.parentElement;
                 if (!root || root.closest(SKIP)) { continue; }
+                if (record.attributeName === 'lang') {
+                    for (const [original, row] of this.rows) {
+                        if (!row.manual && root.contains(original) && row.language !== pageLanguage(original)) {
+                            this.restore(original);
+                            roots.add(original);
+                        }
+                    }
+                    roots.add(root === document.documentElement ? document.body : root);
+                    continue;
+                }
                 const changed = [...record.addedNodes, ...record.removedNodes];
                 if (record.type === 'childList' && changed.every((node) => node instanceof Element && node.matches('.study-page-translation'))) { continue; }
                 let host = root;
@@ -660,7 +670,8 @@ export class PageTranslate {
             }
             for (const root of roots) { this.scan(root); }
         });
-        this.mo.observe(document.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'open']});
+        this.mo.observe(document.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'open', 'lang']});
+        this.mo.observe(document.documentElement, {attributes: true, attributeFilter: ['lang']});
         this.scan(document.body);
     }
 
