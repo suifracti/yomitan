@@ -23,6 +23,7 @@
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
+| 刚导入本地字幕，突然被晚到的网站字幕替换 | L-006；YoutubeReader.importText 和正在载入的控制器 |
 | 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
 | 长视频只记得一个词或一句中文，想跳回那句字幕 | L-006；YoutubeReader._renderCaptionRows、CaptionList、原时间按钮 |
 | 明明听见一个完整短语，字幕拆成几行就搜不到了 | L-006；SubtitleSession.search 复用 groupForReading |
@@ -235,6 +236,8 @@
 **同壳课程／同名视频的继续位置不共用**：`videoStateScope` 和后台 `videoStateRead/Update` 对浏览器当前来源；网页课程及本地文件存完整来源的摘要，不把地址明文放进进度缓存。YouTube／B 站保留已对应视频或选集的旧键；普通网页及本地文件旧短键无法对回某一课或路径，不复制也不主动删除。读取等本页写入回执；旧课程迟到的请求不改掉新课的选轨、偏移或位置。「继续」还要点击且只在当前来源跳。见[两个课程的进度](youtube-study-wiring.md#2026-11-18-同一播放器的课程进度分开记)。
 
 **双语字幕按两个条目写或只有一两句**：旧识别只认一条里同时有英中行。手动导入时，若两条完全同起止、只有一原句一译文，且整个文件达到原双语识别门槛，就沿同一路径用英文原句的 ID 与秒数显示。只有一两句的手动短片须每句都自带双语，支持自己的两句 VTT 下载读回。中文取文件已有的字，不新翻译；不按近似时间配，不把一般网站轨道按此猜合。见[导入临时 ASS](youtube-study-wiring.md#2026-11-18-双语字幕分两条也能中英对照)和[下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
+
+**导入成功优先于已经开始的网站读取**：先解析本地文件，坏文件不打断原请求；成功后结束现有载入并用控制器身份拒绝晚到结果和错误，不递增视频代次或重建菜单。YouTube 的自动 CC 探测停止等候；若正在同一视频的关开间隙，只恢复原本的开状态。不改后续手动选轨或重载。见[晚到字幕复现](youtube-study-wiring.md#2026-11-19-导入文件不被晚到的网站字幕覆盖)。
 
 **找字幕不重新翻译或换轨**：筛选当前轨的原文和已存在的译文，显示原字幕行与时间/循环/笔记按钮。输入不跳播放位置，自动跟随暂停，清空或跟随按钮恢复列表；明确外部定位被筛掉的行就先清查询。换轨不沿用旧查询。见[双语文件与窄屏验证](youtube-study-wiring.md#2026-11-19-在字幕栏用原文或已译中文找一句)。
 

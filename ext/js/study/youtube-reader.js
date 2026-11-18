@@ -1136,6 +1136,11 @@ export class YoutubeReader extends EventTarget {
         if (!this._view || !this._mediaKey) { return; }
         try {
             const {cues, format, translations, language = '', offsetMs} = parseSubtitles(text, name);
+            this._loadController?.abort();
+            this._loadController = null;
+            this._view.load.disabled = false;
+            delete this._view.root.dataset.captionSource;
+            delete this._view.root.dataset.captionTrack;
             this._useCues(cues, {trackKey: `file:${name.slice(0, 100)}`, label: `${name.slice(0, 60)}（本地文件 · ${format.toUpperCase()}）`, language, acquisition: 'import', translations, offsetMs});
         } catch (error) {
             this._status(`导入失败：${error instanceof Error ? error.message : String(error)}`);
@@ -1214,19 +1219,20 @@ export class YoutubeReader extends EventTarget {
         const previous = this._rawSession;
         const controller = new AbortController();
         this._loadController = controller;
+        const current = () => generation === this._generation && this._loadController === controller;
         /** @type {ReturnType<typeof setTimeout>|null} */
         let timeout = null;
         let timedOut = false;
         view.load.disabled = true;
         try {
             const tracks = await this._call('youtubeCaptionTracks').catch(() => []);
-            if (generation !== this._generation) { return; }
+            if (!current()) { return; }
             const available = /** @type {{baseUrl: string, languageCode: string, vssId?: string, kind?: string, name?: {simpleText?: string, runs?: {text: string}[]}}[]} */ ((Array.isArray(tracks) ? tracks : []).filter((track) => captionUrl(track.baseUrl, videoId)));
             available.sort((a,b) => Number(a.kind === 'asr') - Number(b.kind === 'asr'));
             this._sources = available.map((track) => ({id:captionTrackId(track),label:`${track.name?.simpleText || track.name?.runs?.map((r) => r.text).join('') || track.languageCode}${track.kind === 'asr' ? ' · 自动' : ''}`}));
             const source = {mediaKey: `youtube:${videoId}`, url: `https://www.youtube.com/watch?v=${videoId}`};
             const state = await readVideoState(source);
-            if (generation !== this._generation) { return; }
+            if (!current()) { return; }
             const requested = sourceId || state?.selectedTrackKey;
             const selected = available.find((t) => captionTrackId(t) === requested);
             if (sourceId && !selected) {
@@ -1235,7 +1241,8 @@ export class YoutubeReader extends EventTarget {
             }
             /** @type {(typeof available)[number]|undefined} */
             let chosen = selected || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
-            const captured = await this._findCaptionUrl(videoId, generation);
+            const captured = await this._findCaptionUrl(videoId, generation, controller.signal);
+            if (!current()) { return; }
             let url = captured || (chosen ? captionUrl(chosen.baseUrl, videoId) : null);
             if (captured && selected) {
                 // Keep the player's signed URL and proof token; change only the track identity.
@@ -1254,7 +1261,6 @@ export class YoutubeReader extends EventTarget {
                     return ['lang', 'kind', 'name'].every((key) => trackUrl.searchParams.get(key) === captured.searchParams.get(key));
                 });
             }
-            if (generation !== this._generation) { return; }
             if (!url) {
                 this._status('没有找到字幕，可导入字幕文件。');
                 view.status.append(this._button('导入字幕', () => this.pickFile()));
@@ -1281,7 +1287,7 @@ export class YoutubeReader extends EventTarget {
             }
             const response = capturedBody ? new Response(capturedBody.body) : await fetch(url.href, {credentials: 'include', signal: controller.signal});
             const text = response.ok ? await response.text() : '';
-            if (generation !== this._generation) { return; }
+            if (!current()) { return; }
             if (!text.trim()) {
                 this._status(`YouTube 没有返回字幕内容（HTTP ${response.status}）；请在播放器的字幕设置里选择英语，然后刷新页面。`);
                 return;
@@ -1300,7 +1306,7 @@ export class YoutubeReader extends EventTarget {
             if (chosen) {
                 await writeVideoState(source, {selectedTrackKey: captionTrackId(chosen), ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
             }
-            if (generation !== this._generation) { return; }
+            if (!current()) { return; }
             this._rawSession = session;
             this._restoringVideoState = true;
             this._aiGroups = null;
@@ -1312,7 +1318,7 @@ export class YoutubeReader extends EventTarget {
             void this._restoreVideoState(session);
             if (this._prefs.aiSegment) { void this._runSegmentation(); }
         } catch (error) {
-            if (generation === this._generation) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
+            if (current()) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
             if (timeout !== null) { clearTimeout(timeout); }
             if (this._loadController === controller) {
@@ -1334,8 +1340,8 @@ export class YoutubeReader extends EventTarget {
         if (!view || !this._mediaKey || generation !== this._generation || this._loadController || site.kind !== 'web') { return; }
         const source = {mediaKey: this._mediaKey, url: site.pageUrl()};
         const sourceKey = this._sourceKey;
-        const current = () => generation === this._generation && sourceKey === pageSourceKey(site.pageUrl());
         const controller = new AbortController();
+        const current = () => generation === this._generation && this._loadController === controller && sourceKey === pageSourceKey(site.pageUrl());
         this._loadController = controller;
         const timeout = setTimeout(() => controller.abort(), WAIT_MS);
         view.load.disabled = true;
@@ -1357,7 +1363,7 @@ export class YoutubeReader extends EventTarget {
             this._useCues(found.cues, {trackKey: found.id, label: found.label, language: found.language, acquisition: 'provider'});
             await writeVideoState(source, {selectedTrackKey: found.id, ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
         } catch (error) {
-            if (generation === this._generation) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
+            if (current()) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
             clearTimeout(timeout);
             if (this._loadController === controller) {
@@ -1371,10 +1377,12 @@ export class YoutubeReader extends EventTarget {
      * Uses the caption request the player already made. If none yet, turns on the player's CC once and waits.
      * @param {string} videoId
      * @param {number} generation
+     * @param {AbortSignal} [signal]
      * @returns {Promise<URL|null>}
      */
-    async _findCaptionUrl(videoId, generation) {
-        const current = () => generation === this._generation && youtubeVideoId(location.href) === videoId;
+    async _findCaptionUrl(videoId, generation, signal) {
+        const sameVideo = () => generation === this._generation && youtubeVideoId(location.href) === videoId;
+        const current = () => !signal?.aborted && sameVideo();
         if (!current()) { return null; }
         const find = () => {
             for (let i = this._seen.length - 1; i >= 0; --i) {
@@ -1393,8 +1401,9 @@ export class YoutubeReader extends EventTarget {
             cc.click();
             await new Promise((resolve) => { setTimeout(resolve, 300); });
         }
-        if (!current() || !cc.isConnected || document.querySelector('#movie_player .ytp-subtitles-button') !== cc) { return null; }
-        cc.click();
+        if (!sameVideo() || !cc.isConnected || document.querySelector('#movie_player .ytp-subtitles-button') !== cc) { return null; }
+        // If cancelled during the off/on probe, only restore the player's original CC state.
+        if (!signal?.aborted || cc.getAttribute('aria-pressed') !== 'true') { cc.click(); }
         const deadline = Date.now() + WAIT_MS;
         while (!url && current() && Date.now() < deadline) {
             await new Promise((resolve) => { setTimeout(resolve, 250); });

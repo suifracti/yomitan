@@ -211,4 +211,47 @@ test('switching tracks during translation releases the new track and discards th
     }
 });
 
+test('an imported subtitle stays active when the earlier website request finishes late', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk',
+        html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>'}});
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const url = 'https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en';
+    const response = () => new Response(JSON.stringify({events: [
+        {tStartMs: 0, dDurationMs: 1000, segs: [{utf8: 'Website captions.'}]},
+    ]}));
+    /** @type {() => void} */
+    let release = () => {};
+    const delayed = new Promise((resolve) => { release = () => resolve(response()); });
+    const fetcher = vi.fn().mockReturnValueOnce(delayed).mockImplementation(async () => response());
+    vi.stubGlobal('fetch', fetcher);
+    const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
+    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: false},
+        call: async () => [{baseUrl: url, languageCode: 'en', vssId: '.en'}]});
+    const load = vi.spyOn(reader, '_load');
+    try {
+        reader.rememberRequest(url);
+        reader.start();
+        await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+        reader.importText('not a subtitle', 'invalid.srt');
+        expect(fetcher.mock.calls[0][1].signal.aborted).toBe(false);
+        reader.importText('1\n00:00:02,000 --> 00:00:04,000\nUse the local subtitle.', 'local.srt');
+        expect(reader.session?.source.acquisition).toBe('import');
+        release();
+        await load.mock.results[0].value;
+        expect(reader.session?.cues[0].text).toBe('Use the local subtitle.');
+        expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true);
+        expect(document.querySelector('.r-status')?.textContent).toContain('local.srt');
+        expect(document.querySelector('#study-yt-reader')?.hasAttribute('data-caption-source')).toBe(false);
+
+        reader.loadCaptions();
+        await vi.waitFor(() => expect(reader.session?.cues[0].text).toBe('Website captions.'));
+        expect(reader.session?.source.acquisition).toBe('provider');
+    } finally {
+        release();
+        reader._reset();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 /* eslint-enable no-underscore-dangle */
