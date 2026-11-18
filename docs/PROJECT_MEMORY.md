@@ -22,6 +22,7 @@
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
+| 卡间隔已超过 21 天却一直在学；读题面拖慢自动同步 | L-012；study_senses.refresh_metrics、study_library_core.anki_call |
 
 ## 默认自动执行：不等用户提醒
 
@@ -166,6 +167,8 @@
 网页与字幕共用短义：40 字放不下时，部分掌握的词把还在学的义项排在前面。字幕挑句、计数、已制卡原句排重按 v2 里可选的 `lemma`；选中与回听仍用真实字幕的词形、原句和时间，不把原声中的 charges 换成 charge。旧桥没有此字段时沿用原来命中的词。见[字幕推荐案例](youtube-study-wiring.md#2026-11-18-字幕推荐给不同的词留位置)。
 
 如果「刚撤销，颜色又变回去」，先查后台发布顺序，不要改复习阈值。后台只发布最后一次 `refreshWordStatus`，网页、词卡和字幕共用桥已合并人工标记的 v2；旧的 `studyKnownWords` 只解释 v1 及更早的缓存。见[逆序返回案例](youtube-study-wiring.md#2026-11-18-刚撤销认识了旧刷新又把词标回去)。
+
+如果「已经复习很久还在学」，先区分间隔真的不足还是根本没读到。Anki 的 `cardsInfo` 带整张题面和字段，旧桥截断 200 KB 后会悄悄留下过期结果。现在大批只读详情按需拆开；现有 `auto-sync-state.json` 按卡号和秒级 `mod` 复用间隔、遗忘数，仍用 `rated:30:1` 判断近期遗忘。首次、卡有变、同一秒尚不能区分时才读题面；老接口不能给修改时间时照旧读。断连不把旧间隔清零，缓存不留题面。见[真实临时集合的 32／2000 张用例](youtube-study-wiring.md#2026-11-18-卡已经学熟却一直显示在学)。
 
 ## 增量与覆盖
 

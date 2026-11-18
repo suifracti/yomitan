@@ -423,9 +423,20 @@ def word_group_id(lang, word):
 def anki_call(action, params, timeout=5):
     data = json.dumps({'action': action, 'version': 6, 'params': params}).encode()
     request = urllib.request.Request('http://127.0.0.1:8766', data=data, headers={'Content-Type': 'application/json'})
+    # Detail replies include rendered cards or all note fields. Split only these read-only requests.
+    id_key = {'cardsInfo': 'cards', 'notesInfo': 'notes'}.get(action)
+    limit = 2_000_000 if id_key else 200_000
     # Never use environment proxy settings for a loopback write.
     with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=timeout) as response:
-        result = json.loads(response.read(200000))
+        body = response.read(limit + 1)
+    if len(body) > limit:
+        ids = params.get(id_key, []) if id_key else []
+        if len(ids) < 2:
+            raise ValueError('Anki 返回的内容太长，没能读完整。')
+        mid = len(ids) // 2
+        return (anki_call(action, {**params, id_key: ids[:mid]}, timeout) +
+                anki_call(action, {**params, id_key: ids[mid:]}, timeout))
+    result = json.loads(body)
     if not isinstance(result, dict) or result.get('error') or 'result' not in result:
         raise ValueError('Anki 未接受请求；笔记已保留，可稍后补交。')
     return result['result']

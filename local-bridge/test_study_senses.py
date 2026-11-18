@@ -168,6 +168,43 @@ class SenseTests(AutoSyncTests):
         self.assertEqual(self.library.word_status()['words']['brick']['s'], 'partial')
         self.assertEqual(self.notes.keys(), {note_id})
 
+    def test_large_card_faces_do_not_hide_mastery_or_get_reread_on_quiet_passes(self):
+        import io
+        from study_library_core import anki_call
+        from study_senses import refresh_metrics, status_for
+        cards = range(1, 2001)
+        records = {c: (None, None, {'noteId': 10000 + c}) for c in cards}
+        reviewed, detail_ids = set(), []
+
+        def respond(request, timeout):
+            payload = json.loads(request.data)
+            action, p = payload['action'], payload['params']
+            if action == 'findCards':
+                rows = list(cards) if p['query'].startswith('nid:') else list(reviewed)
+            elif action == 'cardsModTime':
+                rows = [{'cardId': c, 'mod': 1100 if c in reviewed else 800} for c in p['cards']]
+            elif action == 'cardsInfo':
+                detail_ids.extend(p['cards'])
+                rows = [{'cardId': c, 'note': 10000 + c, 'mod': 1100 if c in reviewed else 800,
+                         'interval': 2 if c in reviewed else 33, 'lapses': int(c in reviewed),
+                         'answer': 'x' * (21000 if c <= 100 else 2300)} for c in p['cards']]
+            else:
+                raise AssertionError(action)
+            return io.BytesIO(json.dumps({'result': rows, 'error': None}).encode())
+
+        with patch('urllib.request.OpenerDirector.open', side_effect=respond):
+            snapshot = refresh_metrics(anki_call, records, {}, 1000)
+            self.assertEqual(status_for([records[17][2]], snapshot, 1000), ('familiar', {'iv': 33, 'lapses': 0}))
+            self.assertEqual(set(detail_ids), set(cards))
+            detail_ids.clear()
+            quiet = refresh_metrics(anki_call, records, snapshot, 1030)
+            self.assertEqual(quiet['notes'], snapshot['notes'])
+            self.assertEqual(detail_ids, [])
+            reviewed.add(17)
+            changed = refresh_metrics(anki_call, records, quiet, 1101)
+            self.assertEqual(detail_ids, [17])
+            self.assertEqual(status_for([records[17][2]], changed, 1101), ('shaky', {'iv': 2, 'lapses': 1}))
+
     def test_optional_sense_match_uses_only_explicit_calls_and_cache(self):
         from study_senses import match_sense
         from study_translator import normalize_request, parse_answer, turn_params

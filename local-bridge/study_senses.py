@@ -58,11 +58,26 @@ def refresh_metrics(anki, records, old, now):
     all_cards = {}
     owned_notes = set(ids)
     try:
-        # cardsInfo already carries the owning note ID; no note body is needed.
         cards = anki('findCards', {'query': 'nid:' + ','.join(str(n) for n in ids)})
-        seen = set()
-        for offset in range(0, len(cards), 100):
-            info = anki('cardsInfo', {'cards': cards[offset:offset + 100]})
+        # mod is in whole seconds. A card edited during the last snapshot needs one fresh read.
+        cached = {c['id']: (n, c) for n, rows in old.get('notes', {}).items() if n in notes for c in rows
+                  if type(c.get('mod')) is int and c['mod'] < int(old.get('at', 0))}
+        eligible = [c for c in cards if c in cached]
+        for offset in range(0, len(eligible), 1000):
+            try:
+                times = anki('cardsModTime', {'cards': eligible[offset:offset + 1000]})
+            except ValueError:  # Older AnkiConnect: read the details as before.
+                break
+            for stamp in times:
+                ident = stamp.get('cardId')
+                if ident in cached and cached[ident][1]['mod'] == stamp.get('mod'):
+                    n, row = cached[ident]
+                    all_cards[ident] = n
+                    notes[n].append(row)
+        changed = [c for c in cards if c not in all_cards]
+        seen = set(all_cards)
+        for offset in range(0, len(changed), 100):
+            info = anki('cardsInfo', {'cards': changed[offset:offset + 100]})
             if not isinstance(info, list):
                 raise ValueError('复习阶段读取未完成。')
             for row in info:
@@ -72,7 +87,10 @@ def refresh_metrics(anki, records, old, now):
                     seen.add(ident)
                     if note_id in owned_notes:
                         all_cards[ident] = str(note_id)
-                        notes[str(note_id)].append({'id': ident, 'iv': max(0, iv), 'lapses': lapses})
+                        card = {'id': ident, 'iv': max(0, iv), 'lapses': lapses}
+                        if type(row.get('mod')) is int:
+                            card['mod'] = row['mod']
+                        notes[str(note_id)].append(card)
         # Documented Anki search: Again within the last 30 days, not lifetime lapse totals.
         again = anki('findCards', {'query': '(tag:english_study OR tag:japanese_study) rated:30:1'})
         if not isinstance(again, list):
