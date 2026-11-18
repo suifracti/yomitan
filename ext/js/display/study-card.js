@@ -21,7 +21,7 @@ import {prepareStudyDictionary} from './study-dictionary.js';
 import {studyFormLabel, studyPartOfSpeech} from './study-labels.js';
 import {prepareStudyMini} from './study-mini.js';
 import {studyCall} from '../study/study-client.js';
-import {SAVED_KEY} from '../study/study-data.js';
+import {SAVED_KEY, savedStudyRecordId} from '../study/study-data.js';
 
 /** @type {WeakMap<HTMLElement, () => void>} */
 const readingSourceCleanups = new WeakMap();
@@ -852,8 +852,7 @@ export function prepareStudyCard(display, detail = false) {
                         const full = lines.join('\n');
                         dictionaryNotes = full.length > 4000 ? `${full.slice(0, 3950)}\n[本次仅保留部分词典资料，完整条目可在词典查看]` : full;
                     }
-                    const sameSavedWord = !display.history.state?.savedRecordWord || display.history.state.savedRecordWord.toLocaleLowerCase() === (display.query ?? '').toLocaleLowerCase();
-                    const recordId = sentence?.studySubtitle || !sameSavedWord ? void 0 : (display.history.state?.savedRecordId ?? sentence?.recordId);
+                    const recordId = savedStudyRecordId(display.history.state, display.query ?? '');
                     const savedEntry = recordId ? display.history.state?.savedRecordEntry : void 0;
                     translation.render(context, sentence.text, display.query, {translation: display.history.state?.studySentenceTranslation ?? savedEntry?.translation, cancelCapture: display.history.state?.studyMediaToken ? (() => display.invokeContentOrigin('frontendCancelStudyMedia', {token: mediaToken})) : void 0, mediaRange: display.history.state?.studyMediaRange, capture: display.history.state?.studyMediaToken ? ((start, duration, options = {}) => display.invokeContentOrigin('frontendCaptureStudyMedia', {token: mediaToken, start, duration, withFrame: options.withFrame === true, withVideo: options.withVideo === true})) : void 0, language, lemma: head?.term, reading: head?.reading, dictionaryNotes, savedTurnIds: recordId ? display.history.state?.savedRecordTurnIds : void 0, contextSelected: Boolean(savedEntry), notes: savedEntry?.notes, explanationSource: savedEntry?.explanationSource, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime, recordId, meaning: savedEntry?.meaning ?? (meaning ? `词典简释（未按当前句消歧）：${meaning}` : '')});
                     if (display.history.state?.studyOpenCard) {

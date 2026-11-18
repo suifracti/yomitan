@@ -99,6 +99,7 @@ export function prepareStudyWorkspace(display, {shell, dictionary, tabs, word}) 
         sizes.main.collapsed = false; sizes.view = 'main';
         layout(); request();
     });
+    cleanup.push(wordTabs.dispose);
     let state = preferences.get(wordTabs.key);
     if (!state) {
         const size = {...(initialSizes.get(display) ?? {width: window.innerWidth, height: Math.max(250, window.innerHeight)}), collapsed: false};

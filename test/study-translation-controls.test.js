@@ -24,6 +24,57 @@ import {prepareSubtitleSettings} from '../ext/js/pages/subtitle-settings.js';
 import {translationEngineSelect} from '../ext/js/study/youtube-overlay.js';
 import {writeSubtitlePrefs} from '../ext/js/study/subtitle-prefs.js';
 import {prepareStudyFocus} from '../ext/js/display/study-focus.js';
+import {bindStudyWordTabs} from '../ext/js/display/study-word-tabs.js';
+
+test('parked word cards keep each saved sense and its own unsent draft', async () => {
+    const url = 'https://reading.test/story';
+    const sentence = {text: 'They charged him.', offset: 5};
+    const html = '<nav></nav><div id="study-context"><textarea class="study-followup"></textarea></div>';
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html, url}});
+    const notes = ['收费', '指控'].map((gloss, i) => ({
+        id: String(i + 1).repeat(32),
+        entry: {word: 'charge', sentence: sentence.text, url, sense: {key: String(i), gloss}},
+    }));
+    const stateFor = (/** @type {{id: string, entry: Pick<import('study').LibraryEntry, 'word'|'sentence'|'url'|'sense'>}} */ row) => ({url, sentence, savedRecordId: row.id, savedRecordEntry: row.entry});
+    const goingTo = vi.fn();
+    const mockDisplay = {query: 'charge', history: {state: stateFor(notes[0])}, on: vi.fn(), setContent: goingTo};
+    const display = /** @type {import('../ext/js/display/display.js').Display} */ (/** @type {unknown} */ (mockDisplay));
+    try {
+        const nav = /** @type {HTMLElement} */ (document.querySelector('nav'));
+        const question = /** @type {HTMLTextAreaElement} */ (document.querySelector('textarea'));
+        const capture = () => mockDisplay.on.mock.calls[0][1]();
+        const first = bindStudyWordTabs(display, nav, () => {});
+        question.value = '这里收多少钱？';
+        capture();
+        first.park();
+        mockDisplay.history.state = stateFor(notes[1]);
+        question.value = '';
+        const second = bindStudyWordTabs(display, nav, () => {});
+        question.value = '指控内容是什么？';
+        expect(second.key).not.toBe(first.key);
+        const tabs = /** @type {HTMLButtonElement[]} */ ([...nav.querySelectorAll('[data-study-word-tab]')]);
+        expect(tabs.map((tab) => tab.textContent)).toEqual(['charge · 收费', 'charge · 指控']);
+        tabs[0].click();
+        expect(goingTo.mock.lastCall?.[0]?.state).toMatchObject(stateFor(notes[0]));
+        mockDisplay.history.state = stateFor(notes[0]);
+        bindStudyWordTabs(display, nav, () => {});
+        expect(question.value).toBe('这里收多少钱？');
+        /** @type {HTMLButtonElement|null} */ (nav.querySelector('[aria-label="切回单词 charge · 指控"]'))?.click();
+        expect(goingTo.mock.lastCall?.[0]?.state).toMatchObject(stateFor(notes[1]));
+        mockDisplay.history.state = stateFor(notes[1]);
+        const current = bindStudyWordTabs(display, nav, () => {});
+        expect(question.value).toBe('指控内容是什么？');
+        const context = document.querySelector('#study-context');
+        context?.setAttribute('data-study-record-id', notes[0].id);
+        capture();
+        expect(current.key.details.state?.savedRecordId).toBe(notes[1].id);
+        context?.dispatchEvent(new CustomEvent('study-saved', {detail: {...notes[1], vaultSaved: true, turnIds: ['new-turn']}}));
+        expect(current.key.details.state?.savedRecordTurnIds).toEqual(['new-turn']);
+        current.dispose();
+    } finally {
+        await env.teardown(global);
+    }
+});
 
 test('my records opens two senses of the same sentence by their saved IDs', async () => {
     const url = 'https://reading.test/story';

@@ -25,6 +25,7 @@
 | 读回同一篇文章，想看上次记过的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选 |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
+| 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
@@ -67,6 +68,8 @@
 **刚升级，旧问答不能混入新同步**：旧 `update:` 项的手动标记也不能证明队列里的所有轮次都是手动选择，旧合并可能夹进自动追问。旧项原样保留，`StudySync.deliver` 不发送；新的 `update:v2:` 不合并旧键。学习库「旧问答需核对」可读、复制，不自动改投；收藏与桥已写入后的卡片核对照常。见[旧队列与当前追问的对照](youtube-study-wiring.md#2026-11-18-升级前未送出的旧问答留给本人核对)。
 
 **词卡里要继续问的是这一条旧笔记，不是最近的一条**：「我的记录」按已读到的记录号列简释、原句与来源，优先本句。按词的近期摘要没召回较早义项时，再查现有本页索引；不把同页另一个原句冒充本句。继续学习只传编号与语言，打开后沿 `readStudyRecord` 重读；原笔记链接和 Anki 仍是各自的入口。见[从词卡选择这条笔记](youtube-study-wiring.md#2026-11-18-从我的记录继续问指定的笔记)。
+
+**已保存的两个义项不能共用一枚弹窗标签**：旧标签身份只看词、原句、网址和视频位置，切回会恢复第一条笔记和草稿。现在标签、词卡和记录页都从 `savedStudyRecordId` 取明确身份，标签加短义。捕获草稿不再把 DOM 中自动匹配的候选笔记当作恢复对象；只有当前同来源的明确保存回执才刷新该标签的笔记、词义和轮次。正常词卡与受校验字幕不互相套用授权。见[两条草稿的切换验证](youtube-study-wiring.md#2026-11-18-收起词卡后不同义项各自保留草稿)。
 
 依据：既有 Vault 阶段反馈和当前项目保护约定。笔记保存不能隐式覆盖用户手工卡片或复习排程；同词不同原句/来源不能误归属。临时 Vault/FakeAnki、模拟字幕与真实 Profile 分层记录，图片或视频网址不能代替原声音频证据。
 

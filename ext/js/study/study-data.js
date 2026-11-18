@@ -319,3 +319,17 @@ export function studyResumeParams(record) {
 export function createResumeUrl(record, searchUrl) {
     return `${searchUrl}?${studyResumeParams(record).toString()}`;
 }
+
+/**
+ * An explicitly opened note in the ordinary lookup view; live subtitle authority is separate.
+ * @param {import('display').HistoryState | null | undefined} state
+ * @param {string} word
+ * @returns {string | undefined}
+ */
+export function savedStudyRecordId(state, word) {
+    if (!state || state.sentence?.studySubtitle) { return; }
+    const storedWord = state.savedRecordWord ?? state.savedRecordEntry?.word;
+    if (storedWord && storedWord.toLocaleLowerCase() !== word.toLocaleLowerCase()) { return; }
+    const id = state.savedRecordId ?? state.sentence?.recordId;
+    return typeof id === 'string' && /^[a-f0-9]{32}$/.test(id) ? id : void 0;
+}

@@ -7,7 +7,7 @@ import {updateStudySourcePreview, prepareParallelSentence} from './study-transla
 import {explainWordForm, findFormExample} from './study-word-forms.js';
 import {chromeTranslate} from '../study/free-translators.js';
 import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
-import {WORD_STATUS_KEY, createResumeUrl} from '../study/study-data.js';
+import {WORD_STATUS_KEY, createResumeUrl, savedStudyRecordId} from '../study/study-data.js';
 import {timeLabel} from '../study/subtitle-session.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
 
@@ -58,8 +58,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const sentenceState = display.history?.state?.sentence;
         const original = cleanText(sentenceState?.text) || word;
         const subtitleSource = Boolean(sentenceState?.studySubtitle);
-        const sameSavedWord = !display.history?.state?.savedRecordWord || cleanText(display.history.state.savedRecordWord).toLocaleLowerCase() === word.toLocaleLowerCase();
-        const savedRecordId = subtitleSource || !sameSavedWord ? void 0 : (display.history?.state?.savedRecordId ?? sentenceState?.recordId);
+        const savedRecordId = savedStudyRecordId(display.history?.state, word);
         const sourceUrlCurrent = cleanText(display.history?.state?.url);
         const sourceTitleCurrent = cleanText(display.history?.state?.documentTitle) || cleanText(display.history?.state?.title);
         const sourceTimeCurrent = display.history?.state?.videoTime;

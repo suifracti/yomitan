@@ -115,6 +115,8 @@ export type HistoryState = {
  */
 export type HistoryStateSentence = {
     recordId?: string;
+    /** The frozen subtitle snapshot, whose authority is validated separately. */
+    studySubtitle?: import('../../ext/js/app/frontend.js').StudySubtitle;
     /** Lookup material inside our card is not an article or subtitle. */
     sourceKind?: 'dictionary';
     /** Optional bounded local adjacent sentences; not uploaded by default. */
