@@ -27,6 +27,7 @@
 | 想只重听刚才没听清的句子 | L-007；YoutubeReader._beginListening 的本轮队列 |
 | 从学习库回原视频听这一句，不只是跳到秒数 | L-007；videoListenUrl、openVideoListening、claimVideoListening |
 | 同一视频记了很多句，想按时间一起回听 | L-007；openVideoListening 的 wholeVideo、libraryVideoWords 的 sourceUrl |
+| 视频记了很多长句后，已记词、推荐或整轮回听读不到 | L-007；study_translator.write_frame、study-client.nativeStudyCall |
 | 回听完一句却多播了下一句开头 | L-007；YoutubeStudyContext.play 的媒体时钟与句尾定时 |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章或同一视频选集，想找同来源的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选、page_source_key |
@@ -172,6 +173,8 @@
 **整个视频回听不从学习库当前页拼**：`openVideoListening` 用记录确认来源，再由后台给 `libraryVideoWords` 提供 `sourceUrl`。桥把它与视频 key 核对后按同来源取笔记，保留既有上限；没时间的记录可列出但不进回听。队列按已确认字幕行的真实时间排序，重复台词也必须对回原来的时间。见[从同来源进入整轮回听](youtube-study-wiring.md#2026-11-18-从同来源原句回视频练一轮)。
 
 **B 站同一选集的字幕栏、学习库和小结不要各算一份词数**：网页只能传自己的媒体 key，后台用当前顶层网址（iframe 则用自己的文档网址）校验并补来源；桥沿用同 BV／av、同 P 的规则。支持不了该字段的旧桥退回原 key；网页不能指定其他选集。小结选择内容也走同一组，原目标笔记、明确点击才写的规则、字幕轨和进度 key 不变。见[同 P 三处对照](youtube-study-wiring.md#2026-11-18-b-站同选集的已记词和小结对齐)。
+
+**很多长原句让整份已记词读取失败**：原本一次返回 300 条可见原句和全部已制卡上下文，大于本机桥每帧 900,000 字节就整次失败，字符数不能代替 UTF-8 字节数。只在这项请求协商分帧，浏览器收齐后仍交付原样两份列表；不要把制卡上下文裁成前 300 条，否则会重复推荐早已制过的句子。小响应仍单帧、旧桥退回原请求；没有新索引、缓存或记录格式。见[长句回读反例](youtube-study-wiring.md#2026-11-18-视频记了很多长句也能读回)。
 
 **回听不该拖到下一句开头**：实际播放器的 `timeupdate` 不是句尾精确时钟。保留事件兜底，但按剩余媒体时间和倍速只安排一个句尾定时；播放、跳转完成、变速时重算，换媒体、退出或结束仍清除。独立 Chromium 同一音轨原先晚约 0.22–0.25 秒，改后本次晚不到 0.02 秒。没有增加持续轮询，也不追移用户的播放进度。见[实际整轮点播与读回](youtube-study-wiring.md#2026-11-18-独立浏览器串起整轮回听并缩短句尾延迟)。
 

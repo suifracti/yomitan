@@ -46,6 +46,30 @@ export async function readStudyRecord(id, language) {
 
 /** @type {import('study').NativeCall} */
 export function nativeStudyCall(payload) {
+    if (!('action' in payload) || payload.action !== 'libraryVideoWords') {
+        return openNativePort(payload);
+    }
+    let call = openNativePort({...payload, videoWordsFrames: true}, true);
+    return {
+        promise: call.promise.then((reply) => {
+            // Older bridges reject the opt-in field before reading any records.
+            if (reply.ok === false && reply.error === '视频编号无效。') {
+                call = openNativePort(payload);
+                return call.promise;
+            }
+            return reply;
+        }),
+        cancel: () => { call.cancel(); },
+    };
+}
+
+/**
+ * @param {object} payload
+ * @param {boolean} [videoWordsFrames]
+ * @returns {ReturnType<import('study').NativeCall>}
+ * @throws {Error} If native messaging is not available.
+ */
+function openNativePort(payload, videoWordsFrames = false) {
     if (typeof chrome.runtime.connectNative !== 'function') {
         throw new Error('本机通信接口尚未就绪；请先授予权限。若刚完成首次授权，请重新加载扩展并刷新网页，无需再次授权。');
     }
@@ -72,8 +96,22 @@ export function nativeStudyCall(payload) {
         finish(value);
         port.disconnect();
     }
+    /** @type {{items: unknown[], cardContexts: unknown[]} | undefined} */
+    let videoWords;
     /** @param {unknown} value */
-    const receive = (value) => { done(/** @type {import('study').NativeResult} */ (value)); };
+    const receive = (value) => {
+        const reply = /** @type {import('study').NativeResult & {more?: boolean}} */ (value);
+        if (videoWordsFrames && reply.ok && (reply.more || videoWords)) {
+            const part = /** @type {{items: unknown[], cardContexts: unknown[]}} */ (reply.library);
+            videoWords ??= {items: [], cardContexts: []};
+            videoWords.items.push(...part.items);
+            videoWords.cardContexts.push(...part.cardContexts);
+            if (reply.more) { return; }
+            done({ok: true, library: videoWords});
+            return;
+        }
+        done(reply);
+    };
     port.onMessage.addListener(receive);
     port.onDisconnect.addListener(() => {
         const error = chrome.runtime.lastError?.message;

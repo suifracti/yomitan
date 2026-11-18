@@ -299,9 +299,20 @@ def read_frame(stream):
     return value
 
 
-def write_frame(stream, value):
+def write_frame(stream, value, *, split_video_words=False):
     data = json.dumps(value, ensure_ascii=False).encode('utf-8')
     if len(data) > 900000:
+        if split_video_words:
+            library = value['library']
+            key = max(library, key=lambda name: len(library[name]))
+            rows = library[key]
+            middle = len(rows) // 2
+            if middle:
+                first = {name: [] for name in library}
+                first[key] = rows[:middle]
+                write_frame(stream, {'ok': True, 'library': first, 'more': True}, split_video_words=True)
+                write_frame(stream, {**value, 'library': {**library, key: rows[middle:]}}, split_video_words=True)
+                return
         raise ValueError('响应过大。')
     stream.write(struct.pack('=I', len(data)) + data)
     stream.flush()
@@ -618,7 +629,10 @@ def main():
     if len(sys.argv) != 2 or sys.argv[1] not in (ORIGIN, ASB_ORIGIN):
         return 1
     try:
-        payload = normalize_request(read_frame(sys.stdin.buffer))
+        request = read_frame(sys.stdin.buffer)
+        split_video_words = (isinstance(request, dict) and request.get('action') == 'libraryVideoWords'
+                             and request.pop('videoWordsFrames', False) is True)
+        payload = normalize_request(request)
         if sys.argv[1] == ASB_ORIGIN and not payload['action'].startswith('video'):
             raise ValueError('asbplayer 只允许视频字幕记录，不允许词库/Anki/任意模型动作。')
         if payload['action'] == 'bridgePing':
@@ -707,7 +721,7 @@ def main():
             from study_settings import YomitanLibrary
             result = YomitanLibrary(pathlib.Path(__file__).parent / 'bridge-config.json',
                                    cache_dir=pathlib.Path(__file__).parent / 'learning-cache').handle(payload)
-            write_frame(sys.stdout.buffer, {'ok': True, 'library': result})
+            write_frame(sys.stdout.buffer, {'ok': True, 'library': result}, split_video_words=split_video_words)
             return 0
         codex = configured_codex()
         codex_home = pathlib.Path(__file__).parent / 'codex-home'
