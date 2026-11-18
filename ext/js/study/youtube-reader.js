@@ -2015,27 +2015,48 @@ export class YoutubeReader extends EventTarget {
         const view = this._view;
         const session = this._session;
         const video = this._video;
-        if (!view || !video || !/^en(?:-|$)/i.test(session?.source.language || '')) {
+        if (!view || !video || !session || !/^en(?:-|$)/i.test(session.source.language)) {
             this._status('请先载入原来的英语字幕，再练回听。');
             return;
         }
-        /** @type {Map<string, string|null>} */
+        /** @typedef {Pick<RowInfo, 'text'|'start'|'end'|'isCurrent'> & {cueId?: string}} Clip */
+        /** @type {Map<string, Clip|null>} */
         const index = new Map();
-        for (const [id, info] of this._rowInfo) {
-            if (info.end <= info.start) { continue; }
-            const match = savedCueKey(info.start, info.text);
-            index.set(match, index.has(match) ? null : id);
+        const add = (/** @type {Clip} */ clip) => {
+            if (clip.end <= clip.start) { return; }
+            const key = savedCueKey(clip.start, clip.text);
+            index.set(key, index.has(key) ? null : clip);
+        };
+        for (const [cueId, {start, end, text, isCurrent}] of this._rowInfo) {
+            add({start, end, text, isCurrent, cueId});
+        }
+        const wanted = new Set(items.flatMap(({videoTime, sentence}) => (typeof videoTime === 'number' ? [savedCueKey(videoTime, sentence)] : [])));
+        for (const key of index.keys()) { wanted.delete(key); }
+        const raw = this._rawSession;
+        if (raw && wanted.size > 0) {
+            // The display grouping isn't the recording: recover exact clips from the same track only.
+            const source = this._sourceKey;
+            const isCurrent = () => this._session === session && this._rawSession === raw && this._mediaKey !== null && this._mediaKey === this._site.mediaKey() && source === pageSourceKey(this._site.pageUrl());
+            const seconds = (/** @type {number} */ ms) => Math.max(0, ms + session.offsetMs) / 1000;
+            for (const {text, startMs, endMs} of [...raw.cues, ...groupForReading(raw.cues).filter(({cueIds}) => cueIds.length > 1)]) {
+                const start = seconds(startMs);
+                if (wanted.has(savedCueKey(start, text))) { add({text, start, end: seconds(endMs), isCurrent}); }
+            }
         }
         /** @type {Map<string, SavedPlayback[]>} */
         const savedByCue = new Map();
         for (const item of items) {
-            const id = typeof item.videoTime === 'number' ? index.get(savedCueKey(item.videoTime, item.sentence)) : null;
-            if (!id) { continue; }
-            const records = savedByCue.get(id) ?? [];
+            if (typeof item.videoTime !== 'number') { continue; }
+            const key = savedCueKey(item.videoTime, item.sentence);
+            if (!index.get(key)) { continue; }
+            const records = savedByCue.get(key) ?? [];
             records.push(item);
-            savedByCue.set(id, records);
+            savedByCue.set(key, records);
         }
-        let queue = chronological ? [...this._rowInfo.keys()].filter((id) => savedByCue.has(id)) : [...savedByCue.keys()];
+        let queue = [...savedByCue.keys()];
+        if (chronological) {
+            queue.sort((a, b) => /** @type {Clip} */ (index.get(a)).start - /** @type {Clip} */ (index.get(b)).start);
+        }
         if (queue.length === 0) {
             this._status('当前字幕对不上已记下的原句和时间。切回原来的字幕或偏移再试。');
             return;
@@ -2087,7 +2108,7 @@ export class YoutubeReader extends EventTarget {
         };
         const play = this._button('播放本句', () => {
             practice.cancel?.();
-            const info = this._rowInfo.get(queue[current]);
+            const info = index.get(queue[current]);
             if (!info) {
                 hint.textContent = '这句的字幕已改变。请退出后重开练习。';
                 return;
@@ -2106,9 +2127,10 @@ export class YoutubeReader extends EventTarget {
         play.dataset.listenPlay = '';
         const reveal = this._button('看原句', () => {
             const id = queue[current];
-            const info = this._rowInfo.get(id);
+            const info = index.get(id);
             if (!info) { return; }
-            const revealed = document.createTextNode([info.text, session?.translation(id)].filter(Boolean).join('\n'));
+            const {cueId} = info;
+            const revealed = document.createTextNode([info.text, cueId ? session.translation(cueId) : ''].filter(Boolean).join('\n'));
             answer.replaceChildren(revealed);
             answer.hidden = false;
             reveal.hidden = true;
@@ -2133,10 +2155,10 @@ export class YoutubeReader extends EventTarget {
                 });
                 resume.dataset.listenNote = '';
                 notes.append(resume);
-                if (supplementAudio) {
+                if (supplementAudio && cueId) {
                     const audio = this._button('补存原声', () => {
                         practice.cancel?.();
-                        void this.lookupCaption(id, word, 'audio', recordId).then((opened) => {
+                        void this.lookupCaption(cueId, word, 'audio', recordId).then((opened) => {
                             if (!opened) { this._status('这句暂时不能补录；请确认原词和英语字幕还对得上。'); }
                         }).catch(() => { this._status('没能打开原声面板，可以再试一次。'); });
                     });

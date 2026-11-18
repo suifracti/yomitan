@@ -269,3 +269,63 @@ test('a library video handoff keeps the saved occurrence and can prepare a full 
         await env.teardown(global);
     }
 });
+
+test('replays the exact saved range after switching between raw and merged subtitle rows', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>', url: 'https://www.youtube.com/watch?v=abcdefghijk'}});
+    vi.stubGlobal('chrome', {
+        runtime: {getURL: (/** @type {string} */ path) => `chrome-extension://test/${path}`},
+        storage: {local: {get: async () => ({}), set: async () => {}}, onChanged: {addListener() {}, removeListener() {}}},
+    });
+    const events = [
+        {tStartMs: 12300, dDurationMs: 1200, segs: [{utf8: 'We kept'}]},
+        {tStartMs: 13600, dDurationMs: 900, segs: [{utf8: 'the window open.'}]},
+    ];
+    vi.stubGlobal('fetch', async () => ({ok: true, text: async () => JSON.stringify({events})}));
+    const items = ['We kept', 'We kept the window open.', 'We kept the wrong window open.'].map((sentence, i) => ({
+        id: String(i + 1).repeat(32), word: 'kept', sentence, videoTime: 12, cards: 0, supplementAudio: true,
+    }));
+    const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
+    const reader = new YoutubeReader({prefs: {merge: true}, call: async (action) => (action === 'libraryVideoWords' ? {items} : null)});
+    const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+    const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
+    vi.spyOn(video, 'play').mockResolvedValue();
+    const click = (/** @type {string} */ selector) => /** @type {HTMLButtonElement} */ (document.querySelector(selector)).click();
+    const seek = (/** @type {number} */ second) => {
+        video.currentTime = second;
+        video.dispatchEvent(new Event('timeupdate'));
+    };
+    try {
+        reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
+        reader.start();
+        await vi.waitFor(() => expect(reader.session?.cues.length).toBe(1));
+        click('[data-tab=words]');
+        await vi.waitFor(() => expect(document.querySelector('[data-listen-saved]')).not.toBeNull());
+        click('[data-listen-saved]');
+        expect(document.querySelector('.r-listen-practice strong')?.textContent).toContain('1/2');
+        click('[data-listen-play]');
+        expect(video.currentTime).toBe(12.3);
+        seek(13.5);
+        expect(pause).toHaveBeenCalledOnce();
+        click('[data-listen-reveal]');
+        expect(document.querySelector('.r-listen-answer')?.textContent).toBe('We kept');
+        expect(document.querySelector('[data-listen-audio]')).toBeNull();
+
+        reader.setPrefs({...reader.prefs, merge: false});
+        expect(document.querySelector('.r-listen-practice')).toBeNull();
+        click('[data-listen-saved]');
+        click('[data-listen-next]');
+        click('[data-listen-play]');
+        expect(video.currentTime).toBe(12.3);
+        seek(13.5);
+        expect(pause).toHaveBeenCalledOnce();
+        seek(14.5);
+        expect(pause).toHaveBeenCalledTimes(2);
+        click('[data-listen-reveal]');
+        expect(document.querySelector('.r-listen-answer')?.textContent).toBe('We kept the window open.');
+        expect(document.querySelector('[data-listen-audio]')).toBeNull();
+    } finally {
+        reader.setPrefs({...reader.prefs, enabled: false});
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
