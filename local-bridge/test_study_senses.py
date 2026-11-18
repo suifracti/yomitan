@@ -56,7 +56,8 @@ class SenseTests(AutoSyncTests):
         self.assertEqual(self.calls, [])
 
     def test_inflected_lookup_and_cross_form_undo_keep_both_senses(self):
-        old = self.save_word('charge', 'Banks charge fees.', meaning='收费', sense={'key': 'new', 'gloss': '收费'})
+        familiar_gloss = ('收取费用，向顾客索要这次商品或服务所需的款项' * 2)[:40]
+        old = self.save_word('charge', 'Banks charge fees.', meaning='收费', sense={'key': 'new', 'gloss': familiar_gloss})
         self.library.handle({'action': 'libraryCardsAdd', 'id': old['id'],
                              'cards': [{'kind': 'meaning', 'front': 'charge', 'back': '收费'}]})
         self.save_word('Charges', 'Two charges were dropped.', lemma='charge', meaning='指控', sense={'key': 'new', 'gloss': '指控'})
@@ -65,9 +66,10 @@ class SenseTests(AutoSyncTests):
         self.library.auto_sync()
         self.calls.clear()
         senses = self.library.handle({'action': 'libraryWordSenses', 'word': 'charges'})['senses']
-        self.assertEqual({r['gloss']: r['s'] for r in senses}, {'收费': 'familiar', '指控': 'new'})
+        self.assertEqual({r['gloss']: r['s'] for r in senses}, {familiar_gloss: 'familiar', '指控': 'new'})
         before = self.library.word_status()['words']
         self.assertEqual(before['charge']['s'], 'partial')
+        self.assertEqual(before['charges']['gloss'], ('指控；' + familiar_gloss)[:40])
         self.library.handle({'action': 'libraryMarkKnown', 'word': 'charges', 'known': True})
         marked = self.library.word_status()['words']
         self.assertEqual(marked['charge'], marked['charges'])
@@ -209,7 +211,7 @@ class SenseTests(AutoSyncTests):
         self.save_word(word='Runs', sentence='She runs daily.', lemma='run', sense={'key': 'new', 'gloss': '跑'})
         words = self.library.word_status()['words']
         self.assertEqual(words['run'], words['runs'])
-        self.assertEqual(words['run'], {'s': 'new', 'manualKnown': False, 'senses': 1, 'gloss': '跑'})
+        self.assertEqual(words['run'], {'s': 'new', 'manualKnown': False, 'senses': 1, 'gloss': '跑', 'lemma': 'run'})
         row = {'entry': {'word': 'run'}, 'cards': [{'id': 'use', 'kind': 'produce', 'noteId': 1, 'state': 'synced'}]}
         snapshot = {'notes': {'1': [{'id': 10, 'iv': 30, 'lapses': 0}]}, 'at': time.time(), 'again': []}
         self.assertEqual(status_for([row], snapshot, time.time())[0], 'known')

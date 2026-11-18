@@ -233,7 +233,10 @@ export class CaptionList {
  */
 export function learningCaptions(session, words, cardContexts = []) {
     const normalize = (text) => text.toLowerCase().replaceAll(/\s+/g, ' ').trim();
-    const carded = new Set(cardContexts.map((row) => JSON.stringify([wordInfo(row.word, words)?.word ?? row.word.toLowerCase(), normalize(row.sentence)])));
+    const carded = new Set(cardContexts.map((row) => {
+        const info = wordInfo(row.word, words);
+        return JSON.stringify([info?.lemma ?? info?.word ?? row.word.toLowerCase(), normalize(row.sentence)]);
+    }));
     /** @type {Map<string, {word: string, gloss: string, term: string, cueId: string, preferred: boolean}>} */
     const byWord = new Map();
     const learning = new Set();
@@ -248,10 +251,11 @@ export function learningCaptions(session, words, cardContexts = []) {
         for (const token of tokens) {
             if (FUNCTION_WORDS.has(token.toLowerCase().replaceAll('’', "'"))) { continue; }
             const info = wordInfo(token, words);
-            if (info && (info.s === 'ignored' || FUNCTION_WORDS.has(info.word))) { continue; }
-            if (info && !info.manualKnown && (['new', 'learning', 'shaky', 'partial'].includes(info.s) || info.newSense)) {
-                inLine.set(info.word, {word: info.word, gloss: info.gloss || '', term: token, cueId: cue.id});
-                learning.add(info.word);
+            if (!info || info.s === 'ignored' || info.manualKnown) { continue; }
+            const word = info.lemma ?? info.word;
+            if (!FUNCTION_WORDS.has(word) && (['new', 'learning', 'shaky', 'partial'].includes(info.s) || info.newSense)) {
+                inLine.set(word, {word, gloss: info.gloss || '', term: token, cueId: cue.id});
+                learning.add(word);
             }
         }
         if (tokens.length >= 5 && tokens.length <= 20 && inLine.size === 1) {

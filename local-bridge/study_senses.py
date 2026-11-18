@@ -224,20 +224,25 @@ def word_status(library, now=None):
             by_word.setdefault(canonical(entry), []).append(row)
     words, phrase_values = {}, {}
     aliases = word_aliases(r['entry'] for rows in by_word.values() for r in rows)
-    for _key, rows in by_word.items():
-        states = [status_for(contexts, snapshot, now)[0] for contexts in groups(rows).values()]
+    for head, rows in by_word.items():
+        meanings = list(groups(rows).values())
+        states = [status_for(contexts, snapshot, now)[0] for contexts in meanings]
         state = 'partial' if any(s in MATURE for s in states) and any(s not in MATURE for s in states) else (
             'known' if 'known' in states and all(s in MATURE for s in states) else 'shaky' if 'shaky' in states else
             'new' if all(s == 'new' for s in states) else 'familiar' if all(s in MATURE for s in states) else 'learning')
         manual = any(r.get('manualKnown') is True for r in rows)
-        value = {'s': 'known' if manual else state, 'manualKnown': manual, **status_for(rows, snapshot, now)[1], 'senses': len(groups(rows)),
-                 'gloss': '；'.join(dict.fromkeys(gloss(r['entry']) for r in rows if gloss(r['entry'])))[:40]}
+        display_rows = rows
+        if state == 'partial':
+            display_rows = [r for _, contexts in sorted(zip(states, meanings), key=lambda pair: pair[0] in MATURE) for r in contexts]
+        value = {'s': 'known' if manual else state, 'manualKnown': manual, **status_for(rows, snapshot, now)[1], 'senses': len(meanings),
+                 'gloss': '；'.join(dict.fromkeys(short for r in display_rows if (short := gloss(r['entry']))))[:40]}
         if any(e.get('kind') == 'newSense' for r in rows for e in r.get('contextMiss', [])):
             value['newSense'] = True
-        for row in rows:
-            for alias in {row['entry']['word'].casefold(), canonical(row['entry'])}:
-                if aliases.get(alias) == _key:
-                    words[alias] = value
+        words[head] = value
+    for form, head in aliases.items():
+        if head and form != head:
+            words[head]['lemma'] = head
+            words[form] = words[head]
     for word, rows in phrases.items():
         phrase_values[word] = {'s': 'known' if any(r.get('manualKnown') for r in rows) else status_for(rows, snapshot, now)[0],
                                'manualKnown': any(r.get('manualKnown') for r in rows), 'gloss': gloss(rows[0]['entry'])}

@@ -56,7 +56,7 @@ const TIER_OF = {new: 'learning', learning: 'learning', shaky: 'shaky', familiar
 /** Statuses that count as "still learning" for encounters. */
 const COUNTED = new Set(['new', 'learning', 'shaky', 'partial']);
 
-/** @typedef {{s: string, gloss?: string, iv?: number, lapses?: number, senses?: number, newSense?: boolean, manualKnown?: boolean}} WordInfo */
+/** @typedef {{s: string, lemma?: string, gloss?: string, iv?: number, lapses?: number, senses?: number, newSense?: boolean, manualKnown?: boolean}} WordInfo */
 /** @typedef {{learning: boolean, shaky: boolean, familiar: boolean, partial: boolean}} Tiers */
 /**
  * Old lists store a plain status string; v2 stores an object.
