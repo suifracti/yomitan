@@ -374,8 +374,10 @@ function clozePrompts(rows) {
 /**
  * @param {HTMLElement} panel
  * @param {ClozePrompt[]} prompts
+ * @param {(row: StudyLibraryRecord, report?: (message: string) => void) => HTMLButtonElement | null} makeAudioButton
+ * @param {() => void} stopAudio
  */
-function showClozePractice(panel, prompts) {
+function showClozePractice(panel, prompts, makeAudioButton, stopAudio) {
     const heading = document.createElement('h2');
     heading.tabIndex = -1;
     let index = 0;
@@ -426,6 +428,7 @@ function showClozePractice(panel, prompts) {
             const next = Object.assign(document.createElement('button'), {type: 'button', textContent: index + 1 === prompts.length ? '完成这轮' : '下一句'});
             next.dataset.clozeNext = '';
             next.onclick = () => {
+                stopAudio();
                 ++index;
                 show();
             };
@@ -439,7 +442,17 @@ function showClozePractice(panel, prompts) {
         };
         reveal.onclick = () => showAnswer();
         form.append(label, input, check, reveal);
-        panel.replaceChildren(heading, quote, clue, form);
+        const audioStatus = document.createElement('span');
+        audioStatus.setAttribute('role', 'status');
+        const listen = makeAudioButton(row, (message) => { audioStatus.textContent = message; });
+        panel.replaceChildren(heading, quote, clue);
+        if (listen) {
+            const tools = document.createElement('div');
+            tools.className = 'study-library-practice-choices';
+            tools.append(listen, audioStatus);
+            panel.append(tools);
+        }
+        panel.append(form);
         input.focus();
     };
     panel.hidden = false;
@@ -575,9 +588,10 @@ async function initializePage() {
         /**
          * @param {string} id
          * @param {HTMLButtonElement} button
+         * @param {(message: string) => void} report
          * @returns {Promise<void>}
          */
-        async function playSavedAudio(id, button) {
+        async function playSavedAudio(id, button, report) {
             const stopping = button === audioButton;
             clearSavedAudio();
             if (stopping) { return; }
@@ -606,8 +620,24 @@ async function initializePage() {
                 if (savedAudio !== context) { return; }
                 clearSavedAudio();
                 const detail = error instanceof Error && error.name === 'Error' ? error.message : '播放不了这段原声。';
-                setStatus(`${detail} 可打开原笔记检查附件，或试试原来的来源链接。`);
+                report(`${detail} 可打开原笔记检查附件。`);
             }
+        }
+        /**
+         * @param {StudyLibraryRecord} record
+         * @param {(message: string) => void} [report]
+         * @returns {HTMLButtonElement | null}
+         */
+        function makeSavedAudioButton(record, report) {
+            if (!matchesCategory(record, 'saved') || !record.media?.audio?.name) { return null; }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = '播放已存原声';
+            button.onclick = () => {
+                report?.('');
+                void playSavedAudio(record.id, button, report ?? setStatus);
+            };
+            return button;
         }
         oldUpdates?.querySelector('button')?.addEventListener('click', async () => {
             if (!oldText) { return; }
@@ -695,6 +725,7 @@ async function initializePage() {
 
         /** @returns {void} */
         function closePractice() {
+            if (activePractice) { clearSavedAudio(); }
             practice.hidden = true;
             practice.replaceChildren();
             activePractice = null;
@@ -726,7 +757,7 @@ async function initializePage() {
             show();
         }
         practiceButton.addEventListener('click', () => togglePractice(practiceButton, () => showSensePractice(practice, practicePair, compareExamples)));
-        clozeButton.addEventListener('click', () => togglePractice(clozeButton, () => showClozePractice(practice, cloze)));
+        clozeButton.addEventListener('click', () => togglePractice(clozeButton, () => showClozePractice(practice, cloze, makeSavedAudioButton, clearSavedAudio)));
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
@@ -907,13 +938,8 @@ listedQuery :
                 };
                 actions.append(listen);
             }
-            if (matchesCategory(record, 'saved') && record.media?.audio?.name) {
-                const listen = document.createElement('button');
-                listen.type = 'button';
-                listen.textContent = '播放已存原声';
-                listen.onclick = () => { void playSavedAudio(record.id, listen); };
-                actions.append(listen);
-            }
+            const listenSaved = makeSavedAudioButton(record);
+            if (listenSaved) { actions.append(listenSaved); }
             const cardUrl = new URL(resume.href);
             cardUrl.searchParams.set('studyAddCard', '1');
             const useLink = document.createElement('a');

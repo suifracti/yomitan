@@ -19,6 +19,7 @@
 
 import {afterEach, describe, expect, test, vi} from 'vitest';
 import {parseJson} from '../dev/json.js';
+import {deferPromise} from '../ext/js/core/utilities.js';
 import {mountStuckHint} from '../ext/js/display/study-stuck.js';
 import {WORD_STATUS_KEY} from '../ext/js/study/study-data.js';
 
@@ -165,6 +166,51 @@ describe('study library page', () => {
             expect(panel.hidden).toBe(true);
             expect(mocks.studyCall.mock.calls).toHaveLength(calls);
         } finally { history.replaceState(null, '', previousUrl); }
+    });
+
+    test('cloze reads saved audio only on demand and discards it after the learner moves on', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        const audio = deferPromise();
+        const close = vi.fn().mockResolvedValue(void 0);
+        const decodeAudioData = vi.fn();
+        vi.stubGlobal('AudioContext', class {
+            resume = vi.fn().mockResolvedValue(void 0);
+            close = close;
+            decodeAudioData = decodeAudioData;
+        });
+        const items = [
+            {id: '1'.repeat(32), vaultSaved: true, entry: {word: 'built', sentence: 'We built a shelter.'}, media: {audio: {name: 'saved.webm'}}},
+            {id: '2'.repeat(32), vaultSaved: true, entry: {word: 'charges', sentence: 'The bank charges a fee.'}},
+        ];
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action === 'libraryList') { return {items, total: items.length, canSearch: true}; }
+            if (action === 'libraryReconcile') { return items.find((item) => item.id === payload.id); }
+            if (action === 'libraryAudioRead') { return audio.promise; }
+            return [];
+        });
+        await import('../ext/js/pages/study-library.js');
+        const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-cloze-button'));
+        await vi.waitFor(() => expect(start.hidden).toBe(false));
+        start.click();
+        const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+        const buttonNamed = (/** @type {string} */ name) => [...panel.querySelectorAll('button')].find((item) => item.textContent === name);
+        expect(mocks.studyCall.mock.calls.filter(([action]) => action === 'libraryAudioRead')).toEqual([]);
+        expect(buttonNamed('播放已存原声')).toBeDefined();
+        buttonNamed('播放已存原声')?.click();
+        await vi.waitFor(() => expect(mocks.studyCall).toHaveBeenCalledWith('libraryAudioRead', {id: items[0].id}));
+        buttonNamed('直接看答案')?.click();
+        expect(buttonNamed('播放已存原声')).toBeDefined();
+        buttonNamed('下一句')?.click();
+        expect(panel.textContent).toContain('The bank […] a fee.');
+        expect(buttonNamed('播放已存原声')).toBeUndefined();
+        expect(close).toHaveBeenCalledOnce();
+        audio.resolve({parts: ['YQ==']});
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        expect(decodeAudioData).not.toHaveBeenCalled();
+        expect(mocks.studyCall.mock.calls.filter(([action]) => action === 'libraryAudioRead')).toEqual([['libraryAudioRead', {id: items[0].id}]]);
     });
 
     test('uses saved sentences for a short cloze without grading or changing the records', async () => {
