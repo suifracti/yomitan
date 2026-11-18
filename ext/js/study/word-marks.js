@@ -340,16 +340,19 @@ export class WordMarks {
     async _load() {
         const stored = /** @type {Record<string, unknown>} */ (await chrome.storage.local.get([WORD_MARKS_KEY, WORD_STATUS_KEY, 'studyKnownWords']));
         const marks = /** @type {{enabled?: unknown, excluded?: unknown, tiers?: Partial<Tiers>, hover?: unknown, encounters?: unknown,level?:string,possible?:boolean,shortcuts?:boolean}|undefined} */ (stored[WORD_MARKS_KEY]);
-        const status = /** @type {{words?: unknown, phrases?: unknown}|undefined} */ (stored[WORD_STATUS_KEY]);
+        const status = /** @type {{version?: number, words?: unknown, phrases?: unknown}|undefined} */ (stored[WORD_STATUS_KEY]);
         const excluded = Array.isArray(marks?.excluded) ? marks.excluded.filter((item) => typeof item === 'string') : [];
-        const savedWords = status?.words && typeof status.words === 'object' ? /** @type {Record<string, unknown>} */ (status.words) : {};
-        const words = {...savedWords};
-        const manual = /** @type {KnownWords} */ (stored.studyKnownWords || {known: [], ignored: []});
-        for (const word of manual.known) {
-            words[word] = {...normalizeInfo(words[word]), s: 'known', manualKnown: true};
-        }
-        for (const word of manual.ignored) {
-            words[word] = {...normalizeInfo(words[word]), s: 'ignored'};
+        let words = status?.words && typeof status.words === 'object' ? /** @type {Record<string, unknown>} */ (status.words) : {};
+        if (status?.version !== 2 && stored.studyKnownWords) {
+            // Old cached lists were separate. A v2 snapshot already includes both overrides.
+            words = {...words};
+            const manual = /** @type {KnownWords} */ (stored.studyKnownWords);
+            for (const word of manual.known) {
+                words[word] = {...normalizeInfo(words[word]), s: 'known', manualKnown: true};
+            }
+            for (const word of manual.ignored) {
+                words[word] = {...normalizeInfo(words[word]), s: 'ignored'};
+            }
         }
         this._level = (/** @type {Record<string,number>} */({gk: 2, cet4: 3, cet6: 4, ky: 5, ielts: 7}))[marks?.level || 'gk'];
         this._possible = marks?.possible !== false;

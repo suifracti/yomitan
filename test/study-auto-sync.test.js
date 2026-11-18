@@ -16,15 +16,16 @@
  */
 
 import {afterEach, expect, test, vi} from 'vitest';
+import {deferPromise} from '../ext/js/core/utilities.js';
 import {describeAutoSync} from '../ext/js/pages/auto-sync-settings.js';
-import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY} from '../ext/js/study/study-data.js';
+import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY} from '../ext/js/study/study-data.js';
 import {StudyService} from '../ext/js/study/study-service.js';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
 /**
  * @param {Record<string, unknown>} data
- * @param {(payload: unknown) => {ok: boolean, library?: unknown, error?: string}} reply
+ * @param {(payload: object) => (import('study').NativeResult|Promise<import('study').NativeResult>)} reply
  * @returns {{service: StudyService, sent: unknown[]}}
  */
 function make(data, reply) {
@@ -37,13 +38,15 @@ function make(data, reply) {
     return {service, sent};
 }
 
-test('a pass asks the bridge once and keeps its summary', async () => {
-    vi.stubGlobal('chrome', {permissions: {contains: async () => true}});
+test('a pass syncs once, refreshes the daily badge and keeps its summary', async () => {
+    const setBadgeText = vi.fn();
+    vi.stubGlobal('chrome', {permissions: {contains: async () => true}, action: {setBadgeText}});
     /** @type {Record<string, unknown>} */
     const data = {};
-    const {service, sent} = make(data, () => ({ok: true, library: {synced: 2, conflicts: 1, upgrade: [{id: 'a', word: 'brick'}]}}));
+    const {service, sent} = make(data, (payload) => ({ok: true, library: 'action' in payload && payload.action === 'ankiToday' ? {due: 3} : {synced: 2, conflicts: 1, upgrade: [{id: 'a', word: 'brick'}]}}));
     await service.autoSync();
-    expect(sent).toEqual([{action: 'libraryAutoSync'}]);
+    expect(sent).toEqual([{action: 'libraryAutoSync'}, {action: 'ankiToday'}]);
+    expect(setBadgeText).toHaveBeenCalledWith({text: '3'});
     expect(data[AUTO_SYNC_STATE_KEY]).toMatchObject({synced: 2, conflicts: 1});
     expect(describeAutoSync(data[AUTO_SYNC_STATE_KEY])).toMatch(/同步了 2 条 · 1 条有冲突.*1 个词可以加“会用”卡/);
 });
@@ -60,11 +63,41 @@ test('the pass stays quiet when switched off or without the bridge permission', 
 });
 
 test('a failed pass is recorded without throwing', async () => {
-    vi.stubGlobal('chrome', {permissions: {contains: async () => true}});
+    vi.stubGlobal('chrome', {permissions: {contains: async () => true}, action: {setBadgeText: vi.fn()}});
     /** @type {Record<string, unknown>} */
     const data = {};
     const {service} = make(data, () => ({ok: false, error: 'Anki 未打开'}));
     await service.autoSync();
     expect(describeAutoSync(data[AUTO_SYNC_STATE_KEY])).toContain('Anki 未打开');
     expect(describeAutoSync(void 0)).toContain('还没有运行过');
+});
+
+test('a late refresh cannot mark a word known again after undo', async () => {
+    vi.stubGlobal('chrome', {permissions: {contains: async () => true}});
+    const started = deferPromise();
+    const release = deferPromise();
+    /** @type {Record<string, unknown>} */
+    const data = {};
+    let known = true;
+    const {service, sent} = make(data, async (payload) => {
+        const {action} = /** @type {{action: string}} */ (payload);
+        if (action === 'libraryMarkKnown') {
+            known = false;
+            return {ok: true, library: {manualKnown: false}};
+        }
+        if (action === 'knownWords') { return {ok: true, library: {known: [], ignored: []}}; }
+        const charge = {s: known ? 'known' : 'partial', manualKnown: known, iv: 33};
+        if (known) {
+            started.resolve(void 0);
+            await release.promise;
+        }
+        return {ok: true, library: {version: 2, words: {charge, charges: charge}}};
+    });
+    const older = service.refreshWordStatus();
+    await started.promise;
+    await service.handle('libraryMarkKnown', {word: 'charges', known: false});
+    release.resolve(void 0);
+    await older;
+    expect(data[WORD_STATUS_KEY]).toMatchObject({words: {charge: {s: 'partial', iv: 33}, charges: {manualKnown: false}}});
+    expect(sent).toEqual([{action: 'libraryWordStatus'}, {action: 'libraryMarkKnown', word: 'charges', known: false}, {action: 'libraryWordStatus'}]);
 });

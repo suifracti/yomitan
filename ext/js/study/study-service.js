@@ -44,6 +44,8 @@ const cueIntentFingerprint = (value) => JSON.stringify(value, (_key, /** @type {
 export class StudyService {
     /** @type {boolean} */
     #autoSyncing = false;
+    /** Only the latest bridge read may publish word colours after a user action. */
+    #wordStatusRequest = 0;
 
     /** @type {Map<string, {entry: import('study').LibraryEntry, owner: string, sender: chrome.runtime.MessageSender}>} */
     #verifiedCues = new Map();
@@ -106,11 +108,11 @@ export class StudyService {
      * @returns {Promise<void>}
      */
     async refreshWordStatus() {
+        const request = ++this.#wordStatusRequest;
         if (typeof chrome === 'undefined' || !await chrome.permissions?.contains?.({permissions: ['nativeMessaging']})) { return; }
         try {
-            const manual = await this.native({action:'knownWords'}).promise;
-            if (manual.ok && manual.library) { await this.write('studyKnownWords', () => manual.library); }
             const response = await this.native({action: 'libraryWordStatus'}).promise;
+            if (request !== this.#wordStatusRequest) { return; }
             // v1: {words: {word: status}}; v2 adds per-word details and saved phrases (docs/roadmap-2026-10.md).
             const library = /** @type {{words?: unknown, phrases?: unknown, version?: unknown}|undefined} */ (response.library);
             const words = library?.words;
