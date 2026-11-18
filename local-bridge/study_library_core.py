@@ -267,8 +267,14 @@ def _normalize_request(p):
         # Older readers send a YouTube videoId; newer ones send the shared media key.
         if set(p) == {'action', 'videoId'} and isinstance(p['videoId'], str) and re.fullmatch(r'[A-Za-z0-9_-]{11}', p['videoId']):
             return {'action': action, 'mediaKey': 'youtube:' + p['videoId']}
-        if set(p) not in ({'action', 'mediaKey'}, {'action', 'mediaKey', 'sourceUrl'}) or not isinstance(p['mediaKey'], str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400}|file:[^\r\n]{1,350}\|[0-9]+)', p['mediaKey']):
+        if set(p) - {'action', 'mediaKey', 'sourceUrl', 'cue'} or not isinstance(p.get('mediaKey'), str) or not re.fullmatch(r'(youtube:[A-Za-z0-9_-]{11}|web:[^\s]{1,400}|file:[^\r\n]{1,350}\|[0-9]+)', p['mediaKey']):
             raise ValueError('视频编号无效。')
+        if 'cue' in p:
+            cue = p['cue']
+            if ('sourceUrl' not in p or not isinstance(cue, dict) or set(cue) != {'sentence', 'videoTime'} or
+                    type(cue['videoTime']) is not int or not 0 <= cue['videoTime'] <= 604800):
+                raise ValueError('没读到这句的原文和时间。')
+            p = {**p, 'cue': {**cue, 'sentence': text(cue['sentence'], FIELDS['sentence'], True)}}
         if 'sourceUrl' in p:
             url = source_url(p['sourceUrl'])
             if not url.startswith(('https://', 'http://', 'file:///')) or media_key_of(url) != p['mediaKey']:

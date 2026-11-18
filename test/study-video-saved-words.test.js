@@ -37,15 +37,30 @@ test('explains saved video words, opens uncarded words for card selection, and r
         opened = {text: range.toString(), panel, recordId, at: youtubeStudyContext.read(range)?.videoTime};
     });
     youtubeStudyContext.openCard = open;
-    const call = vi.fn(async (/** @type {string} */ action) => action === 'libraryVideoWords' ? {items: [
+    const savedItems = [
         {id: '1'.repeat(32), word: 'successful', sentence, videoTime: 24, cards: 0, sense: {gloss: '成功的'}},
         {id: '2'.repeat(32), word: 'project', sentence, videoTime: 0, cards: 2},
         {id: '3'.repeat(32), word: 'successful', sentence, videoTime: 24, cards: 1, sense: {gloss: '有成效的'}},
-    ]} : {words: 2, cards: 2, openUrl: 'obsidian://open?vault=test&file=summary'});
+    ];
+    const call = vi.fn(async (/** @type {string} */ action, /** @type {{cue?: {videoTime: number}}} */ data) => {
+        if (action === 'libraryVideoWords') { return {items: data?.cue ? savedItems.filter(({videoTime}) => data.cue?.videoTime === videoTime) : savedItems}; }
+        return {words: 2, cards: 2, openUrl: 'obsidian://open?vault=test&file=summary'};
+    });
     const reader = new YoutubeReader({prefs: {merge: false}, call});
     try {
         reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en'); reader.start();
         await vi.waitFor(() => expect(reader.session?.cues.length).toBe(2));
+        expect(call.mock.calls.filter(([action]) => action === 'libraryVideoWords')).toEqual([]);
+        const toggles = /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('[data-cue-notes]'));
+        toggles[1].click();
+        await vi.waitFor(() => expect(document.querySelectorAll('.r-cue-notes button')).toHaveLength(2));
+        expect(call).toHaveBeenCalledWith('libraryVideoWords', {mediaKey: 'youtube:abcdefghijk', cue: {sentence, videoTime: 24}});
+        const recordedNotes = /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('.r-cue-notes button'));
+        expect([...recordedNotes].map(({textContent}) => textContent)).toEqual(['successful · 成功的', 'successful · 有成效的']);
+        recordedNotes[1].click();
+        expect(call).toHaveBeenLastCalledWith('openStudyRecord', {id: '3'.repeat(32), word: 'successful', sentence, openPanel: false});
+        toggles[1].click();
+        expect(document.querySelector('.r-cue-notes')).toBeNull();
         const words = /** @type {HTMLButtonElement} */ (document.querySelector('[data-tab=words]'));
         words.click();
         const savedPanel = /** @type {HTMLElement} */ (document.querySelector('#study-yt-reader .r-words'));

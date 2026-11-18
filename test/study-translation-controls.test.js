@@ -82,6 +82,12 @@ test('video lists and summaries use the browser source, with fallback only when 
         expect(read).toHaveBeenCalledOnce();
         expect(await ask(summary, fileSender, 'libraryVideoSummary')).toMatchObject({ok: true});
         expect(read).toHaveBeenLastCalledWith('libraryVideoSummary', summary);
+
+        read.mockClear().mockRejectedValueOnce(new Error('视频编号无效。'));
+        const cue = {sentence: 'We heard the chime.', videoTime: 24};
+        expect(await ask({mediaKey, cue})).toEqual({ok: false, error: '本机桥还不能查单句笔记；可以去「我在这个视频记的词」找。'});
+        expect(read).toHaveBeenCalledOnce();
+        expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey, sourceUrl: url, cue});
     } finally {
         read.mockRestore();
         vi.unstubAllGlobals();

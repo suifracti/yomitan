@@ -446,11 +446,13 @@ class YomitanLibrary:
         return {'first': first, 'checked': len(files), 'synced': synced, 'conflicts': conflicts,
                 'errors': errors[:5], 'paused': paused, 'upgrade': upgrade}
 
-    def video_words(self, media_key, source_url=''):
+    def video_words(self, media_key, source_url='', cue=None):
         """Read saved words in playback order, using a reader key or a source group."""
+        from study_index import saved_record
         from study_sources import media_key_of, page_source_key
 
         source = page_source_key(source_url) if source_url else ''
+        sentence = ' '.join(cue['sentence'].split()).lower() if cue else ''
         rows = []
         for lib, _path, row in self.indexed()[1].values():
             entry = row['entry']
@@ -458,6 +460,9 @@ class YomitanLibrary:
                 if page_source_key(entry.get('url', '')) != source:
                     continue
             elif media_key_of(entry.get('url')) != media_key:
+                continue
+            if cue and (not saved_record(row) or entry.get('videoTime') != cue['videoTime'] or
+                        ' '.join(entry['sentence'].split()).lower() != sentence):
                 continue
             progress = card_progress(row)
             hint = {'missing': '有卡片已被删除，请到学习库处理', 'ambiguous': '有卡片对应不上，请到学习库核对',
@@ -530,7 +535,7 @@ class YomitanLibrary:
             lib = self.locate(ident) or self.library_for(p.get('targetId', self.active_id))
             return lib.handle(p)
         if action == 'libraryVideoWords':
-            items = self.video_words(p['mediaKey'], p.get('sourceUrl', ''))
+            items = self.video_words(p['mediaKey'], p.get('sourceUrl', ''), p.get('cue'))
             return {'items': [{k: v for k, v in r.items() if k not in ('path', 'vault')} for r in items[:300]],
                     'cardContexts': [{'word': r['word'], 'sentence': r['sentence']} for r in items if r['cards'] or r.get('cardHint')]}
         if action == 'libraryVideoSummary':

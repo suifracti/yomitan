@@ -40,6 +40,7 @@
 | 本地视频的已记词、小结和听写混入别处的同名文件 | L-007；学习库的 librarySource、study_sources.page_source_key、StudyService 的 localVideoSource |
 | 不记得存了哪个词，想按看过的文章或视频找原句和原声 | L-007；学习库「按素材」、libraryList(scope=sources)、study_index.indexed_sources |
 | 在视频里想直接打开已记的原句；倒着记的句子，复习想按视频顺序 | L-007；openPageLibrary 和 study_index.indexed_page |
+| 字幕播到这句，想找当时记的哪个词义，不想翻完整词表 | L-007；YoutubeReader._addCueNotes、libraryVideoWords 的 cue |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
@@ -218,6 +219,8 @@
 **不先找词，按素材集中回顾**：学习库「按素材」从已有记录索引聚合，命中一条也显示整份素材的数量，按最近保存排列。还与原句匹配的已存录音才计入「有原声」；这一数量是记录数，听写仍会去掉重复句。两种入口沿完整来源进入同一范围，不打开原视频、不自动播放或读出附件。旧桥不能列素材时，保留「全部」里的搜索；不另存素材表。见[素材入口与临时验证](youtube-study-wiring.md#2026-11-18-从素材直接回到原句和听写)。
 
 **从字幕栏直接打开素材的时间线**：「复习本视频」沿 `openPageLibrary`，与网页的「本页记过的原句」打开同一个学习库范围。后台从浏览器报告的网页、字幕 iframe 或本地文件取来源；本地的时长只从当前读者的媒体键取，不允许换文件。没有搜索词时，原句列表和源内听写按保存的秒数排列，无时间排后；搜索仍按相关度。时间用字幕的同一个格式，本地只显示、不打开文件。没有接入仓库之外的旧 IINA 候选。见[素材时间线](youtube-study-wiring.md#2026-11-18-从播放器打开素材时间线)。
+
+**在字幕行直接看当时记的义项**：点「笔记」才发 `libraryVideoWords(cue)`；浏览器给出当前素材，桥再按原文和保存整秒读取，只显示旧词表已有的词与短义。一个词的两个义项仍是两个笔记入口；同文同秒在当前轨不能区分时不读，改偏移、换轨或切素材不沿用原结果。不发播放、制卡或写笔记请求；旧桥拒绝时不把整份词表冒充这句。见[重复台词和不同选集的验证](youtube-study-wiring.md#2026-11-18-在字幕这一句找回已存词义)。
 
 **翻译是对照，不是原文的一部分**：整页及下方单句译文虽然没有改原 DOM，插入的 `.study-page-translation` 仍会被句子扫描走进，抢走真正邻句。原文扫描跳过这个生成的节点，不增换行，保留原句和选词位置；不按语言把网页原生中文段落删掉。见[开译文前后对照](youtube-study-wiring.md#2026-11-18-打开网页译文不再把邻句换成中文)。
 

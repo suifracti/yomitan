@@ -82,6 +82,25 @@ class RecordIndexTests(AutoSyncTests):
         self.assertEqual(match(practice='dictation', offset=1), ['middle', 'later'])
         self.assertEqual(match(query='later'), ['later'])
 
+    def test_video_notes_use_the_exact_source_sentence_and_second(self):
+        base = 'https://www.bilibili.com/video/BV1xx411c7mD?p=2'
+        sentence = 'The harbor was silent before dawn.'
+        def save(word, second, url=base, text=sentence):
+            return self.library.handle({'action': 'librarySave', 'makeCard': False, 'entry': {
+                'word': word, 'sentence': text, 'url': url, 'videoTime': second,
+            }})['id']
+        save('harbor', 3)
+        first = save('harbor', 24)
+        second = save('silent', 24)
+        save('before', 24, base.replace('p=2', 'p=1'))
+        save('dawn', 24, text='We waited for dawn here.')
+        request = {'action': 'libraryVideoWords', 'mediaKey': 'web:www.bilibili.com/video/BV1xx411c7mD?p=2', 'sourceUrl': base,
+                   'cue': {'sentence': ' the harbor was  silent before dawn. ', 'videoTime': 24}}
+        self.calls.clear()
+        self.assertEqual({row['id'] for row in self.library.handle(request)['items']}, {first, second})
+        self.assertEqual(self.library.handle({**request, 'cue': {**request['cue'], 'videoTime': 25}})['items'], [])
+        self.assertEqual(self.calls, [])
+
     def test_find_an_older_sentence_by_meaning_or_word_before_paging(self):
         def save(word, sentence, meaning):
             return self.library.handle({'action': 'librarySave', 'makeCard': False,

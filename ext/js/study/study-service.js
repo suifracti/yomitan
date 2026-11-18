@@ -1422,15 +1422,18 @@ export function prepareStudyService(lookupDictionary = null) {
                         await service.write(VIDEO_STATE_KEY, (stored) => mergeVideoState(stored, own, patch));
                         return true;
                     }
-                    if (Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
+                    if (Object.keys(/** @type {object} */ (data ?? {})).some((key) => key !== 'mediaKey' && key !== 'cue')) { throw new Error('只能读取当前视频的生词。'); }
+                    const {cue} = /** @type {{cue?: unknown}} */ (data);
                     const source = new URL(url);
                     if (source.protocol === 'file:') {
                         const sourceUrl = localVideoSource(url, asked);
                         if (!sourceUrl) { throw new Error('请直接打开要学习的本地视频，再读取它的生词。'); }
                         forwarded = {mediaKey: own, sourceUrl};
-                    } else if ((source.hostname === BILIBILI_HOST || source.hostname.endsWith(`.${BILIBILI_HOST}`)) && source.pathname.startsWith('/video/')) {
+                    } else if (typeof cue !== 'undefined' || ((source.hostname === BILIBILI_HOST || source.hostname.endsWith(`.${BILIBILI_HOST}`)) && source.pathname.startsWith('/video/'))) {
+                        source.hash = '';
                         forwarded = {mediaKey: own, sourceUrl: source.href};
                     }
+                    if (typeof cue !== 'undefined') { forwarded = {...forwarded, cue}; }
                 }
                 // The summary's video URL comes from the sender, never from the page's message.
                 if (studyAction === 'libraryVideoSummary') {
@@ -1453,6 +1456,9 @@ export function prepareStudyService(lookupDictionary = null) {
                 } catch (error) {
                     // An older bridge only accepts the reader's original one-field query.
                     if (action === 'libraryVideoWords' && typeof forwarded.sourceUrl === 'string' && error instanceof Error) {
+                        if ('cue' in forwarded && error.message === '视频编号无效。') {
+                            throw new Error('本机桥还不能查单句笔记；可以去「我在这个视频记的词」找。');
+                        }
                         if (forwarded.sourceUrl.startsWith('file:') && ['视频编号无效。', '这不是当前视频的来源。'].includes(error.message)) {
                             throw new Error('本机桥还不能区分同名视频。请先更新本机桥，再打开这页。');
                         }

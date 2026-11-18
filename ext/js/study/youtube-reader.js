@@ -59,6 +59,15 @@ const SUBTITLE_ACCEPT = '.srt,.vtt,.webvtt,.sbv,.ass,.ssa,.ttml,.dfxp,.xml,.json
 const FILE_LIMIT = 4_000_000;
 
 /**
+ * @param {number} second
+ * @param {string} sentence
+ * @returns {string}
+ */
+function savedCueKey(second, sentence) {
+    return `${Math.floor(second)}:${sentence.replaceAll(/\s+/g, ' ').trim().toLowerCase()}`;
+}
+
+/**
  * The single caption controller on a watch page. The sidebar is rendered here; other
  * views (the in-video captions) subscribe to its events instead of keeping state:
  * `session`, `reset`, `active`, `lookup`, `loop`, `translation` and `prefs`.
@@ -371,6 +380,7 @@ export class YoutubeReader extends EventTarget {
      */
     setOffset(ms, remember = true) {
         this._endListening();
+        for (const button of this._view?.list.querySelectorAll('button[data-cue-notes][aria-expanded="true"]') ?? []) { /** @type {HTMLButtonElement} */ (button).click(); }
         const value = Math.max(-600000, Math.min(600000, Math.round(ms / 50) * 50));
         this._offsetMs = value;
         for (const target of new Set([this._rawSession, this._session])) {
@@ -1406,7 +1416,75 @@ export class YoutubeReader extends EventTarget {
         time.append(star);
         tools.append(loop);
         row.append(time, text, tools, translated);
+        if (/^en(?:-|$)/i.test(session.source.language)) { this._addCueNotes(cue.id, info, row, tools); }
         return row;
+    }
+
+    /**
+     * @param {string} id
+     * @param {RowInfo} info
+     * @param {HTMLElement} row
+     * @param {HTMLElement} tools
+     */
+    _addCueNotes(id, info, row, tools) {
+        /** @type {HTMLElement|null} */
+        let panel = null;
+        const close = () => {
+            panel?.remove();
+            panel = null;
+            toggle.setAttribute('aria-expanded', 'false');
+        };
+        const toggle = this._button('笔记', () => {
+            if (panel) {
+                close();
+                return;
+            }
+            const mediaKey = this._mediaKey;
+            if (!mediaKey) { return; }
+            const notes = Object.assign(document.createElement('div'), {className: 'r-cue-notes scan-disable', textContent: '正在查这句…'});
+            notes.setAttribute('aria-live', 'polite');
+            row.append(notes);
+            panel = notes;
+            toggle.setAttribute('aria-expanded', 'true');
+            const videoTime = Math.floor(info.start);
+            const key = savedCueKey(videoTime, info.text);
+            for (const [otherId, other] of this._rowInfo) {
+                if (otherId !== id && savedCueKey(other.start, other.text) === key) {
+                    notes.textContent = '这一秒有两条相同字幕，无法确认是哪一条。';
+                    return;
+                }
+            }
+            const live = () => panel === notes && row.isConnected && info.isCurrent() && Math.floor(info.start) === videoTime;
+            void this._call('libraryVideoWords', {mediaKey, cue: {sentence: info.text, videoTime}}).then((value) => {
+                if (!live()) {
+                    if (panel === notes) { close(); }
+                    return;
+                }
+                const {items} = /** @type {{items: SavedPlayback[]}} */ (value);
+                notes.textContent = items.length > 0 ? '这句记过：' : '这句还没有保存过的笔记。';
+                for (const {id: recordId, word, sentence, sense} of items) {
+                    const open = this._button([word, sense?.gloss].filter(Boolean).join(' · '), () => {
+                        if (!live()) {
+                            close();
+                            return;
+                        }
+                        void this._call('openStudyRecord', {id: recordId, word, sentence, openPanel: false}).catch(() => {
+                            if (live()) { this._status('没能打开这条笔记，请再点一次或去学习库找。'); }
+                        });
+                    });
+                    notes.append(open);
+                }
+            }).catch(() => {
+                if (live()) {
+                    notes.textContent = '没能查到这句。可关闭后重试，或去「我在这个视频记的词」找。';
+                } else if (panel === notes) { close(); }
+            });
+        });
+        toggle.className = 'r-loop';
+        toggle.title = '查看这句记过的词义';
+        toggle.dataset.cueNotes = '';
+        toggle.setAttribute('aria-expanded', 'false');
+        tools.append(toggle);
     }
 
     /**
@@ -1749,23 +1827,17 @@ export class YoutubeReader extends EventTarget {
             this._status('请先载入原来的英语字幕，再练回听。');
             return;
         }
-        /**
-         * @param {number} second
-         * @param {string} sentence
-         * @returns {string}
-         */
-        const key = (second, sentence) => `${Math.floor(second)}:${sentence.replaceAll(/\s+/g, ' ').trim().toLowerCase()}`;
         /** @type {Map<string, string|null>} */
         const index = new Map();
         for (const [id, info] of this._rowInfo) {
             if (info.end <= info.start) { continue; }
-            const match = key(info.start, info.text);
+            const match = savedCueKey(info.start, info.text);
             index.set(match, index.has(match) ? null : id);
         }
         /** @type {Map<string, SavedPlayback[]>} */
         const savedByCue = new Map();
         for (const item of items) {
-            const id = typeof item.videoTime === 'number' ? index.get(key(item.videoTime, item.sentence)) : null;
+            const id = typeof item.videoTime === 'number' ? index.get(savedCueKey(item.videoTime, item.sentence)) : null;
             if (!id) { continue; }
             const records = savedByCue.get(id) ?? [];
             records.push(item);
