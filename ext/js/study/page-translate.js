@@ -28,6 +28,9 @@ import {confirmTranslation} from './translation-confirm.js';
 import {mountTranslationBall} from './translation-ball.js';
 import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY} from './study-data.js';
 
+/** @typedef {import('./subtitle-prefs.js').SubtitleEngine} SubtitleEngine */
+/** @typedef {Pick<import('study').StudyConfig, 'model'|'effort'>} TranslationModel */
+
 export const PAGE_PREFS_KEY = 'studyPageTranslation';
 
 /** @typedef {{mode:'bilingual'|'translation',sites:string[],auto:boolean,selection:'button'|'auto'|'off',hoverKey:string,selectionDisplay:'inline'|'card',ball:boolean,ballSites:Record<string,{hidden?:boolean,y?:number}>}} PagePrefs */
@@ -50,18 +53,18 @@ export async function writePagePrefs(patch) {
 /**
  * The same translation engine used by captions and sentence cards.
  * @param {string} text
- * @param {{language?:string,target?:string}} [options]
+ * @param {{language?:string,target?:string,engine?:SubtitleEngine,config?:TranslationModel}} [options]
  * @returns {Promise<string>}
  */
-async function translateText(text, {language, target = 'zh'} = {}) {
-    const prefs = await readSubtitlePrefs();
-    const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
+async function translateText(text, {language, target = 'zh', engine, config} = {}) {
+    engine ??= (await readSubtitlePrefs()).engine;
+    config ??= /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
     const declared = document.documentElement.lang.split('-')[0] || 'en';
     language ||= declared === 'zh' ? 'en' : declared;
     const result = [];
     for (let offset = 0; offset < text.length; offset += 2200) {
         const part = text.slice(offset, offset + 2200);
-        if (prefs.engine === 'chrome') {
+        if (engine === 'chrome') {
             const status = await chromeTranslatorStatus(language, target);
             if (status !== 'available') {
                 throw new Error(status === 'unavailable' ?
@@ -70,7 +73,7 @@ async function translateText(text, {language, target = 'zh'} = {}) {
             }
             result.push((await chromeTranslate([part], {source: language, target}))[0]);
         } else {
-            const reply = /** @type {{items:{translation:string}[]}} */ (await studyCall('subtitleTranslate', {requestId: crypto.randomUUID(), language, target, items: [{id: 'page', text: part}], config: {model: config.model, effort: config.effort}}));
+            const reply = /** @type {{items:{translation:string}[]}} */ (await studyCall('subtitleTranslate', {requestId: crypto.randomUUID(), language, target, expectedEngine: engine, items: [{id: 'page', text: part}], config: {model: config.model, effort: config.effort}}));
             result.push(reply.items[0].translation);
         }
     }
@@ -88,7 +91,7 @@ function reasonOf(error) {
 }
 
 export class PageTranslate {
-    /** @param {{translate?:(text:string)=>Promise<string>}} [options] */
+    /** @param {{translate?:typeof translateText}} [options] */
     constructor({translate = translateText} = {}) {
         /**
          *
@@ -120,6 +123,8 @@ export class PageTranslate {
          *
          */
         this.consent = '';
+        /** @type {{abort: AbortController, result: Promise<boolean>}|null} */
+        this.approval = null;
         /** @type {Element|null} */
         this.pointer = null;
         /** Mouse location for sentence-level hover translation. */
@@ -192,10 +197,27 @@ export class PageTranslate {
         return target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable=false])'));
     }
 
-    /** @returns {Promise<boolean>} */
-    async approve() {
-        const {engine} = await readSubtitlePrefs();
+    /**
+     * @param {SubtitleEngine} engine
+     * @returns {Promise<boolean>}
+     */
+    async approve(engine) {
         if (engine !== 'model' || this.consent === location.origin) { return true; }
+        if (!this.approval) {
+            const abort = new AbortController();
+            const result = this.confirmModel(abort.signal).finally(() => {
+                if (this.approval?.abort === abort) { this.approval = null; }
+            });
+            this.approval = {abort, result};
+        }
+        return await this.approval.result;
+    }
+
+    /**
+     * @param {AbortSignal} signal
+     * @returns {Promise<boolean>}
+     */
+    async confirmModel(signal) {
         if (await studyCall('pageTranslationConsent') === true) {
             this.consent = location.origin;
             return true;
@@ -206,7 +228,7 @@ export class PageTranslate {
             if (box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth) { text += this.source(node); }
         });
         const size = Math.ceil(text.length / 3);
-        if (!await confirmTranslation(`当前屏幕待翻内容约 ${size.toLocaleString()} Token。往下滚动还会继续翻译新内容。是否继续？`)) { return false; }
+        if (!await confirmTranslation(`当前屏幕待翻内容约 ${size.toLocaleString()} Token。往下滚动还会继续翻译新内容。是否继续？`, signal)) { return false; }
         await studyCall('pageTranslationConsent', {approve: true});
         this.consent = location.origin;
         return true;
@@ -239,7 +261,7 @@ export class PageTranslate {
             let node = leaf;
             while (node.parentElement && ['', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(node).display)) { node = node.parentElement; }
             if (node === document.body || [...node.children].some((child) => !child.matches(SKIP) && !['none', '', 'inline', 'inline-block', 'contents'].includes(getComputedStyle(child).display))) { return; }
-            if (!this.rows.has(node) && !this.pending.has(node) && /[A-Za-z]{2,}/.test(this.source(node))) {
+            if (!this.rows.has(node) && (collect || !this.pending.has(node)) && /[A-Za-z]{2,}/.test(this.source(node))) {
                 if (collect) {
                     collect(node);
                 } else {
@@ -287,15 +309,16 @@ export class PageTranslate {
 
     /**
      * @param {string} text
+     * @param {SubtitleEngine} [engine]
      * @returns {Promise<string>}
      */
-    async requestText(text) {
-        const prefs = await readSubtitlePrefs();
-        const config = /** @type {import('study').StudyConfig} */ (await studyCall('subtitleSettings'));
-        const key = JSON.stringify([text, prefs.engine, config.model, config.effort]);
+    async requestText(text, engine) {
+        engine ??= (await readSubtitlePrefs()).engine;
+        const config = /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
+        const key = JSON.stringify([text, engine, config.model, config.effort]);
         let task = this.cache.get(key);
         if (!task) {
-            task = this.translate(text);
+            task = this.translate(text, {engine, config});
             this.cache.set(key, task);
             task.catch(() => this.cache.delete(key));
         }
@@ -314,9 +337,14 @@ export class PageTranslate {
         document.dispatchEvent(new Event('study-page-change'));
         const version = this.version;
         try {
-            if (!manual && !await this.approve()) { return; }
+            const {engine} = await readSubtitlePrefs();
+            if (version !== this.version) { return; }
+            if (!manual && !await this.approve(engine)) {
+                if (this.active && version === this.version) { this.stop(); }
+                return;
+            }
             if (version !== this.version || !original.isConnected) { return; }
-            const result = await this.requestText(text);
+            const result = await this.requestText(text, engine);
             if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) { this.render(original, text, result, manual); }
         } catch (error) {
             if ((this.active || manual) && version === this.version && original.isConnected && this.source(original) === text) {
@@ -536,7 +564,8 @@ export class PageTranslate {
             this.stop();
             return;
         }
-        if (!await this.approve()) { return; }
+        const version = this.version;
+        if (!await this.approve((await readSubtitlePrefs()).engine) || this.active || version !== this.version) { return; }
         for (const [original, row] of this.rows) {
             if (row.manual && !original.closest('.study-selection-card')) { this.restore(original); }
         }
@@ -586,6 +615,8 @@ export class PageTranslate {
     /** Restore page markup; late translation replies cannot reinsert content. */
     stop() {
         this.active = false;
+        this.approval?.abort.abort();
+        this.approval = null;
         document.dispatchEvent(new Event('study-page-change'));
         ++this.version;
         this.io?.disconnect();

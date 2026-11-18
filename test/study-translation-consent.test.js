@@ -32,13 +32,13 @@ test('model approval estimates only visible prose and remembers this website for
         };
         const {PageTranslate} = await import('../ext/js/study/page-translate.js');
         const controller = new PageTranslate();
-        const request = controller.approve();
+        const request = controller.approve('model');
         await vi.waitFor(() => expect(document.querySelector('.study-translation-confirm')).not.toBeNull());
         expect(document.querySelector('.study-translation-confirm').textContent).toContain('9 Token');
         document.querySelector('.study-translation-confirm button').click();
         expect(await request).toBe(true);
         const second = new PageTranslate();
-        expect(await second.approve()).toBe(true);
+        expect(await second.approve('model')).toBe(true);
         expect(document.querySelector('.study-translation-confirm')).toBeNull();
     } finally {
         vi.unstubAllGlobals();

@@ -18,6 +18,91 @@
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 
+test('switching the global service cannot turn a free page request into an unconfirmed model request', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<p>First paragraph.</p><p>Second paragraph.</p><p>Third paragraph.</p>', url: 'https://example.test/article',
+    }});
+    const prefs = {engine: 'google'};
+    const session = {studyTranslationConsents: []};
+    let changeAtSend = false;
+    let nativeAllowed = false;
+    /** @typedef {(message: object, sender: object, reply: (value: unknown) => void) => boolean} Receive */
+    /** @typedef {{items: {id: string}[]}} ModelRequest */
+    /** @typedef {(reply: unknown) => void} ModelReply */
+    /** @type {Receive} */
+    let receive;
+    const sendModel = vi.fn((/** @type {ModelRequest} */ request) => ({
+        ok: true, result: {items: request.items.map(({id}) => ({id, translation: '模型译文'}))},
+    }));
+    const sender = {id: 'fixture', url: 'https://example.test/article', tab: {id: 7}, frameId: 0};
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([['免费译文']]))));
+    vi.stubGlobal('IntersectionObserver', class {
+        /** */
+        observe() {}
+        /** */
+        disconnect() {}
+    });
+    vi.stubGlobal('chrome', {
+        permissions: {contains: async () => nativeAllowed},
+        storage: {
+            local: {get: async () => ({studyTranslationPrefs: {...prefs}, studySettingsV2: {cacheEnabled: false}}), set: async () => {}},
+            session: {get: async () => ({...session}), set: async (/** @type {object} */ value) => Object.assign(session, value)},
+        },
+        runtime: {
+            id: sender.id,
+            getURL: (/** @type {string} */ path) => `chrome-extension://fixture/${path}`,
+            onMessage: {addListener: (/** @type {Receive} */ listener) => { receive = listener; }},
+            sendMessage: (/** @type {{studyAction: string}} */ message) => new Promise((resolve) => {
+                if (changeAtSend && message.studyAction === 'subtitleTranslate') {
+                    prefs.engine = 'model';
+                    changeAtSend = false;
+                }
+                receive(message, sender, resolve);
+            }),
+            connectNative: () => {
+                /** @type {ModelReply} */
+                let onMessage;
+                return {
+                    onMessage: {addListener: (/** @type {ModelReply} */ fn) => { onMessage = fn; }},
+                    onDisconnect: {addListener() {}},
+                    postMessage: (/** @type {ModelRequest} */ request) => onMessage(sendModel(request)),
+                    disconnect() {},
+                };
+            },
+        },
+    });
+    const {prepareStudyService} = await import('../ext/js/study/study-service.js');
+    const {PageTranslate} = await import('../ext/js/study/page-translate.js');
+    const controller = new PageTranslate();
+    try {
+        prepareStudyService();
+        const [first, second, third] = document.querySelectorAll('p');
+        await controller.toggle();
+        await controller.translateNode(first);
+        expect(first.nextElementSibling?.textContent).toBe('免费译文');
+
+        changeAtSend = true;
+        await controller.translateNode(second);
+        expect(sendModel).not.toHaveBeenCalled();
+        expect(second.nextElementSibling?.textContent).toContain('翻译服务刚换了');
+
+        nativeAllowed = true;
+        const retry = controller.translateNode(second);
+        const next = controller.translateNode(third);
+        await vi.waitFor(() => expect(document.querySelectorAll('.study-translation-confirm')).toHaveLength(1));
+        expect(sendModel).not.toHaveBeenCalled();
+        /** @type {?HTMLButtonElement} */ (document.querySelector('.study-translation-confirm button'))?.click();
+        await Promise.all([retry, next]);
+        expect(sendModel).toHaveBeenCalledTimes(2);
+        expect(second.nextElementSibling?.textContent).toBe('模型译文');
+        expect(third.nextElementSibling?.textContent).toBe('模型译文');
+    } finally {
+        controller.stop();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 test('translates visible blocks and restores the exact original nodes in both modes', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<p id="source">Hello <strong>world</strong><button>Skip</button>.</p><nav>Navigation</nav>', url: 'https://example.test/article'}});
     /** @type {Element[]} */

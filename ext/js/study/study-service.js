@@ -1484,7 +1484,8 @@ export function prepareStudyService(lookupDictionary = null) {
                 }
                 // Only the model and Apple translation go through the local bridge.
                 const {engine} = await service.subtitlePrefs();
-                if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(engine)) || studyAction === 'subtitleSegment' || studyAction.startsWith('library')) && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
+                const translationEngine = /** @type {string|undefined} */ (forwarded.expectedEngine) ?? engine;
+                if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(translationEngine)) || studyAction === 'subtitleSegment' || studyAction.startsWith('library')) && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
                     throw new Error('请先在学习设置中授权本机翻译，再点翻译字幕。');
                 }
                 const action = studyAction === 'subtitleModels' ? 'models' : studyAction;
