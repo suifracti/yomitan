@@ -182,6 +182,38 @@ def word_rows(library, word):
             (row['entry'].get('kind') == 'expression' and row['entry'].get('baseWord', '').casefold() in forms)]
 
 
+def practice_pair(rows, word):
+    head = word_aliases(row['entry'] for row in rows).get(word.strip().casefold())
+    if not head:
+        return []
+    by_sentence = {}
+    for row in sorted(rows, key=lambda r: r['created'], reverse=True):
+        e = row['entry']
+        if e.get('kind') in ('expression', 'sentence') or canonical(e) != head or not e.get('sense'):
+            continue
+        sentence = ' '.join(e.get('sentence', '').casefold().split())
+        if (' ' not in sentence or not gloss(e) or
+                not re.search(r'(?<!\w)' + re.escape(e['word']) + r'(?!\w)', e['sentence'], re.I)):
+            continue
+        by_sentence.setdefault(sentence, {}).setdefault(sense_key(e), row)
+    pair, seen_senses, seen_glosses = [], set(), set()
+    for senses in by_sentence.values():
+        if len(senses) != 1:
+            continue  # The learner saved more than one reading of this exact sentence.
+        row = next(iter(senses.values()))
+        e = row['entry']
+        key, short = sense_key(e), gloss(e)
+        if key in seen_senses or short in seen_glosses:
+            continue
+        seen_senses.add(key)
+        seen_glosses.add(short)
+        fields = ('word', 'sentence', 'sense', 'context', 'url', 'title', 'videoTime', 'language')
+        pair.append({'id': row['id'], 'entry': {k: e[k] for k in fields if k in e}})
+        if len(pair) == 2:
+            return pair
+    return []
+
+
 def senses(library, word, now=None):
     now = time.time() if now is None else now
     rows, snapshot = word_rows(library, word), metrics(library)

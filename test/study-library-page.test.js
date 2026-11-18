@@ -61,6 +61,8 @@ function makePageDom() {
             <button data-library-category="pending" aria-pressed="false">待同步</button>
             <input id="study-library-search">
             <button id="study-library-refresh"></button>
+            <button id="study-library-practice-button" hidden>用旧原句辨词义</button>
+            <section id="study-library-practice" hidden></section>
             <button id="study-library-export-saved">导出已收集收藏</button>
             <button id="study-library-clear-saved">清空已收集收藏</button>
             <section id="study-library-list"></section>

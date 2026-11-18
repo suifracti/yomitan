@@ -21,6 +21,7 @@ import {Frontend} from '../app/frontend.js';
 import {PopupFactory} from '../app/popup-factory.js';
 import {ThemeController} from '../app/theme-controller.js';
 import {HotkeyHandler} from '../input/hotkey-handler.js';
+import {escapeRegExp} from '../core/utilities.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl} from '../study/media-key.js';
@@ -34,6 +35,7 @@ const PAGE_SIZE = 10;
 
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
+/** @typedef {{id: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
 
 /**
  * @param {unknown} value
@@ -236,10 +238,16 @@ function makeTechnicalDetails(path, subtitleLocator, legacyLocator) {
  * @param {HTMLElement} element
  * @param {string} sentence
  * @param {string} word
+ * @param {boolean} [wholeWord]
  */
-function writeSentence(element, sentence, word) {
+function writeSentence(element, sentence, word, wholeWord = false) {
     if (typeof sentence !== 'string') { sentence = ''; }
-    const at = word ? sentence.toLocaleLowerCase().indexOf(word.toLocaleLowerCase()) : -1;
+    let at = -1;
+    if (word) {
+        at = wholeWord ?
+            sentence.search(new RegExp(`(?<!\\w)${escapeRegExp(word)}(?!\\w)`, 'i')) :
+            sentence.toLocaleLowerCase().indexOf(word.toLocaleLowerCase());
+    }
     if (at < 0) {
         element.textContent = sentence;
         return;
@@ -247,6 +255,62 @@ function writeSentence(element, sentence, word) {
     const mark = document.createElement('mark');
     mark.textContent = sentence.slice(at, at + word.length);
     element.replaceChildren(sentence.slice(0, at), mark, sentence.slice(at + word.length));
+}
+
+/**
+ * A short, local exercise: compare with the learner's own saved meaning, not a model's answer.
+ * @param {HTMLElement} panel
+ * @param {SensePracticeItem[]} pair
+ */
+function showSensePractice(panel, pair) {
+    const heading = document.createElement('h2');
+    heading.textContent = '这两句里的词，各是什么意思？';
+    heading.tabIndex = -1;
+    const help = document.createElement('p');
+    help.textContent = '先按原句选，选完看你当时记下的意思。';
+    const questions = document.createElement('div');
+    questions.className = 'study-library-practice-questions';
+    const labels = pair.map(({entry}) => entry.sense.gloss);
+    if (Math.random() < 0.5) { labels.reverse(); }
+    for (const row of pair) {
+        const {entry} = row;
+        const question = document.createElement('article');
+        const sentence = document.createElement('p');
+        sentence.lang = 'en';
+        sentence.className = 'study-library-practice-quote';
+        writeSentence(sentence, entry.sentence, entry.word, true);
+        const choices = document.createElement('div');
+        choices.className = 'study-library-practice-choices';
+        const answer = document.createElement('div');
+        answer.className = 'study-library-practice-answer';
+        answer.tabIndex = -1;
+        for (const label of labels) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            button.addEventListener('click', () => {
+                const saved = entry.sense.gloss;
+                answer.textContent = label === saved ? `你当时记的是「${saved}」。` : `你选了「${label}」，这句你当时记的是「${saved}」。`;
+                const legacy = parseLegacySourceLocator(entry.context);
+                const source = createSourceLine(entry, entry.title || (typeof legacy?.title === 'string' ? legacy.title : ''));
+                if (source) { answer.append(source); }
+                const resume = document.createElement('a');
+                resume.textContent = '继续学习 ↗';
+                resume.href = createResumeUrl(row, chrome.runtime.getURL('/search.html'));
+                resume.target = '_blank';
+                resume.rel = 'noopener noreferrer';
+                answer.append(resume);
+                choices.replaceWith(answer);
+                answer.focus();
+            }, {once: true});
+            choices.append(button);
+        }
+        question.append(sentence, choices);
+        questions.append(question);
+    }
+    panel.replaceChildren(heading, help, questions);
+    panel.hidden = false;
+    heading.focus();
 }
 
 /**
@@ -350,6 +414,8 @@ async function initializePage() {
         const list = byId('study-library-list');
         const search = /** @type {HTMLInputElement} */ (document.getElementById('study-library-search'));
         const more = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-more'));
+        const practiceButton = byId('study-library-practice-button');
+        const practice = byId('study-library-practice');
         let lookupWarning = '';
         /** @param {string} text */
         const setStatus = (text) => { status.textContent = lookupWarning ? `${text} · 选词查词未就绪：${lookupWarning}` : text; };
@@ -377,6 +443,28 @@ async function initializePage() {
         let listedQuery = '';
         let listedCategory = 'all';
         let searchTimer = 0;
+        /** @type {SensePracticeItem[]} */
+        let practicePair = [];
+
+        /** @returns {void} */
+        function closePractice() {
+            practice.hidden = true;
+            practice.replaceChildren();
+            list.hidden = status.hidden = false;
+            practiceButton.textContent = '用旧原句辨词义';
+            practiceButton.setAttribute('aria-expanded', 'false');
+        }
+        practiceButton.addEventListener('click', () => {
+            if (practice.hidden) {
+                showSensePractice(practice, practicePair);
+                list.hidden = status.hidden = more.hidden = true;
+                practiceButton.textContent = '返回搜索结果';
+                practiceButton.setAttribute('aria-expanded', 'true');
+            } else {
+                closePractice();
+                render();
+            }
+        });
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
@@ -781,6 +869,8 @@ listedQuery :
             list.replaceChildren();
             const query = search.value.trim();
             const waiting = canSearch && (query !== listedQuery || category !== listedCategory);
+            practiceButton.hidden = waiting || Boolean(listError) || category !== 'all' || practicePair.length !== 2;
+            if (practiceButton.hidden && !practice.hidden) { closePractice(); }
             const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
             if (rows.length + localRows.length === 0) {
@@ -804,7 +894,7 @@ listedQuery :
             }
             const pending = document.querySelector('[data-library-category=pending]');
             if (pending) { pending.textContent = `需处理 ${Math.max(needsAttention, [...records.values()].filter((row) => matchesCategory(row, 'pending')).length)}`; }
-            more.hidden = loading || waiting || offset >= total;
+            more.hidden = !practice.hidden || loading || waiting || offset >= total;
             more.disabled = loading;
             if (query && !listError) {
                 if (!canSearch && loaded) {
@@ -873,12 +963,16 @@ listedQuery :
             try {
                 const scope = indexed || ['pending', 'anki-only', 'manual-known'].includes(tab) ? tab : 'all';
                 const value = await studyCall('libraryList', {language: 'en', url: '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
-                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean}|null} */ (value);
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[]}|null} */ (value);
                 canSearch = result?.canSearch === true;
                 if (!indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }
                 if (obsolete()) { return; }
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
-                if (reset) { records.clear(); }
+                if (reset) {
+                    records.clear();
+                    practicePair = result?.practicePair ?? [];
+                    if (!practice.hidden) { closePractice(); }
+                }
                 listedQuery = query;
                 listedCategory = tab;
                 for (const record of page) {

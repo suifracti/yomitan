@@ -7,6 +7,23 @@ from test_study_auto_sync import AutoSyncTests
 
 
 class SenseTests(AutoSyncTests):
+    def test_practice_pairs_distinct_saved_senses_and_preserves_the_original_sources(self):
+        fee = self.save_word('charge', 'They charge a fee.', title='At the counter', videoTime=33,
+                             sense={'key': 'new', 'gloss': '收费'})
+        accused = self.save_word('charges', 'The report charges him with theft.', lemma='charge', title='In court',
+                                 sense={'key': 'new', 'gloss': '指控'})
+        for record in (fee, accused):
+            self.save_word('charge', 'They charge.', sense=record['entry']['sense'])
+        self.calls.clear()
+        request = {'action': 'libraryList', 'scope': 'all', 'url': '', 'title': '', 'query': 'CHARGES'}
+        pair = self.library.handle(request)['practicePair']
+        self.assertEqual({(item['id'], item['entry']['sentence'], item['entry']['sense']['gloss']) for item in pair},
+                         {(fee['id'], 'They charge a fee.', '收费'), (accused['id'], 'The report charges him with theft.', '指控')})
+        example = next(item['entry'] for item in pair if item['id'] == fee['id'])
+        self.assertEqual((example['title'], example['videoTime']), ('At the counter', 33))
+        self.assertNotIn('practicePair', self.library.handle({**request, 'query': '收费'}))
+        self.assertEqual(self.calls, [])
+
     def test_manual_known_is_word_wide_undoable_and_never_changes_anki(self):
         first = self.save_word('run', 'I run daily.')
         self.save_word('run', 'We run together.')

@@ -24,6 +24,7 @@
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
+| 想用自己曾经读过的两句话分清同一个词的两种用法 | L-012；study_senses.practice_pair、study-library.js |
 | 卡间隔已超过 21 天却一直在学；读题面拖慢自动同步 | L-012；study_senses.refresh_metrics、study_library_core.anki_call |
 
 ## 默认自动执行：不等用户提醒
@@ -181,6 +182,8 @@
 写入仍保留原来的记录 ID、原句、词形和卡片。词笔记可能把同拼写的不同原形放在同一文件，不能再拿整个文件的一个开关代替某个词的状态。旧标记照读不重写；显式点击后才记该原形、清掉同一原形旧的分散标记。不因撤销重算或改动 Anki。临时记录与浏览器按钮的验证见[交接](youtube-study-wiring.md#2026-11-18-从另一个词形找回两个义项)。
 
 网页与字幕共用短义：40 字放不下时，部分掌握的词把还在学的义项排在前面。字幕挑句、计数、已制卡原句排重按 v2 里可选的 `lemma`；选中与回听仍用真实字幕的词形、原句和时间，不把原声中的 charges 换成 charge。旧桥没有此字段时沿用原来命中的词。见[字幕推荐案例](youtube-study-wiring.md#2026-11-18-字幕推荐给不同的词留位置)。
+
+**用自己的旧原句辨词义**：学习库首页搜索同一原形或已关联的词形时，用 `study_senses.practice_pair` 从已索引的两种明确义项各取一句。保留实际词形、原记录号和来源秒数；同一原句若存过不同读法，只照常列出，不出二选一。选完展示当时记的意思，不把一次选择当成会了或不会，也不调用模型。旧桥不提供这对练习时无入口。见[两种 charge 的浏览器练习](youtube-study-wiring.md#2026-11-18-用自己的旧原句辨词义)。
 
 如果「刚撤销，颜色又变回去」，先查后台发布顺序，不要改复习阈值。后台只发布最后一次 `refreshWordStatus`，网页、词卡和字幕共用桥已合并人工标记的 v2；旧的 `studyKnownWords` 只解释 v1 及更早的缓存。见[逆序返回案例](youtube-study-wiring.md#2026-11-18-刚撤销认识了旧刷新又把词标回去)。
 
