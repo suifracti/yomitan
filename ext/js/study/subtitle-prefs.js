@@ -16,6 +16,7 @@
  */
 
 import {studyCall} from './study-client.js';
+import {pageSourceKey} from './media-key.js';
 import {SUBTITLE_ENGINES} from './translation-engines.js';
 
 // Viewer preferences shared by the in-video captions, the caption sidebar and the
@@ -189,6 +190,19 @@ export const VIDEO_STATE_KEY = 'studyVideoState';
 const VIDEO_STATE_LIMIT = 300;
 let videoStateWrites = Promise.resolve();
 
+/** @typedef {{mediaKey: string, url?: string}} VideoStateSource */
+
+/**
+ * Preserve the provider's video/part keys. A general page or a file already has a
+ * more precise source identity; its old playback key cannot identify one owner.
+ * @param {VideoStateSource} source
+ * @returns {string}
+ */
+export function videoStateScope({mediaKey, url}) {
+    const source = pageSourceKey(url ?? '');
+    return source.startsWith('youtube:') || source.startsWith('web:') ? mediaKey : source;
+}
+
 /** @typedef {{resumeMs?: number, offsetMs?: number, trackKey?: string, selectedTrackKey?: string, at: number}} VideoState */
 
 /** @typedef {Partial<Omit<VideoState, 'at'>> & {ifSelected?: string|null}} VideoStatePatch */
@@ -220,33 +234,27 @@ export function mergeVideoState(stored, mediaKey, patch) {
 }
 
 /**
- * @param {string} mediaKey
+ * @param {VideoStateSource} source
  * @returns {Promise<VideoState|null>}
  */
-export async function readVideoState(mediaKey) {
-    const area = storageArea();
-    if (!area || !mediaKey) { return null; }
-    try {
-        await videoStateWrites;
-        const stored = /** @type {Record<string, unknown>} */ (await area.get(VIDEO_STATE_KEY));
-        const all = /** @type {Record<string, VideoState>} */ (stored[VIDEO_STATE_KEY] && typeof stored[VIDEO_STATE_KEY] === 'object' ? stored[VIDEO_STATE_KEY] : {});
-        const row = all[mediaKey];
-        return row && typeof row === 'object' ? row : null;
-    } catch {
-        return null;
-    }
+export async function readVideoState(source) {
+    const scope = videoStateScope(source);
+    if (!scope) { return null; }
+    await videoStateWrites;
+    return /** @type {VideoState|null} */ (await studyCall('videoStateRead', {mediaKey: source.mediaKey, scope}).catch(() => null));
 }
 
 /**
  * Merges a change for one video; the oldest videos are forgotten past the limit.
- * @param {string} mediaKey
+ * @param {VideoStateSource} source
  * @param {VideoStatePatch} patch
  */
-export async function writeVideoState(mediaKey, patch) {
-    if (!mediaKey || (typeof patch.selectedTrackKey === 'string' && patch.selectedTrackKey === patch.ifSelected)) { return; }
+export async function writeVideoState(source, patch) {
+    const scope = videoStateScope(source);
+    if (!scope || (typeof patch.selectedTrackKey === 'string' && patch.selectedTrackKey === patch.ifSelected)) { return; }
     // Send now while this frame still has the video's URL. A same-page read waits
     // for its own acknowledgements; the worker orders writes from *all* players.
-    const sent = studyCall('videoStateUpdate', {mediaKey, patch}).catch(() => {});
+    const sent = studyCall('videoStateUpdate', {mediaKey: source.mediaKey, scope, patch}).catch(() => {});
     videoStateWrites = Promise.all([videoStateWrites, sent]).then(() => {});
     await videoStateWrites;
 }

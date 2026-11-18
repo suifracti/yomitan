@@ -148,7 +148,8 @@ test('a library video handoff keeps the saved occurrence and can prepare a full 
     vi.stubGlobal('chrome', {
         runtime: {id: 'test',
             getURL: (/** @type {string} */ path) => `chrome-extension://test/${path}`,
-            onMessage: {addListener: (/** @type {ListeningReceiver} */ fn) => { receive = fn; }}},
+            onMessage: {addListener: (/** @type {ListeningReceiver} */ fn) => { receive = fn; }},
+            sendMessage: (/** @type {unknown} */ message) => new Promise((resolve) => { receive(message, sender, resolve); })},
         tabs: {create: async () => ({id: 41}), update},
         storage: {
             local: {

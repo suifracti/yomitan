@@ -395,13 +395,13 @@ export class YoutubeReader extends EventTarget {
         this._onTime();
         this._syncMenu();
         this._emit('offset', {ms: value});
-        if (remember && this._mediaKey && this._rawSession) { void writeVideoState(this._mediaKey, {offsetMs: value, trackKey: this._rawSession.source.trackKey}); }
+        if (remember && this._mediaKey && this._rawSession) { void writeVideoState(this._rawSession.source, {offsetMs: value, trackKey: this._rawSession.source.trackKey}); }
         this._tryLibraryListening();
     }
 
     /** Jumps to the offered resume point. */
     resume() {
-        if (this._resumeMs < 0 || !this._video) { return; }
+        if (this._resumeMs < 0 || !this._video || this._sourceKey !== pageSourceKey(this._site.pageUrl())) { return; }
         this._endListening();
         this._video.currentTime = this._resumeMs / 1000;
         this._clearResume();
@@ -424,10 +424,8 @@ export class YoutubeReader extends EventTarget {
      * @param {SubtitleSession} raw
      */
     async _restoreVideoState(raw) {
-        const key = this._mediaKey;
-        if (!key) { return; }
-        const state = await readVideoState(key);
-        if (this._rawSession !== raw) { return; }
+        const state = await readVideoState(raw.source);
+        if (this._rawSession !== raw || this._sourceKey !== pageSourceKey(this._site.pageUrl())) { return; }
         if (!state) {
             this._restoringVideoState = false;
             this._tryLibraryListening();
@@ -498,10 +496,10 @@ export class YoutubeReader extends EventTarget {
      * @param {number} playbackMs
      */
     _saveProgress(playbackMs) {
-        const key = this._mediaKey;
-        if (!key || this._restoringVideoState || !this._video || this._video.paused || Date.now() - this._savedAt < 5000) { return; }
+        const source = this._rawSession?.source;
+        if (!source || this._restoringVideoState || !this._video || this._video.paused || Date.now() - this._savedAt < 5000) { return; }
         this._savedAt = Date.now();
-        void writeVideoState(key, {resumeMs: Math.max(0, Math.round(playbackMs))});
+        void writeVideoState(source, {resumeMs: Math.max(0, Math.round(playbackMs))});
         if (this._resumeMs >= 0 && Math.abs(playbackMs - this._resumeMs) < 15000) { this._clearResume(); }
     }
 
@@ -730,6 +728,7 @@ export class YoutubeReader extends EventTarget {
         this._sources = [];
         this._offsetMs = 0;
         this._resumeMs = -1;
+        this._savedAt = 0;
         this._shadowRow = null;
         this._shadowDone = ''; this._shadowPause = null;
         if (this._shadowTimer) {
@@ -1166,7 +1165,8 @@ export class YoutubeReader extends EventTarget {
             const available = /** @type {{baseUrl: string, languageCode: string, vssId?: string, kind?: string, name?: {simpleText?: string, runs?: {text: string}[]}}[]} */ ((Array.isArray(tracks) ? tracks : []).filter((track) => captionUrl(track.baseUrl, videoId)));
             available.sort((a,b) => Number(a.kind === 'asr') - Number(b.kind === 'asr'));
             this._sources = available.map((track) => ({id:captionTrackId(track),label:`${track.name?.simpleText || track.name?.runs?.map((r) => r.text).join('') || track.languageCode}${track.kind === 'asr' ? ' · 自动' : ''}`}));
-            const state = await readVideoState(`youtube:${videoId}`);
+            const source = {mediaKey: `youtube:${videoId}`, url: `https://www.youtube.com/watch?v=${videoId}`};
+            const state = await readVideoState(source);
             const requested = sourceId || state?.selectedTrackKey;
             /** @type {(typeof available)[number]|undefined} */
             let chosen = available.find((t) => captionTrackId(t) === requested) || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
@@ -1231,7 +1231,7 @@ export class YoutubeReader extends EventTarget {
                 trackName: chosen ? this._sources.find((s) => s.id === captionTrackId(chosen)).label : (kind === 'asr' ? `${language} 自动字幕` : language),
             }, cuesFromTimedText(text));
             if (chosen) {
-                await writeVideoState(`youtube:${videoId}`, {selectedTrackKey: captionTrackId(chosen), ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
+                await writeVideoState(source, {selectedTrackKey: captionTrackId(chosen), ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
             }
             if (generation !== this._generation) { return; }
             this._rawSession = session;
@@ -1262,16 +1262,16 @@ export class YoutubeReader extends EventTarget {
         const view = this._view;
         const site = this._site;
         if (!view || !this._mediaKey || generation !== this._generation || this._loadController || site.kind !== 'web') { return; }
-        const key = this._mediaKey;
-        const source = this._sourceKey;
-        const current = () => generation === this._generation && source === pageSourceKey(site.pageUrl());
+        const source = {mediaKey: this._mediaKey, url: site.pageUrl()};
+        const sourceKey = this._sourceKey;
+        const current = () => generation === this._generation && sourceKey === pageSourceKey(site.pageUrl());
         const controller = new AbortController();
         this._loadController = controller;
         const timeout = setTimeout(() => controller.abort(), WAIT_MS);
         view.load.disabled = true;
         this._status('正在查找这个视频的字幕…');
         try {
-            const state = sourceId ? null : await readVideoState(key);
+            const state = sourceId ? null : await readVideoState(source);
             if (!current() || controller.signal.aborted) { return; }
             const found = await site.load({signal: controller.signal, sourceId, preferredId: state?.selectedTrackKey, learning: 'en'});
             if (!current()) { return; }
@@ -1285,7 +1285,7 @@ export class YoutubeReader extends EventTarget {
                 return;
             }
             this._useCues(found.cues, {trackKey: found.id, label: found.label, language: found.language, acquisition: 'provider'});
-            await writeVideoState(key, {selectedTrackKey: found.id, ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
+            await writeVideoState(source, {selectedTrackKey: found.id, ifSelected: sourceId ? void 0 : state?.selectedTrackKey ?? null});
         } catch (error) {
             if (generation === this._generation) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {

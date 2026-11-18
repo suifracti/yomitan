@@ -21,14 +21,14 @@ import {BILIBILI_HOST, FILE_DURATION_KEY} from './media-rules.js';
 import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
-import {deepEqual} from '../core/utilities.js';
+import {arrayBufferDigest, deepEqual} from '../core/utilities.js';
 import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, createSourceLibraryUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL, canSupplementAudio} from './study-data.js';
 import {StudyJournal, conversationRecordId, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
 import {NATIVE_ROUTES} from './native-routes.js';
-import {mergeVideoState, storeSubtitlePatch, subtitlePrefsFrom, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY, VIDEO_STATE_KEY} from './subtitle-prefs.js';
+import {mergeVideoState, storeSubtitlePatch, subtitlePrefsFrom, SUBTITLE_PREFS_KEY, TRANSLATION_PREFS_KEY, VIDEO_STATE_KEY, videoStateScope} from './subtitle-prefs.js';
 
 /** @type {WeakSet<object>} */
 const preparedRuntimes = new WeakSet();
@@ -1429,7 +1429,7 @@ export function prepareStudyService(lookupDictionary = null) {
         }
         // Readers run in their own web frame or a top-level local file. Remembering
         // playback is local to the extension; writing a video note is a separate action.
-        if (['videoStateUpdate', 'subtitlePrefsUpdate', 'subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
+        if (['videoStateRead', 'videoStateUpdate', 'subtitlePrefsUpdate', 'subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
         (/^https?:\/\//.test(sender.url || '') || (sender.frameId === 0 && /^file:\/\//.test(sender.url || '')))) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
@@ -1437,16 +1437,28 @@ export function prepareStudyService(lookupDictionary = null) {
                 /** @type {Record<string, unknown>} */
                 let forwarded = scoped;
                 // A reader may remember progress or look up words for its own video only.
-                if (studyAction === 'libraryVideoWords' || studyAction === 'videoStateUpdate') {
+                const videoState = studyAction === 'videoStateRead' || studyAction === 'videoStateUpdate';
+                if (studyAction === 'libraryVideoWords' || videoState) {
                     const asked = /** @type {{mediaKey?: unknown}} */ (data ?? {}).mediaKey;
                     const local = sender.url?.startsWith('file:');
-                    const url = (studyAction === 'libraryVideoWords' && !local ? pageUrl(sender) : sender.url) ?? '';
+                    const url = (local ? sender.url : pageUrl(sender)) ?? '';
                     const own = url.startsWith('file:') && typeof asked === 'string' && /^file:.+\|[0-9]+$/.test(asked) ? asked : mediaKeyOf(url);
-                    if (!own || asked !== own) { throw new Error(studyAction === 'videoStateUpdate' ? '只能记住当前视频的进度。' : '只能读取当前视频的生词。'); }
-                    if (studyAction === 'videoStateUpdate') {
-                        const {patch} = /** @type {{patch?: import('./subtitle-prefs.js').VideoStatePatch}} */ (data);
+                    if (!own || asked !== own) { throw new Error(videoState ? '只能读取或记住当前视频的进度。' : '只能读取当前视频的生词。'); }
+                    if (videoState) {
+                        const {patch, scope} = /** @type {{patch?: import('./subtitle-prefs.js').VideoStatePatch, scope?: string}} */ (data);
+                        const currentScope = videoStateScope({mediaKey: own, url: local ? localVideoSource(url, own) : url});
+                        if (!currentScope || scope !== currentScope) { throw new Error('这段视频已经换了，未使用旧位置。'); }
+                        // Keep URLs (including signed query strings) out of persistent playback storage.
+                        const storageKey = async () => {
+                            if (scope === own) { return own; }
+                            return `source:${await arrayBufferDigest('SHA-256', new TextEncoder().encode(scope).buffer)}`;
+                        };
+                        if (studyAction === 'videoStateRead') {
+                            const rows = /** @type {Record<string, import('./subtitle-prefs.js').VideoState>|undefined} */ (await service.read(VIDEO_STATE_KEY));
+                            return rows?.[await storageKey()] ?? null;
+                        }
                         if (!patch || typeof patch !== 'object') { throw new Error('没能记住这次进度。'); }
-                        await service.write(VIDEO_STATE_KEY, (stored) => mergeVideoState(stored, own, patch));
+                        await service.write(VIDEO_STATE_KEY, async (stored) => mergeVideoState(stored, await storageKey(), patch));
                         return true;
                     }
                     if (Object.keys(/** @type {object} */ (data ?? {})).some((key) => key !== 'mediaKey' && key !== 'cue')) { throw new Error('只能读取当前视频的生词。'); }
