@@ -393,7 +393,7 @@ def _normalize_request(p):
         scope = p.get('scope', 'source')
         if 'practice' in p and p['practice'] != 'dictation':
             raise ValueError('练习类型无效。')
-        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall'):
+        if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'sources', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall'):
             raise ValueError('学习列表范围无效。')
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),
                 **({'query': text(p['query'], 240)} if 'query' in p else {})}

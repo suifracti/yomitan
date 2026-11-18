@@ -26,7 +26,7 @@ import {blankStudyWord} from '../display/study-card-kinds.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl, videoListenUrl} from '../study/media-key.js';
-import {YOUTUBE_HOSTS} from '../study/media-rules.js';
+import {BILIBILI_HOST, YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
 import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
 
@@ -34,11 +34,13 @@ export {createResumeUrl} from '../study/study-data.js';
 
 const PAGE_SIZE = 10;
 const SENTENCE_PRACTICE_LIMIT = 5;
+const SOURCES_UPDATE_BRIDGE = '当前的本机桥还不能按素材查看。可先回「全部」搜索，更新后再试。';
 
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
 /** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
 /** @typedef {{row: StudyLibraryRecord, text: string, answer: string, hint: string}} SentencePrompt */
+/** @typedef {{url: string, title: string, records: number, audio: number}} SourceShelfItem */
 
 /**
  * @param {unknown} value
@@ -140,6 +142,49 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
         line.append(' · ', related);
     }
     return line;
+}
+
+/**
+ * @param {SourceShelfItem} source
+ * @returns {HTMLElement}
+ */
+function renderSourceShelfItem({url, title, records, audio}) {
+    const parsed = new URL(url);
+    const local = parsed.protocol === 'file:';
+    const youtube = YOUTUBE_HOSTS.has(parsed.hostname);
+    const host = parsed.hostname.replace(/^www\./, '');
+    let path = parsed.pathname;
+    if (local) {
+        try { path = decodeURIComponent(path); } catch { /* Keep the original path spelling. */ }
+    }
+    const bilibiliPart = host === BILIBILI_HOST ? parsed.searchParams.get('p') : null;
+    const locationLabel = local ? path : `${youtube ? 'YouTube' : host}${bilibiliPart ? ` · 第 ${bilibiliPart} 集` : ''}`;
+    const card = document.createElement('article');
+    card.className = 'study-library-record';
+    card.dataset.material = '';
+    const heading = document.createElement('h2');
+    const fallbackTitle = youtube ? parsed.searchParams.get('v') || path : path;
+    heading.textContent = local ? path.split('/').pop() ?? path : title.trim() || `${locationLabel} ${fallbackTitle}`;
+    const counts = document.createElement('p');
+    counts.className = 'study-library-source';
+    counts.textContent = `${locationLabel} · ${records} 条记录${audio ? ` · ${audio} 条有原声` : ''}`;
+    const actions = document.createElement('div');
+    actions.className = 'study-library-actions';
+    const related = document.createElement('a');
+    related.href = createSourceLibraryUrl(url, chrome.runtime.getURL('/study-library.html'));
+    related.className = 'study-library-primary-action';
+    related.textContent = '查看原句';
+    actions.append(related);
+    if (audio) {
+        const practice = new URL(related.href);
+        practice.searchParams.set('practice', 'dictation');
+        const listen = document.createElement('a');
+        listen.href = practice.href;
+        listen.textContent = '练原声听写';
+        actions.append(listen);
+    }
+    card.append(heading, counts, actions);
+    return card;
 }
 
 /**
@@ -803,6 +848,8 @@ async function initializePage() {
         let syncPendingError = '';
         let pendingSyncCount = 0;
         let listError = '';
+        /** @type {SourceShelfItem[]} */
+        const sourceShelf = [];
         let total = 0;
         let needsAttention = 0;
         let offset = 0;
@@ -815,8 +862,9 @@ async function initializePage() {
         search.value = (requested.get('query') || '').slice(0, 240);
         const sourceTab = /** @type {?HTMLButtonElement} */ (document.querySelector('[data-library-category="source"]'));
         const sourceUrl = librarySource(requestedSource);
+        const requestedDictation = Boolean(sourceUrl && requested.get('practice') === 'dictation');
         const practiceWord = !sourceUrl && requested.get('practice') === 'word' ? search.value.trim() : '';
-        let openRequestedPractice = Boolean(practiceWord);
+        let openRequestedPractice = Boolean(practiceWord || requestedDictation);
         let category = sourceUrl ? 'source' : 'all';
         if (sourceUrl && sourceTab) {
             sourceTab.hidden = false;
@@ -1385,7 +1433,24 @@ listedQuery :
             clearSavedAudio();
             list.replaceChildren();
             const query = search.value.trim();
-            const waiting = (canSearch || category === 'recent-recall') && (query !== listedQuery || category !== listedCategory);
+            const waiting = (canSearch || ['sources', 'recent-recall'].includes(category)) && (query !== listedQuery || category !== listedCategory);
+            if (category === 'sources') {
+                for (const button of [practiceButton, ...sentenceButtons, listenSource]) { button.hidden = true; }
+                if (activePractice) { closePractice(); }
+                more.hidden = loading || waiting || Boolean(listError) || offset >= total;
+                more.disabled = loading;
+                if (loading) { return; }
+                if (!listError && !waiting) { setStatus(`已显示 ${sourceShelf.length} / ${total} 个素材。`); }
+                if (waiting || listError || sourceShelf.length === 0) {
+                    const empty = document.createElement('p');
+                    empty.className = 'study-library-empty';
+                    empty.textContent = listError || (waiting ? '正在找素材…' : (query ? '没找到匹配的素材。可以换个词或标题试试。' : '还没有带来源的学习笔记。'));
+                    list.append(empty);
+                } else {
+                    list.append(...sourceShelf.map(renderSourceShelfItem));
+                }
+                return;
+            }
             practiceButton.hidden = waiting || Boolean(listError) || category !== 'all' || practicePair.length !== 2;
             if (activePractice !== practiceButton) { practiceButton.textContent = practiceLabel(); }
             const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
@@ -1478,8 +1543,9 @@ listedQuery :
             const query = search.value.trim();
             const tab = category;
             const indexed = canSearch;
-            const readOnly = searchOnly || Boolean(query) || ['manual-known', 'source', 'recent-recall'].includes(tab);
-            const obsolete = () => queuedSearch !== null || tab !== category || (canSearch && query !== search.value.trim());
+            const shelf = tab === 'sources';
+            const readOnly = searchOnly || Boolean(query) || ['manual-known', 'source', 'recent-recall'].includes(tab) || shelf;
+            const obsolete = () => queuedSearch !== null || tab !== category || ((canSearch || shelf) && query !== search.value.trim());
             if (reset && !readOnly) { void refreshToday(); }
             more.disabled = true;
             setStatus(reset ? '正在读取学习库…' : '正在读取下一页…');
@@ -1498,17 +1564,21 @@ listedQuery :
                     }
                 }
                 if (obsolete()) { return; }
-                if ((!loaded || !readOnly) && tab !== 'source') { await refreshSavedWords(); }
+                if ((!loaded || !readOnly) && tab !== 'source' && !shelf) { await refreshSavedWords(); }
                 if (obsolete()) { return; }
-                const scope = indexed || ['pending', 'anki-only', 'manual-known', 'source', 'recent-recall'].includes(tab) ? tab : 'all';
-                const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? sourceUrl : '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
-                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[]}|null} */ (value);
+                const scope = indexed || shelf || ['pending', 'anki-only', 'manual-known', 'source', 'recent-recall'].includes(tab) ? tab : 'all';
+                const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? sourceUrl : '', title: '', scope, offset: start, ...((indexed || shelf) && (query || searchOnly) ? {query} : {})});
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], sources?: SourceShelfItem[]}|null} */ (value);
+                if (shelf && !result?.sources) { throw new Error(SOURCES_UPDATE_BRIDGE); }
                 canSearch = result?.canSearch === true;
-                if (!indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }
+                if (!shelf && !indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }
                 if (obsolete()) { return; }
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
+                const shelfPage = result?.sources ?? [];
+                const pageLength = shelf ? shelfPage.length : page.length;
                 if (reset) {
                     records.clear();
+                    sourceShelf.length = 0;
                     const contrast = result?.practicePair ?? [];
                     const examples = result?.practiceExamples ?? [];
                     compareExamples = contrast.length !== 2 && examples.length === 2;
@@ -1520,15 +1590,16 @@ listedQuery :
                 for (const record of page) {
                     if (record && typeof record.id === 'string') { records.set(record.id, readOnly ? record : {...record, reconcileState: 'checking'}); }
                 }
-                total = typeof result?.total === 'number' && Number.isFinite(result.total) ? result.total : start + page.length;
+                sourceShelf.push(...shelfPage);
+                total = typeof result?.total === 'number' && Number.isFinite(result.total) ? result.total : start + pageLength;
                 needsAttention = result?.needsAttention ?? 0;
-                offset = start + page.length;
+                offset = start + pageLength;
                 loaded = true;
                 listError = '';
                 const target = value && typeof value === 'object' ? /** @type {{target?: {deck?: string, model?: string}}} */ (value).target : null;
                 render();
                 if (readOnly) {
-                    if (!query) { setStatus(`已读取 ${records.size} / ${total} 条。`); }
+                    if (!shelf && !query) { setStatus(`已读取 ${records.size} / ${total} 条。`); }
                     return;
                 }
                 for (const record of page) {
@@ -1562,7 +1633,8 @@ listedQuery :
                 if (obsolete()) { return; }
                 listError = error instanceof Error ? error.message : '学习库读取失败。';
                 if (tab === 'recent-recall' && listError === '学习列表范围无效。') { listError = '本机桥还不能读最近卡点。更新后再试。'; }
-                setStatus(`${listError}${loaded ? ' 上次已读取的记录仍保留。' : ' 未读到记录，不代表学习库为空。'}${savedWords.length > 0 ? ` 本地收藏仍有 ${savedWords.length} 条。` : ''}`);
+                if (shelf && listError === '学习列表范围无效。') { listError = SOURCES_UPDATE_BRIDGE; }
+                setStatus(shelf ? listError : `${listError}${loaded ? ' 上次已读取的记录仍保留。' : ' 未读到记录，不代表学习库为空。'}${savedWords.length > 0 ? ` 本地收藏仍有 ${savedWords.length} 条。` : ''}`);
             } finally {
                 loading = false;
                 render();
@@ -1572,7 +1644,9 @@ listedQuery :
                     void loadPage(true, read);
                 } else if (openRequestedPractice) {
                     openRequestedPractice = false;
-                    if (!obsolete() && !listError && tab === 'all' && query === practiceWord) {
+                    if (!obsolete() && !listError && tab === 'source' && requestedDictation && !dictationButton.hidden) {
+                        dictationButton.click();
+                    } else if (!obsolete() && !listError && tab === 'all' && query === practiceWord) {
                         if (!practiceButton.hidden) {
                             practiceButton.click();
                         } else if (!clozeButton.hidden) {
@@ -1654,7 +1728,7 @@ listedQuery :
             openRequestedPractice = false;
             window.clearTimeout(searchTimer);
             render();
-            if (canSearch && !(/** @type {InputEvent} */ (event)).isComposing) {
+            if ((canSearch || category === 'sources') && !(/** @type {InputEvent} */ (event)).isComposing) {
                 searchTimer = window.setTimeout(() => { void loadPage(true, true); }, 180);
             }
         });

@@ -13,6 +13,8 @@ from study_cards import linked_note_ids, with_card_progress
 from study_sources import page_source_key, with_article_href
 from study_media import has_current_audio, with_audio_context
 
+PAGE_SIZE = 10
+
 
 def needs_attention(row):
     return row.get('syncState') in ('pending', 'missing', 'ambiguous', 'conflict', 'error', 'failed', 'anki-only') or row.get('ankiState') == 'pending'
@@ -53,11 +55,39 @@ def search_hit(row, query):
     return rank, {'label': label, 'text': ('…' if start else '') + value[start:end] + ('…' if end < len(value) else '')}
 
 
+def saved_record(row):
+    return row.get('vaultSaved') and row.get('learningState') != 'favorite-only'
+
+
+def indexed_sources(rows, query, offset):
+    groups = {}
+    matched = set()
+    for row in rows:
+        entry = row['entry']
+        url = entry['url']
+        if not url or not saved_record(row): continue
+        key = page_source_key(url)
+        group = groups.setdefault(key, {'url': url, 'title': '', 'records': 0, 'audio': 0, 'created': ''})
+        group['records'] += 1
+        group['audio'] += bool(entry['sentence'] and has_current_audio(row))
+        if row['created'] > group['created']:
+            group.update(url=url, title=entry['title'] or group['title'], created=row['created'])
+        if not group['title']: group['title'] = entry['title']
+        if key not in matched and (not query or search_hit(row, query)):
+            matched.add(key)
+    found = sorted((group for key, group in groups.items() if key in matched), key=lambda g: (g['created'], g['url']), reverse=True)
+    return {'sources': [{k: v for k, v in group.items() if k != 'created'} for group in found[offset:offset + PAGE_SIZE]],
+            'total': len(found), 'canSearch': True}
+
+
 def indexed_page(rows, p):
     scope = p.get('scope', 'source')
     dictation = p.get('practice') == 'dictation'
     source = page_source_key(p['url']) if scope == 'source' else ''
     query = ' '.join(p.get('query', '').casefold().split())
+    offset = p.get('offset', 0)
+    if scope == 'sources':
+        return indexed_sources(rows, query, offset)
     matches = []
     if scope == 'recent-recall':
         import time
@@ -70,7 +100,7 @@ def indexed_page(rows, p):
         if scope == 'anki-only' and row.get('syncState') != 'anki-only': continue
         if scope == 'manual-known' and not row.get('manualKnown'): continue
         if scope == 'favorites' and not row.get('favorite'): continue
-        if (scope == 'saved' or dictation) and (not row.get('vaultSaved') or row.get('learningState') == 'favorite-only'): continue
+        if (scope == 'saved' or dictation) and not saved_record(row): continue
         if scope == 'linked' and row.get('ankiState') != 'linked' and not linked_note_ids((row,)): continue
         order = recent_recall(row, now) if scope == 'recent-recall' else row['created']
         if scope == 'recent-recall' and not order: continue
@@ -88,8 +118,7 @@ def indexed_page(rows, p):
         for match in matches:
             unique.setdefault(match[2]['entry']['sentence'], match)
         matches = list(unique.values())
-    offset = p.get('offset', 0)
-    return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for _, _, row in matches[offset:offset + 10]], 'total': len(matches), 'canSearch': True}
+    return {'items': [with_article_href(with_card_progress(with_audio_context(row))) for _, _, row in matches[offset:offset + PAGE_SIZE]], 'total': len(matches), 'canSearch': True}
 
 
 class RecordIndex:

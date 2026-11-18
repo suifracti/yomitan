@@ -59,6 +59,7 @@ function makePageDom() {
             <p id="study-library-today"></p>
             <button id="study-library-open-anki"></button>
             <button data-library-category="all" aria-pressed="true">全部</button>
+            <button data-library-category="sources" aria-pressed="false">按素材</button>
             <button data-library-category="source" hidden>本页原句</button>
             <button data-library-category="favorites" aria-pressed="false">收藏</button>
             <button data-library-category="saved" aria-pressed="false">已保存</button>
@@ -397,16 +398,18 @@ describe('study library page', () => {
         }
     });
 
-    test('a local video has a related-records link, and dictation stays in that exact file scope', async () => {
+    test('a local video can be reviewed from the source shelf and dictation stays in that exact file scope', async () => {
         vi.resetModules();
         makePageDom();
         const previousUrl = location.href;
         const url = 'file:///examples/folder-a/lesson%20one.mp4#study-duration=120';
-        history.replaceState(null, '', `?source=${encodeURIComponent(url)}`);
+        history.replaceState(null, '', `?source=${encodeURIComponent(url)}&practice=dictation`);
         vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         const row = {id: 'a'.repeat(32), vaultSaved: true, entry: {word: 'shelter', sentence: 'We built a shelter.', url, videoTime: 12}, media: {audio: {name: 'own-clip.webm'}}};
-        mocks.studyCall.mockResolvedValue({items: [row], total: 1, canSearch: true});
+        mocks.studyCall.mockImplementation(async (_action, value) => (value?.scope === 'sources' ?
+            {sources: [{url, title: '', records: 1, audio: 1}], total: 1, canSearch: true} :
+            {items: [row], total: 1, canSearch: true}));
         try {
             const {createSourceLine} = await import('../ext/js/pages/study-library.js');
             const source = createSourceLine(row.entry, '', '', 'chrome-extension://test/study-library.html');
@@ -414,17 +417,22 @@ describe('study library page', () => {
             const anchors = [...(source?.querySelectorAll('a') ?? [])];
             expect(anchors.map((a) => a.textContent)).toEqual(['同来源原句 ↗']);
             expect(new URL(anchors[0].href).searchParams.get('source')).toBe(url);
-            const dictation = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-dictation-button'));
-            await vi.waitFor(() => expect(dictation.hidden).toBe(false));
+            await vi.waitFor(() => expect(document.querySelector('#study-library-practice').textContent).toContain('练原声听写 · 1 / 1'));
             expect(document.querySelector('[data-library-category="source"]').getAttribute('aria-pressed')).toBe('true');
             expect(/** @type {HTMLButtonElement} */ (document.querySelector('#study-library-listen-source')).hidden).toBe(true);
             const params = {language: 'en', url, title: '', scope: 'source'};
-            expect(mocks.studyCall.mock.calls).toEqual([['libraryList', {...params, offset: 0}]]);
-            dictation.click();
-            await vi.waitFor(() => expect(document.querySelector('#study-library-practice').textContent).toContain('练原声听写 · 1 / 1'));
             expect(mocks.studyCall.mock.calls).toEqual([
                 ['libraryList', {...params, offset: 0}], ['libraryList', {...params, practice: 'dictation'}],
             ]);
+            document.querySelector('[data-library-category="sources"]').click();
+            await vi.waitFor(() => expect(document.querySelector('#study-library-list [data-material] h2')?.textContent).toBe('lesson one.mp4'));
+            const shelf = document.querySelector('#study-library-list [data-material]');
+            expect(shelf?.textContent).toContain('/examples/folder-a/lesson one.mp4 · 1 条记录 · 1 条有原声');
+            const links = [...(shelf?.querySelectorAll('a') ?? [])].map((a) => new URL(a.href));
+            expect(links.map((link) => [link.protocol, link.searchParams.get('source'), link.searchParams.get('practice')])).toEqual([
+                ['chrome-extension:', url, null], ['chrome-extension:', url, 'dictation'],
+            ]);
+            expect(mocks.studyCall.mock.calls.slice(2)).toEqual([['libraryList', {language: 'en', url: '', title: '', scope: 'sources', offset: 0}]]);
         } finally {
             history.replaceState(null, '', previousUrl);
         }

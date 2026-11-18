@@ -560,7 +560,7 @@ class YomitanLibrary:
             return orphan_action(self, p)
         if action == 'libraryList':
             rows = [row for _lib, _path, row in self.indexed()[1].values()]
-            if p.get('practice') == 'dictation':
+            if p.get('practice') == 'dictation' or p.get('scope') == 'sources':
                 return indexed_page(rows, p)
             state_path = pathlib.Path(self.cache_dir or self.config_path.parent) / 'auto-sync-state.json'
             ignored_path = state_path.with_name('anki-ignored.json')

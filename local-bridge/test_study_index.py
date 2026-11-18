@@ -11,6 +11,30 @@ from test_study_media_video import WEBM, asset
 
 
 class RecordIndexTests(AutoSyncTests):
+    def test_source_shelf_groups_saved_contexts_and_search_keeps_whole_group_counts(self):
+        yt = 'https://www.youtube.com/watch?v=abcdefghijk&t=4s'
+        local = 'file:///examples/a/Lesson.mp4#study-duration=18'
+        for word, url in [('beacon', yt), ('harbor', 'https://youtu.be/abcdefghijk?t=13s'),
+                          ('change', local), ('bridge', local.replace('/a/', '/b/'))]:
+            row = self.library.handle({'action': 'librarySave', 'makeCard': False,
+                                        'entry': {'word': word, 'sentence': f'We saw a {word}.', 'url': url, 'videoTime': 4}})
+            if word in ('beacon', 'change'):
+                self.library.handle({'action': 'libraryMedia', 'id': row['id'], 'version': row['version'],
+                                     'start': 4, 'end': 6, 'origin': 'capture', 'assets': [asset('audio', 'audio/webm', WEBM)]})
+        request = {'action': 'libraryList', 'scope': 'sources', 'url': '', 'title': ''}
+        all_sources = self.library.handle(request)
+        self.assertEqual(all_sources['total'], 3)
+        self.assertEqual({row['url'] for row in all_sources['sources'] if row['url'].startswith('file:')},
+                         {local, local.replace('/a/', '/b/')})
+        self.calls.clear()
+        with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('source shelf reopened a note')), \
+                patch('study_media.attachment', side_effect=AssertionError('source shelf opened audio')):
+            found = self.library.handle({**request, 'query': 'harbor'})
+            self.assertEqual(found['total'], 1)
+            self.assertEqual([(s['records'], s['audio']) for s in found['sources']], [(2, 1)])
+            self.assertEqual(self.library.handle({**request, 'offset': 1})['sources'], all_sources['sources'][1:])
+        self.assertEqual(self.calls, [])
+
     def test_dictation_finds_original_recordings_before_list_paging(self):
         root = 'file:///examples/folder-a/lesson%20one.mp4#study-duration=120'
         def save(word, sentence, url=root, audio=False):
