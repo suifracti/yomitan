@@ -1738,8 +1738,8 @@ export class YoutubeReader extends EventTarget {
             records.push(item);
             savedByCue.set(id, records);
         }
-        const ids = [...savedByCue.keys()];
-        if (ids.length === 0) {
+        let queue = [...savedByCue.keys()];
+        if (queue.length === 0) {
             this._status('当前字幕对不上已记下的原句和时间。切回原来的字幕或偏移再试。');
             return;
         }
@@ -1762,19 +1762,34 @@ export class YoutubeReader extends EventTarget {
         notes.setAttribute('aria-label', '这句已存的词义');
         /** @type {NonNullable<YoutubeReader['_listen']>} */
         const practice = {panel, listHidden: view.list.hidden, wordsHidden: view.words.hidden};
+        /** @type {Set<string>} */
+        const missed = new Set();
         let current = 0;
+        let retrying = false;
         const prompt = () => {
-            title.textContent = `先听，再看原句 · ${current + 1}/${ids.length}`;
-            hint.textContent = '不看字幕，试着听懂这一句。';
             answer.hidden = true;
             answer.textContent = '';
             notes.replaceChildren();
             notes.remove();
-            reveal.hidden = false;
+            const done = current === queue.length;
+            for (const button of [play, reveal, miss, next]) { button.hidden = done; }
+            retry.hidden = !done || missed.size === 0;
+            if (done) {
+                title.textContent = '本轮结束';
+                hint.textContent = missed.size > 0 ? '可以只重听标过「没听清」的句子。' : '这轮没有标记没听清的句子。';
+                retry.textContent = `重听这 ${missed.size} 句`;
+                (retry.hidden ? stop : retry).focus();
+            } else {
+                title.textContent = `${retrying ? '重听没听清的' : '先听，再看原句'} · ${current + 1}/${queue.length}`;
+                hint.textContent = '不看字幕，试着听懂这一句。';
+                miss.setAttribute('aria-pressed', 'false');
+                next.textContent = current + 1 === queue.length ? '结束这一轮' : '下一句';
+                play.focus();
+            }
         };
         const play = this._button('播放本句', () => {
             practice.cancel?.();
-            const id = ids[current];
+            const id = queue[current];
             const original = this._list.ensure(id)?.querySelector('.r-text')?.firstChild;
             const info = this._rowInfo.get(id);
             if (!original || !info) {
@@ -1792,7 +1807,7 @@ export class YoutubeReader extends EventTarget {
                 hint.textContent = this._video?.muted || this._video?.volume === 0 ? '正在播放；播放器已静音，请打开声音。' : '正在播放本句…';
                 practice.cancel = youtubeStudyContext.play(source.token, (reason) => {
                     practice.cancel = void 0;
-                    hint.textContent = {ended: '已播完。可以再听，或看原句。', failed: '播放没开始，请再点一次。', cancelled: '已停止。可以再听，或换一句。'}[reason];
+                    hint.textContent = {ended: '已播完。可以再听，或看原句。', failed: '播放没开始，请再点一次。', cancelled: '已停止。可以再点一次播放。'}[reason];
                 });
             } catch (error) {
                 hint.textContent = error instanceof Error ? error.message : '播放没开始，请再点一次。';
@@ -1800,7 +1815,7 @@ export class YoutubeReader extends EventTarget {
         });
         play.dataset.listenPlay = '';
         const reveal = this._button('看原句', () => {
-            const id = ids[current];
+            const id = queue[current];
             answer.textContent = [this._rowInfo.get(id)?.text, session?.translation(id)].filter(Boolean).join('\n');
             answer.hidden = false;
             reveal.hidden = true;
@@ -1809,7 +1824,7 @@ export class YoutubeReader extends EventTarget {
                 const resume = this._button(`继续学习：${label}`, () => {
                     practice.cancel?.();
                     void this._call('openStudyRecord', {id: recordId, word, sentence, openPanel: false}).catch(() => {
-                        if (this._listen === practice && ids[current] === id) { hint.textContent = '没能打开这条笔记。再点一次，或去学习库找它。'; }
+                        if (this._listen === practice && queue[current] === id) { hint.textContent = '没能打开这条笔记。再点一次，或去学习库找它。'; }
                     });
                 });
                 resume.dataset.listenNote = '';
@@ -1818,27 +1833,40 @@ export class YoutubeReader extends EventTarget {
             answer.after(notes);
         });
         reveal.dataset.listenReveal = '';
-        const next = this._button('换一句', () => {
+        const miss = this._button('没听清', () => {
+            const id = queue[current];
+            const marked = !missed.delete(id);
+            if (marked) { missed.add(id); }
+            miss.setAttribute('aria-pressed', String(marked));
+            hint.textContent = marked ? '已标记。这轮结束后可以只重听标过的句子。' : '已取消这句的标记。';
+        });
+        miss.dataset.listenMiss = '';
+        const next = this._button('下一句', () => {
             practice.cancel?.();
-            current = (current + 1) % ids.length;
+            ++current;
             prompt();
-            play.focus();
         });
         next.dataset.listenNext = '';
-        next.hidden = ids.length === 1;
+        const retry = this._button('', () => {
+            queue = queue.filter((id) => missed.has(id));
+            missed.clear();
+            current = 0;
+            retrying = true;
+            prompt();
+        });
+        retry.dataset.listenRetry = '';
         const stop = this._button('退出', () => {
             this._endListening();
             view.words.querySelector('button[data-listen-saved]')?.focus();
         });
-        controls.append(play, reveal, next, stop);
+        controls.append(play, reveal, miss, next, retry, stop);
         panel.append(title, hint, controls, answer);
-        prompt();
         this._listen = practice;
         view.words.hidden = true;
         view.list.hidden = true;
         view.words.before(panel);
         this._emit('listening');
-        play.focus();
+        prompt();
     }
 
     /** */
