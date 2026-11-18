@@ -185,9 +185,9 @@ test('opens a saved video word with its original source context and stops when i
         storage: {onChanged: {addListener() {}}, local: {get: async () => ({}), set: async () => {}}},
     });
     const read = vi.spyOn(StudyService.prototype, 'handle').mockResolvedValue({items: [{id, record}]});
-    const open = () => new Promise((resolve) => {
+    const open = (openPanel = true) => new Promise((resolve) => {
         if (!receive) { throw new Error('message listener missing'); }
-        receive({studyAction: 'openStudyRecord', data: {id, word: entry.word, sentence: entry.sentence}}, {id: 'test', url: entry.url}, resolve);
+        receive({studyAction: 'openStudyRecord', data: {id, word: entry.word, sentence: entry.sentence, ...(openPanel ? {} : {openPanel})}}, {id: 'test', url: entry.url}, resolve);
     });
     try {
         prepareStudyService();
@@ -203,9 +203,12 @@ test('opens a saved video word with its original source context and stops when i
         expect(target.searchParams.get('full')).toBe(entry.sentence);
         expect(target.searchParams.get('studyAddCard')).toBe('1');
         expect(read).toHaveBeenCalledWith('libraryRead', {ids: [id], language: 'en'});
+        expect(await open(false)).toEqual({ok: true, value: true});
+        target.searchParams.delete('studyAddCard');
+        expect(create).toHaveBeenLastCalledWith({url: target.href});
         read.mockRejectedValueOnce(new Error('暂时读不到这条记录，请在学习库重试。'));
         expect(await open()).toEqual({ok: false, error: '暂时读不到这条记录，请在学习库重试。'});
-        expect(create).toHaveBeenCalledTimes(1);
+        expect(create).toHaveBeenCalledTimes(2);
     } finally {
         read.mockRestore();
         vi.unstubAllGlobals();

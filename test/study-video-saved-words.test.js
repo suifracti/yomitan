@@ -35,10 +35,12 @@ test('explains saved video words, opens uncarded words for card selection, and r
         opened = {text: range.toString(), panel, recordId, at: youtubeStudyContext.read(range)?.videoTime};
     });
     youtubeStudyContext.openCard = open;
-    const reader = new YoutubeReader({prefs: {merge: false}, call: async (action) => action === 'libraryVideoWords' ? {items: [
-        {id: '1'.repeat(32), word: 'successful', sentence, videoTime: 24, cards: 0},
+    const call = vi.fn(async (/** @type {string} */ action) => action === 'libraryVideoWords' ? {items: [
+        {id: '1'.repeat(32), word: 'successful', sentence, videoTime: 24, cards: 0, sense: {gloss: '成功的'}},
         {id: '2'.repeat(32), word: 'project', sentence, videoTime: 0, cards: 2},
-    ]} : {words: 2, cards: 2, openUrl: 'obsidian://open?vault=test&file=summary'}});
+        {id: '3'.repeat(32), word: 'successful', sentence, videoTime: 24, cards: 1, sense: {gloss: '有成效的'}},
+    ]} : {words: 2, cards: 2, openUrl: 'obsidian://open?vault=test&file=summary'});
+    const reader = new YoutubeReader({prefs: {merge: false}, call});
     try {
         reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en'); reader.start();
         await vi.waitFor(() => expect(reader.session?.cues.length).toBe(2));
@@ -63,6 +65,7 @@ test('explains saved video words, opens uncarded words for card selection, and r
         const practice = /** @type {HTMLElement} */ (document.querySelector('.r-listen-practice'));
         expect(savedPanel.hidden).toBe(true);
         expect(practice.textContent).not.toContain(sentence);
+        expect(practice.querySelector('[data-listen-note]')).toBeNull();
         /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-play]')).click();
         expect(play).toHaveBeenCalledOnce();
         expect(video.currentTime).toBe(24.5);
@@ -74,8 +77,13 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(practice.textContent).not.toContain(sentence);
         /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-reveal]')).click();
         expect(practice.textContent).toContain(sentence);
+        const notes = [...practice.querySelectorAll('button[data-listen-note]')];
+        expect(notes.map((button) => button.textContent)).toEqual(['继续学习：successful · 成功的', '继续学习：successful · 有成效的']);
+        /** @type {HTMLButtonElement} */ (notes[1]).click();
+        expect(call).toHaveBeenLastCalledWith('openStudyRecord', {id: '3'.repeat(32), word: 'successful', sentence, openPanel: false});
         /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-next]')).click();
         expect(practice.textContent).not.toContain(sentence);
+        expect(practice.querySelector('[data-listen-note]')).toBeNull();
         /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-play]')).click();
         expect(video.currentTime).toBe(0);
         reader.setOffset(500, false);

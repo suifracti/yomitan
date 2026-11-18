@@ -52,7 +52,7 @@ const WAIT_MS = 10000;
  * @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} RowInfo
  */
 
-/** @typedef {{sentence: string, videoTime: number|null}} SavedPlayback */
+/** @typedef {{id: string, word: string, sentence: string, videoTime: number|null, sense?: {gloss?: string}}} SavedPlayback */
 /** @typedef {import('./youtube-site.js').YoutubeSite|WebVideoSite} ReaderSite */
 
 const SUBTITLE_ACCEPT = '.srt,.vtt,.webvtt,.sbv,.ass,.ssa,.ttml,.dfxp,.xml,.json,.txt';
@@ -1729,10 +1729,16 @@ export class YoutubeReader extends EventTarget {
             const match = key(info.start, info.text);
             index.set(match, index.has(match) ? null : id);
         }
-        const ids = [...new Set(items.flatMap((item) => {
+        /** @type {Map<string, SavedPlayback[]>} */
+        const savedByCue = new Map();
+        for (const item of items) {
             const id = typeof item.videoTime === 'number' ? index.get(key(item.videoTime, item.sentence)) : null;
-            return id ? [id] : [];
-        }))];
+            if (!id) { continue; }
+            const records = savedByCue.get(id) ?? [];
+            records.push(item);
+            savedByCue.set(id, records);
+        }
+        const ids = [...savedByCue.keys()];
         if (ids.length === 0) {
             this._status('当前字幕对不上已记下的原句和时间。切回原来的字幕或偏移再试。');
             return;
@@ -1750,6 +1756,10 @@ export class YoutubeReader extends EventTarget {
         answer.className = 'r-listen-answer';
         const controls = document.createElement('div');
         controls.className = 'r-listen-actions';
+        const notes = document.createElement('div');
+        notes.className = 'r-listen-actions';
+        notes.setAttribute('role', 'group');
+        notes.setAttribute('aria-label', '这句已存的词义');
         /** @type {NonNullable<YoutubeReader['_listen']>} */
         const practice = {panel, listHidden: view.list.hidden, wordsHidden: view.words.hidden};
         let current = 0;
@@ -1758,6 +1768,8 @@ export class YoutubeReader extends EventTarget {
             hint.textContent = '不看字幕，试着听懂这一句。';
             answer.hidden = true;
             answer.textContent = '';
+            notes.replaceChildren();
+            notes.remove();
             reveal.hidden = false;
         };
         const play = this._button('播放本句', () => {
@@ -1792,6 +1804,18 @@ export class YoutubeReader extends EventTarget {
             answer.textContent = [this._rowInfo.get(id)?.text, session?.translation(id)].filter(Boolean).join('\n');
             answer.hidden = false;
             reveal.hidden = true;
+            for (const {id: recordId, word, sentence, sense} of savedByCue.get(id) ?? []) {
+                const label = [word, sense?.gloss].filter(Boolean).join(' · ');
+                const resume = this._button(`继续学习：${label}`, () => {
+                    practice.cancel?.();
+                    void this._call('openStudyRecord', {id: recordId, word, sentence, openPanel: false}).catch(() => {
+                        if (this._listen === practice && ids[current] === id) { hint.textContent = '没能打开这条笔记。再点一次，或去学习库找它。'; }
+                    });
+                });
+                resume.dataset.listenNote = '';
+                notes.append(resume);
+            }
+            answer.after(notes);
         });
         reveal.dataset.listenReveal = '';
         const next = this._button('换一句', () => {

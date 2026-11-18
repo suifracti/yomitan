@@ -21,7 +21,7 @@
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
 | 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
-| 在原视频不看字幕，先听自己保存的句子 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play |
+| 在原视频不看字幕，先听自己保存的句子；听完回哪一条笔记 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play、openStudyRecord |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章，想看上次记过的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选 |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
@@ -155,6 +155,8 @@
 ## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
 
 **字幕栏的「先听，再看原句」**：用已保存的原句和秒数在当前英语轨唯一对回播放行；同一范围的多个义项只听一次，零个或多个匹配不选。复用 `YoutubeStudyContext.play` 的真实播放器，来源或轨道变了就停止；练习时隐藏可控制的字幕层、暂停自动翻译和进度写入，退出恢复原显示设置。只在用户点看原句时显示原文及已有译文；无新练习档案、不打分、不写排程。见[独立播放器和两次重复台词](youtube-study-wiring.md#2026-11-18-先听已记下的原声再揭晓原句)。
+
+**听完想回到当时记的意思**：`_beginListening` 按字幕行保留匹配的记录，去重的是待播行而非义项；揭晓后才显示各条笔记入口，换一句即清除。用 `openStudyRecord` 读原记录号并在搜索词卡里继续，传 `openPanel:false` 不自动显示制卡；没传这项的旧制卡入口照旧。搜索词卡不因此得到对原视频的取声权限。见[同一句不同义项的回听接续](youtube-study-wiring.md#2026-11-18-回听揭晓后接回原笔记)。
 
 **来源链接和记录编号不是同一回事。** 改视频分组键时看 `study_sources.py`（浏览器站点表由同一文件生成）；不能因此改 `entry_id` 或归档笔记的编号。没有实际播放时间就保留原链接：曾将分享地址的 83 秒写成 0 秒，也会把普通页面的章节锚点丢掉。只有确实知道时间，才为 YouTube/B站生成跳时链接；普通网页不加时间参数，本地文件在来源行只显示文件名。见[临时笔记复现](youtube-study-wiring.md#2026-11-18-来源链接不再从零秒开始)。
 

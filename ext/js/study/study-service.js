@@ -1329,7 +1329,7 @@ export function prepareStudyService(lookupDictionary = null) {
             return true;
         }
         if (studyAction === 'openStudyRecord' && sender.id === chrome.runtime.id && /^(?:https?|file):/.test(sender.url || '')) {
-            const row = /** @type {{id?: string, word?: string, sentence?: string}} */ (data || {});
+            const row = /** @type {{id?: string, word?: string, sentence?: string, openPanel?: boolean}} */ (data || {});
             if (!/^[a-f0-9]{32}$/.test(row.id || '') || !row.word || row.word.length > 128 || !row.sentence || row.sentence.length > 2400) {
                 reply({ok: false, error: '这条记录没有读完整，请重新打开这个页签。'}); return false;
             }
@@ -1338,7 +1338,7 @@ export function prepareStudyService(lookupDictionary = null) {
                 const record = materials.items?.find((item) => item.id === row.id)?.record;
                 if (!record?.entry || record.id !== row.id) { throw new Error('这条记录暂时没读到，请在学习库里重新打开。'); }
                 const url = new URL(createResumeUrl(record, chrome.runtime.getURL('search.html')));
-                url.searchParams.set('studyAddCard', '1');
+                if (row.openPanel !== false) { url.searchParams.set('studyAddCard', '1'); }
                 await chrome.tabs.create({url: url.href});
                 return true;
             })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '词卡没有打开，请从学习库里点「制卡」。'}));
