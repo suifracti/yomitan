@@ -235,6 +235,49 @@ test('regrouping retains finished translations only for exact rows of the same l
     }
 });
 
+test('a free subtitle run keeps finished rows but cannot send its next batch to a newly selected model', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const {StudyService} = await import('../ext/js/study/study-service.js');
+    const {TRANSLATION_PREFS_KEY} = await import('../ext/js/study/subtitle-prefs.js');
+    const {SETTINGS_KEY} = await import('../ext/js/study/study-data.js');
+    const prefs = {engine: 'google'};
+    /** @type {Record<string, unknown>} */
+    const data = {[TRANSLATION_PREFS_KEY]: prefs, [SETTINGS_KEY]: {model: 'gpt-5-mini', effort: 'low', cacheEnabled: false}};
+    const native = vi.fn(() => { throw new Error('The test must never send a model request'); });
+    const service = new StudyService({get: async (key) => ({[key]: data[key]}), set: async () => {}}, native);
+    const free = vi.fn().mockImplementationOnce(async () => {
+        // Change the actual preference without notifying the open reader yet.
+        prefs.engine = 'model';
+        return new Response(JSON.stringify([Array.from({length: 8}, () => '免费译文')]));
+    }).mockResolvedValueOnce(new Response(JSON.stringify([['免费译文']])));
+    vi.stubGlobal('fetch', free);
+    const cues = Array.from({length: 9}, (_, i) => ({id: String(i), sourceIndex: i, startMs: i * 2000, endMs: i * 2000 + 1000, text: `Sentence ${i}.`}));
+    const site = fakeSite({cues, language: 'en', label: 'English', id: 'track:0', all: []});
+    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: false, engine: 'google', resume: false}, site: /** @type {never} */ (site), call: service.handle.bind(service)});
+    try {
+        reader.start();
+        reader.loadCaptions();
+        await vi.waitFor(() => expect(reader.session?.cues).toHaveLength(9));
+        /** @type {HTMLVideoElement} */ (document.querySelector('video')).currentTime = 0;
+        const translate = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-translate'));
+        translate.click();
+        await vi.waitFor(() => expect(translate.disabled).toBe(false));
+        expect(native).not.toHaveBeenCalled();
+        expect(reader.session?.progress().translated).toBe(8);
+        expect(document.querySelector('#study-yt-reader .r-cue:last-child .r-translation')?.textContent).toContain('翻译服务刚换了');
+
+        prefs.engine = 'google';
+        const retry = [...document.querySelectorAll('#study-yt-reader button')].find((button) => button.textContent === '重试失败');
+        retry?.click();
+        await vi.waitFor(() => expect(reader.session?.progress().translated).toBe(9));
+        expect(free).toHaveBeenCalledTimes(2);
+        expect(native).not.toHaveBeenCalled();
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
 test('keyboard replay stops on the shared media clock and releases slow speed on exit', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     installReaderStorage({get: async () => ({}), set: async () => {}});

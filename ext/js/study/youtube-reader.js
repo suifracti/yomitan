@@ -132,7 +132,7 @@ export class YoutubeReader extends EventTarget {
         this._segmentRun = 0;
         /** @type {typeof studyCall} */
         this._call = call;
-        /** @type {{id: string, controller: AbortController, batch: Set<string>, waiting: Map<string, ((value: string) => void)[]>}|null} */
+        /** @type {{id: string, engine: import('./subtitle-prefs.js').SubtitleEngine, controller: AbortController, batch: Set<string>, waiting: Map<string, ((value: string) => void)[]>}|null} */
         this._translation = null;
         /** @type {string} Model consent for this video and selected model. */
         this._fullConsent = '';
@@ -141,14 +141,14 @@ export class YoutubeReader extends EventTarget {
         /** @type {TranslationQueue} */
         this._queue = new TranslationQueue(async ({items, config, signal}) => {
             const run = this._translation;
-            const requestId = run?.id ?? '';
-            if (run) { run.batch = new Set(items.map((item) => item.id)); }
+            if (!run || signal.aborted) { throw new Error('已取消'); }
+            const requestId = run.id;
+            run.batch = new Set(items.map((item) => item.id));
             const cancel = () => { void this._call('subtitleCancel', {requestId}).catch(() => {}); };
             signal.addEventListener('abort', cancel, {once: true});
             try {
-                if (signal.aborted) { throw new Error('已取消'); }
                 // Chrome's on-device translator only exists in pages, so it runs here.
-                if (this._prefs.engine === 'chrome') {
+                if (run.engine === 'chrome') {
                     const source = (this._session?.source.language || 'en').split('-')[0];
                     const rows = await chromeTranslate(items.map((item) => item.text), {source, signal});
                     return items.map((item, index) => ({id: item.id, translation: rows[index]}));
@@ -156,6 +156,7 @@ export class YoutubeReader extends EventTarget {
                 const result = /** @type {{items: {id: string, translation: string}[]}} */ (await this._call('subtitleTranslate', {requestId,
                     items,
                     config,
+                    expectedEngine: run.engine,
                     language: this._session?.source.language || 'en',
                     title: document.title.slice(0, 300)}));
                 return result.items;
@@ -1669,19 +1670,19 @@ export class YoutubeReader extends EventTarget {
             this._status('这些句子已经翻译好了。');
             return;
         }
-        const run = {id: crypto.randomUUID(), controller: new AbortController(), batch: new Set(), waiting: new Map()};
+        const run = {id: crypto.randomUUID(), engine: this._prefs.engine, controller: new AbortController(), batch: new Set(), waiting: new Map()};
         const live = () => this._translation === run;
         this._translation = run;
         view.translate.disabled = true;
         view.retry.disabled = true;
         view.load.disabled = true;
         view.cancel.hidden = false;
-        this._status(`正在翻译 ${items.length} 句 · ${ENGINE_LABELS[this._prefs.engine]}…`);
+        this._status(`正在翻译 ${items.length} 句 · ${ENGINE_LABELS[run.engine]}…`);
         try {
             const config = /** @type {import('study').StudyConfig} */ (await this._call('subtitleSettings'));
             if (!live()) { return; }
-            const consent = JSON.stringify([session.source.mediaKey, this._prefs.engine, config.model, config.effort]);
-            if (full && this._prefs.engine === 'model' && this._fullConsent !== consent) {
+            const consent = JSON.stringify([session.source.mediaKey, run.engine, config.model, config.effort]);
+            if (full && run.engine === 'model' && this._fullConsent !== consent) {
                 // Token estimate only; no provider pricing or billing precision is claimed.
                 const estimate = Math.ceil(items.reduce((sum, item) => sum + item.text.length + item.context.length, 0) / 3 + items.length * 80);
                 const approved = await confirmTranslation(`全文 ${session.cues.length} 句，大约消耗 ${estimate.toLocaleString()} Token（估算，实际用量由模型决定）。继续吗？`, run.controller.signal);
@@ -1713,7 +1714,7 @@ export class YoutubeReader extends EventTarget {
                     run.waiting.delete(row.id);
                 }});
             if (live() && !result.cancelled) {
-                this._status(`已译 ${session.progress().translated}/${session.cues.length} · ${ENGINE_LABELS[this._prefs.engine]}${this._failed.size > 0 ? ' · 有失败，可重试或换服务' : ''}`);
+                this._status(`已译 ${session.progress().translated}/${session.cues.length} · ${ENGINE_LABELS[run.engine]}${this._failed.size > 0 ? ' · 有失败，可重试或换服务' : ''}`);
                 if (this._failed.size > 0) { this._autoBackoff = Date.now() + 20000; }
             }
         } catch (error) {
