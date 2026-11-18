@@ -60,6 +60,10 @@ def saved_record(row):
     return row.get('vaultSaved') and row.get('learningState') != 'favorite-only'
 
 
+def has_saved_translation(entry):
+    return bool(entry.get('sentence') and entry.get('language', 'en') == 'en' and entry.get('translation', '').strip())
+
+
 def indexed_sources(rows, query, offset, link_source):
     from study_senses import recent_recall
     now = time.time()
@@ -71,17 +75,20 @@ def indexed_sources(rows, query, offset, link_source):
         if not url or not saved_record(row): continue
         key = page_source_key(url)
         if link_source and key != link_source: continue
-        group = groups.setdefault(key, {'url': url, 'title': '', 'records': 0, 'audio': 0, 'recall': 0, 'created': ''})
+        group = groups.setdefault(key, {'url': url, 'title': '', 'records': 0, 'audio': 0, 'recall': 0, 'translated': set(), 'created': ''})
         group['records'] += 1
         group['audio'] += bool(entry['sentence'] and has_current_audio(row))
         group['recall'] += bool(recent_recall(row, now))
+        if has_saved_translation(entry):
+            group['translated'].add(entry['sentence'])
         if row['created'] > group['created']:
             group.update(url=url, title=entry['title'] or group['title'], created=row['created'])
         if not group['title']: group['title'] = entry['title']
         if key not in matched and (not query or search_hit(row, query)):
             matched.add(key)
     found = sorted((group for key, group in groups.items() if key in matched), key=lambda g: (g['created'], g['url']), reverse=True)
-    return {'sources': [{k: v for k, v in group.items() if k != 'created'} for group in found[offset:offset + PAGE_SIZE]],
+    return {'sources': [{k: (len(v) if k == 'translated' else v) for k, v in group.items() if k != 'created'}
+                        for group in found[offset:offset + PAGE_SIZE]],
             'total': len(found), 'canSearch': True}
 
 
@@ -127,7 +134,7 @@ def indexed_page(rows, p, *, complete=True):
         order = recent_recall(row, now) if recent_only else row['created']
         if recent_only and not order: continue
         if dictation and (not e['sentence'] or not has_current_audio(row)): continue
-        if translating and (not e['sentence'] or e.get('language', 'en') != 'en' or not e['translation'].strip()): continue
+        if translating and not has_saved_translation(e): continue
         # Only prefilter candidates. The same browser masking rule used by cards decides if a blank is valid.
         if cloze and (e.get('kind') == 'sentence' or e.get('language', 'en').split('-', 1)[0].lower() != 'en'
                       or e['word'].casefold() not in e['sentence'].casefold()): continue

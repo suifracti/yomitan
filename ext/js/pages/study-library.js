@@ -43,7 +43,7 @@ const SOURCES_UPDATE_BRIDGE = '当前的本机桥还不能按素材查看。可�
 /** @typedef {'cloze'|'dictation'|'recall'|'translation'} PracticeMode */
 /** @typedef {{row: StudyLibraryRecord, kind: 'cloze'|'dictation'|'read', text: string, answer: string, hint: string}} SentencePrompt */
 /** @typedef {{prompts: SentencePrompt[], hasMore: boolean}} SentenceRound */
-/** @typedef {{url: string, title: string, records: number, audio: number, recall?: number}} SourceShelfItem */
+/** @typedef {{url: string, title: string, records: number, audio: number, recall?: number, translated?: number}} SourceShelfItem */
 
 /**
  * @param {unknown} value
@@ -142,7 +142,7 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
  * @param {SourceShelfItem} source
  * @returns {HTMLElement}
  */
-function renderSourceShelfItem({url, title, records, audio, recall}) {
+function renderSourceShelfItem({url, title, records, audio, recall, translated}) {
     const parsed = new URL(url);
     const local = parsed.protocol === 'file:';
     const youtube = YOUTUBE_HOSTS.has(parsed.hostname);
@@ -161,7 +161,8 @@ function renderSourceShelfItem({url, title, records, audio, recall}) {
     heading.textContent = local ? path.split('/').pop() ?? path : title.trim() || `${locationLabel} ${fallbackTitle}`;
     const counts = document.createElement('p');
     counts.className = 'study-library-source';
-    counts.textContent = `${locationLabel} · ${records} 条记录${audio ? ` · ${audio} 条有原声` : ''}${recall ? ` · ${recall} 条卡点` : ''}`;
+    const availability = [`${records} 条记录`, audio ? `${audio} 条有原声` : '', recall ? `${recall} 条卡点` : '', translated ? `${translated} 句有译文` : ''];
+    counts.textContent = [locationLabel, ...availability].filter(Boolean).join(' · ');
     const actions = document.createElement('div');
     actions.className = 'study-library-actions';
     const related = document.createElement('a');
@@ -169,21 +170,14 @@ function renderSourceShelfItem({url, title, records, audio, recall}) {
     related.className = 'study-library-primary-action';
     related.textContent = '查看原句';
     actions.append(related);
-    if (audio) {
+    const modes = /** @type {const} */ ([
+        ['dictation', '练原声听写', audio], ['recall', '复习本素材卡点', recall], ['translation', '练整句理解', translated],
+    ]);
+    for (const [mode, label, available] of modes) {
+        if (!available) { continue; }
         const practice = new URL(related.href);
-        practice.searchParams.set('practice', 'dictation');
-        const listen = document.createElement('a');
-        listen.href = practice.href;
-        listen.textContent = '练原声听写';
-        actions.append(listen);
-    }
-    if (recall) {
-        const practice = new URL(related.href);
-        practice.searchParams.set('practice', 'recall');
-        const recallLink = document.createElement('a');
-        recallLink.href = practice.href;
-        recallLink.textContent = '复习本素材卡点';
-        actions.append(recallLink);
+        practice.searchParams.set('practice', mode);
+        actions.append(Object.assign(document.createElement('a'), {href: practice.href, textContent: label}));
     }
     card.append(heading, counts, actions);
     return card;
@@ -1045,13 +1039,14 @@ async function initializePage() {
         const sourcePractice = sourceUrl ? requested.get('practice') : '';
         const requestedDictation = sourcePractice === 'dictation';
         const requestedSourceRecall = sourcePractice === 'recall';
+        const requestedTranslation = sourcePractice === 'translation';
         const recallId = requested.get('recall') || '';
         const requestedRecall = !sourceUrl && /^[a-f0-9]{32}$/.test(recallId) ? recallId : '';
         let focusRecall = requestedRecall;
         const legacyWordPractice = !sourceUrl && !requested.has('word') && requested.get('practice') === 'word';
         const word = sourceUrl || requestedRecall ? '' : (requested.get('word') || (legacyWordPractice ? search.value : '')).trim().slice(0, 128);
         if (legacyWordPractice) { search.value = ''; }
-        let openRequestedPractice = Boolean(requestedRecall) || requestedDictation || requestedSourceRecall || Boolean(word && requested.get('practice') === 'word');
+        let openRequestedPractice = Boolean(requestedRecall) || requestedDictation || requestedSourceRecall || requestedTranslation || Boolean(word && requested.get('practice') === 'word');
         let category = word ? 'word' : 'all';
         if (sourceUrl) {
             category = 'source';
@@ -1970,6 +1965,13 @@ listedQuery :
                     openRequestedPractice = false;
                     if (!obsolete() && !listError && tab === 'source') {
                         if (requestedDictation && !dictationButton.hidden) { dictationButton.click(); }
+                        if (requestedTranslation) {
+                            if (!translationButton.hidden) {
+                                translationButton.click();
+                            } else {
+                                setStatus('这份素材目前没有带译文的原句，可先查看下面的记录。');
+                            }
+                        }
                         if (requestedSourceRecall) {
                             if (!sourceRecallButton.hidden) {
                                 sourceRecallButton.click();

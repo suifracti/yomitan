@@ -48,6 +48,7 @@
 | 本地视频的已记词、小结和听写混入别处的同名文件 | L-007；学习库的 librarySource、study_sources.page_source_key、StudyService 的 localVideoSource |
 | 普通本地文件被当成视频来源；合法本地视频存不进笔记 | L-007；study_library_core.source_url、study_sources.media_key_of |
 | 想按看过的文章或视频找原句、原声，或只复习这份素材的卡点 | L-007；学习库「按素材」、study_index.indexed_sources / indexed_page |
+| 想直接在「按素材」挑一篇有译文的文章练理解 | L-007；素材卡的 translated、libraryList(practice: 'translation') |
 | 字幕搜索没有结果，切去练已存原句却播不出 | L-007；YoutubeReader._beginListening 按匹配的原句时间直接回听 |
 | 合并或拆开字幕后，旧视频原句无法回听 | L-007；YoutubeReader._beginListening、原始轨与 groupForReading |
 | 课程在同一播放器切章节，上一课字幕或词表还在／小结混课 | L-007；media-key.pageSourceKey、YoutubeReader._sync、StudyService 的 libraryVideoWords |
@@ -305,6 +306,8 @@
 **不先找词，按素材集中回顾**：学习库「按素材」从已有记录索引聚合，命中一条也显示整份素材的数量，按最近保存排列。还与原句匹配的已存录音才计入「有原声」；这一数量是记录数，听写仍会去掉重复句。两种入口沿完整来源进入同一范围，不打开原视频、不自动播放或读出附件。旧桥不能列素材时，保留「全部」里的搜索；不另存素材表。见[素材入口与临时验证](youtube-study-wiring.md#2026-11-18-从素材直接回到原句和听写)。
 
 **只复习一份素材的近期卡点**：素材卡的 `recall` 是原卡点资格在这份素材的记录数；源内练习用原 `scope: source` 首屏的 `recallRound`，先按当前搜索和完整来源筛选，再换不同义项。不凭标题、文件名或共用视频编号猜选集；普通原句仍按原顺序。旧桥没有源内题组时保留本素材原句，不用全库卡点顶替。见[来源范围验证](youtube-study-wiring.md#2026-11-18-按素材只复习本素材的卡点)。
+
+**从素材卡直接练整句理解**：`indexed_sources` 和整句找题共用已存译文的资格，`translated` 数不同的英语原句而不是笔记条数。搜索只挑素材，不裁它整组的题。一键进入同来源的既有五句练习；没有题或旧桥没有数不显示入口，仍能查看原句。不开附件、模型或 Anki，不另存题库。见[素材筛选到练习](youtube-study-wiring.md#2026-11-19-在按素材直接练整句理解)。
 
 **从字幕栏直接打开素材的时间线**：「复习本视频」沿 `openPageLibrary`，与网页的「本页记过的原句」打开同一个学习库范围。后台从浏览器报告的网页、字幕 iframe 或本地文件取来源；本地的时长只从当前读者的媒体键取，不允许换文件。没有搜索词时，原句列表和源内听写按保存的秒数排列，无时间排后；搜索仍按相关度。时间用字幕的同一个格式，本地只显示、不打开文件。没有接入仓库之外的旧 IINA 候选。见[素材时间线](youtube-study-wiring.md#2026-11-18-从播放器打开素材时间线)。
 
