@@ -28,7 +28,7 @@ import {sourceKey} from '../study/study-journal.js';
 import {timedUrl, videoListenUrl} from '../study/media-key.js';
 import {YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
 
@@ -630,7 +630,7 @@ async function initializePage() {
          * @returns {HTMLButtonElement | null}
          */
         function makeSavedAudioButton(record, report) {
-            if (!matchesCategory(record, 'saved') || !record.media?.audio?.name) { return null; }
+            if (!matchesCategory(record, 'saved') || !savedAudioAttachment(record)) { return null; }
             const button = document.createElement('button');
             button.type = 'button';
             button.textContent = '播放已存原声';

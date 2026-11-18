@@ -39,6 +39,17 @@ export const SAVED_KEY = 'studySavedWordsV1';
 
 export const LOCAL_SYNC_INCOMPLETE_TEXT = '笔记已保存；扩展未更新本地记录，新增问答请手动保存。';
 
+/**
+ * Reads the attachment reference from the saved note, not the capture in progress.
+ * The bridge checks the file itself when playing it or making an audio card.
+ * @param {import('study').LibraryRecord | null | undefined} record
+ * @returns {import('study').SavedStudyAsset | undefined}
+ */
+export function savedAudioAttachment(record) {
+    const audio = record?.media?.audio;
+    return audio?.name ? audio : void 0;
+}
+
 export const DETAIL_KEY = 'studyDetailSnapshotsV1';
 
 export const DICTIONARY_CACHE_KEY = 'studyDictionaryCacheV1';

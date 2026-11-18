@@ -17,7 +17,7 @@
  */
 
 import {CARD_CATALOG} from '../study/card-catalog.js';
-import {AUTO_SYNC_STATE_KEY, LOCAL_SYNC_INCOMPLETE_TEXT, SAVE_TARGETS_KEY, canOfferUseCard, cardReceipt} from '../study/study-data.js';
+import {AUTO_SYNC_STATE_KEY, LOCAL_SYNC_INCOMPLETE_TEXT, SAVE_TARGETS_KEY, canOfferUseCard, cardReceipt, savedAudioAttachment} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
 import {explainWordForm} from './study-word-forms.js';
@@ -114,7 +114,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             const label = /** @type {HTMLElement} */ (piece).dataset.label || '';
             return {label, form: /** @type {HTMLElement} */ (piece).dataset.form || '', kind: explainWordForm(label, word, []).kind};
         }).filter((item) => item.form && item.form.toLocaleLowerCase() !== word.toLocaleLowerCase());
-        const audio = Boolean(currentSaved?.media?.audio?.name) && !currentSaved?.entry.subtitleSource;
+        const audio = Boolean(savedAudioAttachment(currentSaved)) && !currentSaved?.entry.subtitleSource;
         return {word, sentence, translation: entry.translation?.trim() || '', meaning, contextMeaning, audio, forms};
     };
     /** @type {Set<string>} Kinds already drafted in this panel, so recommendations never duplicate. */
@@ -223,14 +223,18 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         const facts = cardFacts();
         for (const [kind, choice] of choiceButtons) {
             const info = cardKind(kind);
-            const missing = info ? missingFor(info, facts) : '';
+            const missing = info?.needs === 'audio' && !facts.audio && captureAudio.hidden ?
+                '这里没有可用于制卡的原声。可以选择文字卡。' :
+                (info ? missingFor(info, facts) : '');
             choice.disabled = Boolean(missing);
             choice.title = missing || (kind === 'listening' ? '使用这条记录已附带的真实原声与原句，不采集整页截图。' : `${STAGE_LABELS[/** @type {import('./study-card-kinds.js').CardStage} */ (info?.stage ?? 1)]} · 可与其他卡一起选择。`);
         }
-        if (currentSaved?.media?.audio?.name) {
-            setAudioState('ready');
-        } else if (audioState.dataset.state === 'ready') {
-            setAudioState('none');
+        if (!['capturing', 'saving'].includes(audioState.dataset.state ?? '')) {
+            if (savedAudioAttachment(currentSaved)) {
+                setAudioState('ready');
+            } else if (audioState.dataset.state === 'ready') {
+                setAudioState('none');
+            }
         }
     };
     const draftCards = d.createElement('div');
@@ -420,6 +424,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     cancelCapture.textContent = '取消采集';
     cancelCapture.hidden = true;
     cancelCapture.addEventListener('click', () => {
+        if (cancelCapture.hidden) { return; }
         mediaOperation++;
         void media.cancelCapture?.().catch(() => {});
         addStatus.textContent = '已取消；未附加原声，也未制卡。';
@@ -428,17 +433,17 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const audioState = d.createElement('p');
     audioState.className = 'study-card-audio-state';
     audioState.dataset.state = 'none';
-    /** @type {Record<string, string>} */
-    const audioLabels = {none: '未采集', capturing: '采集中…', failed: '采集失败', ready: '已保存，可制卡'};
+    const audioLabels = {none: '未采集', capturing: '采集中…', saving: '正在保存…', failed: '采集失败', unconfirmed: '保存还没确认', ready: '已保存'};
     /**
      * @param {number} value
      * @returns {string}
      */
     const clock = (value) => `${Math.floor(value / 60)}:${(value % 60).toFixed(1).padStart(4, '0')}`;
-    /** @param {'none'|'capturing'|'failed'|'ready'} state */
+    /** @param {'none'|'capturing'|'saving'|'failed'|'unconfirmed'|'ready'} state */
     const setAudioState = (state) => {
         audioState.dataset.state = state;
-        const range = media.range ? ` · ${clock(media.range.start)}–${clock(media.range.end)}` : '';
+        const time = state === 'ready' ? savedAudioAttachment(currentSaved) : media.range;
+        const range = typeof time?.start === 'number' && typeof time.end === 'number' ? ` · ${clock(time.start)}–${clock(time.end)}` : '';
         audioState.textContent = `原声 · ${audioLabels[state]}${range}`;
         audioState.hidden = state === 'none' && captureAudio.hidden;
     };
@@ -585,7 +590,8 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             return;
         }
         const operation = ++mediaOperation;
-        const live = () => isCurrent() && !disposed && operation === mediaOperation && media.isSourceCurrent?.() !== false;
+        const owns = () => isCurrent() && !disposed && operation === mediaOperation;
+        const live = () => owns() && media.isSourceCurrent?.() !== false;
         run(async () => {
             captureAudio.disabled = true; cancelCapture.hidden = false;
             setAudioState('capturing');
@@ -601,23 +607,49 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 if (!live()) { return; }
                 const fresh = read.items?.[0]?.record;
                 if (!fresh || fresh.id !== saved.id || fresh.entry.sentence !== entryOf().sentence) { throw new Error('记录语境已改变，请重新确认保存后采集。'); }
+                cancelCapture.hidden = true;
+                setAudioState('saving');
+                addStatus.textContent = '正在将原声保存到这条笔记…';
                 const row = /** @type {import('study').LibraryRecord} */ (await studyCall('libraryMedia', {id: saved.id,
                     version: fresh.version,
                     assets: recorded.assets,
                     start: range.start,
                     end: range.end,
                     origin: 'capture'}));
-                if (!live()) { return; }
+                if (!owns()) { return; }
+                const audio = savedAudioAttachment(row);
+                const sameNote = row?.id === saved.id && row.entry?.sentence === fresh.entry.sentence;
+                const attached = audio?.start === range.start && audio.end === range.end && audio.origin === 'capture';
+                if (!live() || !sameNote || !attached) {
+                    throw new Error('没有收到本句的原声回执。');
+                }
                 showAnkiStatus(row);
                 setAudioState('ready');
-                const extras = recorded.assets.filter((asset) => asset.kind !== 'audio').map((asset) => (asset.kind === 'image' ? '截图' : '视频片段'));
-                addStatus.textContent = [`真实原声${extras.length > 0 ? `和${extras.join('、')}` : ''}已保存；现在可选择“视频声音字幕”制卡。`, ...recorded.warnings].join(' ');
+                const extras = recorded.assets.filter(({kind}) => {
+                    if (kind !== 'image' && kind !== 'video') { return false; }
+                    const ref = row.media?.[kind];
+                    return ref?.start === range.start && ref.end === range.end && ref.origin === 'capture';
+                }).map(({kind}) => (kind === 'image' ? '截图' : '视频片段'));
+                addStatus.textContent = [`原声${extras.length > 0 ? `和${extras.join('、')}` : ''}已保存到这条笔记，没有自动制卡。`, ...recorded.warnings].join(' ');
                 if (d.defaultView) { container.dispatchEvent(new d.defaultView.CustomEvent('study-saved', {detail: row})); }
+            } catch (error) {
+                if (!owns()) { return; }
+                if (audioState.dataset.state === 'saving') {
+                    setAudioState('unconfirmed');
+                    addStatus.textContent = '文字笔记已保存，原声保存还没确认。请先到学习库查看这条笔记，再决定要不要重新采集。';
+                } else {
+                    setAudioState(savedAudioAttachment(currentSaved) ? 'ready' : 'failed');
+                    const detail = error instanceof Error ? error.message : '没有采集到本句原声。';
+                    addStatus.textContent = `${detail} ${currentSaved ? '文字笔记保留；' : ''}这次没有附加新的原声。`;
+                }
             } finally {
                 if (isCurrent() && !disposed) {
                     captureAudio.disabled = false;
                     cancelCapture.hidden = true;
-                    if (audioState.dataset.state === 'capturing') { setAudioState(operation === mediaOperation ? 'failed' : 'none'); }
+                    if (audioState.dataset.state === 'capturing') {
+                        setAudioState(savedAudioAttachment(currentSaved) ? 'ready' : 'none');
+                        if (owns()) { addStatus.textContent = '原句已改变，已停止采集；没有附加新的原声。'; }
+                    }
                 }
             }
         });

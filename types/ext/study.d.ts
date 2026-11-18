@@ -74,6 +74,7 @@ export type StudyTarget = {
 export type CardKind = typeof import('../../ext/js/study/card-catalog.js').CARD_CATALOG[number]['kind'];
 export type SyncConflict = {key: string; local: unknown; remote: unknown};
 export type SaveTargetSettings = {deckByKind?: Partial<Record<CardKind, string>>; ankiEnabled: boolean; targetId: string; vault: string; directory: string; deck: string; model: string};
+export type SavedStudyAsset = {name: string; start?: number; end?: number; origin?: 'capture' | 'import'};
 
 export type LibraryRecord = {
     /** A bridge-confirmed save whose browser journal or sync link could not be updated. */
@@ -86,7 +87,7 @@ export type LibraryRecord = {
     candidates?: {noteId: number; front: string}[];
     repairCardId?: string;
     confirmRestoreTo?: {targetId: string; path: string};
-    media?: {audio?: {name: string}};
+    media?: Partial<Record<'audio' | 'image' | 'video', SavedStudyAsset>>;
     favorite?: boolean;
     learningState?: string;
     syncState?: string;

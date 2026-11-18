@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {mountStudyLibrary} from '../ext/js/display/study-library.js';
 const tick=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
-function setup({capture=async()=>({assets:[{kind:'audio',mime:'audio/webm',data:'real'}],warnings:[]}),isSourceCurrent=()=>true}={}){
+function setup({capture=async()=>({assets:[{kind:'audio',mime:'audio/webm',data:'real'}],warnings:[]}),isSourceCurrent=()=>true,
+    attach=async (row)=>({...row,media:{audio:{name:'study-media-real.webm',start:1,end:3,origin:'capture',mime:'audio/webm'}}})}={}){
  const dom=new JSDOM('<section id="host"></section>'),d=dom.window.document,calls=[];let cancelled=0;
  const entry={word:'improve',sentence:'We improve daily.',context:'',language:'en',translation:'我们每天进步。',meaning:'',notes:'',url:'https://www.youtube.com/watch?v=abcdefghijk&t=1s',title:'Fixture',videoTime:1};
  const row={id:'a'.repeat(32),entry,version:'b'.repeat(64),ankiEnabled:true,cards:[],ankiState:'saved'};
  globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async({studyAction,data})=>{calls.push([studyAction,data]);let value={};
  if(studyAction==='pendingPeek')value={count:0};if(studyAction==='rememberEntry')value=row;
  if(studyAction==='libraryRead')value={items:[{record:row}]};
- if(studyAction==='libraryMedia')value={...row,media:{audio:{name:'study-media-real.webm'}}};return {ok:true,value};}}};
+ if(studyAction==='libraryMedia')value=await attach(row);return {ok:true,value};}}};
  const dispose=mountStudyLibrary(d.querySelector('#host'),()=>entry,()=>true,{capture,cancelCapture:async()=>{cancelled++;},range:{start:1,end:3},isSourceCurrent});
  return {d,calls,dispose,get cancelled(){return cancelled;}};
 }
@@ -26,6 +27,31 @@ test('cancel or disposal never attaches a late recording',async()=>{
  h.d.querySelector('[data-study-add-card]').click();h.d.querySelector('[data-study-capture]').click();await tick();
  h.d.querySelector('[data-study-capture-cancel]').click();finish({assets:[{kind:'audio',mime:'audio/webm',data:'late'}],warnings:[]});await tick();
  assert.equal(h.calls.some(([a])=>a==='libraryMedia'),false);assert.equal(h.cancelled,1);h.dispose();
+});
+test('an attachment in flight cannot be reported as cancelled or saved without a matching receipt', async () => {
+    let finish;
+    const h = setup({attach: (row) => new Promise((resolve) => { finish = () => resolve(row); })});
+    const host = h.d.querySelector('#host');
+    let saved = 0;
+    host.addEventListener('study-saved', () => { ++saved; });
+    h.d.querySelector('[data-study-add-card]').click();
+    h.d.querySelector('[data-study-capture]').click();
+    await tick();
+    assert.ok(finish);
+    const state = h.d.querySelector('.study-card-audio-state');
+    assert.equal(state.dataset.state, 'saving');
+    const cancel = h.d.querySelector('[data-study-capture-cancel]');
+    assert.equal(cancel.hidden, true);
+    cancel.click();
+    assert.equal(h.cancelled, 0);
+    finish();
+    await tick();
+    assert.equal(state.dataset.state, 'unconfirmed');
+    assert.match(h.d.querySelector('.study-card-add-status').textContent, /还没确认.*学习库/);
+    assert.equal(h.d.querySelector('[data-study-card-choice=listening]').disabled, true);
+    assert.equal(saved, 0);
+    assert.equal(h.calls.some(([a]) => a === 'libraryCardsAdd'), false);
+    h.dispose();
 });
 test('edited source is not silently recorded as its former cue',async()=>{
  const h=setup({isSourceCurrent:()=>false});h.d.querySelector('[data-study-add-card]').click();h.d.querySelector('[data-study-capture]').click();await tick();
