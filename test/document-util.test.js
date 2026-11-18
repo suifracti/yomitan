@@ -117,6 +117,28 @@ describe('Document utility tests', () => {
     afterAll(() => teardown(global));
 
     describe('DocumentUtil', () => {
+        test('keeps translated overlays out of the source sentence and its neighbors', () => {
+            const {document} = window;
+            const article = document.createElement('article');
+            article.innerHTML = `<p>The shop was open. We waited by the door.</p>
+                <div class="study-page-translation scan-disable">我们在门口等着。</div>
+                <p>They <b>charge</b> a fee.</p>
+                <div class="study-page-translation scan-disable">他们收取费用。</div>
+                <p>Keep the receipt.</p>`;
+            document.body.append(article);
+            try {
+                const word = /** @type {Text} */ (article.querySelector('b')?.firstChild);
+                const range = document.createRange();
+                range.setStart(word, 0);
+                range.setEnd(word, word.length);
+                const periods = /** @type {import('text-scanner').SentenceTerminatorMap} */ (new Map([['.', [false, true]], ['。', [false, true]]]));
+                const source = new TextSourceGenerator().extractSentence(TextSourceRange.create(range), true, 200, true, periods, new Map(), new Map());
+                expect(source).toEqual({text: 'They charge a fee.', offset: 5, adjacent: '前句：We waited by the door.\n后句：Keep the receipt.'});
+            } finally {
+                article.remove();
+            }
+        });
+
         describe('Text scanning functions', () => {
             let testIndex = 0;
             const {document} = window;

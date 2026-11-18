@@ -449,6 +449,8 @@ export class DOMTextScanner {
      * @returns {import('dom-text-scanner').ElementSeekInfo}
      */
     static getElementSeekInfo(element) {
+        // Inline study translations are inserted next to the original, not part of its context.
+        if (element.classList.contains('study-page-translation')) { return {enterable: false, newlines: 0}; }
         let enterable = true;
         switch (element.nodeName.toUpperCase()) {
             case 'HEAD':
