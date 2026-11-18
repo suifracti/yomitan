@@ -200,7 +200,7 @@ export class YoutubeReader extends EventTarget {
         this._captionVideoId = null;
         /** @type {() => void} */
         this._timeListener = () => this._onTime();
-        /** @type {{id: string, start: number, end: number, video: HTMLVideoElement}|null} */
+        /** @type {{id: string, cancel: (pause?: boolean) => void}|null} */
         this._loop = null;
         /** @type {string} */
         this._lookup = '';
@@ -427,7 +427,10 @@ export class YoutubeReader extends EventTarget {
         this._restoreReplay?.();
         for (const button of this._view?.list.querySelectorAll('button[data-cue-notes][aria-expanded="true"]') ?? []) { /** @type {HTMLButtonElement} */ (button).click(); }
         const value = Math.max(-600000, Math.min(600000, Math.round(ms / 50) * 50));
-        if (value !== this._offsetMs) { this._shadowPause = null; }
+        if (value !== this._offsetMs) {
+            this._stopLoop('');
+            this._shadowPause = null;
+        }
         this._offsetMs = value;
         for (const target of new Set([this._rawSession, this._session])) {
             try { target?.setOffset(value); } catch { /* bounds are checked above */ }
@@ -445,6 +448,7 @@ export class YoutubeReader extends EventTarget {
     resume() {
         if (this._resumeMs < 0 || !this._video || this._sourceKey !== pageSourceKey(this._site.pageUrl())) { return; }
         this._endListening();
+        this._stopLoop('');
         this._video.currentTime = this._resumeMs / 1000;
         this._clearResume();
         this._resumeFollow();
@@ -765,6 +769,7 @@ export class YoutubeReader extends EventTarget {
         const video = this._site.video();
         if (!video || video === this._video) { return; }
         this._endListening();
+        this._stopLoop('');
         this._restoreReplay?.();
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._shadowRow = this._shadowPause = null;
@@ -779,6 +784,7 @@ export class YoutubeReader extends EventTarget {
         this._endListening();
         this._libraryListening = null;
         this._restoreReplay?.();
+        this._stopLoop('');
         ++this._generation;
         this._loadController?.abort();
         this._loadController = null;
@@ -787,7 +793,6 @@ export class YoutubeReader extends EventTarget {
         youtubeStudyContext.reset();
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._video = null;
-        this._loop = null;
         this._lookup = '';
         this._session = null;
         this._searchRanges.clear();
@@ -1446,6 +1451,7 @@ export class YoutubeReader extends EventTarget {
     _render(session) {
         this._endListening();
         this._restoreReplay?.();
+        this._stopLoop('');
         const view = this._view;
         if (!view) { return; }
         this._failed.clear();
@@ -1453,7 +1459,6 @@ export class YoutubeReader extends EventTarget {
         this._autoBackoff = 0;
         youtubeStudyContext.reset();
         this._video?.removeEventListener('timeupdate', this._timeListener);
-        this._loop = null;
         this._lookup = '';
         this._shadowRow = null; this._shadowDone = '';
         this._shadowPause = null;
@@ -1828,16 +1833,6 @@ export class YoutubeReader extends EventTarget {
         const session = this._session;
         const video = this._video;
         if (!session || !video || !this._view) { return; }
-        const loop = this._loop;
-        if (loop) {
-            const now = video.currentTime;
-            if (loop.video !== video || now < loop.start - 0.75 || now > loop.end + 1.5) {
-                this._stopLoop('已退出循环（播放位置已改变）');
-            } else if (now >= loop.end) {
-                video.currentTime = loop.start;
-                return;
-            }
-        }
         const active = session.active(video.currentTime * 1000).map((c) => c.id);
         const key = active.join('|');
         if (key === this._active) { return; }
@@ -1867,12 +1862,17 @@ export class YoutubeReader extends EventTarget {
             this._stopLoop('已退出循环');
             return;
         }
-        this._stopLoop('');
+        this._resetCuePlayback();
         try {
-            const cue = session.cue(id);
             const start = session.seekSeconds(id);
-            this._loop = {id, start, end: (cue.endMs + session.offsetMs) / 1000, video};
-            video.currentTime = start;
+            const end = (session.cue(id).endMs + session.offsetMs) / 1000;
+            const info = this._rowInfo.get(id);
+            const isCurrent = () => this._video === video && info?.isCurrent() === true;
+            const cancel = youtubeStudyContext.playRange(video, {start, end, isCurrent, repeat: true}, (reason) => {
+                if (this._loop?.id !== id) { return; }
+                this._stopLoop(reason === 'failed' ? '播放没有开始，请点播放器的播放按钮。' : '已退出循环');
+            });
+            this._loop = {id, cancel};
         } catch (error) {
             this._loop = null;
             this._status(error instanceof Error ? error.message : String(error));
@@ -1893,6 +1893,7 @@ export class YoutubeReader extends EventTarget {
         const loop = this._loop;
         if (!loop) { return; }
         this._loop = null;
+        loop.cancel(false);
         const row = this._rows.get(loop.id);
         row?.classList.remove('is-looping');
         row?.querySelector('.r-loop')?.setAttribute('aria-pressed', 'false');

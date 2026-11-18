@@ -82,6 +82,8 @@ test('loads the player caption request read-only and keeps sentences per caption
     // Row tools live outside the sentence node; looping replays one caption until the learner leaves it.
     expect(rows[1].querySelector('.r-text .r-tools')).toBe(null);
     const loop = /** @type {HTMLButtonElement} */ (rows[1].querySelector('.r-tools .r-loop'));
+    const play = vi.spyOn(video, 'play').mockResolvedValue();
+    const paused = vi.spyOn(video, 'paused', 'get').mockReturnValue(false);
     loop.click();
     expect(current).toBe(1);
     expect(loop.getAttribute('aria-pressed')).toBe('true');
@@ -90,10 +92,12 @@ test('loads the player caption request read-only and keeps sentences per caption
     video.dispatchEvent(new Event('timeupdate'));
     expect(current).toBe(1);
     current = 10;
-    video.dispatchEvent(new Event('timeupdate'));
+    video.dispatchEvent(new Event('seeking'));
     expect(current).toBe(10);
     expect(loop.getAttribute('aria-pressed')).toBe('false');
     expect(rows[1].classList.contains('is-looping')).toBe(false);
+    play.mockRestore();
+    paused.mockRestore();
     vi.unstubAllGlobals();
 });
 

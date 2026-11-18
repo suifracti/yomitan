@@ -48,6 +48,7 @@
 | 视频记了很多长句后，已记词、推荐或整轮回听读不到 | L-007；study_translator.write_frame、study-client.nativeStudyCall |
 | 字幕栏开着时记词或制卡，已记张数和推荐没有变化 | L-007；StudyService 的确认回执通知、YoutubeReader._loadWords |
 | 回听完一句却多播了下一句开头；Shift+S 后没有恢复原速 | L-007；YoutubeStudyContext.playRange 的媒体时钟、句尾定时和倍率恢复 |
+| 视频暂停时点循环不播放，循环回到句首太晚 | L-007；YoutubeReader.toggleLoop、YoutubeStudyContext.playRange 的 repeat |
 | 搜到跨行短语，想一次听完，不想逐行点时间 | L-007；SubtitleSession.search 的命中范围、YoutubeReader._playCaptionRange |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章或同一视频选集，想找同来源的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选、page_source_key |
@@ -312,6 +313,8 @@
 **回听不该拖到下一句开头**：实际播放器的 `timeupdate` 不是句尾精确时钟。保留事件兜底，但按剩余媒体时间和倍速只安排一个句尾定时；播放、跳转完成、变速时重算，换媒体、退出或结束仍清除。独立 Chromium 同一音轨原先晚约 0.22–0.25 秒，改后本次晚不到 0.02 秒。没有增加持续轮询，也不追移用户的播放进度。见[实际整轮点播与读回](youtube-study-wiring.md#2026-11-18-独立浏览器串起整轮回听并缩短句尾延迟)。
 
 字幕快捷键 S／Shift+S 也使用这个媒体时钟；读当前行的已校验时间，不另发词卡或原声令牌。Shift+S 以 0.75 倍重听，结束、手动离开这句或视频／字幕偏移变化时恢复原倍率，不把手动跳转暂停。偏移后的开头早于 0 时提示调整，不跳到别处。见[快捷键回听验证](youtube-study-wiring.md#2026-11-19-快捷键回听也停在准确的句尾)。
+
+**循环本句也用同一个句尾时钟**：过去只跳到句首，播放器暂停时不会开始；播放后要等粗粒度的 `timeupdate`。现在用户点循环才开始播放，在此句结束时返回句首；手动拖到下一句、改偏移或换播放器等会清掉原循环，不拦新位置或抢着恢复播放。保留单次回听与跟读的原行为。[暂停点循环](youtube-study-wiring.md#2026-11-19-暂停时点循环也开始播放)
 
 跨行短语「回听 N 行」与快捷键共用 `_playCaptionRange`：从命中首行到末行，按点击时的字幕偏移和原速播放，到末行停住。多个位置分别保留，筛选不变；不真的合并字幕，不取得词卡或原声权限。见[两处命中点播](youtube-study-wiring.md#2026-11-19-一键回听跨行字幕片段)。
 

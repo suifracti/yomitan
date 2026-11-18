@@ -119,12 +119,12 @@ export class YoutubeStudyContext {
     /**
      * Plays a reader-owned range. This does not issue a selection or capture token.
      * @param {HTMLVideoElement} video
-     * @param {{start: number, end: number, isCurrent: () => boolean, rate?: number}} range
+     * @param {{start: number, end: number, isCurrent: () => boolean, rate?: number, repeat?: boolean}} range
      * @param {(reason: 'ended'|'cancelled'|'failed') => void} [finished]
      * @returns {(pause?: boolean) => void}
      * @throws {Error}
      */
-    playRange(video, {start, end, isCurrent, rate}, finished) {
+    playRange(video, {start, end, isCurrent, rate, repeat = false}, finished) {
         const {src, srcObject} = video;
         const media = video.currentSrc || src;
         const live = () => video.isConnected && video.src === src && (video.currentSrc || video.src) === media &&
@@ -154,8 +154,12 @@ export class YoutubeStudyContext {
             if (!live()) {
                 stop('cancelled');
             } else if (remaining <= 0) {
-                video.pause();
-                stop('ended');
+                if (repeat) {
+                    if (!video.paused && !video.seeking) { video.currentTime = start; }
+                } else {
+                    video.pause();
+                    stop('ended');
+                }
             } else if (!video.paused && !video.seeking && video.playbackRate > 0) {
                 // timeupdate can arrive a fraction of a second after the cue has ended.
                 timer = setTimeout(onTime, Math.max(12, remaining * 1000 / video.playbackRate));
@@ -163,9 +167,22 @@ export class YoutubeStudyContext {
         };
         const onSeek = () => {
             clearTimeout(timer);
-            if (!live() || video.currentTime < start - 0.5 || video.currentTime > end + 0.5) { stop('cancelled'); }
+            const now = video.currentTime;
+            const outside = repeat ? now < start - 0.05 || now >= end : now < start - 0.5 || now > end + 0.5;
+            if (!live() || outside) { stop('cancelled'); }
         };
-        const onEnded = () => { stop(live() && video.currentTime >= end - 0.1 ? 'ended' : 'cancelled'); };
+        const startPlayback = () => { void video.play()?.catch?.(() => stop('failed')); };
+        const onEnded = () => {
+            if (!live()) {
+                stop('cancelled');
+            } else if (repeat && video.ended && video.currentTime > start) {
+                video.currentTime = start;
+                startPlayback();
+            } else {
+                if (repeat && !video.ended) { return; }
+                stop(video.currentTime >= end - 0.1 ? 'ended' : 'cancelled');
+            }
+        };
         const onEmptied = () => { stop('cancelled'); };
         this.replay = stop;
         if (rate !== void 0) { video.playbackRate = rate; }
@@ -174,7 +191,8 @@ export class YoutubeStudyContext {
         video.addEventListener('seeking', onSeek);
         video.addEventListener('ended', onEnded);
         video.addEventListener('emptied', onEmptied);
-        void video.play()?.catch?.(() => stop('failed'));
+        startPlayback();
+        if (repeat) { onTime(); }
         return (pause = true) => {
             if (this.replay !== stop) { return; }
             if (pause && live()) { video.pause(); }

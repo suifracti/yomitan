@@ -395,7 +395,27 @@ test('keyboard replay stops on the shared media clock and releases slow speed on
         expect(() => reader.captionShortcut('s', true)).not.toThrow();
         expect(play).toHaveBeenCalledTimes(2);
         expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('请调整偏移');
+
+        reader.setOffset(0, false);
+        const loop = /** @type {HTMLButtonElement} */ (document.querySelector('.r-tools .r-loop'));
+        paused.mockReturnValue(true);
+        loop.click();
+        expect(play).toHaveBeenCalledTimes(3);
+        expect(time).toBe(1);
+        expect(loop.getAttribute('aria-pressed')).toBe('true');
+        paused.mockReturnValue(false);
+        video.dispatchEvent(new Event('playing'));
+        vi.advanceTimersByTime(799);
+        time = 2;
+        vi.advanceTimersByTime(1);
+        expect(time).toBe(1);
+        time = 2.15;
+        video.dispatchEvent(new Event('seeking'));
+        expect(time).toBe(2.15);
+        expect(pause).toHaveBeenCalledOnce();
+        expect(loop.getAttribute('aria-pressed')).toBe('false');
     } finally {
+        if (reader.loopId) { reader.toggleLoop(reader.loopId); }
         reader.updatePrefs({shortcuts: false});
         paused.mockRestore();
         pause.mockRestore();
