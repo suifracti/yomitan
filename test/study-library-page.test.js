@@ -297,6 +297,9 @@ describe('study library page', () => {
         const recallUrl = new URL(card.querySelector('a')?.href ?? '');
         expect([...recallUrl.searchParams]).toEqual([['recall', items[0].id]]);
         makePageDom();
+        const openVideo = vi.fn()
+            .mockRejectedValueOnce(new Error('视频没打开，可以再试一次。'))
+            .mockResolvedValueOnce(null);
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         mocks.studyCall.mockImplementation(async (action, payload) => {
             if (action === 'libraryList') {
@@ -304,6 +307,7 @@ describe('study library page', () => {
                 const sorted = payload.focus?.id === items[0].id ? items : [items[1], items[0], items[2]];
                 return {items: sorted, total: items.length, canSearch: true};
             }
+            if (action === 'openVideoListening') { return openVideo(); }
             if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
             return [];
         });
@@ -329,21 +333,35 @@ describe('study library page', () => {
             expect(panel.textContent).toContain('他们向他收费。');
             expect(panel.textContent).toContain('Original clip');
             expect(linkId()).toBe(items[0].id);
+            expect(panel.textContent).not.toContain('回视频听');
             press('下一句');
             expect(panel.textContent).toContain('They […] him.');
+            expect(panel.textContent).not.toContain('回视频听');
             press('直接看答案');
             expect(panel.textContent).toContain('指控的意思');
             expect(linkId()).toBe(items[1].id);
+            expect(openVideo).not.toHaveBeenCalled();
+            expect(panel.textContent).toContain('回视频听／补原声');
+            press('回视频听／补原声');
+            await vi.waitFor(() => expect(panel.querySelector('[role="status"]')?.textContent).toBe('视频没打开，可以再试一次。'));
+            press('回视频听／补原声');
+            await vi.waitFor(() => expect(openVideo).toHaveBeenCalledTimes(2));
+            expect(panel.querySelector('[role="status"]')?.textContent).toBe('');
             press('下一句');
             expect(panel.textContent).toContain('We went on and on.');
             expect(panel.textContent).not.toContain('一直继续');
             expect(panel.querySelector('input, textarea')).toBeNull();
             press('看当时的释义');
             expect(panel.textContent).toContain('一直继续');
+            expect(panel.textContent).not.toContain('回视频听');
             expect(linkId()).toBe(items[2].id);
             press('完成这轮');
             expect(panel.textContent).toContain('本轮结束');
-            expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([['libraryAudioRead', {id: items[0].id}]]);
+            expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([
+                ['libraryAudioRead', {id: items[0].id}],
+                ['openVideoListening', {id: items[1].id}],
+                ['openVideoListening', {id: items[1].id}],
+            ]);
         } finally { history.replaceState(null, '', previousUrl); }
     });
 

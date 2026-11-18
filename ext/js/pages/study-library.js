@@ -493,6 +493,26 @@ function markDictation(line, text, offsets) {
 }
 
 /**
+ * @param {StudyLibraryRecord} row
+ * @param {(message: string) => void} report
+ * @returns {HTMLButtonElement | null}
+ */
+function makeVideoListenButton(row, report) {
+    if (row.syncState === 'anki-only' || !videoListenUrl(row.entry)) { return null; }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = canSupplementAudio(row) ? '回视频听／补原声' : '回视频听这句';
+    button.onclick = () => {
+        button.disabled = true;
+        report('');
+        void studyCall('openVideoListening', {id: row.id})
+            .catch((error) => report(error instanceof Error ? error.message : '没能打开视频。可点原来的来源链接。'))
+            .finally(() => { button.disabled = false; });
+    };
+    return button;
+}
+
+/**
  * @param {HTMLElement} panel
  * @param {SentencePrompt[]} prompts
  * @param {PracticeMode} mode
@@ -597,6 +617,10 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
             ++index;
             show();
         };
+        const audioStatus = document.createElement('span');
+        audioStatus.setAttribute('role', 'status');
+        const report = (/** @type {string} */ message) => { audioStatus.textContent = message; };
+        const listen = makeAudioButton(row, report);
         const showAnswer = (/** @type {string} */ guess = '') => {
             const normalize = (/** @type {string} */ value) => value.trim().toLowerCase()
                 .replaceAll('’', "'")
@@ -650,6 +674,10 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
             next.dataset.clozeNext = '';
             next.onclick = advance;
             actions.append(next, resume);
+            if (!listen) {
+                const listenVideo = makeVideoListenButton(row, report);
+                if (listenVideo) { actions.append(listenVideo, audioStatus); }
+            }
             form.replaceWith(feedback, actions);
             feedback.focus();
         };
@@ -664,9 +692,6 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
         if (dictation) {
             form.append(Object.assign(document.createElement('button'), {type: 'button', textContent: '跳过', onclick: advance}));
         }
-        const audioStatus = document.createElement('span');
-        audioStatus.setAttribute('role', 'status');
-        const listen = makeAudioButton(row, (message) => { audioStatus.textContent = message; });
         panel.replaceChildren(heading);
         if (!dictation) { panel.append(quote); }
         panel.append(clue);
@@ -1293,18 +1318,10 @@ listedQuery :
             resume.rel = 'noopener noreferrer';
             resume.textContent = '继续学习 ↗';
             actions.append(resume);
-            if (record.syncState !== 'anki-only' && videoListenUrl(record.entry)) {
-                const listen = document.createElement('button');
-                listen.type = 'button';
-                listen.textContent = canSupplementAudio(record) ? '回视频听／补原声' : '回视频听这句';
-                listen.onclick = () => {
-                    listen.disabled = true;
-                    void studyCall('openVideoListening', {id: record.id})
-                        .catch((error) => setStatus(error instanceof Error ? error.message : '没能打开视频。可点原来的来源链接。'))
-                        .finally(() => { listen.disabled = false; });
-                };
-                actions.append(listen);
-            }
+            const listenVideo = makeVideoListenButton(record, (message) => {
+                if (message) { setStatus(message); }
+            });
+            if (listenVideo) { actions.append(listenVideo); }
             const listenSaved = makeSavedAudioButton(record);
             if (listenSaved) { actions.append(listenSaved); }
             if (record.audioContextChanged) {
