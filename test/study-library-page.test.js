@@ -87,7 +87,7 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
-    test('finds older saved whole sentences from the library before paging and continues to the next group', async () => {
+    test('practices old translated word and sentence notes before normal paging', async () => {
         vi.resetModules();
         makePageDom();
         const url = 'https://example.test/reading';
@@ -98,9 +98,9 @@ describe('study library page', () => {
             entry: {kind: 'sentence', word: sentence, sentence, translation, language: 'en', title: 'Reading practice', url},
             articleHref: url + '#:~:text=' + encodeURIComponent(sentence),
         });
-        const first = {...example('a', 'The stairs were steep.', '楼梯很陡。'), media: {audio: {name: 'stairs.webm'}}};
+        const savedWord = example('a', 'The stairs were steep.', '楼梯很陡。');
+        const first = {...savedWord, entry: {...savedWord.entry, kind: void 0, word: 'steep'}, media: {audio: {name: 'stairs.webm'}}};
         const others = Array.from({length: 5}, (_, i) => example(String(i + 1), `Saved sentence ${i + 1}.`, `当时译文 ${i + 1}。`));
-        const word = {...first, entry: {...first.entry, kind: void 0, word: 'stairs'}};
         vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}, storage: {local: {get: async () => ({})}}});
         mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
         let oldBridge = false;
@@ -110,7 +110,7 @@ describe('study library page', () => {
                 if (oldBridge) { throw new Error('练习类型无效。'); }
                 return {items: payload.offset ? [others[4]] : [first, ...others.slice(0, 4)], total: 6, canSearch: true};
             }
-            return {items: [word], total: 30, canSearch: true};
+            return {items: [first], total: 30, canSearch: true};
         });
         await import('../ext/js/pages/study-library.js');
         const button = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-translation-button'));
@@ -154,7 +154,10 @@ describe('study library page', () => {
         expect(panel.hidden).toBe(true);
         oldBridge = true;
         button.click();
-        await vi.waitFor(() => expect(document.getElementById('study-library-status')?.textContent).toContain('先点「加载更多」'));
+        await vi.waitFor(() => expect(panel.textContent).toContain('练整句理解 · 1 / 1'));
+        expect(panel.textContent).toContain('The stairs were steep.');
+        expect(panel.textContent).not.toContain('楼梯很陡。');
+        button.click();
         expect(panel.hidden).toBe(true);
 
         oldBridge = false;

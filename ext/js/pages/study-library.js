@@ -436,7 +436,7 @@ function sentencePrompts(rows, picked, mode, limit = SENTENCE_PRACTICE_LIMIT) {
         const hasAudio = (recall || mode === 'dictation') && savedAudioAttachment(row);
         const sentenceKey = recall ? row.id : entry.sentence;
         if (mode === 'translation') {
-            if (entry.kind !== 'sentence' || !entry.translation?.trim() || seen.has(sentenceKey)) { continue; }
+            if (!entry.translation?.trim() || seen.has(sentenceKey)) { continue; }
             seen.add(sentenceKey);
             prompts.push({row, kind: 'read', text: entry.sentence, answer: '', hint: ''});
             continue;
@@ -1291,7 +1291,7 @@ async function initializePage() {
             } else if (translating && !failed) {
                 setStatus(oldPractice && !readOrdinaryPages && offset < total ?
                     '这版暂时只能练已显示的原句，可以先点「加载更多」。' :
-                    '这里还没有带译文的整句。划词翻译后，可以点「记住这句」。');
+                    '这里还没有带译文的原句。可以翻译词卡里的原句再点「记住它」，或划词翻译后点「记住这句」。');
             } else {
                 setStatus(failed ? '后面的原句没有读到，可以再试一次。' : '这次没找到能练的原句，可以继续看记录。');
             }

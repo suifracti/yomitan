@@ -127,7 +127,7 @@ def indexed_page(rows, p, *, complete=True):
         order = recent_recall(row, now) if recent_only else row['created']
         if recent_only and not order: continue
         if dictation and (not e['sentence'] or not has_current_audio(row)): continue
-        if translating and (e.get('kind') != 'sentence' or e.get('language', 'en') != 'en' or not e['translation'].strip()): continue
+        if translating and (not e['sentence'] or e.get('language', 'en') != 'en' or not e['translation'].strip()): continue
         # Only prefilter candidates. The same browser masking rule used by cards decides if a blank is valid.
         if cloze and (e.get('kind') == 'sentence' or e.get('language', 'en').split('-', 1)[0].lower() != 'en'
                       or e['word'].casefold() not in e['sentence'].casefold()): continue
@@ -161,6 +161,10 @@ def indexed_page(rows, p, *, complete=True):
         for match in matches:
             entry = match[2]['entry']
             key = (entry['word'].casefold(), entry['sentence']) if cloze else entry['sentence']
+            # Keep the explicit sentence note's translation and its actual position in the list.
+            if (translating and key in unique and entry.get('kind') == 'sentence'
+                    and unique[key][2]['entry'].get('kind') != 'sentence'):
+                del unique[key]
             unique.setdefault(key, match)
         matches = list(unique.values())
     extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not practice and not focus and p.get('language', 'en') == 'en' else {}
