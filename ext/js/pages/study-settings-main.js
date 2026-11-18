@@ -501,11 +501,11 @@ export function prepareSystemStatus(root) {
                 studyCall('bridgeHealth'),
                 fetch(chrome.runtime.getURL('js/study/bridge-manifest.json')).then(readResponseJson),
             ]);
-            const value = /** @type {{files: Record<string, string>, anki: {ok: boolean}, vault: {ok: boolean}, appleTranslate: boolean, errors: {action: string, message: string}[]}} */ (health);
+            const value = /** @type {{files: Record<string, string>, anki: {ok: boolean}, vault: {ok: boolean, message?: string}, appleTranslate: boolean, errors: {action: string, message: string}[]}} */ (health);
             const same = Object.entries(/** @type {Record<string, string>} */ (expected)).every(([name, hash]) => value.files[name] === hash);
             show('bridge', same);
             show('anki', value.anki.ok);
-            show('vault', value.vault.ok);
+            show('vault', value.vault.ok, value.vault.message);
             show('apple', value.appleTranslate);
             command.hidden = same;
             const errors = new Map();

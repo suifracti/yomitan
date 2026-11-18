@@ -10,6 +10,7 @@ import time
 
 from bridge_files import hashes, runtime_sources
 from study_library import anki_call
+from study_settings import YomitanLibrary
 
 
 def read_json(path, fallback):
@@ -45,8 +46,11 @@ def record_error(runtime, action, error):
 
 def health(runtime, anki=anki_call):
     root = pathlib.Path(runtime)
-    config = read_json(root / 'bridge-config.json', {})
-    vault = pathlib.Path(config.get('vault', ''))
+    try:
+        vault_ok = YomitanLibrary(root / 'bridge-config.json').save_status()['saveAvailable']
+    except (OSError, ValueError):
+        vault_ok = False
+    vault = {'ok': True} if vault_ok else {'ok': False, 'message': '保存位置不可用，请到「保存与复习」做只读检查。'}
     files = runtime_sources(root)
     apple = root / 'apple-translate'
     if apple.is_file():
@@ -59,7 +63,7 @@ def health(runtime, anki=anki_call):
     state = read_json(root / 'learning-cache' / 'auto-sync-state.json', {})
     errors = read_json(root / 'learning-cache' / 'bridge-errors.json', [])
     return {'files': hashes(files), 'python': platform.python_version(),
-            'vault': {'ok': vault.is_absolute() and vault.is_dir() and not vault.is_symlink()},
+            'vault': vault,
             'anki': connected, 'appleTranslate': apple.is_file() and os.access(apple, os.X_OK),
             'autoSync': {key: state.get(key, 0) for key in ('at', 'synced', 'conflicts')},
             'errors': errors[-20:] if isinstance(errors, list) else []}

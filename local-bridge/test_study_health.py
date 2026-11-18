@@ -9,11 +9,15 @@ from unittest.mock import patch
 class HealthTests(unittest.TestCase):
     def test_health_reports_actual_bytes_without_reading_notes(self):
         from study_health import health, record_error
+        from study_settings import YomitanLibrary
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
             vault = root / 'vault'
             vault.mkdir()
-            (root / 'bridge-config.json').write_text(json.dumps({'vault': str(vault)}))
+            config = root / 'bridge-config.json'
+            config.write_text(json.dumps({'vault': str(root / 'missing-legacy-vault')}))
+            library = YomitanLibrary(config)
+            library.save_settings({**library.settings(), 'vault': str(vault), 'directory': '学习笔记'})
             (root / 'study_demo.py').write_bytes(b'code')
             cache = root / 'learning-cache'
             cache.mkdir()
@@ -25,10 +29,16 @@ class HealthTests(unittest.TestCase):
             self.assertEqual(result['files']['study_demo.py'], hashlib.sha256(b'code').hexdigest())
             self.assertEqual(result['anki'], {'ok': True, 'version': 6})
             self.assertEqual(result['vault'], {'ok': True})
+            self.assertFalse((vault / '学习笔记').exists(), 'health should not create records')
             self.assertEqual(result['autoSync'], {'at': 12, 'synced': 2, 'conflicts': 1})
             self.assertEqual(len(result['errors']), 20)
             self.assertNotIn('PRIVATE', json.dumps(result))
             self.assertNotIn(str(vault), json.dumps(result))
+            (vault / '学习笔记').write_text('a file blocks the configured directory')
+            blocked = health(root, anki=lambda action, params: 6)['vault']
+            self.assertFalse(blocked['ok'])
+            self.assertIn('保存与复习', blocked['message'])
+            self.assertNotIn(str(vault), json.dumps(blocked))
 
     def test_health_is_available_without_codex_or_anki(self):
         from study_health import health

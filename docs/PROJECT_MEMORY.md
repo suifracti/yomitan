@@ -66,6 +66,7 @@
 | 整页翻译用免费的，中途切 AI 会不会扣费 | L-010；PageTranslate.approve、SubtitleTranslation.handle 的 expectedEngine |
 | 只看译文时想点原段里的链接或按钮 | L-010；PageTranslate.render / paint |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
+| 选了新笔记位置，「系统状态」却仍说旧 Vault 正常或不可用 | L-011；study_health.health、study_settings.YomitanLibrary.save_status |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
 | 想用旧原句辨义，或对照同一个意思在两句话里的用法 | L-012；study_senses.practice_material、study-library.js |
@@ -324,6 +325,8 @@
 ## L-011 同步到日常使用的版本可以原样再跑一次
 
 运行模块只认桥目录第一层的 `study_*.py` 和 `bridge_files.py`；安装、健康检查、清单和同步均按同一规则，不把测试子目录当成要装的模块。用原 `dev/sync-local.py`：已是本次提交的字节就跳过，仍是上版的才更新；两版都不匹配就停止，不能强行跳过或另行复制。未提交的改动不作为安装版本。此前刚同步成功再运行也会被误拦；临时双目录重跑及保留本机修改的验收见[同步记录](youtube-study-wiring.md#2026-11-18-同一版可以重复同步)。
+
+**体检看当前保存目的地，不看安装时旧根**：「系统状态」和「保存与复习」的只读检查共用 `YomitanLibrary.save_status`。没有新子目录不等于不能保存；被同名文件挡住、路径不能写或有符号链接才提示去检查。只看路径状态，不读正文、不试写，体检不返回绝对路径；旧桥没有新提示时显示通用原因。见[两个 Vault 对照](youtube-study-wiring.md#2026-11-19-系统状态检查当前笔记保存位置)。
 
 ## L-012 词形可以共用学习状态，同拼写不一定是同一个词
 

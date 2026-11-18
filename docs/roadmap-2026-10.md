@@ -298,6 +298,7 @@
 ```
 
 - `errors` 最多 20 条，只含动作名和错误文案，不含学习内容。
+- `vault.ok` 检查「保存与复习」当前已保存的英语笔记位置；与该页的「只读检查」共用路径检查，不拿安装时的旧 Vault 代替。失败可返回不含路径的 `vault.message`；旧桥没有该字段时沿用原提示。只检查目录条件，不读取笔记、不试写文件，尚未创建但可写的记录目录可以使用。
 - F6 拿 `files` 和扩展内的 `js/study/bridge-manifest.json` 比对；不一致时，提示运行 `python3 dev/sync-local.py`。
 - `bridge-manifest.json` 列出受版本控制且实际安装的 Python 桥模块；`bridgeHealth.files` 计算运行目录的实际字节（可另外含已编译的 `apple-translate`）。安装器的清单同时记录该可选二进制。体检不读取笔记正文；错误摘要只存动作和不含学习原文的固定错误文案。
 - `sync-local.py` 先核对运行桥的全部模块与上一个提交一致；扩展只同步本批 Git 变更的源码文件，不覆盖无关的本机 UI 改动，也不删除文件或读取 Chrome 存储。

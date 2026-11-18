@@ -158,12 +158,11 @@ class YomitanLibrary:
             raise ValueError('不同目录有相同学习编号，请先人工确认；没有自动覆盖。')
         return found[0] if found else None
 
-    def check(self, include_view=True):
+    def save_status(self):
         result = self.settings()
         vault = pathlib.Path(result['vault'])
         status = {'vaultExists': vault.is_absolute() and vault.is_dir(), 'directoryExists': vault.is_absolute() and (vault / result['directory']).is_dir(),
-                  'ankiConnected': False, 'deckExists': False, 'modelExists': False, 'modelCompatible': False}
-        status.update({'saveAvailable': False, 'saveMessage': ''})
+                  'saveAvailable': False, 'saveMessage': ''}
         try:
             lib = self.library_for(self.active_id)
             lib.check_path(lib.records)
@@ -176,6 +175,11 @@ class YomitanLibrary:
             status['saveMessage'] = '可以保存；不存在的记录子目录在实际保存时创建。'
         except (ValueError, OSError):
             status['saveMessage'] = 'Vault 或记录路径不可写、不是文件夹，或含符号链接；没有试写文件。'
+        return status
+
+    def check(self, include_view=True):
+        result = self.settings()
+        status = {**self.save_status(), 'ankiConnected': False, 'deckExists': False, 'modelExists': False, 'modelCompatible': False}
         result.update({'decks': [], 'models': [], 'status': status})
         try:
             result['decks'] = self.anki('deckNames', {})
