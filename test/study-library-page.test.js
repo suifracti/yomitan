@@ -88,6 +88,22 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('distinguishes missing Anki decks from a completed review', async () => {
+        makePageDom();
+        const {refreshToday} = await import('../ext/js/pages/study-library.js');
+        const line = /** @type {HTMLParagraphElement} */ (document.getElementById('study-library-today'));
+        mocks.studyCall.mockResolvedValueOnce({due: 0, reviewed: 0, decks: []});
+        await refreshToday();
+        expect(line.textContent).toContain('找不到设置的 Anki 牌组');
+        expect(line.querySelector('a')?.getAttribute('href')).toBe('/settings.html#save');
+        expect(document.getElementById('study-library-open-anki')?.hidden).toBe(false);
+
+        mocks.studyCall.mockResolvedValueOnce({due: 0, reviewed: 2, decks: ['外语']});
+        await refreshToday();
+        expect(line.textContent).toBe('今天的复习已完成');
+        expect(line.querySelector('a')).toBeNull();
+    });
+
     test('practices old translated word and sentence notes before normal paging', async () => {
         vi.resetModules();
         makePageDom();

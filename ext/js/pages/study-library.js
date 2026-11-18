@@ -851,12 +851,21 @@ export async function prepareStudyLibraryLookup(application) {
  * @returns {Promise<void>}
  */
 export async function refreshToday() {
-    const line = document.getElementById('study-library-today');
+    const line = /** @type {HTMLParagraphElement} */ (document.getElementById('study-library-today'));
     const open = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-open-anki'));
     try {
-        const today = /** @type {{due: number, reviewed: number, paused?: boolean}} */ (await studyCall('ankiToday'));
+        const today = /** @type {{due: number, reviewed: number, paused?: boolean, decks?: string[]}} */ (await studyCall('ankiToday'));
         line.hidden = open.hidden = today.paused === true;
-        line.textContent = today.paused ? '' : (today.due === 0 ? '今天的复习已完成' : `今天还有 ${today.due} 张 · 已复习 ${today.reviewed}`);
+        if (today.paused) {
+            line.textContent = '';
+        } else if (today.decks?.length === 0) {
+            const settings = document.createElement('a');
+            settings.href = '/settings.html#save';
+            settings.textContent = '检查复习牌组 ↗';
+            line.replaceChildren('找不到设置的 Anki 牌组。', settings);
+        } else {
+            line.textContent = today.due === 0 ? '今天的复习已完成' : `今天还有 ${today.due} 张 · 已复习 ${today.reviewed}`;
+        }
         open.onclick = () => {
             void studyCall('ankiOpen').catch(() => { line.textContent = '未能打开 Anki，请先启动 Anki 后再试。'; });
         };

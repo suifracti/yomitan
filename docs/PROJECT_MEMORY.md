@@ -17,6 +17,7 @@
 | 切分类还在读上一个分类；取消的收藏又出现 | L-002；study-library.js 的 loadPage、refreshSavedWords |
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
+| 删除或改名复习牌组后，学习库却说今天已完成 | L-002；ankiToday 的 decks、study-library.js 的 refreshToday |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
 | 明明手选了法语，字幕却还在英语或读的是另一条法语 | L-003；captionCaptureKey、YoutubeReader._load 的已选轨道与英语兜底 |
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
@@ -198,6 +199,8 @@
 **换回自己原本的卡面**：原工具的单份备份留下正背面和 CSS，新备份另记账户/类型的校验值，以及当时所换内容的指纹。还原只需同一份备份，不把当前版本的模板当成过去装过的版本。手改、新同名类型和无从证实来源的老备份不替人覆盖。见[还原与中途断开](youtube-study-wiring.md#2026-11-18-试过学习版后换回原题面)。
 
 **学习库说今天已完成，但子牌组还有卡**：`ankiToday` 先按已选完整路径缩小范围，父子不重复；`getDeckStats` 返回键是编号，其 name 可能只是「单词」这样的末级显示名。不要按完整路径二次查 name，也不要用短名字典合并不同课程。只加这次请求返回的各编号，缺失的仍计零。「已复习」是同范围内当天答过的不同卡片数，另查，不等于这次的到期数。见[临时调度器复现](youtube-study-wiring.md#2026-11-18-有两张到期学习库却说今天已完成)。
+
+**设置的复习牌组一个都找不到**：已启用且能连接 Anki 时，`ankiToday` 会返回 `decks: []`，不代表已复习完。学习库保留「打开 Anki」，另给出「检查复习牌组」直达保存与复习设置；读到牌组且到期为零才走原完成提示。旧桥没有返回 `decks` 时保留旧行为，不新增统计请求或自动建牌组。见[复习牌组缺失验证](youtube-study-wiring.md#2026-11-19-找不到复习牌组不再说今天已完成)。
 
 **Anki 里改了答案，笔记却不变**：先看 `study_settings.auto_sync` 如何识别编辑。有些 `notesInfo` 不给修改时间，同一秒的两次编辑也不能靠秒数区分。对已经在「今天编辑／未关联候选」范围内读到的字段与关联做摘要，不能为判断变化而全库读取或把卡面再保存一份。首次同步只立基线，已处理的旧时间可以接续。见[临时 Anki 中编辑答案](youtube-study-wiring.md#2026-11-18-在-anki-改了答案学习笔记还是旧字)。
 
