@@ -47,7 +47,7 @@ export const LOCAL_SYNC_INCOMPLETE_TEXT = '笔记已保存；扩展未更新本�
  */
 export function savedAudioAttachment(record) {
     const audio = record?.media?.audio;
-    return audio?.name ? audio : void 0;
+    return audio?.name && !record?.audioContextChanged ? audio : void 0;
 }
 
 export const DETAIL_KEY = 'studyDetailSnapshotsV1';

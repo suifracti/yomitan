@@ -4,6 +4,7 @@
 import base64
 import hashlib
 import html
+import json
 import math
 import re
 
@@ -12,6 +13,37 @@ MAX_VIDEO = 8_000_000
 FORMATS = {'image/png': ('image', 'png'), 'image/jpeg': ('image', 'jpg'), 'video/webm': ('video', 'webm'),
            'audio/webm': ('audio', 'webm'), 'audio/ogg': ('audio', 'ogg'),
            'audio/mpeg': ('audio', 'mp3'), 'audio/wav': ('audio', 'wav')}
+OLD_CONTEXT = '原句或来源已改，旧附件仍在原笔记。请回到对应的字幕重新采集，或选文字卡。'
+
+
+def context_key(entry):
+    identity = (entry['sentence'].strip(), entry['url'].strip(), entry.get('videoTime'))
+    return hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
+
+
+def context_matches(record, ref, entry):
+    if 'contextKey' in ref:
+        return context_key(entry) == ref['contextKey']
+    # A legacy attachment has no snapshot, but an edited identity isn't a safe match.
+    from study_library_core import entry_id
+    source = entry.get('subtitleSource')
+    if source and (entry['sentence'].strip() != source['text'].strip() or entry['url'] != source['url']):
+        return False
+    return entry_id(entry) == record['id']
+
+
+def with_audio_context(row):
+    ref = row.get('media', {}).get('audio')
+    return {**row, 'audioContextChanged': True} if ref and not context_matches(row, ref, row['entry']) else row
+
+
+def require_audio(record, values):
+    ref = record.get('media', {}).get('audio')
+    if not ref:
+        raise ValueError('这条记录尚未附带真实音频；请先附加原声，或选文字学习卡。')
+    if not context_matches(record, ref, {**record['entry'], **values}):
+        raise ValueError(OLD_CONTEXT)
+    return ref
 
 
 def decode(asset):
@@ -54,7 +86,10 @@ def validate(p):
 
 
 def attach(library, p):
+    from study_sync import local_fields
     r, body, version = library.read(p['id'])
+    entry = {**r['entry'], **local_fields(r, body)}
+    key = context_key(entry)
     if version != p['version']:
         same = True
         for asset in p['assets']:
@@ -64,7 +99,7 @@ def attach(library, p):
             ref = r.get('media', {}).get(asset['kind'], {})
             path = library.vault / name
             library.check_path(path)
-            if (ref.get('name'), ref.get('start'), ref.get('end'), ref.get('origin')) != (name, p['start'], p['end'], p['origin']) or not path.is_file() or path.read_bytes() != data:
+            if (ref.get('name'), ref.get('start'), ref.get('end'), ref.get('origin')) != (name, p['start'], p['end'], p['origin']) or not context_matches(r, ref, entry) or not path.is_file() or path.read_bytes() != data:
                 same = False
         if same:
             return library.result(r['id'])
@@ -86,7 +121,7 @@ def attach(library, p):
             if path.read_bytes() != data:
                 raise ValueError('媒体写入后读回不同。')
         ref = {'name': name, 'sha256': digest, 'size': len(data), 'mime': asset['mime'],
-               'start': p['start'], 'end': p['end'], 'origin': p['origin']}
+               'start': p['start'], 'end': p['end'], 'origin': p['origin'], 'contextKey': key}
         if media.get(asset['kind']) != ref:
             changed = True
             media[asset['kind']] = ref
@@ -113,9 +148,10 @@ def attachment(library, record, kind, ref):
 
 
 def read_audio(library, ident):
-    record = library.read(ident)[0]
-    ref = record.get('media', {}).get('audio')
-    if not ref or FORMATS.get(ref.get('mime'), ('', ''))[0] != 'audio':
+    from study_sync import local_fields
+    record, body, _version = library.read(ident)
+    ref = require_audio(record, local_fields(record, body))
+    if FORMATS.get(ref.get('mime'), ('', ''))[0] != 'audio':
         raise ValueError('这条笔记没有已存原声。')
     _name, data = attachment(library, record, 'audio', ref)
     encoded = base64.b64encode(data).decode()
@@ -123,9 +159,14 @@ def read_audio(library, ident):
     return {'mime': ref['mime'], 'parts': [encoded[i:i + 400000] for i in range(0, len(encoded), 400000)]}
 
 
-def anki_fields(library, record):
+def anki_fields(library, record, values, *, audio_required=False):
     fields = {'Audio': '', 'Image': ''}
-    media = record.get('media', {})
+    if audio_required:
+        require_audio(record, values)
+    entry = {**record['entry'], **values}
+    media = {kind: ref for kind, ref in record.get('media', {}).items() if context_matches(record, ref, entry)}
+    if 'audio' in media and 'video' in media and any(media['audio'].get(k) != media['video'].get(k) for k in ('start', 'end', 'origin')):
+        del media['video']
     for kind, ref in media.items():
         name, data = attachment(library, record, kind, ref)
         actual = library.anki('storeMediaFile', {'filename': name, 'data': base64.b64encode(data).decode()})

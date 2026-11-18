@@ -997,6 +997,9 @@ listedQuery :
             }
             const listenSaved = makeSavedAudioButton(record);
             if (listenSaved) { actions.append(listenSaved); }
+            if (record.audioContextChanged) {
+                actions.append(Object.assign(document.createElement('small'), {textContent: '原句或来源已改，旧录音仍在笔记里。'}));
+            }
             const cardUrl = new URL(resume.href);
             cardUrl.searchParams.set('studyAddCard', '1');
             const useLink = document.createElement('a');

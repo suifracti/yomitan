@@ -91,6 +91,16 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     choiceHint.textContent = '先选掌握程度会自动勾上推荐的卡；也可以自己选，确认正反面后再制卡。';
     /** @type {import('study').SaveTargetSettings | undefined} */
     let cardSettings;
+    const changedAudioText = '当前原句没有对应的已存原声。请回到原句重新采集，或选择文字卡。';
+    /**
+     * @param {import('study').LibraryEntry} entry
+     * @returns {boolean}
+     */
+    const sameAudioContext = (entry) => {
+        const saved = currentSaved?.entry;
+        const time = typeof entry.videoTime === 'number' ? Math.trunc(entry.videoTime) : void 0;
+        return saved?.sentence === entry.sentence.trim() && (saved.url ?? '') === (entry.url ?? '').trim() && saved.videoTime === time;
+    };
     if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
         void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
             cardSettings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
@@ -114,7 +124,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             const label = /** @type {HTMLElement} */ (piece).dataset.label || '';
             return {label, form: /** @type {HTMLElement} */ (piece).dataset.form || '', kind: explainWordForm(label, word, []).kind};
         }).filter((item) => item.form && item.form.toLocaleLowerCase() !== word.toLocaleLowerCase());
-        const audio = Boolean(savedAudioAttachment(currentSaved)) && !currentSaved?.entry.subtitleSource;
+        const audio = Boolean(savedAudioAttachment(currentSaved)) && sameAudioContext(entry) && !currentSaved?.entry.subtitleSource;
         return {word, sentence, translation: entry.translation?.trim() || '', meaning, contextMeaning, audio, forms};
     };
     /** @type {Set<string>} Kinds already drafted in this panel, so recommendations never duplicate. */
@@ -127,6 +137,10 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     /** @param {string} kind */
     const draftKind = (kind) => {
         const facts = cardFacts();
+        if (cardKind(kind)?.needs === 'audio' && !facts.audio) {
+            addStatus.textContent = changedAudioText;
+            return;
+        }
         const drafts = cardDrafts(kind, facts);
         if (drafts.length === 0) { return; }
         for (const draft of drafts) {
@@ -230,9 +244,11 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             choice.title = missing || (kind === 'listening' ? '使用这条记录已附带的真实原声与原句，不采集整页截图。' : `${STAGE_LABELS[/** @type {import('./study-card-kinds.js').CardStage} */ (info?.stage ?? 1)]} · 可与其他卡一起选择。`);
         }
         if (!['capturing', 'saving'].includes(audioState.dataset.state ?? '')) {
-            if (savedAudioAttachment(currentSaved)) {
+            if (currentSaved?.audioContextChanged || (savedAudioAttachment(currentSaved) && !sameAudioContext(entryOf()))) {
+                setAudioState('stale');
+            } else if (savedAudioAttachment(currentSaved)) {
                 setAudioState('ready');
-            } else if (audioState.dataset.state === 'ready') {
+            } else if (audioState.dataset.state === 'ready' || audioState.dataset.state === 'stale') {
                 setAudioState('none');
             }
         }
@@ -433,16 +449,16 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const audioState = d.createElement('p');
     audioState.className = 'study-card-audio-state';
     audioState.dataset.state = 'none';
-    const audioLabels = {none: '未采集', capturing: '采集中…', saving: '正在保存…', failed: '采集失败', unconfirmed: '保存还没确认', ready: '已保存'};
+    const audioLabels = {none: '未采集', capturing: '采集中…', saving: '正在保存…', failed: '采集失败', unconfirmed: '保存还没确认', ready: '已保存', stale: '原句或来源已改，旧录音保留'};
     /**
      * @param {number} value
      * @returns {string}
      */
     const clock = (value) => `${Math.floor(value / 60)}:${(value % 60).toFixed(1).padStart(4, '0')}`;
-    /** @param {'none'|'capturing'|'saving'|'failed'|'unconfirmed'|'ready'} state */
+    /** @param {'none'|'capturing'|'saving'|'failed'|'unconfirmed'|'ready'|'stale'} state */
     const setAudioState = (state) => {
         audioState.dataset.state = state;
-        const time = state === 'ready' ? savedAudioAttachment(currentSaved) : media.range;
+        const time = state === 'ready' || state === 'stale' ? currentSaved?.media?.audio : media.range;
         const range = typeof time?.start === 'number' && typeof time.end === 'number' ? ` · ${clock(time.start)}–${clock(time.end)}` : '';
         audioState.textContent = `原声 · ${audioLabels[state]}${range}`;
         audioState.hidden = state === 'none' && captureAudio.hidden;
@@ -729,6 +745,11 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             addStatus.textContent = '请为每张已选卡片填写正面和背面。';
             return;
         }
+        const needsAudio = cards.some(({kind}) => cardKind(kind)?.needs === 'audio');
+        if (needsAudio && !cardFacts().audio) {
+            addStatus.textContent = changedAudioText;
+            return;
+        }
         const seen = new Set();
         for (const card of cards) {
             const key = `${card.front.trim().toLocaleLowerCase()}\u0000${card.back.trim().toLocaleLowerCase()}`;
@@ -742,6 +763,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             const saved = await ensureNote();
             if (!isCurrent() || disposed) { return; }
             if (saved.ankiEnabled === false) { throw new Error('笔记已保存；Anki 制卡尚未启用。'); }
+            if (needsAudio && !cardFacts().audio) { throw new Error(changedAudioText); }
             const currentLanguage = saved.entry?.language ?? entryOf().language ?? 'en';
             addStatus.textContent = '正在添加已选卡片…';
             const result = /** @type {import('study').LibraryRecord} */ (await studyCall('libraryCardsAdd', {

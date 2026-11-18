@@ -108,6 +108,33 @@ class VideoMediaTests(unittest.TestCase):
             p.write_bytes(audio + b'changed')
             self.assertFalse(request(first['id'])[0]['ok'])
 
+    def test_editing_a_sentence_never_plays_or_cards_the_old_audio(self):
+        entry = {'word': 'brick', 'sentence': 'There is a brick wall.', 'url': 'https://example.test/video', 'videoTime': 12}
+        first = self.library.handle({'action': 'librarySave', 'makeCard': False, 'entry': entry})
+        attach = {'action': 'libraryMedia', 'id': first['id'], 'start': 12, 'end': 15, 'origin': 'capture'}
+        old = self.library.handle({**attach, 'version': first['version'],
+                                   'assets': [asset('audio', 'audio/webm', WEBM+b'old'), asset('video', 'video/webm', WEBM+b'video')]})
+        old_file = self.vault / old['media']['audio']['name']
+        changed = self.library.handle({'action': 'libraryUpdate', 'id': first['id'], 'entry': {'sentence': 'I picked up a brick.'}})
+        play = {'action': 'libraryAudioRead', 'id': first['id']}
+        create = {'action': 'libraryCardsAdd', 'id': first['id'],
+                  'cards': [{'front': '听本句的 brick', 'back': '砖', 'kind': 'listening'}]}
+
+        with self.assertRaisesRegex(ValueError, '原句或来源'):
+            self.library.handle(play)
+        with self.assertRaisesRegex(ValueError, '原句或来源'):
+            self.library.handle(create)
+        self.assertEqual(self.notes, {})
+        self.assertEqual(old_file.read_bytes(), WEBM+b'old')
+        page = self.library.handle({'action': 'libraryList', 'scope': 'all'})
+        self.assertTrue(page['items'][0]['audioContextChanged'])
+
+        new = self.library.handle({**attach, 'version': changed['version'], 'assets': [asset('audio', 'audio/webm', WEBM+b'new')]})
+        self.assertEqual(base64.b64decode(''.join(self.library.handle(play)['parts'])), WEBM+b'new')
+        self.library.handle(create)
+        self.assertEqual(self.notes[1]['fields']['Audio'], '[sound:' + new['media']['audio']['name'] + ']')
+        self.assertEqual(old_file.read_bytes(), WEBM+b'old')
+
     def test_video_words_list_only_this_video_in_time_order(self):
         for word, url, t in [('wall', 'https://www.youtube.com/watch?v=abcdefghijk', 40), ('brick', 'https://youtu.be/abcdefghijk', 12), ('other', 'https://www.youtube.com/watch?v=zzzzzzzzzzz', 5)]:
             self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} here.', 'meaning': '义', 'url': url, 'videoTime': t}, 'makeCard': False})

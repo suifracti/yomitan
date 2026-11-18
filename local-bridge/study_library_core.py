@@ -770,9 +770,10 @@ class StudyLibrary:
         return details
 
     def result(self, ident):
+        from study_media import with_audio_context
         path = self.path(ident)
         r, body, version = self.read_file(path, ident)
-        return with_article_href(with_card_progress(self.result_from(r, body, version, path)))
+        return with_article_href(with_card_progress(with_audio_context(self.result_from(r, body, version, path))))
 
     def indexed_files(self):
         from study_index import RecordIndex
@@ -842,7 +843,7 @@ class StudyLibrary:
             if not found:
                 study_sync.require_deck(self, self.deck)
                 from study_media import anki_fields
-                fields.update(anki_fields(self, r))
+                fields.update(anki_fields(self, r, local))
             note_id = found[0] if found else self.anki('addNote', {'note': {
                 'deckName': self.deck, 'modelName': self.model, 'fields': fields,
                 'tags': ['study_' + ident, exact_tag(self, fields), 'japanese_study' if self.language == 'ja' else 'english_study'],
@@ -936,7 +937,7 @@ class StudyLibrary:
                 if not found:
                     study_sync.require_deck(self, card.get('target', {}).get('deck', self.deck))
                     from study_media import anki_fields
-                    fields.update(anki_fields(self, r))
+                    fields.update(anki_fields(self, r, source_values, audio_required=not reuse_text))
                     if self.language == 'en' and not reuse_text:
                         fields['Word'] = study_sync.question_field(card['front'], fields['Audio'])
                 self.language_fields(fields, r['entry'], card['front'])

@@ -86,7 +86,7 @@ test('context without a confirmed explanation stays editable and unavailable aud
 test('audio choice needs stored real audio, and missing source text disables sentence cards',()=>{
  const {d}=makeHarness();
  const host=d.querySelector('#host');
- host.dispatchEvent(new d.defaultView.CustomEvent('study-record-current',{detail:{id:'a'.repeat(32),entry:{word:'hello',language:'en'},media:{audio:{name:'real.webm'}},cards:[],ankiEnabled:true}}));
+ host.dispatchEvent(new d.defaultView.CustomEvent('study-record-current',{detail:{id:'a'.repeat(32),entry:{word:'hello',language:'en',sentence:'Hello world.',url:''},media:{audio:{name:'real.webm'}},cards:[],ankiEnabled:true}}));
  d.querySelector('[data-study-add-card]').click();
  assert.equal(d.querySelector('[data-study-card-choice=listening]').disabled,false);
  const {d:empty}=makeHarness({sentence:''});

@@ -88,6 +88,7 @@ export type LibraryRecord = {
     repairCardId?: string;
     confirmRestoreTo?: {targetId: string; path: string};
     media?: Partial<Record<'audio' | 'image' | 'video', SavedStudyAsset>>;
+    audioContextChanged?: true;
     favorite?: boolean;
     learningState?: string;
     syncState?: string;

@@ -28,6 +28,7 @@
 | 从学习库回原视频听这一句，不只是跳到秒数 | L-007；videoListenUrl、openVideoListening、claimVideoListening |
 | 原网页打不开，想播放已附在笔记里的原声 | L-007；study_media.read_audio、libraryAudioRead |
 | 录音后说已保存却不能制卡，或点取消时附件其实已送出 | L-007；display/study-library.js 的采集和保存阶段、savedAudioAttachment |
+| 笔记已经改句，却还播放或用旧原声制卡 | L-007；study_media.context_matches、require_audio、audioContextChanged |
 | 同一视频记了很多句，想按时间一起回听 | L-007；openVideoListening 的 wholeVideo、libraryVideoWords 的 sourceUrl |
 | 视频记了很多长句后，已记词、推荐或整轮回听读不到 | L-007；study_translator.write_frame、study-client.nativeStudyCall |
 | 回听完一句却多播了下一句开头 | L-007；YoutubeStudyContext.play 的媒体时钟与句尾定时 |
@@ -179,6 +180,8 @@
 **原网页打不开，已存的本句音频仍可听**：学习库「详情 → 播放已存原声」只给确有本条音频附件的笔记。按照原记录号及历史目标找附件，复用已有附件名、路径、大小与内容校验；不从视频文件、相似句或 Anki 的其他卡借音。音频过大就复用本机分帧，完整收齐后只在学习库内存解码；不新增缓存、站点权限或附件写入。见[已有音频的独立播放](youtube-study-wiring.md#2026-11-18-原网页打不开也能播放已存原声)。
 
 **录到了，不等于笔记已收到原声**：词卡在送出附件前可取消；一旦请求发出，显示正在保存，不承诺能撤销。仅接受对应记录、原句和采集范围的音频回执，才显示这次已存；失败前没有发送的新原声与送出后尚未确认分开说，既有文字与录音不自动重写。词卡和学习库用同一个已存附件引用；受保护的来源不因此解锁制卡。见[采集与保存的边界](youtube-study-wiring.md#2026-11-18-录到原声和保存原声分开确认)。
+
+**原句改了，旧录音不是新句的原声**：新附件按保存时的原句、来源地址和整秒归属判断；旧附件没有这个字段时，只有仍能对回原记录身份才沿用。只改释义或译文不挡原声。学习库回听、词卡和桥上的新原声卡不借旧媒体，留着附件；重新采集音频后也不拿旧视频替代。已送达 Anki 的卡不在本步回写。见[改句后重新采集的验证](youtube-study-wiring.md#2026-11-18-原句改了不借旧录音)。
 
 **整个视频回听不从学习库当前页拼**：`openVideoListening` 用记录确认来源，再由后台给 `libraryVideoWords` 提供 `sourceUrl`。桥把它与视频 key 核对后按同来源取笔记，保留既有上限；没时间的记录可列出但不进回听。队列按已确认字幕行的真实时间排序，重复台词也必须对回原来的时间。见[从同来源进入整轮回听](youtube-study-wiring.md#2026-11-18-从同来源原句回视频练一轮)。
 

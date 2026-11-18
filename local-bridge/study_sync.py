@@ -358,8 +358,9 @@ def add_cards(lib, p):
                 raise ValueError('同一问题已有不同答案；请用冲突界面核对，未新增或覆盖。')
             continue
         kind = proposed.get('kind') or default_card_kind(r['entry'])
-        if kind in AUDIO_KINDS and not r.get('media', {}).get('audio'):
-            raise ValueError('这条记录尚未附带真实音频；请先附加原声，或选文字学习卡。')
+        if kind in AUDIO_KINDS:
+            from study_media import require_audio
+            require_audio(r, local_fields(r, body))
         target = card_target(lib, {**proposed, 'kind': kind})
         card = {'id': cid, 'front': proposed['front'], 'back': proposed['back'], 'kind': kind,
                 'state': 'pending', 'noteId': None, 'deck': target['deck'], 'target': target}
