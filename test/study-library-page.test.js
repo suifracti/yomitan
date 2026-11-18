@@ -19,6 +19,8 @@
 
 import {afterEach, describe, expect, test, vi} from 'vitest';
 import {parseJson} from '../dev/json.js';
+import {mountStuckHint} from '../ext/js/display/study-stuck.js';
+import {WORD_STATUS_KEY} from '../ext/js/study/study-data.js';
 
 const mocks = vi.hoisted(() => ({
     studyCall: vi.fn(),
@@ -75,6 +77,53 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('the lookup practice link opens an old sentence for the same word, not a search hit for a different word', async () => {
+        vi.resetModules();
+        vi.stubGlobal('chrome', {
+            runtime: {getURL: (name) => `chrome-extension://test${name}`},
+            storage: {local: {get: async () => ({[WORD_STATUS_KEY]: {version: 2, words: {charges: {s: 'learning', lemma: 'charge', senses: 1}}}})}},
+        });
+        const call = vi.fn();
+        const popup = mountStuckHint({
+            doc: document,
+            getEntry: () => ({word: 'charges', sentence: 'Private current sentence with charges.', url: 'https://private.example'}),
+            call,
+            isCurrent: () => true,
+            onChoice: vi.fn(),
+        });
+        document.body.replaceChildren(popup);
+        const link = await vi.waitFor(() => {
+            const anchor = popup.querySelector('a');
+            expect(anchor).not.toBeNull();
+            expect(anchor?.hidden).toBe(false);
+            return /** @type {HTMLAnchorElement} */ (anchor);
+        });
+        const url = new URL(link.href);
+        expect(url.pathname).toBe('/study-library.html');
+        expect([...url.searchParams]).toEqual([['query', 'charge'], ['practice', 'word']]);
+        expect(call).not.toHaveBeenCalled();
+
+        makePageDom();
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const previousUrl = location.href;
+        const saved = {id: '2'.repeat(32), vaultSaved: true, entry: {word: 'charges', lemma: 'charge', sentence: 'She charges by the hour.', meaning: '收费'}};
+        const unrelated = {id: '1'.repeat(32), vaultSaved: true, entry: {word: 'hour', sentence: 'An hour of charging is enough.'}};
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action === 'libraryList') { return {items: payload?.query === 'charge' ? [unrelated, saved] : [], total: 2, canSearch: true}; }
+            return [];
+        });
+        history.replaceState(null, '', url.search);
+        try {
+            await import('../ext/js/pages/study-library.js');
+            const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+            await vi.waitFor(() => expect(panel.hidden).toBe(false));
+            expect(panel.textContent).toContain('练原句填空 · 1 / 1');
+            expect(panel.textContent).toContain('She');
+            expect(panel.textContent).not.toContain('charging');
+            expect(mocks.studyCall.mock.calls.every(([action]) => action === 'libraryList' || action === 'saved')).toBe(true);
+        } finally { history.replaceState(null, '', previousUrl); }
+    });
+
     test('compares two saved uses of one sense in the existing practice panel', async () => {
         vi.resetModules();
         makePageDom();

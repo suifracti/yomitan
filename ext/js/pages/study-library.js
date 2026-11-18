@@ -612,6 +612,8 @@ async function initializePage() {
         search.value = (requested.get('query') || '').slice(0, 240);
         const sourceTab = /** @type {?HTMLButtonElement} */ (document.querySelector('[data-library-category="source"]'));
         const articleUrl = /^https?:\/\//.test(requestedSource) && requestedSource.length <= 2000 ? requestedSource : '';
+        const practiceWord = !articleUrl && requested.get('practice') === 'word' ? search.value.trim() : '';
+        let openRequestedPractice = Boolean(practiceWord);
         let category = articleUrl ? 'source' : 'all';
         if (articleUrl && sourceTab) {
             sourceTab.hidden = false;
@@ -1099,7 +1101,10 @@ listedQuery :
             sourceVideoId = category === 'source' && !loading && !listError ?
                 rows.find((row) => matchesCategory(row, 'saved') && videoListenUrl(row.entry))?.id ?? '' :
                 '';
-            cloze = loading || listError ? [] : clozePrompts(rows);
+            const clozeRows = category === 'all' && practiceWord && query === practiceWord ?
+                rows.filter(({entry}) => (entry?.lemma || entry?.word)?.toLowerCase() === practiceWord.toLowerCase()) :
+                rows;
+            cloze = loading || listError ? [] : clozePrompts(clozeRows);
             clozeButton.hidden = cloze.length === 0;
             if (activePractice?.hidden) { closePractice(); }
             listenSource.hidden = !sourceVideoId || !practice.hidden;
@@ -1267,6 +1272,17 @@ listedQuery :
                     const read = queuedSearch;
                     queuedSearch = null;
                     void loadPage(true, read);
+                } else if (openRequestedPractice) {
+                    openRequestedPractice = false;
+                    if (!obsolete() && !listError && tab === 'all' && query === practiceWord) {
+                        if (!practiceButton.hidden) {
+                            practiceButton.click();
+                        } else if (!clozeButton.hidden) {
+                            clozeButton.click();
+                        } else {
+                            setStatus('这次没找到能练的旧原句。可以看下方记录，或读到合适的句子时点「记住它」。');
+                        }
+                    }
                 }
             }
         }
@@ -1327,6 +1343,7 @@ listedQuery :
 
         for (const button of document.querySelectorAll('[data-library-category]')) {
             button.addEventListener('click', () => {
+                openRequestedPractice = false;
                 category = /** @type {HTMLElement} */ (button).dataset.libraryCategory ?? 'all';
                 for (const tab of document.querySelectorAll('[data-library-category]')) {
                     tab.setAttribute('aria-pressed', `${tab === button}`);
@@ -1335,6 +1352,7 @@ listedQuery :
             });
         }
         search.addEventListener('input', (event) => {
+            openRequestedPractice = false;
             window.clearTimeout(searchTimer);
             render();
             if (canSearch && !(/** @type {InputEvent} */ (event)).isComposing) {

@@ -25,7 +25,7 @@
  * "AI 判断" button asks the model which sense this is, only when clicked.
  * Also shows how often the word was met on other pages recently (local counts).
  */
-import {ENCOUNTERS_KEY, recentEncounters, wordInfo} from '../study/word-marks.js';
+import {ENCOUNTERS_KEY, normalizeInfo, recentEncounters, wordInfo} from '../study/word-marks.js';
 import {WORD_STATUS_KEY} from '../study/study-data.js';
 
 /** @typedef {'newSense'|'collocation'|'structure'|'recall'} MissKind */
@@ -88,8 +88,14 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
     const result = doc.createElement('p');
     result.className = 'study-stuck-result';
     result.setAttribute('role', 'status');
+    const practice = doc.createElement('a');
+    practice.className = 'sf-link';
+    practice.textContent = '用旧原句练这个词 ↗';
+    practice.target = '_blank';
+    practice.rel = 'noopener noreferrer';
+    practice.hidden = true;
     panel.append(question, senses, buttons, phraseRow, result);
-    box.append(encounters, panel);
+    box.append(encounters, panel, practice);
 
     /** @type {Sense[]} */
     let known = [];
@@ -198,6 +204,17 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
         const stored = /** @type {Record<string, unknown>} */ (await chrome.storage.local.get([WORD_STATUS_KEY, ENCOUNTERS_KEY]));
         if (!isCurrent()) { return; }
         const status = /** @type {{words?: Record<string, unknown>}|undefined} */ (stored[WORD_STATUS_KEY]);
+        // A practice link needs a saved identity, not a guessed inflection used for colouring.
+        const form = (entry.lemma || entry.word).toLowerCase();
+        const saved = normalizeInfo(status?.words?.[form]);
+        if (saved && saved.s !== 'ignored' && (saved.senses ?? 0) > 0) {
+            const url = new URL('/study-library.html', doc.URL);
+            url.searchParams.set('query', saved.lemma || form);
+            url.searchParams.set('practice', 'word');
+            practice.href = url.href;
+            practice.hidden = false;
+            box.hidden = false;
+        }
         const info = wordInfo(entry.lemma || entry.word, status?.words ?? {}) ?? wordInfo(entry.word, status?.words ?? {});
         const met = recentEncounters(/** @type {Record<string, {days?: Record<string, {n: number, sites: string[]}>}>} */ (stored[ENCOUNTERS_KEY] ?? {}), info?.word ?? entry.word.toLowerCase());
         if (met.times > 1) {

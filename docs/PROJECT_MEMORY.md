@@ -42,6 +42,7 @@
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
 | 想用旧原句辨义，或对照同一个意思在两句话里的用法 | L-012；study_senses.practice_material、study-library.js |
+| 查词卡又没认出这个词，想马上拿以前的原句练一下 | L-012；study-stuck.js、学习库 query / practice 入口 |
 | 想用自己的旧原句练填空，但不想制卡 | L-012；study-library.js 的 clozePrompts、study-card-kinds.js 的 blankStudyWord |
 | 卡间隔已超过 21 天却一直在学；读题面拖慢自动同步 | L-012；study_senses.refresh_metrics、study_library_core.anki_call |
 
@@ -240,6 +241,8 @@
 **用旧原句辨义或对照用法**：学习库首页搜索同一原形或已关联词形时，`study_senses.practice_material` 优先返回原来两种不同义项的 `practicePair`。如果不能出辨义题，却有两条明确归属同一义项的已存原句，另给 `practiceExamples`；旧版不会把它当辨义题。两种模式用同一入口，保留原词形、出处、记录号；同文重复不当两个例子，同一原句有不同读法时不拿来出题。不调用模型或评定掌握。见[两种 charge 的浏览器练习](youtube-study-wiring.md#2026-11-18-用自己的旧原句辨词义)、[同一个意思的实际用法](youtube-study-wiring.md#2026-11-18-对照同一义项的两条旧原句)。
 
 **不制卡也可以用原句练填空**：「练原句填空」与辨词义共用现有练习区，只取当前已读结果中已存的英语笔记；`blankStudyWord` 与填空卡合用单词边界，练习只取有唯一空位的题目，不从词形猜新题。遮去提示中的原词，核对的是原文用法而非判定语法或掌握；答案揭晓后能继续打开原记录，不调模型或写复习结果。见[原句用词核对](youtube-study-wiring.md#2026-11-18-用已保存的原句练一小轮填空)。
+
+**在查词卡直接练这个词的旧原句**：用 v2 已明确保存的词形或原形，沿学习库的原搜索打开练习；不要用标色的猜词规则替练习认词。不传眼前的句子、来源或记录号。已有可辨义／可对照材料优先，否则只从同原形的已存句做填空；仅在全文搜索中提到这个词的其他记录不是同词练习。无材料保留搜索，切分类或改词不再自动打开。见[查词到练习](youtube-study-wiring.md#2026-11-18-查词后直接练原来的句子)。
 
 如果「刚撤销，颜色又变回去」，先查后台发布顺序，不要改复习阈值。后台只发布最后一次 `refreshWordStatus`，网页、词卡和字幕共用桥已合并人工标记的 v2；旧的 `studyKnownWords` 只解释 v1 及更早的缓存。见[逆序返回案例](youtube-study-wiring.md#2026-11-18-刚撤销认识了旧刷新又把词标回去)。
 
