@@ -124,7 +124,8 @@ test('translates visible blocks and restores the exact original nodes in both mo
     });
     vi.stubGlobal('chrome', {runtime: {sendMessage: async () => ({ok: true, value: {model: 'fixture', effort: 'low'}})}, storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'chrome'}}), set: async () => {}}, onChanged: {addListener() {}}}});
     const {PageTranslate} = await import('../ext/js/study/page-translate.js');
-    const controller = new PageTranslate({translate: async () => '你好，世界。'});
+    const translate = vi.fn(async () => '你好，世界。');
+    const controller = new PageTranslate({translate});
     try {
         const original = document.querySelector('#source');
         const link = original.querySelector('a');
@@ -152,6 +153,26 @@ test('translates visible blocks and restores the exact original nodes in both mo
         expect(link.getAttribute('href')).toBe('#world');
         reveal.click();
         expect(original.classList.contains('study-original-hidden')).toBe(true);
+        // A dynamic page can reuse the same paragraph in a different card.
+        const destination = document.createElement('article');
+        document.body.append(destination);
+        observed.length = 0;
+        destination.append(original);
+        await vi.waitFor(() => expect(original.classList.contains('study-original-hidden')).toBe(false));
+        expect(translation?.isConnected).toBe(false);
+        expect(observed).toContain(original);
+        await controller.translateNode(original);
+        const moved = original.nextElementSibling;
+        expect(moved?.firstChild?.textContent).toBe('你好，世界。');
+        expect(original.classList.contains('study-original-hidden')).toBe(true);
+        expect(translate).toHaveBeenCalledOnce();
+
+        // If the page removes just our wrapper, the original must be readable.
+        observed.length = 0;
+        moved?.remove();
+        await vi.waitFor(() => expect(observed).toContain(original));
+        expect(original.classList.contains('study-original-hidden')).toBe(false);
+        expect(original.querySelector('a')).toBe(link);
         const later = document.createElement('p');
         later.textContent = 'A later paragraph.';
         document.body.append(later);

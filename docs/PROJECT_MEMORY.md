@@ -68,6 +68,7 @@
 | 字幕正在翻，查词卡又把同一句翻了一遍 | L-010；YoutubeReader._waitCaptionTranslation、frontendReadCaptionTranslation |
 | 整页翻译用免费的，中途切 AI 会不会扣费 | L-010；PageTranslate.approve、SubtitleTranslation.handle 的 expectedEngine |
 | 只看译文时想点原段里的链接或按钮 | L-010；PageTranslate.render / paint |
+| 动态页面挪过段落后，一段突然空白或译文留在旧位置 | L-010；PageTranslate.toggle 里的 DOM 观察器 |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 选了新笔记位置，「系统状态」却仍说旧 Vault 正常或不可用 | L-011；study_health.health、study_settings.YomitanLibrary.save_status |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
@@ -330,6 +331,8 @@
 **网页翻译设置只交这次改动**：`page-prefs.js` 沿同一后台写队列合并，不用页面手头的整份设置重写。拖动、隐藏、恢复修改同站的独立字段；扩展菜单单站自动翻译只改这一站。旧设置不用迁移，翻译服务仍由原全局入口管理。见[跨标签交错写入](youtube-study-wiring.md#2026-11-19-三个入口不再互相盖掉网页翻译设置)。
 
 **只看译文不等于不能用原网页的链接**：悬停的原文只是提示，不可点击。含链接或可用按钮的段落才给就地展开入口，靠原节点的隐藏类切换；不复制链接或改写地址和监听。键盘展开后把焦点送到原控件。纯文本、双语、单句和失败状态不多一个入口。见[原链接和键盘操作](youtube-study-wiring.md#2026-11-19-只看译文也能用原网页的链接)。
+
+**译文不在原段落后面时，原文不能继续藏起来**：网站移动原段落或只移除译文时，原段落仍然连接在页面，旧检查发现不了。现有 DOM 观察器核对译文是否仍紧跟原元素；失配就去掉旧译文、恢复原文，整页翻译的段落回到原视口队列。文本和服务未变时用同一缓存；不动网页内容和交互，不重建主动翻译的单句。见[动态段落验证](youtube-study-wiring.md#2026-11-19-网页挪段落后不会只剩空白)。
 
 ## L-011 同步到日常使用的版本可以原样再跑一次
 

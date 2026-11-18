@@ -608,11 +608,14 @@ export class PageTranslate {
             }
         });
         this.mo = new MutationObserver((records) => {
-            for (const original of this.rows.keys()) {
-                if (!original.isConnected) { this.restore(original); }
-            }
             /** @type {Set<Element>} */
             const roots = new Set();
+            for (const [original, row] of this.rows) {
+                if (original.isConnected && row.node.previousElementSibling === original) { continue; }
+                // A page can move a paragraph or remove its translation without replacing the original.
+                this.restore(original);
+                if (original.isConnected && !row.manual) { roots.add(original); }
+            }
             for (const record of records) {
                 const root = record.target instanceof Element ? record.target : record.target.parentElement;
                 if (!root || root.closest(SKIP)) { continue; }
