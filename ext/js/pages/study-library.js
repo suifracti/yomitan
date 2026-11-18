@@ -86,6 +86,15 @@ function plainText(value) {
 }
 
 /**
+ * Keep the stored string for the index; a file URL here is metadata, not a navigation target.
+ * @param {string} value
+ * @returns {string}
+ */
+function librarySource(value) {
+    return value.length <= 2000 && /^(?:https?:\/\/|file:\/\/\/[^/])/.test(value) ? value : '';
+}
+
+/**
  * @param {{url?: string, videoTime?: number}} entry
  * @param {string} title
  * @param {string} [articleHref] The bridge's optional direct link to the saved sentence.
@@ -95,6 +104,7 @@ function plainText(value) {
 export function createSourceLine(entry, title, articleHref = '', libraryUrl = '') {
     let name = title.trim();
     let href = '';
+    let source = '';
     try {
         const url = new URL(entry.url);
         if (url.protocol === 'file:') {
@@ -109,6 +119,7 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
                 name += ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
             }
         }
+        source = librarySource(entry.url ?? '');
     } catch { /* A title without a usable URL remains plain text. */ }
     if (!name) { return null; }
     const line = document.createElement('p'); line.className = 'study-library-source';
@@ -120,9 +131,9 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
         text.target = '_blank'; text.rel = 'noopener noreferrer';
     }
     line.append(text);
-    if (href && libraryUrl) {
+    if (source && libraryUrl) {
         const related = document.createElement('a');
-        related.href = createSourceLibraryUrl(entry.url ?? '', libraryUrl);
+        related.href = createSourceLibraryUrl(source, libraryUrl);
         related.textContent = '同来源原句 ↗';
         related.target = '_blank';
         related.rel = 'noopener noreferrer';
@@ -803,11 +814,11 @@ async function initializePage() {
         const requestedSource = requested.get('source') || '';
         search.value = (requested.get('query') || '').slice(0, 240);
         const sourceTab = /** @type {?HTMLButtonElement} */ (document.querySelector('[data-library-category="source"]'));
-        const articleUrl = /^https?:\/\//.test(requestedSource) && requestedSource.length <= 2000 ? requestedSource : '';
-        const practiceWord = !articleUrl && requested.get('practice') === 'word' ? search.value.trim() : '';
+        const sourceUrl = librarySource(requestedSource);
+        const practiceWord = !sourceUrl && requested.get('practice') === 'word' ? search.value.trim() : '';
         let openRequestedPractice = Boolean(practiceWord);
-        let category = articleUrl ? 'source' : 'all';
-        if (articleUrl && sourceTab) {
+        let category = sourceUrl ? 'source' : 'all';
+        if (sourceUrl && sourceTab) {
             sourceTab.hidden = false;
             sourceTab.setAttribute('aria-pressed', 'true');
             document.querySelector('[data-library-category="all"]')?.setAttribute('aria-pressed', 'false');
@@ -910,7 +921,7 @@ async function initializePage() {
             sentenceSearch = request;
             button.textContent = '取消找题';
             const scope = category;
-            const url = scope === 'source' ? articleUrl : '';
+            const url = scope === 'source' ? sourceUrl : '';
             setStatus(listening ? '正在找带原声的原句…' : '正在找可练的原句…');
             const query = search.value.trim();
             const indexed = canSearch;
@@ -1490,7 +1501,7 @@ listedQuery :
                 if ((!loaded || !readOnly) && tab !== 'source') { await refreshSavedWords(); }
                 if (obsolete()) { return; }
                 const scope = indexed || ['pending', 'anki-only', 'manual-known', 'source', 'recent-recall'].includes(tab) ? tab : 'all';
-                const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? articleUrl : '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
+                const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? sourceUrl : '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
                 const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[]}|null} */ (value);
                 canSearch = result?.canSearch === true;
                 if (!indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }

@@ -36,6 +36,7 @@
 | 回听完一句却多播了下一句开头 | L-007；YoutubeStudyContext.play 的媒体时钟与句尾定时 |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章或同一视频选集，想找同来源的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选、page_source_key |
+| 本地视频录了几句，要集中复习，但不要混入别处的同名文件 | L-007；学习库的 librarySource、study_sources.page_source_key |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
@@ -201,6 +202,8 @@
 **回听不该拖到下一句开头**：实际播放器的 `timeupdate` 不是句尾精确时钟。保留事件兜底，但按剩余媒体时间和倍速只安排一个句尾定时；播放、跳转完成、变速时重算，换媒体、退出或结束仍清除。独立 Chromium 同一音轨原先晚约 0.22–0.25 秒，改后本次晚不到 0.02 秒。没有增加持续轮询，也不追移用户的播放进度。见[实际整轮点播与读回](youtube-study-wiring.md#2026-11-18-独立浏览器串起整轮回听并缩短句尾延迟)。
 
 **来源链接和记录编号不是同一回事。** 改视频分组键时看 `study_sources.py`（浏览器站点表由同一文件生成）；不能因此改 `entry_id` 或归档笔记的编号。没有实际播放时间就保留原链接：曾将分享地址的 83 秒写成 0 秒，也会把普通页面的章节锚点丢掉。只有确实知道时间，才为 YouTube/B站生成跳时链接；普通网页不加时间参数，本地文件在来源行只显示文件名。见[临时笔记复现](youtube-study-wiring.md#2026-11-18-来源链接不再从零秒开始)。
+
+**本地素材也能按来源集中复习**：学习库保留文件名纯文本，另给「同来源原句」内部入口。完整本地地址（含目录和已存时长标记）是索引范围，不是文件跳转目标。两处同名且同长度的素材仍分开，听写沿同一范围只查附件元数据，点击后才读音频。路径或时长标记不同的旧记录不猜补。播放器侧栏原短 key 不由这一处更改。见[两个目录的临时笔记](youtube-study-wiring.md#2026-11-18-本地视频可以按原素材集中复习)。
 
 **文章来源直达原句**：`study_sources.article_href` 用原句生成浏览器文本片段，合适的是不含已有锚点或视频时间的 HTTP(S) 页面（不含 YouTube/B 站，原文 3 词以上、最多 400 字符）。学习库、辨词义和新笔记共用派生链接，不用它替换保存的 URL 或编号。明确的章节锚点优先；浏览器找不到原句仍能打开页面，重复文本不能保证是哪一次。见[浏览器实际点击](youtube-study-wiring.md#2026-11-18-普通网页的出处也能回到原句)。
 

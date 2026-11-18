@@ -397,6 +397,39 @@ describe('study library page', () => {
         }
     });
 
+    test('a local video has a related-records link, and dictation stays in that exact file scope', async () => {
+        vi.resetModules();
+        makePageDom();
+        const previousUrl = location.href;
+        const url = 'file:///examples/folder-a/lesson%20one.mp4#study-duration=120';
+        history.replaceState(null, '', `?source=${encodeURIComponent(url)}`);
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const row = {id: 'a'.repeat(32), vaultSaved: true, entry: {word: 'shelter', sentence: 'We built a shelter.', url, videoTime: 12}, media: {audio: {name: 'own-clip.webm'}}};
+        mocks.studyCall.mockResolvedValue({items: [row], total: 1, canSearch: true});
+        try {
+            const {createSourceLine} = await import('../ext/js/pages/study-library.js');
+            const source = createSourceLine(row.entry, '', '', 'chrome-extension://test/study-library.html');
+            expect(source?.querySelector('strong')?.textContent).toBe('lesson one.mp4');
+            const anchors = [...(source?.querySelectorAll('a') ?? [])];
+            expect(anchors.map((a) => a.textContent)).toEqual(['同来源原句 ↗']);
+            expect(new URL(anchors[0].href).searchParams.get('source')).toBe(url);
+            const dictation = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-dictation-button'));
+            await vi.waitFor(() => expect(dictation.hidden).toBe(false));
+            expect(document.querySelector('[data-library-category="source"]').getAttribute('aria-pressed')).toBe('true');
+            expect(/** @type {HTMLButtonElement} */ (document.querySelector('#study-library-listen-source')).hidden).toBe(true);
+            const params = {language: 'en', url, title: '', scope: 'source'};
+            expect(mocks.studyCall.mock.calls).toEqual([['libraryList', {...params, offset: 0}]]);
+            dictation.click();
+            await vi.waitFor(() => expect(document.querySelector('#study-library-practice').textContent).toContain('练原声听写 · 1 / 1'));
+            expect(mocks.studyCall.mock.calls).toEqual([
+                ['libraryList', {...params, offset: 0}], ['libraryList', {...params, practice: 'dictation'}],
+            ]);
+        } finally {
+            history.replaceState(null, '', previousUrl);
+        }
+    });
+
     test('drops outdated list work but keeps the pending filter selected during loading', async () => {
         vi.resetModules();
         makePageDom();

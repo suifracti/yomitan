@@ -12,7 +12,7 @@ from test_study_media_video import WEBM, asset
 
 class RecordIndexTests(AutoSyncTests):
     def test_dictation_finds_original_recordings_before_list_paging(self):
-        root = 'https://example.test/film'
+        root = 'file:///examples/folder-a/lesson%20one.mp4#study-duration=120'
         def save(word, sentence, url=root, audio=False):
             row = self.library.handle({'action': 'librarySave', 'makeCard': False,
                                         'entry': {'word': word, 'sentence': sentence, 'url': url, 'videoTime': 12}})
@@ -25,7 +25,7 @@ class RecordIndexTests(AutoSyncTests):
         old = save('harbor', sentence, audio=True)
         stale = save('shore', 'We reached the shore.', audio=True)
         self.library.handle({'action': 'libraryUpdate', 'id': stale['id'], 'entry': {'sentence': 'We see the harbor.'}})
-        save('boats', 'Boats were waiting at the harbor.', url='https://example.test/other', audio=True)
+        save('boats', 'Boats were waiting at the harbor.', url=root.replace('folder-a', 'folder-b'), audio=True)
         for i in range(11):
             save(f'word{i}', f'A new example for word{i}.')
         request = {'action': 'libraryList', 'scope': 'all', 'url': '', 'title': ''}
@@ -34,7 +34,9 @@ class RecordIndexTests(AutoSyncTests):
         self.calls.clear()
         with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('dictation reopened a note')), \
                 patch('study_media.attachment', side_effect=AssertionError('dictation opened audio before playback')):
-            result = self.library.handle({**request, 'scope': 'source', 'url': root, 'query': 'harbor', 'practice': 'dictation'})
+            scoped = {**request, 'scope': 'source', 'url': root}
+            self.assertEqual(self.library.handle(scoped)['total'], 14)
+            result = self.library.handle({**scoped, 'query': 'harbor', 'practice': 'dictation'})
             self.assertEqual(result['total'], 1)
             self.assertEqual([r['id'] for r in result['items']], [old['id']])
         self.assertEqual(self.calls, [])
