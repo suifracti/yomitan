@@ -24,6 +24,7 @@ export const NATIVE_ROUTES = /** @type {const} */ ({
     librarySettingsOpen: 'target',
     libraryPrepareJapanese: 'library',
     libraryMedia: 'library',
+    libraryAudioRead: 'library',
     libraryList: 'library',
     librarySync: 'library',
     libraryEnrich: 'library',

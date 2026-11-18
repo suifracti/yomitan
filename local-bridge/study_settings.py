@@ -578,7 +578,7 @@ class YomitanLibrary:
             if p.get('scope') in ('all', 'pending', 'anki-only', 'linked'): rows += orphans
             return {**indexed_page(rows, p), **extras, 'needsAttention': needs, 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
         ids = p.get('ids', []) or [r['id'] for r in p.get('items', [])] or ([p['id']] if p.get('id') else [])
-        if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite','libraryRepair'):
+        if ids and action in ('libraryRead','librarySync','libraryCards','libraryDraftSave','libraryDraftDiscard','libraryDraftCommit','libraryEnrich','libraryMedia','libraryAudioRead','libraryCardsAdd','libraryUpdate','libraryReconcile','libraryFavorite','libraryRepair'):
             # Split mixed destinations while preserving caller ordering and per-record versions.
             rows = []
             for ident in ids:

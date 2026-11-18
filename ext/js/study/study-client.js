@@ -47,6 +47,7 @@ export async function readStudyRecord(id, language) {
 /** @type {import('study').NativeCall} */
 export function nativeStudyCall(payload) {
     const action = 'action' in payload ? payload.action : '';
+    if (action === 'libraryAudioRead') { return openNativePort(payload, true); }
     const videoWords = action === 'libraryVideoWords';
     if (!videoWords && action !== 'libraryWordStatus') { return openNativePort(payload); }
     const flag = videoWords ? 'videoWordsFrames' : 'wordStatusFrames';

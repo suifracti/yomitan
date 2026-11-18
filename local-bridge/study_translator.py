@@ -640,6 +640,8 @@ def main():
                 sections = ('items', 'cardContexts')
             elif request.get('action') == 'libraryWordStatus' and request.pop('wordStatusFrames', False) is True:
                 sections = ('words', 'phrases')
+            elif request.get('action') == 'libraryAudioRead':
+                sections = ('parts',)
         payload = normalize_request(request)
         if sys.argv[1] == ASB_ORIGIN and not payload['action'].startswith('video'):
             raise ValueError('asbplayer 只允许视频字幕记录，不允许词库/Anki/任意模型动作。')

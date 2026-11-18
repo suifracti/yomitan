@@ -1,8 +1,12 @@
 import base64
+import io
 import json
 import pathlib
+import struct
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from study_settings import YomitanLibrary
 
@@ -59,6 +63,50 @@ class VideoMediaTests(unittest.TestCase):
         fields = self.notes[1]['fields']
         self.assertEqual(fields['Audio'], '[sound:' + row['media']['video']['name'] + ']')
         self.assertIn(row['media']['image']['name'], fields['Image'])
+
+    def test_reads_only_the_saved_original_audio_of_this_record_over_the_native_port(self):
+        from study_translator import ORIGIN, main, write_frame
+
+        source = {'word': 'just', 'url': 'https://example.test/video'}
+        first = self.library.handle({'action': 'librarySave', 'makeCard': False,
+                                     'entry': {**source, 'sentence': 'This just happened.', 'videoTime': 12}})
+        other = self.library.handle({'action': 'librarySave', 'makeCard': False,
+                                     'entry': {**source, 'sentence': 'This just happened.', 'videoTime': 30}})
+        audio = WEBM + b'a' * 720000
+        row = self.library.handle({'action': 'libraryMedia', 'id': first['id'], 'version': first['version'],
+                                   'start': 12, 'end': 15, 'origin': 'capture',
+                                   'assets': [asset('audio', 'audio/webm', audio), asset('video', 'video/webm', WEBM + b'different')]})
+        p = self.vault / row['media']['audio']['name']
+        before = [(file, file.stat().st_mtime_ns) for file in self.vault.rglob('*') if file.is_file()]
+
+        def request(ident):
+            source, destination = io.BytesIO(), io.BytesIO()
+            write_frame(source, {'action': 'libraryAudioRead', 'id': ident})
+            source.seek(0)
+            with patch('study_settings.YomitanLibrary', return_value=self.library), patch('study_health.record_error'), \
+                    patch('sys.argv', ['bridge', ORIGIN]), patch('sys.stdin', SimpleNamespace(buffer=source)), \
+                    patch('sys.stdout', SimpleNamespace(buffer=destination)):
+                main()
+            destination.seek(0)
+            replies = []
+            while header := destination.read(4):
+                size = struct.unpack('=I', header)[0]
+                self.assertLessEqual(size, 900000)
+                replies.append(json.loads(destination.read(size)))
+            return replies
+
+        with patch.object(self.library, 'anki', side_effect=AssertionError('readback must not contact Anki')):
+            replies = request(first['id'])
+            self.assertTrue(replies[0]['ok'], replies[0])
+            self.assertGreater(len(replies), 1)
+            self.assertTrue(all(frame['more'] for frame in replies[:-1]))
+            self.assertNotIn('more', replies[-1])
+            self.assertEqual(replies[-1]['library']['mime'], 'audio/webm')
+            self.assertEqual(base64.b64decode(''.join(part for frame in replies for part in frame['library']['parts'])), audio)
+            self.assertFalse(request(other['id'])[0]['ok'])
+            self.assertEqual([(file, file.stat().st_mtime_ns) for file in self.vault.rglob('*') if file.is_file()], before)
+            p.write_bytes(audio + b'changed')
+            self.assertFalse(request(first['id'])[0]['ok'])
 
     def test_video_words_list_only_this_video_in_time_order(self):
         for word, url, t in [('wall', 'https://www.youtube.com/watch?v=abcdefghijk', 40), ('brick', 'https://youtu.be/abcdefghijk', 12), ('other', 'https://www.youtube.com/watch?v=zzzzzzzzzzz', 5)]:

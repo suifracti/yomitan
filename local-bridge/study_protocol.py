@@ -5,7 +5,7 @@
 TARGET_ROUTES = ('librarySettingsGet', 'librarySettingsSave', 'librarySettingsCheck',
                  'librarySettingsPrepare', 'librarySettingsOpen')
 RECORD_ROUTES = (
-    'libraryPrepareJapanese', 'libraryMedia', 'libraryList', 'librarySync', 'libraryEnrich',
+    'libraryPrepareJapanese', 'libraryMedia', 'libraryAudioRead', 'libraryList', 'librarySync', 'libraryEnrich',
     'libraryRead', 'libraryMemory', 'libraryCards', 'libraryDraftSave', 'libraryDraftDiscard',
     'libraryDraftCommit', 'libraryReconcile', 'libraryRepair', 'libraryOrphan', 'libraryCardsAdd',
     'libraryFavorite', 'libraryUpdate', 'libraryVideoWords', 'libraryVideoSummary', 'libraryWordSenses',

@@ -451,8 +451,9 @@ function showClozePractice(panel, prompts) {
  * and the less frequent actions in place.
  * @param {HTMLElement} article
  * @param {HTMLElement} actions
+ * @param {() => void} [onClose]
  */
-function addDetailToggle(article, actions) {
+function addDetailToggle(article, actions, onClose) {
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'study-library-detail-toggle';
@@ -463,6 +464,7 @@ function addDetailToggle(article, actions) {
         article.dataset.open = `${open}`;
         toggle.setAttribute('aria-expanded', `${open}`);
         toggle.textContent = open ? '收起' : '详情';
+        if (!open) { onClose?.(); }
     });
     actions.querySelector('.study-library-primary-action')?.after(toggle);
 }
@@ -557,6 +559,56 @@ async function initializePage() {
         let lookupWarning = '';
         /** @param {string} text */
         const setStatus = (text) => { status.textContent = lookupWarning ? `${text} · 选词查词未就绪：${lookupWarning}` : text; };
+        /** @type {AudioContext|null} */
+        let savedAudio = null;
+        /** @type {HTMLButtonElement|null} */
+        let audioButton = null;
+        const clearSavedAudio = () => {
+            if (savedAudio) { void savedAudio.close().catch(() => {}); }
+            if (audioButton) {
+                audioButton.textContent = '播放已存原声';
+                audioButton.disabled = false;
+            }
+            savedAudio = audioButton = null;
+        };
+        window.addEventListener('pagehide', clearSavedAudio);
+        /**
+         * @param {string} id
+         * @param {HTMLButtonElement} button
+         * @returns {Promise<void>}
+         */
+        async function playSavedAudio(id, button) {
+            const stopping = button === audioButton;
+            clearSavedAudio();
+            if (stopping) { return; }
+            const context = new AudioContext();
+            savedAudio = context;
+            audioButton = button;
+            button.disabled = true;
+            try {
+                await context.resume();
+                if (savedAudio !== context) { return; }
+                const {parts} = /** @type {{parts: string[]}} */ (await studyCall('libraryAudioRead', {id}));
+                if (savedAudio !== context) { return; }
+                const bytes = parts.map((part) => Uint8Array.from(atob(part), (character) => character.charCodeAt(0)));
+                const audio = await context.decodeAudioData(await new Blob(bytes).arrayBuffer());
+                if (savedAudio !== context) { return; }
+                const source = context.createBufferSource();
+                source.buffer = audio;
+                source.connect(context.destination);
+                source.addEventListener('ended', () => {
+                    if (savedAudio === context) { clearSavedAudio(); }
+                });
+                source.start();
+                button.textContent = '停止播放';
+                button.disabled = false;
+            } catch (error) {
+                if (savedAudio !== context) { return; }
+                clearSavedAudio();
+                const detail = error instanceof Error && error.name === 'Error' ? error.message : '播放不了这段原声。';
+                setStatus(`${detail} 可打开原笔记检查附件，或试试原来的来源链接。`);
+            }
+        }
         oldUpdates?.querySelector('button')?.addEventListener('click', async () => {
             if (!oldText) { return; }
             try {
@@ -663,6 +715,7 @@ async function initializePage() {
                 render();
                 return;
             }
+            clearSavedAudio();
             activePractice = button;
             list.hidden = status.hidden = more.hidden = true;
             listenSource.hidden = true;
@@ -854,6 +907,13 @@ listedQuery :
                 };
                 actions.append(listen);
             }
+            if (matchesCategory(record, 'saved') && record.media?.audio?.name) {
+                const listen = document.createElement('button');
+                listen.type = 'button';
+                listen.textContent = '播放已存原声';
+                listen.onclick = () => { void playSavedAudio(record.id, listen); };
+                actions.append(listen);
+            }
             const cardUrl = new URL(resume.href);
             cardUrl.searchParams.set('studyAddCard', '1');
             const useLink = document.createElement('a');
@@ -935,7 +995,9 @@ listedQuery :
                 resume.remove(); favorite.remove();
                 refresh.remove();
             }
-            addDetailToggle(article, actions);
+            addDetailToggle(article, actions, () => {
+                if (audioButton && article.contains(audioButton)) { clearSavedAudio(); }
+            });
             const createCard = () => {
                 window.open(cardUrl.href, '_blank', 'noopener');
             };
@@ -1092,6 +1154,7 @@ listedQuery :
 
         /** @returns {void} */
         function render() {
+            clearSavedAudio();
             list.replaceChildren();
             const query = search.value.trim();
             const waiting = canSearch && (query !== listedQuery || category !== listedCategory);

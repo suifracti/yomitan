@@ -98,20 +98,36 @@ def attach(library, p):
     return library.result(r['id'])
 
 
+def attachment(library, record, kind, ref):
+    name = ref.get('name', '')
+    if kind not in ('audio', 'image', 'video') or not re.fullmatch('study-media-' + record['id'] + r'-[a-f0-9]{64}\.(png|jpg|webm|ogg|mp3|wav)', name):
+        raise ValueError('附件引用无效；不读取任意文件。')
+    path = library.vault / name
+    library.check_path(path)
+    if not path.is_file() or path.stat().st_size > (MAX_VIDEO if kind == 'video' else MAX_ASSET):
+        raise ValueError('场景附件缺失或过大；请检查原笔记的附件。')
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != ref['sha256']:
+        raise ValueError('附件内容已变化，请重新确认。')
+    return name, data
+
+
+def read_audio(library, ident):
+    record = library.read(ident)[0]
+    ref = record.get('media', {}).get('audio')
+    if not ref or FORMATS.get(ref.get('mime'), ('', ''))[0] != 'audio':
+        raise ValueError('这条笔记没有已存原声。')
+    _name, data = attachment(library, record, 'audio', ref)
+    encoded = base64.b64encode(data).decode()
+    # Keep each base64 part independently decodable and safely below the native frame limit.
+    return {'mime': ref['mime'], 'parts': [encoded[i:i + 400000] for i in range(0, len(encoded), 400000)]}
+
+
 def anki_fields(library, record):
     fields = {'Audio': '', 'Image': ''}
     media = record.get('media', {})
     for kind, ref in media.items():
-        name = ref.get('name', '')
-        if kind not in ('audio', 'image', 'video') or not re.fullmatch('study-media-' + record['id'] + r'-[a-f0-9]{64}\.(png|jpg|webm|ogg|mp3|wav)', name):
-            raise ValueError('附件引用无效；不读取任意文件。')
-        path = library.vault / name
-        library.check_path(path)
-        if not path.is_file() or path.stat().st_size > (MAX_VIDEO if kind == 'video' else MAX_ASSET):
-            raise ValueError('场景附件缺失或过大；卡片暂不发送，请恢复附件。')
-        data = path.read_bytes()
-        if hashlib.sha256(data).hexdigest() != ref['sha256']:
-            raise ValueError('附件内容已变化，请重新确认。')
+        name, data = attachment(library, record, kind, ref)
         actual = library.anki('storeMediaFile', {'filename': name, 'data': base64.b64encode(data).decode()})
         if actual != name:
             raise ValueError('Anki 未确认原附件名称。')

@@ -189,6 +189,10 @@ def _normalize_request(p):
     if action == 'libraryMedia':
         from study_media import validate
         return validate(p)
+    if action == 'libraryAudioRead':
+        if set(p) != {'action', 'id'} or not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
+            raise ValueError('播放已存原声只需要学习记录编号。')
+        return p
     if action == 'librarySave' and {'action', 'entry', 'makeCard'} <= set(p) and not set(p) - {'action', 'entry', 'makeCard', 'turns'} and isinstance(p['makeCard'], bool):
         turns = p.get('turns', [])
         if not isinstance(turns, list) or len(turns) > 20:
@@ -997,6 +1001,9 @@ class StudyLibrary:
         if p['action'] == 'libraryMemory':
             from study_memory import memory
             return memory(self, p['word'], p.get('lemma', ''), p.get('fresh', False))
+        if p['action'] == 'libraryAudioRead':
+            from study_media import read_audio
+            return read_audio(self, p['id'])
         if not self.anki_enabled and p['action'] in ('libraryCards', 'libraryDraftCommit', 'librarySync'):
             ids = p.get('ids', []) or [x['id'] for x in p.get('items', [])]
             return {'items': [self.result(i) for i in ids], 'ankiEnabled': False}

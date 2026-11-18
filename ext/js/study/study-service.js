@@ -1441,6 +1441,10 @@ export function prepareStudyService(lookupDictionary = null) {
             reply({ok: false, error: '详解已留在当前查词卡，不再打开其他页面。'});
             return false;
         }
+        if (studyAction === 'libraryAudioRead' && pathname !== 'study-library.html') {
+            reply({ok: false, error: '请在学习库播放已存原声。'});
+            return false;
+        }
         if (studyAction === 'openVideoListening' && pathname === 'study-library.html') {
             const {id, wholeVideo} = /** @type {{id?: string, wholeVideo?: boolean}} */ (data ?? {});
             void (async () => {
