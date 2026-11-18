@@ -37,6 +37,7 @@
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 想用自己曾经读过的两句话分清同一个词的两种用法 | L-012；study_senses.practice_pair、study-library.js |
+| 想用自己的旧原句练填空，但不想制卡 | L-012；study-library.js 的 clozePrompts、study-card-kinds.js 的 blankStudyWord |
 | 卡间隔已超过 21 天却一直在学；读题面拖慢自动同步 | L-012；study_senses.refresh_metrics、study_library_core.anki_call |
 
 ## 默认自动执行：不等用户提醒
@@ -224,6 +225,8 @@
 网页与字幕共用短义：40 字放不下时，部分掌握的词把还在学的义项排在前面。字幕挑句、计数、已制卡原句排重按 v2 里可选的 `lemma`；选中与回听仍用真实字幕的词形、原句和时间，不把原声中的 charges 换成 charge。旧桥没有此字段时沿用原来命中的词。见[字幕推荐案例](youtube-study-wiring.md#2026-11-18-字幕推荐给不同的词留位置)。
 
 **用自己的旧原句辨词义**：学习库首页搜索同一原形或已关联的词形时，用 `study_senses.practice_pair` 从已索引的两种明确义项各取一句。保留实际词形、原记录号和来源秒数；同一原句若存过不同读法，只照常列出，不出二选一。选完展示当时记的意思，不把一次选择当成会了或不会，也不调用模型。旧桥不提供这对练习时无入口。见[两种 charge 的浏览器练习](youtube-study-wiring.md#2026-11-18-用自己的旧原句辨词义)。
+
+**不制卡也可以用原句练填空**：「练原句填空」与辨词义共用现有练习区，只取当前已读结果中已存的英语笔记；`blankStudyWord` 与填空卡合用单词边界，练习只取有唯一空位的题目，不从词形猜新题。遮去提示中的原词，核对的是原文用法而非判定语法或掌握；答案揭晓后能继续打开原记录，不调模型或写复习结果。见[原句用词核对](youtube-study-wiring.md#2026-11-18-用已保存的原句练一小轮填空)。
 
 如果「刚撤销，颜色又变回去」，先查后台发布顺序，不要改复习阈值。后台只发布最后一次 `refreshWordStatus`，网页、词卡和字幕共用桥已合并人工标记的 v2；旧的 `studyKnownWords` 只解释 v1 及更早的缓存。见[逆序返回案例](youtube-study-wiring.md#2026-11-18-刚撤销认识了旧刷新又把词标回去)。
 

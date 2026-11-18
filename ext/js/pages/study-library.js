@@ -22,6 +22,7 @@ import {PopupFactory} from '../app/popup-factory.js';
 import {ThemeController} from '../app/theme-controller.js';
 import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {escapeRegExp} from '../core/utilities.js';
+import {blankStudyWord} from '../display/study-card-kinds.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl, videoListenUrl} from '../study/media-key.js';
@@ -36,6 +37,7 @@ const PAGE_SIZE = 10;
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
 /** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
+/** @typedef {{row: StudyLibraryRecord, text: string, answer: string, hint: string}} ClozePrompt */
 
 /**
  * @param {unknown} value
@@ -316,6 +318,103 @@ function showSensePractice(panel, pair) {
 }
 
 /**
+ * @param {StudyLibraryRecord[]} rows
+ * @returns {ClozePrompt[]}
+ */
+function clozePrompts(rows) {
+    /** @type {ClozePrompt[]} */
+    const prompts = [];
+    const seen = new Set();
+    for (const row of rows) {
+        const {entry} = row;
+        if (!matchesCategory(row, 'saved') || !entry?.sentence || !entry.word || !/^en(?:-|$)/i.test(entry.language || 'en')) { continue; }
+        const facts = {word: entry.word, sentence: entry.sentence, forms: []};
+        const {text, answers} = blankStudyWord(facts);
+        if (answers.length !== 1 || seen.has(text)) { continue; }
+        seen.add(text);
+        const hint = blankStudyWord(facts, entry.sense?.gloss || entry.meaning || '').text.trim().slice(0, 160);
+        prompts.push({row, text, answer: answers[0], hint});
+        if (prompts.length === 5) { break; }
+    }
+    return prompts;
+}
+
+/**
+ * @param {HTMLElement} panel
+ * @param {ClozePrompt[]} prompts
+ */
+function showClozePractice(panel, prompts) {
+    const heading = document.createElement('h2');
+    heading.tabIndex = -1;
+    let index = 0;
+    const show = () => {
+        if (index === prompts.length) {
+            heading.textContent = '本轮结束';
+            panel.replaceChildren(heading, Object.assign(document.createElement('p'), {textContent: '可返回学习库继续找原句。这轮不保存成绩。'}));
+            heading.focus();
+            return;
+        }
+        const {row, text, answer, hint} = prompts[index];
+        heading.textContent = `练原句填空 · ${index + 1} / ${prompts.length}`;
+        const quote = document.createElement('p');
+        quote.lang = 'en';
+        quote.className = 'study-library-practice-quote';
+        quote.textContent = text;
+        const clue = Object.assign(document.createElement('p'), {textContent: hint ? `你当时的提示：${hint}` : '想想你当时在这里读到的用法。'});
+        const form = document.createElement('form');
+        form.className = 'study-library-practice-choices';
+        const label = Object.assign(document.createElement('label'), {htmlFor: 'study-library-cloze-answer', textContent: '填原句里的词或短语'});
+        const input = document.createElement('input');
+        input.id = label.htmlFor;
+        input.lang = 'en';
+        input.type = 'text';
+        input.autocomplete = 'off';
+        input.required = true;
+        input.spellcheck = false;
+        input.setAttribute('autocapitalize', 'none');
+        const check = Object.assign(document.createElement('button'), {type: 'submit', textContent: '核对原文'});
+        const reveal = Object.assign(document.createElement('button'), {type: 'button', textContent: '直接看答案'});
+        const showAnswer = (/** @type {string} */ guess = '') => {
+            const normalize = (/** @type {string} */ value) => value.trim().toLowerCase()
+                .replaceAll('’', "'")
+                .replaceAll(/\s+/g, ' ');
+            writeSentence(quote, row.entry.sentence, answer, true);
+            const prefix = !guess ? '' : (normalize(guess) === normalize(answer) ? '和原句一致。' : '和原句用词不同。');
+            const feedback = document.createElement('p');
+            feedback.tabIndex = -1;
+            feedback.className = 'study-library-practice-answer';
+            feedback.textContent = `${prefix}原句用的是「${answer}」。`;
+            const actions = document.createElement('div');
+            actions.className = 'study-library-practice-choices';
+            const resume = document.createElement('a');
+            resume.textContent = '继续学习 ↗';
+            resume.href = createResumeUrl(row, chrome.runtime.getURL('/search.html'));
+            resume.target = '_blank';
+            resume.rel = 'noopener noreferrer';
+            const next = Object.assign(document.createElement('button'), {type: 'button', textContent: index + 1 === prompts.length ? '完成这轮' : '下一句'});
+            next.dataset.clozeNext = '';
+            next.onclick = () => {
+                ++index;
+                show();
+            };
+            actions.append(next, resume);
+            form.replaceWith(feedback, actions);
+            feedback.focus();
+        };
+        form.onsubmit = (event) => {
+            event.preventDefault();
+            if (input.value.trim()) { showAnswer(input.value); }
+        };
+        reveal.onclick = () => showAnswer();
+        form.append(label, input, check, reveal);
+        panel.replaceChildren(heading, quote, clue, form);
+        input.focus();
+    };
+    panel.hidden = false;
+    show();
+}
+
+/**
  * Rows stay compact for scanning; the toggle reveals context, record details
  * and the less frequent actions in place.
  * @param {HTMLElement} article
@@ -417,8 +516,10 @@ async function initializePage() {
         const oldText = oldUpdates?.querySelector('textarea');
         const list = byId('study-library-list');
         const search = /** @type {HTMLInputElement} */ (document.getElementById('study-library-search'));
+        const searchLabel = search.labels?.[0];
         const more = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-more'));
         const practiceButton = byId('study-library-practice-button');
+        const clozeButton = byId('study-library-cloze-button');
         const practice = byId('study-library-practice');
         let lookupWarning = '';
         /** @param {string} text */
@@ -490,26 +591,43 @@ async function initializePage() {
         let searchTimer = 0;
         /** @type {SensePracticeItem[]} */
         let practicePair = [];
+        /** @type {ClozePrompt[]} */
+        let cloze = [];
+        /** @type {HTMLElement|null} */
+        let activePractice = null;
 
         /** @returns {void} */
         function closePractice() {
             practice.hidden = true;
             practice.replaceChildren();
-            list.hidden = status.hidden = false;
+            activePractice = null;
+            list.hidden = status.hidden = search.hidden = false;
+            if (searchLabel) { searchLabel.hidden = false; }
             practiceButton.textContent = '用旧原句辨词义';
-            practiceButton.setAttribute('aria-expanded', 'false');
+            clozeButton.textContent = '练原句填空';
+            for (const button of [practiceButton, clozeButton]) { button.setAttribute('aria-expanded', 'false'); }
         }
-        practiceButton.addEventListener('click', () => {
-            if (practice.hidden) {
-                showSensePractice(practice, practicePair);
-                list.hidden = status.hidden = more.hidden = true;
-                practiceButton.textContent = '返回搜索结果';
-                practiceButton.setAttribute('aria-expanded', 'true');
-            } else {
-                closePractice();
+        /**
+         * @param {HTMLElement} button
+         * @param {() => void} show
+         */
+        function togglePractice(button, show) {
+            const closing = activePractice === button;
+            closePractice();
+            if (closing) {
                 render();
+                return;
             }
-        });
+            activePractice = button;
+            list.hidden = status.hidden = more.hidden = true;
+            search.hidden = button === clozeButton;
+            if (searchLabel) { searchLabel.hidden = search.hidden; }
+            button.textContent = button === clozeButton ? '返回学习库' : '返回搜索结果';
+            button.setAttribute('aria-expanded', 'true');
+            show();
+        }
+        practiceButton.addEventListener('click', () => togglePractice(practiceButton, () => showSensePractice(practice, practicePair)));
+        clozeButton.addEventListener('click', () => togglePractice(clozeButton, () => showClozePractice(practice, cloze)));
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
@@ -931,8 +1049,10 @@ listedQuery :
             const query = search.value.trim();
             const waiting = canSearch && (query !== listedQuery || category !== listedCategory);
             practiceButton.hidden = waiting || Boolean(listError) || category !== 'all' || practicePair.length !== 2;
-            if (practiceButton.hidden && !practice.hidden) { closePractice(); }
             const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
+            cloze = loading || listError ? [] : clozePrompts(rows);
+            clozeButton.hidden = cloze.length === 0;
+            if (activePractice?.hidden) { closePractice(); }
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
             if (rows.length + localRows.length === 0) {
                 const empty = document.createElement('p');

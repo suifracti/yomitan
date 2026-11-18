@@ -60,9 +60,11 @@ function makePageDom() {
             <button data-library-category="saved" aria-pressed="false">已保存</button>
             <button data-library-category="linked" aria-pressed="false">关联卡</button>
             <button data-library-category="pending" aria-pressed="false">待同步</button>
+            <label for="study-library-search">搜索学习库</label>
             <input id="study-library-search">
             <button id="study-library-refresh"></button>
             <button id="study-library-practice-button" hidden>用旧原句辨词义</button>
+            <button id="study-library-cloze-button" hidden>练原句填空</button>
             <section id="study-library-practice" hidden></section>
             <button id="study-library-export-saved">导出已收集收藏</button>
             <button id="study-library-clear-saved">清空已收集收藏</button>
@@ -72,6 +74,57 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('uses saved sentences for a short cloze without grading or changing the records', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const entries = [
+            {word: 'built', lemma: 'build', sentence: 'We built a shelter.', sense: {gloss: '搭建（built）'}},
+            {word: 'play', sentence: 'The display is clear.'},
+            {word: 'left', sentence: 'She left when he left.'},
+            {word: 'charges', sentence: 'The bank charges a fee.', sense: {gloss: '收费'}},
+        ];
+        const items = entries.map((entry, index) => ({id: String(index + 1).repeat(32), vaultSaved: true, entry: {...entry, language: 'en', url: '', title: ''}}));
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action === 'libraryList') { return {items, total: items.length, canSearch: true}; }
+            if (action === 'libraryReconcile') { return items.find((item) => item.id === payload.id); }
+            if (action === 'ankiToday') { return {paused: true}; }
+            return [];
+        });
+        await import('../ext/js/pages/study-library.js');
+        const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-cloze-button'));
+        await vi.waitFor(() => expect(start.hidden).toBe(false));
+        const reads = mocks.studyCall.mock.calls.length;
+        start.click();
+        const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+        const search = /** @type {HTMLElement} */ (document.querySelector('#study-library-search'));
+        expect(search.hidden).toBe(true);
+        expect(panel.textContent).toContain('1 / 2');
+        expect(panel.textContent).toContain('We […] a shelter.');
+        expect(panel.textContent).toContain('搭建');
+        expect(panel.textContent).not.toContain('built');
+        const submit = (/** @type {string} */ input) => {
+            const field = /** @type {HTMLInputElement} */ (panel.querySelector('input'));
+            field.value = input;
+            field.form?.dispatchEvent(new Event('submit', {cancelable: true}));
+        };
+        submit('build');
+        expect(panel.textContent).toContain('和原句用词不同');
+        expect(panel.textContent).toContain('We built a shelter.');
+        /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
+        expect(panel.textContent).toContain('The bank […] a fee.');
+        submit('Charges');
+        expect(panel.textContent).toContain('和原句一致');
+        expect(new URL(/** @type {HTMLAnchorElement} */ (panel.querySelector('a')).href).searchParams.get('studyRecordId')).toBe(items[3].id);
+        /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
+        expect(panel.textContent).toContain('本轮结束');
+        start.click();
+        expect(panel.hidden).toBe(true);
+        expect(search.hidden).toBe(false);
+        expect(mocks.studyCall.mock.calls).toHaveLength(reads);
+    });
+
     test('opening the library from an article reads only that source before any user action', async () => {
         vi.resetModules();
         makePageDom();

@@ -64,7 +64,7 @@ export function cardKind(kind) {
  */
 export function missingFor(info, facts) {
     if (info.needs === 'sentence' && !facts.sentence) { return '没有原句，请先补充原句。'; }
-    if (info.kind === 'cloze' && blank(facts).answers.length === 0) { return '这句里没找到这个词或它的词形。换一句再挖空。'; }
+    if (info.kind === 'cloze' && blankStudyWord(facts).answers.length === 0) { return '这句里没找到这个词或它的词形。换一句再挖空。'; }
     if (info.needs === 'audio' && !facts.audio) { return '还没有真实原声；先在下方采集原声。'; }
     if (info.needs === 'forms' && facts.forms.length === 0) { return '这个词没有列出词形。'; }
     if (info.needs === 'translation' && !(facts.sentence && facts.translation)) { return '需要原句和译文；先翻译本句。'; }
@@ -85,11 +85,11 @@ export function recommendedKinds(mastery, facts) {
 }
 
 /**
- * @param {CardFacts} facts
+ * @param {Pick<CardFacts, 'sentence'|'word'|'forms'>} facts
  * @param {string} [source]
  * @returns {{text: string, answers: string[]}}
  */
-function blank({sentence, word, forms}, source = sentence) {
+export function blankStudyWord({sentence, word, forms}, source = sentence) {
     const alternatives = [word, ...forms.map(({form}) => form)]
         .filter(Boolean)
         .sort((a, b) => b.length - a.length)
@@ -122,15 +122,15 @@ export function cardDrafts(kind, facts) {
         case 'context': return [{front: `“${word}”在这句话中是什么意思？\n${sentence}`, back: contextMeaning}];
         case 'sentence': return [{front: `翻译这句话：\n${sentence}`, back: translation}];
         case 'listening': {
-            const masked = blank(facts);
+            const masked = blankStudyWord(facts);
             const front = masked.answers.length > 0 ? `听原声，补全这句话：\n${masked.text}` : '听原声，写下你听到的内容。';
             return [{front, back: [sentence || word, translation].filter(Boolean).join('\n')}];
         }
         case 'produce': return [{front: `用英文说出这句话（提示：${word}）：\n${translation}`, back: sentence}];
         case 'cloze': {
-            const masked = blank(facts);
+            const masked = blankStudyWord(facts);
             if (masked.answers.length === 0) { return []; }
-            const hint = blank(facts, contextMeaning || meaning).text;
+            const hint = blankStudyWord(facts, contextMeaning || meaning).text;
             return [{front: `填空${hint ? `（${hint}）` : ''}：\n${masked.text}`, back: `${masked.answers.join('、')}\n${sentence}`}];
         }
         case 'form-produce': return facts.forms.slice(0, 3).map(({form, kind: name}) => ({front: `${word} 的${name}是？`, back: form}));
