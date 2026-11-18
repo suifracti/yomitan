@@ -74,6 +74,7 @@ function makePageDom() {
             <button id="study-library-practice-button" hidden>用旧原句辨词义</button>
             <button id="study-library-cloze-button" hidden>练原句填空</button>
             <button id="study-library-translation-button" hidden>练整句理解</button>
+            <button id="study-library-reconstruct-button" hidden>看中文写英文</button>
             <button id="study-library-dictation-button" hidden>练原声听写</button>
             <button id="study-library-source-recall" hidden>复习本素材卡点</button>
             <button id="study-library-listen-source" hidden>回视频练一轮</button>
@@ -97,7 +98,7 @@ describe('study library page', () => {
             entry: {kind: 'sentence', word: sentence, sentence, translation, language: 'en', title: 'Reading practice', url},
             articleHref: url + '#:~:text=' + encodeURIComponent(sentence),
         });
-        const first = example('a', 'The stairs were steep.', '楼梯很陡。');
+        const first = {...example('a', 'The stairs were steep.', '楼梯很陡。'), media: {audio: {name: 'stairs.webm'}}};
         const others = Array.from({length: 5}, (_, i) => example(String(i + 1), `Saved sentence ${i + 1}.`, `当时译文 ${i + 1}。`));
         const word = {...first, entry: {...first.entry, kind: void 0, word: 'stairs'}};
         vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}, storage: {local: {get: async () => ({})}}});
@@ -155,6 +156,25 @@ describe('study library page', () => {
         button.click();
         await vi.waitFor(() => expect(document.getElementById('study-library-status')?.textContent).toContain('先点「加载更多」'));
         expect(panel.hidden).toBe(true);
+
+        oldBridge = false;
+        const reconstruct = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-reconstruct-button'));
+        expect(reconstruct.hidden).toBe(false);
+        reconstruct.click();
+        await vi.waitFor(() => expect(panel.textContent).toContain('楼梯很陡。'));
+        expect(panel.textContent).not.toContain('The stairs were steep.');
+        expect(panel.textContent).not.toContain('播放已存原声');
+        const answer = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
+        expect(answer.lang).toBe('en');
+        answer.value = 'Those steps were very steep.';
+        press('看保存的原句');
+        expect(panel.textContent).toContain('你写的英文Those steps were very steep.');
+        expect(panel.textContent).toContain('保存的原句The stairs were steep.');
+        expect(panel.textContent).not.toContain('和原句用词不同');
+        expect(panel.querySelector('[href*="studyRecordId"]')?.href).toContain(first.id);
+        expect(panel.textContent).toContain('播放已存原声');
+        expect(lists().at(-1)).toEqual(['libraryList', {...request, practice: 'translation'}]);
+        expect(mocks.studyCall.mock.calls.every(([action]) => !['librarySave', 'libraryAudioRead', 'practiceCheck'].includes(String(action)))).toBe(true);
     });
 
     test('the lookup practice link opens an old sentence for the same word, not a search hit for a different word', async () => {
