@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Sense-aware summaries and explicit learner difficulty events; no automatic cards."""
+import hashlib
 import json
 import pathlib
 import re
@@ -18,6 +19,26 @@ MONTH = 30 * 86400
 
 def sense_key(entry):
     return entry.get('sense', {}).get('key') or canonical(entry) + '#1'
+
+
+def recall_context(entry):
+    at = entry.get('videoTime')
+    return (entry['word'].casefold(), entry.get('sentence'), entry.get('url'), None if at is None else int(at))
+
+
+def recall_context_key(entry):
+    return hashlib.sha256(json.dumps((*recall_context(entry), sense_key(entry)), ensure_ascii=False).encode()).hexdigest()
+
+
+def recent_recall(record, now):
+    if record.get('manualKnown') or not record.get('vaultSaved') or record.get('learningState') == 'favorite-only':
+        return 0
+    events = [event for event in record.get('contextMiss', []) if event.get('kind') == 'recall' and event.get('contextKey') and
+              event.get('recordId') == record['id'] and 0 <= now - event['at'] < MONTH]
+    if not events:
+        return 0
+    key = recall_context_key(record['entry'])
+    return max((event['at'] for event in events if event['contextKey'] == key), default=0)
 
 
 def gloss(entry):
@@ -369,11 +390,19 @@ def add_miss(library, p, now=None):
             (not p.get('senseKey') or sense_key(row['entry']) == p['senseKey'])]
     if not rows:
         raise ValueError('请先保存这个词或选择已有义项，再记录卡点；未另建笔记。')
-    row = next((r for r in rows if r['entry']['sentence'] == p.get('sentence') and r['entry']['url'] == p.get('url')), rows[0])
+    context = recall_context(p)
+    matched = [row for row in rows if p.get('sentence') and p.get('url') and recall_context(row['entry']) == context]
+    exact = len(matched) == 1
+    candidates = matched or rows
+    if not exact and len({sense_key(row['entry']) for row in candidates}) > 1:
+        raise ValueError('没能确认这次卡在哪个词义。可以从对应的已存原句打开词卡再试。')
+    row = candidates[0]
     lib = library.locate(row['id'])
     with lib.locked():
         record, body, version = lib.read(row['id'])
         event = {'at': now, 'kind': p['kind'], 'recordId': row['id'], 'senseKey': p.get('senseKey') or sense_key(row['entry'])}
+        if p['kind'] == 'recall' and exact and recall_context(record['entry']) == context and sense_key(record['entry']) == event['senseKey']:
+            event['contextKey'] = recall_context_key(record['entry'])
         record.setdefault('contextMiss', []).append(event)
         body += '\n### 语境卡点\n\n' + paragraph(p['kind'] + ' · ' + event['senseKey']) + '\n'
         lib.write(record, body, version)

@@ -57,6 +57,10 @@ def indexed_page(rows, p):
     source = page_source_key(p['url']) if scope == 'source' else ''
     query = ' '.join(p.get('query', '').casefold().split())
     matches = []
+    if scope == 'recent-recall':
+        import time
+        from study_senses import recent_recall
+        now = time.time()
     for row in rows:
         e = row['entry']
         if scope == 'source' and (page_source_key(e['url']) != source or (not source and e['title'] != p['title'])): continue
@@ -66,16 +70,18 @@ def indexed_page(rows, p):
         if scope == 'favorites' and not row.get('favorite'): continue
         if scope == 'saved' and (not row.get('vaultSaved') or row.get('learningState') == 'favorite-only'): continue
         if scope == 'linked' and row.get('ankiState') != 'linked' and not linked_note_ids((row,)): continue
+        order = recent_recall(row, now) if scope == 'recent-recall' else row['created']
+        if scope == 'recent-recall' and not order: continue
         rank = 0
         if query:
             match = search_hit(row, query)
             if not match: continue
             rank, hit = match
             row = {**row, 'searchHit': hit}
-        matches.append((rank, row))
-    matches.sort(key=lambda x: (x[0], x[1]['created']), reverse=True)
+        matches.append((rank, order, row))
+    matches.sort(key=lambda x: x[:2], reverse=True)
     offset = p.get('offset', 0)
-    return {'items': [with_article_href(with_card_progress(row)) for _, row in matches[offset:offset + 10]], 'total': len(matches), 'canSearch': True}
+    return {'items': [with_article_href(with_card_progress(row)) for _, _, row in matches[offset:offset + 10]], 'total': len(matches), 'canSearch': True}
 
 
 class RecordIndex:

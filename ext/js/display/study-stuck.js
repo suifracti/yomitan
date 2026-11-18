@@ -29,7 +29,7 @@ import {ENCOUNTERS_KEY, normalizeInfo, recentEncounters, wordInfo} from '../stud
 import {WORD_STATUS_KEY} from '../study/study-data.js';
 
 /** @typedef {'newSense'|'collocation'|'structure'|'recall'} MissKind */
-/** @typedef {{key: string, gloss: string, s: string}} Sense */
+/** @typedef {{key: string, gloss: string, s: string, recordIds?: string[]}} Sense */
 
 const STUCK_STATES = new Set(['familiar', 'known', 'partial', 'shaky']);
 const STATE_LABELS = {new: '刚保存', learning: '在学', shaky: '卡住过', familiar: '已熟悉', known: '已会', partial: '部分会'};
@@ -100,6 +100,7 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
     /** @type {Sense[]} */
     let known = [];
     let supported = false;
+    let choiceRequest = 0;
 
     /** @returns {string} */
     const gloss = () => {
@@ -113,26 +114,34 @@ export function mountStuckHint({doc, getEntry, call, isCurrent, onChoice}) {
      */
     const choose = (kind, phrase = '') => {
         for (const button of buttons.querySelectorAll('button')) { button.setAttribute('aria-pressed', String(button.dataset.stuck === kind)); }
+        const request = ++choiceRequest;
         const entry = getEntry();
-        const senseKey = known.length === 1 ? known[0].key : '';
-        if (supported) {
-            void call('libraryContextMiss', {word: entry.word,
-                lemma: entry.lemma || entry.word,
-                language: entry.language ?? 'en',
-                kind,
-                ...(senseKey ? {senseKey} : {}),
-                sentence: entry.sentence ?? '',
-                url: entry.url ?? '',
-                ...(typeof entry.videoTime === 'number' ? {videoTime: entry.videoTime} : {})}).catch(() => {});
-        }
+        const selected = entry.recordId ? known.find((sense) => sense.recordIds?.includes(entry.recordId ?? '')) : null;
+        const senseKey = selected?.key ?? (known.length === 1 ? known[0].key : '');
         const messages = {
             newSense: supported ? '按新意思来学：「记住它」和制卡会存成这个词的新义项，原来学会的意思不受影响。' : '已按新意思准备卡片（本机桥更新后会单独记成新义项）。',
             collocation: supported ? `按搭配「${phrase}」来学：保存和制卡都针对这个搭配，并关联到 ${entry.word}。` : `已准备「${phrase}」的搭配卡（本机桥更新后会单独记成搭配条目）。`,
             structure: '词没问题，难在句子：已准备「句子英→中」卡；这个词的掌握程度不变。',
-            recall: supported ? '已记下这次没认出，这个词会先标成“卡住过”；不建卡。' : '这次只是一时没认出，不建卡（本机桥更新后会计入掌握度）。',
+            recall: supported ? '已记下这次没认出，没有建卡。' : '这次只是一时没认出，不建卡（本机桥更新后会计入掌握度）。',
         };
-        result.textContent = messages[kind];
+        result.textContent = supported && kind === 'recall' ? '正在记下这次没认出…' : messages[kind];
         onChoice(kind, {supported, senseKey, phrase, gloss: gloss()});
+        if (!supported) { return; }
+        void call('libraryContextMiss', {word: entry.word,
+            lemma: entry.lemma || entry.word,
+            language: entry.language ?? 'en',
+            kind,
+            ...(senseKey ? {senseKey} : {}),
+            sentence: entry.sentence ?? '',
+            url: entry.url ?? '',
+            ...(typeof entry.videoTime === 'number' ? {videoTime: entry.videoTime} : {})}).then(() => {
+            if (isCurrent() && request === choiceRequest && kind === 'recall') { result.textContent = messages[kind]; }
+        }).catch((error) => {
+            if (isCurrent() && request === choiceRequest) {
+                const detail = error instanceof Error ? error.message : '可以打开对应的已存原句再试。';
+                result.textContent = `这次卡点没记下：${detail}`;
+            }
+        });
     };
 
     for (const [kind, label, title] of /** @type {[MissKind, string, string][]} */ ([

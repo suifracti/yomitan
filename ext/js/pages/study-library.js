@@ -715,8 +715,8 @@ async function initializePage() {
         let cloze = [];
         /** @type {symbol|null} */
         let clozeSearch = null;
-        const moreSourcePrompts = () => {
-            if (category !== 'source' || loading || listError || offset >= total) { return false; }
+        const moreScopedPrompts = () => {
+            if (!['source', 'recent-recall'].includes(category) || loading || listError || offset >= total) { return false; }
             return listedCategory === category && (!canSearch || listedQuery === search.value.trim());
         };
         const cancelClozeSearch = () => {
@@ -781,14 +781,16 @@ async function initializePage() {
                 setStatus('已取消找题，原列表保留。');
                 return;
             }
-            if (activePractice === clozeButton || cloze.length >= CLOZE_LIMIT || !moreSourcePrompts()) {
+            if (activePractice === clozeButton || cloze.length >= CLOZE_LIMIT || !moreScopedPrompts()) {
                 openCloze(cloze);
                 return;
             }
             const request = Symbol();
             clozeSearch = request;
             clozeButton.textContent = '取消找题';
-            setStatus('正在从同来源找可练的原句…');
+            const scope = category;
+            const url = scope === 'source' ? articleUrl : '';
+            setStatus('正在找可练的原句…');
             const query = search.value.trim();
             const indexed = canSearch;
             const end = total;
@@ -797,7 +799,7 @@ async function initializePage() {
             let failed = false;
             try {
                 while (prompts.length < CLOZE_LIMIT && next < end) {
-                    const payload = {language: 'en', scope: 'source', url: articleUrl, title: '', offset: next, ...(indexed && query ? {query} : {})};
+                    const payload = {language: 'en', scope, url, title: '', offset: next, ...(indexed && query ? {query} : {})};
                     const page = normalizeRecords(await studyCall('libraryList', payload));
                     if (clozeSearch !== request) { return; }
                     if (page.length === 0) { break; }
@@ -1238,7 +1240,7 @@ listedQuery :
             clearSavedAudio();
             list.replaceChildren();
             const query = search.value.trim();
-            const waiting = canSearch && (query !== listedQuery || category !== listedCategory);
+            const waiting = (canSearch || category === 'recent-recall') && (query !== listedQuery || category !== listedCategory);
             practiceButton.hidden = waiting || Boolean(listError) || category !== 'all' || practicePair.length !== 2;
             if (activePractice !== practiceButton) { practiceButton.textContent = practiceLabel(); }
             const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
@@ -1249,7 +1251,7 @@ listedQuery :
                 rows.filter(({entry}) => (entry?.lemma || entry?.word)?.toLowerCase() === practiceWord.toLowerCase()) :
                 rows;
             cloze = loading || listError ? [] : clozePrompts(clozeRows);
-            clozeButton.hidden = cloze.length === 0 && !moreSourcePrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
+            clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
             if (activePractice?.hidden) { closePractice(); }
             listenSource.hidden = !sourceVideoId || !practice.hidden;
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
@@ -1264,6 +1266,8 @@ listedQuery :
                     empty.textContent = '正在学习库里找…';
                 } else if (loaded && category === 'source' && !query) {
                     empty.textContent = '还没有在这页记过的原句。读到想留下的句子时，可以点词卡里的「记住它」。';
+                } else if (loaded && category === 'recent-recall' && !query) {
+                    empty.textContent = '这里显示近 30 天在已存原句上点过「一时没认出」的记录。还没有可显示的原句。';
                 } else if (loaded) {
                     empty.textContent = query && canSearch ? '这个分类没有匹配的记录。试试单词、中文义或原句。' : (query ? '已加载的记录里没有匹配结果。' : '这个分类暂时没有已读取的记录。');
                 } else {
@@ -1326,7 +1330,7 @@ listedQuery :
             const query = search.value.trim();
             const tab = category;
             const indexed = canSearch;
-            const readOnly = searchOnly || Boolean(query) || tab === 'manual-known' || tab === 'source';
+            const readOnly = searchOnly || Boolean(query) || ['manual-known', 'source', 'recent-recall'].includes(tab);
             const obsolete = () => queuedSearch !== null || tab !== category || (canSearch && query !== search.value.trim());
             if (reset && !readOnly) { void refreshToday(); }
             more.disabled = true;
@@ -1348,7 +1352,7 @@ listedQuery :
                 if (obsolete()) { return; }
                 if ((!loaded || !readOnly) && tab !== 'source') { await refreshSavedWords(); }
                 if (obsolete()) { return; }
-                const scope = indexed || ['pending', 'anki-only', 'manual-known', 'source'].includes(tab) ? tab : 'all';
+                const scope = indexed || ['pending', 'anki-only', 'manual-known', 'source', 'recent-recall'].includes(tab) ? tab : 'all';
                 const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? articleUrl : '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
                 const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[]}|null} */ (value);
                 canSearch = result?.canSearch === true;
@@ -1409,6 +1413,7 @@ listedQuery :
             } catch (error) {
                 if (obsolete()) { return; }
                 listError = error instanceof Error ? error.message : '学习库读取失败。';
+                if (tab === 'recent-recall' && listError === '学习列表范围无效。') { listError = '本机桥还不能读最近卡点。更新后再试。'; }
                 setStatus(`${listError}${loaded ? ' 上次已读取的记录仍保留。' : ' 未读到记录，不代表学习库为空。'}${savedWords.length > 0 ? ` 本地收藏仍有 ${savedWords.length} 条。` : ''}`);
             } finally {
                 loading = false;

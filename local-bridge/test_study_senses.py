@@ -33,6 +33,24 @@ class SenseTests(AutoSyncTests):
         self.assertEqual(next(item['id'] for item in result['practiceExamples'] if item['entry']['word'] == 'runs'), other['id'])
         self.assertEqual(self.calls, [])
 
+    def test_recent_recall_only_reviews_the_saved_sentence_at_the_matching_time(self):
+        earlier = self.save_word('charge', 'They charge a fee.', videoTime=12, sense={'key': 'new', 'gloss': '收费'})
+        later = self.save_word('charge', 'They charge a fee.', videoTime=37, sense=earlier['entry']['sense'])
+        self.save_word('charge', 'They charge at dawn.', sense={'key': 'new', 'gloss': '冲锋'})
+        tap = {'action': 'libraryContextMiss', 'word': 'charge', 'kind': 'recall', 'url': earlier['entry']['url']}
+        self.library.handle({**tap, 'sentence': 'They charge a fee.', 'videoTime': 37.7})
+        scope = {'action': 'libraryList', 'scope': 'recent-recall', 'title': '', 'url': ''}
+        self.calls.clear()
+        self.assertEqual([item['id'] for item in self.library.handle(scope)['items']], [later['id']])
+        self.assertNotIn('contextMiss', self.library.locate(earlier['id']).read(earlier['id'])[0])
+        # A new sentence may belong to either saved sense; it must not be attributed to either without evidence.
+        with self.assertRaisesRegex(ValueError, '词义'):
+            self.library.handle({**tap, 'sentence': 'They charge every day.'})
+        # An explicitly named sense can receive a word-level recall, but the unseen sentence isn't a saved prompt.
+        self.library.handle({**tap, 'sentence': 'They charge per hour.', 'senseKey': earlier['entry']['sense']['key']})
+        self.assertEqual([item['id'] for item in self.library.handle(scope)['items']], [later['id']])
+        self.assertEqual(self.calls, [])
+
     def test_manual_known_is_word_wide_undoable_and_never_changes_anki(self):
         first = self.save_word('run', 'I run daily.')
         self.save_word('run', 'We run together.')
