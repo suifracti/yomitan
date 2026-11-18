@@ -76,7 +76,7 @@
 | 查词卡又没认出这个词，想练这句或找以前的原句 | L-012；study-stuck.js、libraryContextMiss 的 recallRecordId、学习库入口 |
 | 想直接对照这个词在视频、文章里的旧原句，不想先做题 | L-012；study-focus.js「我的记录」、libraryList 的 word 范围 |
 | 想用自己的旧原句练填空，但不想制卡 | L-012；study-library.js 的 sentencePrompts、study-card-kinds.js 的 blankStudyWord |
-| 网页记下一整句后想自己先猜意思，再看当时的译文 | L-012；study-library.js 的 sentencePrompts、showSentencePractice |
+| 网页记下一整句后想自己先猜意思；旧整句在首页练不到 | L-012；study-library.js 的 sentencePrompts、study_index.indexed_page 的 practice:translation |
 | 不开原网页，想先听自己存的录音再写整句 | L-012；study-library.js 的 sentencePrompts、showSentencePractice |
 | 学习库第一页没有录音，后面才有，听写入口找不到 | L-012；study_index.indexed_page 的 practice:dictation |
 | 存了十几句原声，练完却总回到前五句 | L-012；study-library.js 的 startSentencePractice 和 showSentencePractice |
@@ -348,7 +348,7 @@
 
 **不制卡也可以用原句练填空**：「练原句填空」与辨词义共用现有练习区，只取当前已读结果中已存的英语笔记；`blankStudyWord` 与填空卡合用单词边界，练习只取有唯一空位的题目，不从词形猜新题。遮去提示中的原词，核对的是原文用法而非判定语法或掌握；答案揭晓后能继续打开原记录，不调模型或写复习结果。见[原句用词核对](youtube-study-wiring.md#2026-11-18-用已保存的原句练一小轮填空)。
 
-**保存整句和记词是两种练习材料**：`kind:'sentence'` 是网页「记住这句」的既有记录，不用整句话作为一个词挖空。已存译文时可以先读英文自想，后揭晓当时的译文；同来源可按原分页凑五句。保留该句来源和记录号，不调用模型或保存自评。见[整句理解的一轮](youtube-study-wiring.md#2026-11-19-用自己保存的整句练理解)。
+**保存整句和记词是两种练习材料**：`kind:'sentence'` 是网页「记住这句」的既有记录，不用整句话作为一个词挖空。`libraryList(practice: 'translation')` 在当前分类内查有译文的英语整句，先去重再分页，不要求普通列表先读到。每组最多五句，先读再揭晓，保留来源和记录号；继续下一组才查后续。旧桥用已显示的候选，素材范围保留普通分页，不调用模型或保存自评。见[旧句跨页与旧桥](youtube-study-wiring.md#2026-11-19-旧整句不用先翻到那一页)。
 
 **同一来源多页的练习不要停在列表第一页**：同来源不足五题时，只有点练习才继续读当前来源、搜索条件下的下一页；复用 `sentencePrompts` 去掉重复题，够五题或读完就停，不改可见列表的分页。取消、换分类或搜索后丢弃迟到页，不请求原声。见[跨页找题](youtube-study-wiring.md#2026-11-18-同来源原句能到下一页找题)。
 

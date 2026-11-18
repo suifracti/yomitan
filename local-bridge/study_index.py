@@ -86,7 +86,9 @@ def indexed_sources(rows, query, offset):
 
 def indexed_page(rows, p, *, complete=True):
     scope = p.get('scope', 'source')
-    dictation = p.get('practice') == 'dictation'
+    practice = p.get('practice')
+    dictation = practice == 'dictation'
+    translating = practice == 'translation'
     source = page_source_key(p['url']) if scope == 'source' else ''
     query = ' '.join(p.get('query', '').casefold().split())
     offset = p.get('offset', 0)
@@ -100,7 +102,7 @@ def indexed_page(rows, p, *, complete=True):
         head = word_aliases(row['entry'] for row in rows).get(word) or word
         rows = [row for row in rows if canonical(row['entry']) == head]
     matches = []
-    source_recall = scope == 'source' and bool(source) and not offset and not dictation
+    source_recall = scope == 'source' and bool(source) and not offset and not practice
     if scope == 'recent-recall' or source_recall:
         from study_senses import recall_round, recent_recall
         now = time.time()
@@ -111,11 +113,12 @@ def indexed_page(rows, p, *, complete=True):
         if scope == 'anki-only' and row.get('syncState') != 'anki-only': continue
         if scope == 'manual-known' and not row.get('manualKnown'): continue
         if scope == 'favorites' and not row.get('favorite'): continue
-        if (scope == 'saved' or dictation) and not saved_record(row): continue
+        if (scope == 'saved' or practice) and not saved_record(row): continue
         if scope == 'linked' and row.get('ankiState') != 'linked' and not linked_note_ids((row,)): continue
         order = recent_recall(row, now) if scope == 'recent-recall' else row['created']
         if scope == 'recent-recall' and not order: continue
         if dictation and (not e['sentence'] or not has_current_audio(row)): continue
+        if translating and (e.get('kind') != 'sentence' or e.get('language', 'en') != 'en' or not e['translation'].strip()): continue
         rank = 0
         if query:
             match = search_hit(row, query)
@@ -141,12 +144,12 @@ def indexed_page(rows, p, *, complete=True):
                 focus_ids.add(row['id'])
     if focus:
         matches.sort(key=lambda match: (match[2]['id'] != focus.get('id'), match[2]['id'] not in focus_ids))
-    if dictation:
+    if practice:
         unique = {}
         for match in matches:
             unique.setdefault(match[2]['entry']['sentence'], match)
         matches = list(unique.values())
-    extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not dictation and not focus and p.get('language', 'en') == 'en' else {}
+    extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not practice and not focus and p.get('language', 'en') == 'en' else {}
     page = [row for _, _, row in matches[offset:offset + PAGE_SIZE]]
     if focus and scope == 'word':
         extras.update(focusIds=[row['id'] for row in page if row['id'] in focus_ids], focusTotal=len(focus_ids),

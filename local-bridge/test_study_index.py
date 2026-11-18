@@ -79,6 +79,28 @@ class RecordIndexTests(AutoSyncTests):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.library.handle(request)['total'], normal['total'])
 
+    def test_translation_practice_finds_saved_whole_sentences_before_paging(self):
+        def save(sentence, url, whole=False, translation=''):
+            entry = {'word': sentence if whole else sentence.split()[0], 'sentence': sentence,
+                     'url': url, 'translation': translation, **({'kind': 'sentence'} if whole else {})}
+            return self.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})
+
+        source = 'https://example.test/coast'
+        old = save('We finally reached the harbor.', source, True, '我们终于到达港口。')
+        save('We finally reached the harbor.', source + '#other', True, '我们终于到达港口。')
+        save('The harbor was quiet.', source, True)
+        save('Ships were near the harbor.', source + '/another', True, '船在港口附近。')
+        for i in range(12):
+            save(f'Word{i} means something near the harbor.', source, translation='港口')
+        args = {'action': 'libraryList', 'scope': 'source', 'url': source, 'title': ''}
+        self.assertNotIn(old['id'], {r['id'] for r in self.library.handle(args)['items']})
+        self.calls.clear()
+        with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('practice reopened a note')):
+            result = self.library.handle({**args, 'practice': 'translation', 'query': '港口'})
+        self.assertEqual(result['total'], 1)
+        self.assertEqual([r['entry']['sentence'] for r in result['items']], [old['entry']['sentence']])
+        self.assertEqual(self.calls, [])
+
     def test_video_source_uses_playback_order_for_the_list_and_dictation(self):
         local = 'file:///examples/a/Lesson.mp4#study-duration=80'
         for word, second in [('later', 52), ('first', 0), ('middle', 10), ('unknown', None)]:

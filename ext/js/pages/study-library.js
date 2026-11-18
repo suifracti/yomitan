@@ -42,7 +42,7 @@ const SOURCES_UPDATE_BRIDGE = '当前的本机桥还不能按素材查看。可�
 /** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}, translation?: string}}} SensePracticeItem */
 /** @typedef {'cloze'|'dictation'|'recall'|'translation'} PracticeMode */
 /** @typedef {{row: StudyLibraryRecord, kind: 'cloze'|'dictation'|'read', text: string, answer: string, hint: string}} SentencePrompt */
-/** @typedef {{prompts: SentencePrompt[], hasMore: boolean}} DictationRound */
+/** @typedef {{prompts: SentencePrompt[], hasMore: boolean}} SentenceRound */
 /** @typedef {{url: string, title: string, records: number, audio: number, recall?: number}} SourceShelfItem */
 
 /**
@@ -538,7 +538,7 @@ function makeVideoListenButton(row, report) {
  * @param {PracticeMode} mode
  * @param {(row: StudyLibraryRecord, report?: (message: string) => void) => HTMLButtonElement | null} makeAudioButton
  * @param {() => void} stopAudio
- * @param {() => Promise<DictationRound>} [loadNextRound]
+ * @param {() => Promise<SentenceRound>} [loadNextRound]
  */
 function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, loadNextRound) {
     const heading = document.createElement('h2');
@@ -554,7 +554,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
     const show = () => {
         if (index === queue.length) {
             heading.textContent = '本轮结束';
-            const message = Object.assign(document.createElement('p'), {textContent: loadNextRound ? '还有可练的原声。这组的作答不会保存。' : '可返回学习库继续找原句。这轮不保存成绩。'});
+            const message = Object.assign(document.createElement('p'), {textContent: loadNextRound ? (translating ? '还有已存的原句可练。' : '还有可练的原声。这组的作答不会保存。') : '可返回学习库继续找原句。这轮不保存成绩。'});
             panel.replaceChildren(heading, message);
             const actions = document.createElement('div');
             actions.className = 'study-library-practice-choices';
@@ -572,7 +572,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
                         if (!hasMore) { loadNextRound = void 0; }
                         if (next.length === 0) {
                             load.remove();
-                            message.textContent = '目前没有更多可练的原声了。';
+                            message.textContent = translating ? '目前没有更多带译文的原句了。' : '目前没有更多可练的原声了。';
                             heading.focus();
                             return;
                         }
@@ -1122,11 +1122,12 @@ async function initializePage() {
             cancelSentenceSearch();
             const listening = button === dictationButton;
             const translating = button === translationButton;
+            const indexedPractice = listening || translating;
             /** @type {PracticeMode} */
             let mode = category === 'recent-recall' ? 'recall' : 'cloze';
             if (listening) { mode = 'dictation'; }
             if (translating) { mode = 'translation'; }
-            /** @type {(() => Promise<DictationRound>) | undefined} */
+            /** @type {(() => Promise<SentenceRound>) | undefined} */
             let loadNextRound;
             /**
              * @param {SentencePrompt[]} prompts
@@ -1134,7 +1135,7 @@ async function initializePage() {
              */
             const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, mode, makeSavedAudioButton, clearSavedAudio, loadNextRound));
             let prompts = listening ? dictation : (translating ? translations : cloze);
-            if (activePractice === button || (mode === 'recall' && recallRound) || (!listening && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
+            if (activePractice === button || (mode === 'recall' && recallRound) || (!indexedPractice && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
                 open(prompts);
                 return;
             }
@@ -1146,9 +1147,11 @@ async function initializePage() {
             const indexed = canSearch;
             const base = libraryScope(category);
             let failed = false;
+            let readOrdinaryPages = !indexedPractice;
+            let oldPractice = false;
             try {
-                if (listening) {
-                    const payload = {...base, practice: 'dictation', ...(query ? {query} : {})};
+                if (indexedPractice) {
+                    const payload = {...base, practice: translating ? 'translation' : 'dictation', ...(query ? {query} : {})};
                     let nextOffset = 0;
                     let available = Number.POSITIVE_INFINITY;
                     /** @type {SentencePrompt[]} */
@@ -1163,10 +1166,17 @@ async function initializePage() {
                         }
                         return {prompts: waiting.splice(0, SENTENCE_PRACTICE_LIMIT), hasMore: waiting.length > 0 || nextOffset < available};
                     };
-                    const first = await readRound();
-                    prompts = first.prompts;
-                    if (first.hasMore) { loadNextRound = readRound; }
-                } else {
+                    try {
+                        const first = await readRound();
+                        prompts = first.prompts;
+                        if (first.hasMore) { loadNextRound = readRound; }
+                    } catch (error) {
+                        if (!translating || !(error instanceof Error) || !['练习类型无效。', '不支持的学习库操作或字段。'].includes(error.message)) { throw error; }
+                        oldPractice = true;
+                        readOrdinaryPages = moreScopedPrompts();
+                    }
+                }
+                if (readOrdinaryPages && sentenceSearch === request) {
                     const end = total;
                     let next = offset;
                     while (prompts.length < SENTENCE_PRACTICE_LIMIT && next < end) {
@@ -1186,7 +1196,9 @@ async function initializePage() {
             } else if (listening) {
                 setStatus(failed ? '暂时没能查到更多录音。可多加载一些记录，再试听写。' : '这里没有能练听写的录音。可以换个分类或清空搜索再试。');
             } else if (translating && !failed) {
-                setStatus('这里还没有带译文的整句。划词翻译后，可以点「记住这句」。');
+                setStatus(oldPractice && !readOrdinaryPages && offset < total ?
+                    '这版暂时只能练已显示的原句，可以先点「加载更多」。' :
+                    '这里还没有带译文的整句。划词翻译后，可以点「记住这句」。');
             } else {
                 setStatus(failed ? '后面的原句没有读到，可以再试一次。' : '这次没找到能练的原句，可以继续看记录。');
             }
@@ -1653,7 +1665,7 @@ listedQuery :
             cloze = loading || listError ? [] : sentencePrompts(practiceRows, [], recall ? 'recall' : 'cloze');
             dictation = recall || loading || listError ? [] : sentencePrompts(rows, [], 'dictation');
             translations = waiting || loading || listError ? [] : sentencePrompts(rows, [], 'translation');
-            const canFindTranslation = translations.length > 0 || activePractice === translationButton || (category === 'source' && moreScopedPrompts());
+            const canFindTranslation = translations.length > 0 || activePractice === translationButton || total > 0;
             translationButton.hidden = waiting || loading || Boolean(listError) || !['all', 'saved', 'source'].includes(category) || !canFindTranslation;
             if (activePractice !== clozeButton && sentenceSearch?.button !== clozeButton) { clozeButton.textContent = clozeLabel(); }
             clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
