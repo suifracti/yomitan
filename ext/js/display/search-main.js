@@ -117,11 +117,14 @@ await Application.main(true, async (application) => {
             let savedRecordEntry;
             /** @type {string[]|undefined} */
             let savedRecordTurnIds;
+            /** @type {import('study').LearningTurn[]|undefined} */
+            let savedRecordTurns;
             if (savedRecordId) {
                 try {
                     const record = await readStudyRecord(savedRecordId, resumeParams.get('studyLanguage') ?? 'en');
                     savedRecordEntry = record.entry;
                     savedRecordTurnIds = record.turnIds ?? [];
+                    savedRecordTurns = record.savedTurns;
                 } catch (error) {
                     const heading = document.querySelector('#study-detail-heading');
                     if (heading instanceof HTMLElement) {
@@ -150,6 +153,7 @@ await Application.main(true, async (application) => {
                     savedRecordId,
                     savedRecordEntry,
                     savedRecordTurnIds,
+                    savedRecordTurns,
                     savedRecordWord: query,
                     studyAddCard: resumeParams.get('studyAddCard') === '1'},
                 content: {}});

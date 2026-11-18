@@ -148,6 +148,7 @@ export function bindStudyWordTabs(display, nav, reveal) {
         if (entry.sentence.trim() !== savedState.sentence?.text.trim() || (entry.url || '') !== (savedState.url || '') ||
         entry.videoTime !== at) { return; }
         const turns = row.turnIds ?? (savedState.savedRecordId === row.id ? savedState.savedRecordTurnIds : []);
+        if (savedState.savedRecordId !== row.id) { delete savedState.savedRecordTurns; }
         savedState.savedRecordId = row.id;
         savedState.savedRecordWord = entry.word;
         savedState.savedRecordEntry = entry;

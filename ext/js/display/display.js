@@ -1442,6 +1442,7 @@ export class Display extends EventDispatcher {
                 state.savedRecordWord = entry.word;
                 state.savedRecordEntry = entry;
                 state.savedRecordTurnIds = record.turnIds ?? [];
+                state.savedRecordTurns = record.savedTurns;
                 state.studySentenceTranslation = entry.translation || state.studySentenceTranslation;
                 changeHistory = true;
             } catch (error) {

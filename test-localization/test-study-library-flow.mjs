@@ -8,6 +8,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {JSDOM} from 'jsdom';
 import {StudyService} from '../ext/js/study/study-service.js';
+import {readStudyRecord} from '../ext/js/study/study-client.js';
 import {prepareStudyTranslation} from '../ext/js/display/study-translation.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -70,7 +71,7 @@ class FakeAnki:
 
 vault = pathlib.Path(sys.argv[2])
 anki = FakeAnki()
-library = StudyLibrary(vault, anki=anki)
+library = StudyLibrary(vault, anki=anki, group_words=sys.argv[3] == 'grouped')
 print(json.dumps({'ready': True, 'model': library.model, 'deck': library.deck}), flush=True)
 for line in sys.stdin:
     request = json.loads(line)
@@ -110,8 +111,8 @@ function deferred() {
 
 class TemporaryVaultBridge {
     /** @param {string} vault */
-    constructor(vault) {
-        this.child = spawn('python3', ['-B', '-u', '-c', PYTHON_BRIDGE, path.join(ROOT, 'local-bridge'), vault], {stdio: ['pipe', 'pipe', 'pipe']});
+    constructor(vault, grouped = false) {
+        this.child = spawn('python3', ['-B', '-u', '-c', PYTHON_BRIDGE, path.join(ROOT, 'local-bridge'), vault, grouped ? 'grouped' : 'separate'], {stdio: ['pipe', 'pipe', 'pipe']});
         this.pending = new Map();
         this.nextId = 0;
         this.stderr = '';
@@ -178,10 +179,10 @@ function markdownFiles(root) {
 
 function count(text, needle) { return text.split(needle).length - 1; }
 
-async function createHarness(t, {cards = [], loseSaveReply = false} = {}) {
+async function createHarness(t, {cards = [], loseSaveReply = false, grouped = false} = {}) {
     const vault = mkdtempSync(path.join(tmpdir(), 'yomitan-study-flow-'));
     t.after(() => rmSync(vault, {recursive: true, force: true}));
-    const bridge = new TemporaryVaultBridge(vault);
+    const bridge = new TemporaryVaultBridge(vault, grouped);
     t.after(() => bridge.close());
     await bridge.ready.promise;
     const data = {};
@@ -291,7 +292,7 @@ async function askCompletedQuestion(container, service) {
     assert.ok(question, 'the translation UI must preserve the completed follow-up question');
     question.value = QUESTION;
     container.querySelector('[data-study-translate="explain"]').click();
-    await waitFor(() => container.querySelector('.study-request-status')?.textContent.includes('点“记住它”'), 'completed UI answer');
+    await waitFor(() => container.querySelector('.study-turn-answer')?.textContent.includes(ANSWER), 'completed UI answer');
     const turns = await service.handle('journalConversation', {word: 'just', sentence: SENTENCE, context: '', url: ARTICLE_URL, title: 'Synthetic article'});
     assert.equal(turns.length, 1);
     assert.equal(turns[0].question, QUESTION);
@@ -340,21 +341,31 @@ test('translation UI saves the completed original Q&A without card selection or 
 });
 
 test('reopening a saved context isolates older history and keeps new auto-synced answers', async (t) => {
-    const h = await createHarness(t);
+    const h = await createHarness(t, {grouped: true});
     const entry = {word: 'just', language: 'en', sentence: SENTENCE, context: 'The judge explains the decision.',
         url: ARTICLE_URL, title: 'Synthetic article', videoTime: 72,
         meaning: '原来保存的含义', translation: '原来保存的译文', notes: '原来保存的学习提示', explanationSource: 'AI 辅助解释（非词典原文）'};
-    // A rebuilt note can have no turnIds while older saved history remains locally.
+    // An unrelated earlier browser turn isn't part of either explicitly saved sense.
     await h.service.journal.append(entry, {meaning: '过期的本机解释', translation: '过期的本机译文', notes: '过期的提示'});
     await h.service.journal.acknowledge(await h.service.journal.get(entry));
-    const seeded = await h.native({action: 'librarySave', entry, makeCard: false}).promise;
+    const archived = {id: 'archived-1', at: '2026-09-12T08:00:00Z', mode: 'explain', question: '这里为什么用 *just*？',
+        translation: '', meaning: '先前写下的解释', notes: '原文是 [just]。\n记得对比 <fair>。', feedback: 'unconfirmed'};
+    const seeded = await h.native({action: 'librarySave', entry, makeCard: false, turns: [archived]}).promise;
     assert.equal(seeded.ok, true, seeded.error);
     const id = seeded.library.id;
-    const saved = (await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise).library.items[0].record;
-    const source = {...saved.entry, recordId: id, savedTurnIds: saved.turnIds ?? [], contextSelected: true};
+    const other = await h.native({action: 'librarySave', makeCard: false,
+        entry: {...entry, sense: {key: 'new', gloss: '刚刚'}},
+        turns: [{...archived, id: 'other-turn', question: '另一义项的问题'}]}).promise;
+    assert.equal(other.ok, true, other.error);
+    assert.notEqual(other.library.id, id);
+    assert.equal(other.library.path, seeded.library.path, 'the two notes share a grouped Markdown file');
+    const saved = await readStudyRecord(id, 'en');
+    assert.deepEqual(saved.savedTurns, [{...archived, saved: true}], 'the exact note is the source of history when the browser has no copy');
+    const source = {...saved.entry, recordId: id, savedTurnIds: saved.turnIds ?? [], savedTurns: saved.savedTurns, contextSelected: true};
     const {dom, container, view} = mountUi(SENTENCE, source);
     t.after(() => { view.cancel(); dom.window.close(); });
     await waitFor(() => container.querySelector('[data-study-translate="explain"]') && !container.querySelector('[data-study-translate="explain"]').disabled, 'restored learning controls');
+    await waitFor(() => container.querySelector('[data-study-restored] .study-ai-notes')?.textContent === archived.notes, 'record-only answer');
     container.querySelector('[data-study-save="note"]').click();
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'restored save receipt');
     let read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
@@ -375,8 +386,9 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     const answer = {meaning: MEANING, translation: TRANSLATION, notes: ANSWER};
     container.querySelector('.study-followup').value = QUESTION;
     container.querySelector('[data-study-translate="explain"]').click();
-    await waitFor(() => container.querySelector('.study-request-status')?.textContent.includes('点“记住它”'), 'new answer after fast automatic acknowledgement');
-    assert.equal((await h.service.journal.conversation(entry)).every((turn) => turn.saved), true);
+    await waitFor(() => [...container.querySelectorAll('.study-turn-answer')].some((row) => row.textContent.includes(ANSWER)), 'new answer after fast automatic acknowledgement');
+    const turns = await h.service.journal.conversation({...entry, recordId: id});
+    assert.equal(turns.find((turn) => turn.question === QUESTION)?.saved, true);
     container.querySelector('[data-study-save="note"]').click();
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'new answer save');
     read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
@@ -389,11 +401,12 @@ test('reopening a saved context isolates older history and keeps new auto-synced
 
     const manual = '笔记里后来核对过的含义。';
     await h.native({action: 'libraryUpdate', id, entry: {meaning: manual}}).promise;
-    const current = (await h.native({action: 'libraryRead', ids: [id]}).promise).library.items[0].record;
+    await h.storage.set({studyLearningJournalV1: []});
+    const current = await readStudyRecord(id, 'en');
     view.cancel();
     container.replaceChildren();
-    view.render(container, SENTENCE, 'just', {...current.entry, recordId: id, savedTurnIds: current.turnIds, contextSelected: true});
-    await waitFor(() => container.querySelector('.study-conversation-turn'), 'old saved history beside the fresh note snapshot');
+    view.render(container, SENTENCE, 'just', {...current.entry, recordId: id, savedTurnIds: current.turnIds, savedTurns: current.savedTurns, contextSelected: true});
+    await waitFor(() => container.querySelectorAll('.study-conversation-turn[data-study-restored]').length === 2, 'both saved answers with no browser history beside the fresh note snapshot');
     container.querySelector('[data-study-save="note"]').click();
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存') && !container.querySelector('[data-study-save="note"]').disabled, 'save without reverting to the old cached answer');
     read = await h.native({action: 'libraryRead', ids: [id]}).promise;
@@ -403,6 +416,12 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     assert.deepEqual(state.notes, {});
     assert.equal(h.modelCalls.filter((call) => call.action === 'explain').length, 1);
     assert.equal(h.modelCalls.some((call) => call.action === 'cards'), false);
+    const upgradedBridge = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = async (message) => message.data?.includeTurns ?
+        {ok: false, error: '不支持的学习库操作或字段。'} : upgradedBridge(message);
+    const legacy = await readStudyRecord(id, 'en');
+    assert.equal(legacy.entry.meaning, manual);
+    assert.equal(legacy.savedTurns, undefined);
     view.cancel();
     await waitFor(() => h.bridge.pending.size === 0, 'outstanding readback before closing the temporary bridge');
 });

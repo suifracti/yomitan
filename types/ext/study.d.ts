@@ -187,6 +187,7 @@ export type JournalRow = {
 };
 
 export type LearningMaterial = {
+    savedTurns?: LearningTurn[];
     relatedMemory?: string;
     confirmedCards?: string;
     record?: LibraryRecord;

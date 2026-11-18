@@ -741,7 +741,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             const turns = /** @type {HTMLElement[]} */ ([...(output?.querySelectorAll('.study-conversation-turn') || [])]);
             /** @param {Element} node */
             const isTranslationTurn = (node) => node.getAttribute('data-study-mode') === 'translate';
-            const questionTurns = turns.filter((node) => !isTranslationTurn(node) && (!savedWithoutDictionary || typeof node.dataset.studyRestored === 'undefined'));
+            const questionTurns = turns.filter((node) => !isTranslationTurn(node) && typeof node.dataset.studyArchived === 'undefined' && (!savedWithoutDictionary || typeof node.dataset.studyRestored === 'undefined'));
             const turn = [...questionTurns].reverse().find((node) => node.querySelector('.study-turn-answer')) || questionTurns.at(-1);
             const prior = turns.filter((node) => node !== turn);
             const answer = turn?.querySelector('.study-turn-answer');

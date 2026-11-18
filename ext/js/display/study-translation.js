@@ -304,7 +304,7 @@ export function updateStudySourcePreview(target, text) {
 }
 
 /**
- * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, supplementAudio?: boolean, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, savedTurnIds?: string[], meaning?: string, notes?: string, explanationSource?: string}) => void}}
+ * @returns {{cancel: () => void, render: (container: HTMLElement, sentence: string, word: string, source?: {translation?: string, cancelCapture?: () => Promise<void>, subtitleSnapshot?: import('../app/frontend.js').StudySubtitle, mediaRange?: import('study').MediaRange, supplementAudio?: boolean, language?: string, lemma?: string, reading?: string, dictionaryNotes?: string, capture?: import('study').CaptureMedia, url?: string, title?: string, context?: string, recordId?: string, videoTime?: number, contextSelected?: boolean, savedTurnIds?: string[], savedTurns?: import('study').LearningTurn[], meaning?: string, notes?: string, explanationSource?: string}) => void}}
  */
 export function prepareStudyTranslation() {
     let generation = 0;
@@ -669,10 +669,19 @@ export function prepareStudyTranslation() {
             };
             const refresh = async () => {
                 const identityAtRead = identity();
-                const turns = /** @type {import('study').LearningTurn[]} */ (await studyCall('journalConversation', {...lookup(), savedTurnIds}));
-                if (!isCurrent() || identityAtRead !== identity() || !Array.isArray(turns)) {
+                const localTurns = /** @type {import('study').LearningTurn[]} */ (await studyCall('journalConversation', {...lookup(), savedTurnIds}));
+                if (!isCurrent() || identityAtRead !== identity() || !Array.isArray(localTurns)) {
                     return;
                 }
+                const savedTurns = recordId === source.recordId && editor.value.trim() === sentence.trim() ? source.savedTurns ?? [] : [];
+                const archived = new Map(savedTurns.map((turn) => [turn.id, turn]));
+                const turns = localTurns.map((turn) => {
+                    const saved = archived.get(turn.id);
+                    archived.delete(turn.id);
+                    return saved ? {...saved, usage: turn.usage, ...(!turn.saved ? {saved: false, feedback: turn.feedback} : {})} : turn;
+                });
+                turns.push(...archived.values());
+                if (savedTurns.length > 0) { turns.sort((a, b) => a.at.localeCompare(b.at)); }
                 const opened = new Set([...output.querySelectorAll('details[open]')].map((e) => /** @type {HTMLElement} */ (e).dataset.turnId));
                 const oldLast = output.lastElementChild?.getAttribute('data-turn-id');
                 output.replaceChildren();
@@ -697,6 +706,8 @@ export function prepareStudyTranslation() {
                     panel.className = 'study-conversation-turn';
                     panel.dataset.turnId = turn.id;
                     if (!currentAnswer(turn)) { panel.dataset.studyRestored = ''; }
+                    const archiveOnly = archived.has(turn.id);
+                    if (archiveOnly) { panel.dataset.studyArchived = ''; }
                     const isTranslation = turn.mode === 'translate';
                     panel.dataset.studyMode = isTranslation ? 'translate' : 'explain';
                     panel.open = opened.has(turn.id) || (index === turns.length - 1 && oldLast !== turn.id);
@@ -721,15 +732,18 @@ export function prepareStudyTranslation() {
                     const usage = d.createElement('p');
                     usage.className = 'study-turn-usage';
                     usage.textContent = usageText(turn.usage);
-                    usage.hidden = isTranslation;
+                    usage.hidden = isTranslation || archiveOnly;
                     const feedback = d.createElement('div');
                     feedback.className = 'study-learning-actions study-feedback';
-                    feedback.hidden = isTranslation;
+                    feedback.hidden = isTranslation || archiveOnly;
                     const feedbackStatus = d.createElement('p');
                     feedbackStatus.className = 'study-feedback-status';
                     feedbackStatus.hidden = isTranslation;
                     feedbackStatus.setAttribute('role', 'status');
                     const choices = [['understood', '这次懂了'], ['unclear', '仍然不懂']];
+                    if (archiveOnly) {
+                        feedbackStatus.textContent = choices.find(([value]) => value === turn.feedback)?.[1] ?? '';
+                    }
                     /** @type {HTMLButtonElement[]} */
                     const feedbackButtons = [];
                     /** @param {string} value */
@@ -738,7 +752,7 @@ export function prepareStudyTranslation() {
                             b.setAttribute('aria-pressed', String(b.dataset.feedback === value));
                         }
                     };
-                    for (const [value, title] of (isTranslation ? [] : choices)) {
+                    for (const [value, title] of (isTranslation || archiveOnly ? [] : choices)) {
                         const b = button(title);
                         b.dataset.feedback = value;
                         feedbackButtons.push(b);

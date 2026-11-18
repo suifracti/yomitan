@@ -403,6 +403,8 @@ def _normalize_request(p):
             raise ValueError('学习列表范围无效。')
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),
                 **({'query': text(p['query'], 240)} if 'query' in p else {})}
+    if action == 'libraryRead' and set(p) == {'action', 'ids', 'includeTurns'} and p['includeTurns'] is True and isinstance(p['ids'], list) and len(p['ids']) == 1:
+        return {**_normalize_request({'action': action, 'ids': p['ids']}), 'includeTurns': True}
     if action in ('librarySync', 'libraryRead') and set(p) == {'action', 'ids'} and isinstance(p['ids'], list) and 1 <= len(p['ids']) <= 10:
         if len(set(p['ids'])) != len(p['ids']) or any(not isinstance(i, str) or not ID_RE.fullmatch(i) for i in p['ids']):
             raise ValueError('学习记录编号无效。')
@@ -482,6 +484,39 @@ def source_line(entry):
 
 def paragraph(s):
     return '\n'.join('> ' + safe_markdown(line) for line in s.splitlines()) if s else '（未填写）'
+
+
+def saved_learning_turns(record, body):
+    """Read generated quote blocks in this context, never an adjacent note or unsent browser history."""
+    confirmed = set(record.get('turnIds', []))
+    if not confirmed:
+        return []
+    fields = {'我的问题': 'question', '原句翻译': 'translation', '这里的含义': 'meaning',
+              'AI 的解释（非权威原文）': 'notes', '学习记录': 'notes'}
+    turns = {}
+    heading = re.compile(r'^(学习过程|翻译过程|理解反馈) · ([^\n]{1,40})\n\n轮次 ID：([a-zA-Z0-9_-]{6,80})\n\n')
+    quote = re.compile(r'^(' + '|'.join(fields) + r')：\n\n((?:^> [^\n]*(?:\n|\Z))+)', re.M)
+    for block in re.split(r'^#{1,6} ', body, flags=re.M):
+        match = heading.match(block)
+        if not match or match[3] not in confirmed:
+            continue
+        kind, at, ident = match.groups()
+        feedback = next((value for line, value in (
+            ('本人反馈：这次解释我懂了', 'understood'), ('本人反馈：仍然不懂', 'unclear')
+        ) if line in block.splitlines()), 'unconfirmed')
+        if kind == '理解反馈':
+            if ident in turns:
+                turns[ident]['feedback'] = feedback
+            continue
+        if ident in turns:
+            continue
+        turn = dict.fromkeys(fields.values(), '')
+        for label, value in quote.findall(block):
+            raw = '\n'.join(line[2:] for line in value.splitlines())
+            turn[fields[label]] = html.unescape(re.sub(r'\\([\\`*_{}\[\]()#!|])', r'\1', raw))
+        turns[ident] = {**turn, 'id': ident, 'at': at, 'feedback': feedback, 'saved': True,
+                        'mode': 'translate' if kind == '翻译过程' else 'explain'}
+    return list(turns.values())[-5:]
 
 
 class StudyLibrary:
@@ -882,7 +917,7 @@ class StudyLibrary:
         self.write(r, body, version)
         return self.result(ident)
 
-    def material(self, ident):
+    def material(self, ident, *, include_turns=False):
         r, body, version = self.read(ident)
         body = self.without_draft(r, body)
         confirmed = '已确认复习卡（本记录，非全Anki库）：\n' + '\n'.join(c['front'] + ' → ' + c['back'] + ' [' + c['state'] + ']' for c in r.get('cards', [])[-8:])
@@ -890,6 +925,7 @@ class StudyLibrary:
             confirmed += '\n旧词句卡：' + r['entry']['word'] + ' → ' + r['entry']['meaning'] + ' [' + r['ankiState'] + ']'
         confirmed = re.sub(r'(?:https?://|obsidian://)\S+|\[\[.*?\]\]', '[来源省略]', confirmed)
         confirmed = confirmed[:2400] + ('\n[历史卡摘要截断]' if len(confirmed) > 2400 else '')
+        saved_turns = {'savedTurns': saved_learning_turns(r, body)} if include_turns else {}
         # Send learning prose, including user edits, but not metadata, source URLs or vault paths.
         body = re.sub(r'^#{2,3} 来源\n.*?(?=^#{2,3} |\Z)', '', body, flags=re.M | re.S)
         body = re.sub(r'\[\[.*?\]\]', '', body)
@@ -898,7 +934,7 @@ class StudyLibrary:
         if truncated:
             body = body[:1000] + '\n[中间较早内容未送入本次模型，完整记录仍在笔记]\n' + body[-5000:]
         return {'id': ident, 'version': version, 'word': r['entry']['word'], 'language': self.language, 'text': body,
-                'truncated': truncated, 'confirmedCards': confirmed, 'updated': r.get('updated', r['created'])}
+                'truncated': truncated, 'confirmedCards': confirmed, 'updated': r.get('updated', r['created']), **saved_turns}
 
     def sync_cards(self, r, body, version):
         if not self.anki_enabled:
@@ -1041,7 +1077,7 @@ class StudyLibrary:
                         record = self.result(i)
                         e = record['entry']
                         evidence = {'unavailable': True} if e.get('subtitleSource') or not self.anki_enabled else memory(self, e['word'], e.get('lemma', ''))
-                        items.append({**self.material(i), 'record': record, 'relatedMemory': compact(evidence)})
+                        items.append({**self.material(i, include_turns=p.get('includeTurns', False)), 'record': record, 'relatedMemory': compact(evidence)})
                     return {'items': items, **({'ankiEnabled': self.anki_enabled} if self.target_id else {})}
                 finally:
                     del self.memory_deadline

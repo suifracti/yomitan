@@ -34,14 +34,19 @@ export async function studyCall(action, data = {}) {
  * Read one saved context in the extension UI, never its first same-word neighbour.
  * @param {string} id
  * @param {string} language
- * @returns {Promise<import('study').LibraryRecord>}
+ * @returns {Promise<import('study').LibraryRecord & {savedTurns?: import('study').LearningTurn[]}>}
  * @throws {Error}
  */
 export async function readStudyRecord(id, language) {
-    const read = /** @type {{items: import('study').LearningMaterial[]}} */ (await studyCall('libraryRead', {ids: [id], language}));
-    const record = read.items.find((item) => item.record?.id === id)?.record;
+    const request = {ids: [id], language};
+    const response = await studyCall('libraryRead', {...request, includeTurns: true}).catch((error) => {
+        if (error instanceof Error && error.message === '不支持的学习库操作或字段。') { return studyCall('libraryRead', request); }
+        throw error;
+    });
+    const item = /** @type {{items: import('study').LearningMaterial[]}} */ (response).items.find((row) => row.record?.id === id);
+    const record = item?.record;
     if (!record?.entry) { throw new Error('这条笔记没读到，请回学习库重新打开。'); }
-    return record;
+    return {...record, savedTurns: item?.savedTurns};
 }
 
 /** @type {import('study').NativeCall} */
