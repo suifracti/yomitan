@@ -17,6 +17,7 @@
  */
 
 import {mediaKeyOf, timedUrl, videoListenUrl} from './media-key.js';
+import {BILIBILI_HOST} from './media-rules.js';
 import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
@@ -1368,10 +1369,13 @@ export function prepareStudyService(lookupDictionary = null) {
             const request = /** @type {{requestId?: string}} */ (data || {});
             const scoped = {...request, ...(request.requestId ? {requestId: `${sender.tab?.id}:${sender.documentId || ''}:${request.requestId}`} : {})};
             void (async () => {
+                /** @type {Record<string, unknown>} */
+                let forwarded = scoped;
                 // A reader may remember progress or look up words for its own video only.
                 if (studyAction === 'libraryVideoWords' || studyAction === 'videoStateUpdate') {
                     const asked = /** @type {{mediaKey?: unknown}} */ (data ?? {}).mediaKey;
-                    const own = sender.url?.startsWith('file:') && typeof asked === 'string' && /^file:.+\|[0-9]+$/.test(asked) ? asked : mediaKeyOf(/** @type {string} */ (sender.url));
+                    const url = (studyAction === 'libraryVideoWords' ? pageUrl(sender) : sender.url) ?? '';
+                    const own = url.startsWith('file:') && typeof asked === 'string' && /^file:.+\|[0-9]+$/.test(asked) ? asked : mediaKeyOf(url);
                     if (!own || asked !== own) { throw new Error(studyAction === 'videoStateUpdate' ? '只能记住当前视频的进度。' : '只能读取当前视频的生词。'); }
                     if (studyAction === 'videoStateUpdate') {
                         const {patch} = /** @type {{patch?: import('./subtitle-prefs.js').VideoStatePatch}} */ (data);
@@ -1380,10 +1384,12 @@ export function prepareStudyService(lookupDictionary = null) {
                         return true;
                     }
                     if (Object.keys(/** @type {object} */ (data ?? {})).length !== 1) { throw new Error('只能读取当前视频的生词。'); }
+                    const source = new URL(url);
+                    if ((source.hostname === BILIBILI_HOST || source.hostname.endsWith(`.${BILIBILI_HOST}`)) && source.pathname.startsWith('/video/')) {
+                        forwarded = {mediaKey: own, sourceUrl: source.href};
+                    }
                 }
                 // The summary's video URL comes from the sender, never from the page's message.
-                /** @type {Record<string, unknown>} */
-                let forwarded = scoped;
                 if (studyAction === 'libraryVideoSummary') {
                     const local = sender.url?.startsWith('file:');
                     const localUrl = /** @type {{url?: string}} */ (data).url;
@@ -1398,7 +1404,16 @@ export function prepareStudyService(lookupDictionary = null) {
                 if (((studyAction === 'subtitleTranslate' && ['model', 'apple'].includes(engine)) || studyAction === 'subtitleSegment' || studyAction.startsWith('library')) && !await chrome.permissions.contains({permissions: ['nativeMessaging']})) {
                     throw new Error('请先在学习设置中授权本机翻译，再点翻译字幕。');
                 }
-                return await service.handle(studyAction === 'subtitleModels' ? 'models' : studyAction, forwarded);
+                const action = studyAction === 'subtitleModels' ? 'models' : studyAction;
+                try {
+                    return await service.handle(action, forwarded);
+                } catch (error) {
+                    // An older bridge only accepts the reader's original one-field query.
+                    if (action === 'libraryVideoWords' && forwarded.sourceUrl && error instanceof Error && error.message === '视频编号无效。') {
+                        return await service.handle(action, {mediaKey: forwarded.mediaKey});
+                    }
+                    throw error;
+                }
             })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '字幕翻译未完成。'}));
             return true;
         }
@@ -1432,7 +1447,7 @@ export function prepareStudyService(lookupDictionary = null) {
                 if (wholeVideo === true) {
                     const result = /** @type {{items: import('study').SavedVideoListening[]}} */ (await service.handle('libraryVideoWords', {mediaKey, sourceUrl: url.href})
                         .catch(() => { throw new Error('没能读到本视频的原句。可以先回视频听一条，或到设置检查本机连接。'); }));
-                    listening = result.items;
+                    listening = result.items.filter((item) => item.videoTime !== null);
                     if (listening.length === 0) { throw new Error('没找到本视频可回听的原句。'); }
                 }
                 const {id: tabId} = await chrome.tabs.create({url: 'about:blank'});

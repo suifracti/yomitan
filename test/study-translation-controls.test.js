@@ -26,6 +26,40 @@ import {writeSubtitlePrefs} from '../ext/js/study/subtitle-prefs.js';
 import {prepareStudyFocus} from '../ext/js/display/study-focus.js';
 import {bindStudyWordTabs} from '../ext/js/display/study-word-tabs.js';
 
+test('Bilibili saved words use the current part from the browser, with legacy exact-key fallback', async () => {
+    /** @typedef {{id: string, frameId: number, url: string, tab: {url: string}}} VideoSender */
+    /** @typedef {(message: object, sender: VideoSender, reply: (value: unknown) => void) => boolean} ReceiveVideo */
+    /** @type {ReceiveVideo} */
+    let receive;
+    vi.stubGlobal('chrome', {
+        runtime: {
+            id: 'test',
+            getURL: (/** @type {string} */ name) => `chrome-extension://test/${name}`,
+            onMessage: {addListener: (/** @type {ReceiveVideo} */ fn) => { receive = fn; }},
+        },
+        permissions: {contains: async () => true},
+        storage: {local: {get: async () => ({}), set: async () => {}}},
+    });
+    const read = vi.spyOn(StudyService.prototype, 'handle').mockResolvedValue({items: [{word: 'chime'}]});
+    const url = 'https://www.bilibili.com/video/BV1xx411c7mD?p=2';
+    const mediaKey = 'web:www.bilibili.com/video/BV1xx411c7mD?p=2';
+    const sender = {id: 'test', frameId: 0, url: url.replace('p=2', 'p=1'), tab: {url}};
+    const ask = (/** @type {object} */ data) => new Promise((resolve) => { receive({studyAction: 'libraryVideoWords', data}, sender, resolve); });
+    try {
+        prepareStudyService();
+        expect(await ask({mediaKey})).toEqual({ok: true, value: {items: [{word: 'chime'}]}});
+        expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey, sourceUrl: url});
+        expect(await ask({mediaKey, sourceUrl: sender.url})).toMatchObject({ok: false});
+        expect(read).toHaveBeenCalledOnce();
+        read.mockRejectedValueOnce(new Error('视频编号无效。')).mockResolvedValueOnce({items: [{word: 'ring'}]});
+        expect(await ask({mediaKey})).toEqual({ok: true, value: {items: [{word: 'ring'}]}});
+        expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey});
+    } finally {
+        read.mockRestore();
+        vi.unstubAllGlobals();
+    }
+});
+
 test('parked word cards keep each saved sense and its own unsent draft', async () => {
     const url = 'https://reading.test/story';
     const sentence = {text: 'They charged him.', offset: 5};

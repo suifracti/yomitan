@@ -9,6 +9,7 @@
 | 用户说法或本次触及范围 | 到哪里找 |
 |---|---|
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
+| 同一 B 站选集换网址后，字幕栏和学习库的已记词数不同 | L-007；study-service 的 libraryVideoWords、study_settings.video_words |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
 | Anki 换了账户，一批已有的卡突然显示被删 | L-002；study_settings.auto_sync、study_sync.sync_profile |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
@@ -168,7 +169,9 @@
 
 **学习库回视频听这一句**：`videoListenUrl` 只去掉已知站点的跳时参数，不动选集等来源标记。后端按原记录号读取，交接暂存扩展会话、绑定新标签及原视频的 media key；网址不带笔记资料。字幕偏移恢复后复用原句和保存秒数的唯一匹配，准备好不等于已经播放。没对上的读者可以先切轨或改偏移；受保护来源、已存记录号、制卡和排程不改。见[学习库到单句回听](youtube-study-wiring.md#2026-11-18-从学习库回原视频听这一句)。
 
-**整个视频回听不从学习库当前页拼**：`openVideoListening` 用记录确认来源，整轮才由后台给 `libraryVideoWords` 提供 `sourceUrl`。桥把它与视频 key 核对后用同来源规则取有时间的原句，保留既有上限；网页原本的已记词请求仍按当前媒体 key、不能传额外来源。回听队列按已确认字幕行的真实时间排序，重复台词也必须对回原来的时间。见[从同来源进入整轮回听](youtube-study-wiring.md#2026-11-18-从同来源原句回视频练一轮)。
+**整个视频回听不从学习库当前页拼**：`openVideoListening` 用记录确认来源，再由后台给 `libraryVideoWords` 提供 `sourceUrl`。桥把它与视频 key 核对后按同来源取笔记，保留既有上限；没时间的记录可列出但不进回听。队列按已确认字幕行的真实时间排序，重复台词也必须对回原来的时间。见[从同来源进入整轮回听](youtube-study-wiring.md#2026-11-18-从同来源原句回视频练一轮)。
+
+**B 站同一选集的字幕栏、学习库和小结不要各算一份词数**：网页只能传自己的媒体 key，后台用当前顶层网址（iframe 则用自己的文档网址）校验并补来源；桥沿用同 BV／av、同 P 的规则。支持不了该字段的旧桥退回原 key；网页不能指定其他选集。小结选择内容也走同一组，原目标笔记、明确点击才写的规则、字幕轨和进度 key 不变。见[同 P 三处对照](youtube-study-wiring.md#2026-11-18-b-站同选集的已记词和小结对齐)。
 
 **回听不该拖到下一句开头**：实际播放器的 `timeupdate` 不是句尾精确时钟。保留事件兜底，但按剩余媒体时间和倍速只安排一个句尾定时；播放、跳转完成、变速时重算，换媒体、退出或结束仍清除。独立 Chromium 同一音轨原先晚约 0.22–0.25 秒，改后本次晚不到 0.02 秒。没有增加持续轮询，也不追移用户的播放进度。见[实际整轮点播与读回](youtube-study-wiring.md#2026-11-18-独立浏览器串起整轮回听并缩短句尾延迟)。
 

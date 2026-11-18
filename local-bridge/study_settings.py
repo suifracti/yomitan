@@ -455,7 +455,7 @@ class YomitanLibrary:
         for lib, _path, row in self.indexed()[1].values():
             entry = row['entry']
             if source:
-                if entry.get('videoTime') is None or page_source_key(entry.get('url', '')) != source:
+                if page_source_key(entry.get('url', '')) != source:
                     continue
             elif media_key_of(entry.get('url')) != media_key:
                 continue
@@ -534,8 +534,10 @@ class YomitanLibrary:
             return {'items': [{k: v for k, v in r.items() if k not in ('path', 'vault')} for r in items[:300]],
                     'cardContexts': [{'word': r['word'], 'sentence': r['sentence']} for r in items if r['cards'] or r.get('cardHint')]}
         if action == 'libraryVideoSummary':
+            from study_sources import BILIBILI_HOST, page_source_key
             from study_video import VideoLibrary
-            rows = self.video_words(p['mediaKey'])[:300]
+            source_url = p['url'] if page_source_key(p['url']).startswith(f'web:{BILIBILI_HOST}/video/') else ''
+            rows = self.video_words(p['mediaKey'], source_url)[:300]
             if not rows:
                 raise ValueError('这个视频还没有记住的词，先选词「记住它」。')
             videos = VideoLibrary(self.config['vault'])

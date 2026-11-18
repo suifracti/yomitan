@@ -78,7 +78,17 @@ class VideoMediaTests(unittest.TestCase):
         self.assertEqual([r['word'] for r in rows], ['ring'])
         source = {'action': 'libraryVideoWords', 'mediaKey': 'web:www.bilibili.com/video/BV1xx411c7mD?p=2',
                   'sourceUrl': 'https://www.bilibili.com/video/BV1xx411c7mD?p=2'}
-        self.assertEqual([r['word'] for r in self.library.handle(source)['items']], ['chime', 'ring'])
+        self.library.handle({'action': 'librarySave', 'entry': {'word': 'untimed', 'sentence': 'This note has no timestamp.',
+                             'url': 'https://m.bilibili.com/video/BV1xx411c7mD?p=2'}, 'makeCard': False})
+        grouped = self.library.handle(source)['items']
+        listed = self.library.handle({'action': 'libraryList', 'scope': 'source', 'url': source['sourceUrl'], 'title': ''})['items']
+        self.assertEqual([r['word'] for r in grouped], ['chime', 'ring', 'untimed'])
+        self.assertEqual({r['id'] for r in grouped}, {r['id'] for r in listed})
+        summary = self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': source['mediaKey'],
+                                       'url': source['sourceUrl'], 'title': 'Temporary second part'})
+        summary_text = (self.vault / summary['path']).read_text()
+        self.assertIn('记住了 3 个词', summary_text)
+        self.assertNotIn('**bell**', summary_text)
         with self.assertRaises(ValueError):
             self.library.handle({**source, 'sourceUrl': source['sourceUrl'].replace('p=2', 'p=1')})
         rows = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'web:course.example.org/watch?id=7'})['items']
