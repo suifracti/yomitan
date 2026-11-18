@@ -372,3 +372,14 @@ export function savedStudyRecordId(state, word) {
     const id = state.savedRecordId ?? state.sentence?.recordId;
     return typeof id === 'string' && /^[a-f0-9]{32}$/.test(id) ? id : void 0;
 }
+
+/**
+ * Use the language of the exact read-back record, not the current dictionary or the URL hint.
+ * @param {import('display').HistoryState | null | undefined} state
+ * @param {string} word
+ * @returns {string | undefined}
+ */
+export function savedStudyLanguage(state, word) {
+    const entry = savedStudyRecordId(state, word) ? state?.savedRecordEntry : void 0;
+    return entry ? entry.language ?? 'en' : void 0;
+}

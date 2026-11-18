@@ -7,7 +7,7 @@ import {updateStudySourcePreview, prepareParallelSentence} from './study-transla
 import {explainWordForm, findFormExample} from './study-word-forms.js';
 import {chromeTranslate} from '../study/free-translators.js';
 import {readSubtitlePrefs} from '../study/subtitle-prefs.js';
-import {WORD_STATUS_KEY, createResumeUrl, createSourceLibraryUrl, librarySource, savedStudyRecordId} from '../study/study-data.js';
+import {WORD_STATUS_KEY, createResumeUrl, createSourceLibraryUrl, librarySource, savedStudyLanguage, savedStudyRecordId} from '../study/study-data.js';
 import {timeLabel} from '../study/subtitle-session.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
 
@@ -54,7 +54,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         if (!source) { return; }
         const entry = context.closest('.study-entry');
         const word = cleanText(display.query);
-        const language = display.getOptions?.()?.general?.language === 'ja' ? 'ja' : 'en';
+        const profileLanguage = display.getOptions?.()?.general?.language ?? 'en';
+        const language = savedStudyLanguage(display.history?.state, word) ?? (profileLanguage === 'ja' ? 'ja' : 'en');
         const sentenceState = display.history?.state?.sentence;
         const original = cleanText(sentenceState?.text) || word;
         const subtitleSource = Boolean(sentenceState?.studySubtitle);
@@ -71,7 +72,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const dictionarySource = sentenceState?.sourceKind === 'dictionary' || sourceLabel.includes('来自词典解释') || sourceLabel.includes('暂无完整原句');
         const hasSentence = !dictionarySource && original.trim().toLowerCase() !== word.trim().toLowerCase();
         const dictionaryEntry = display.dictionaryEntries?.[0];
-        const lemma = dictionaryEntry?.type === 'term' ? cleanText(dictionaryEntry.headwords?.[0]?.term) : '';
+        const lemma = savedEntry?.lemma || (dictionaryEntry?.type === 'term' ? cleanText(dictionaryEntry.headwords?.[0]?.term) : '');
         const owner = {word, language, sentence: original, ...(lemma ? {lemma} : {})};
         if (validId(savedRecordId)) { context.dataset.studyRecordId = savedRecordId; }
         const current = () => token === revision && shell.isConnected;
@@ -299,7 +300,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             settings.textContent = '词典设置 ↗';
             settings.target = '_blank';
             settings.rel = 'noopener noreferrer';
-            hint.append('词典没找到这个词。', settings);
+            hint.append(language === profileLanguage ? '词典没找到这个词。' : '当前词典和这条笔记的语言不同。', settings);
             dictionaryScroll.prepend(hint);
         }
         const formNodes = entryHeader?.querySelectorAll('[data-study-meta-role="forms"], [data-sc-study-role="forms"]') || [];

@@ -21,7 +21,7 @@ import {prepareStudyDictionary} from './study-dictionary.js';
 import {studyFormLabel, studyPartOfSpeech} from './study-labels.js';
 import {prepareStudyMini} from './study-mini.js';
 import {studyCall} from '../study/study-client.js';
-import {SAVED_KEY, savedStudyRecordId} from '../study/study-data.js';
+import {SAVED_KEY, savedStudyLanguage, savedStudyRecordId} from '../study/study-data.js';
 
 /** @type {WeakMap<HTMLElement, () => void>} */
 const readingSourceCleanups = new WeakMap();
@@ -780,10 +780,12 @@ export function prepareStudyCard(display, detail = false) {
     });
     display.on('contentUpdateComplete', () => {
         try {
+            const savedLanguage = savedStudyLanguage(display.history.state, display.query);
+            const language = savedLanguage ?? display.getOptions?.()?.general?.language ?? 'en';
             const toolbar = document.querySelector('.study-toolbar');
             const toolbarTitle = toolbar?.querySelector('.study-toolbar-title');
             if (toolbarTitle) {
-                toolbarTitle.textContent = display.getOptions?.()?.general?.language === 'ja' ? '日语查词' : '英语查词';
+                toolbarTitle.textContent = language === 'ja' ? '日语查词' : '英语查词';
             }
             const settings = /** @type {HTMLAnchorElement|null} */ (toolbar?.querySelector('.study-settings'));
             if (settings) {
@@ -829,7 +831,6 @@ export function prepareStudyCard(display, detail = false) {
                     context.hidden = false;
                     const meaning = briefDictionaryMeaning(document.querySelector('.study-entry'));
                     const mediaToken = display.history.state?.studyMediaToken ?? '';
-                    const language = display.getOptions?.()?.general?.language ?? 'en';
                     const first = display.dictionaryEntries?.[0];
                     const head = first?.type === 'term' ? first.headwords[0] : null;
                     let dictionaryNotes = [...(document.querySelector('.study-entry')?.querySelectorAll('[data-sc-content=glosses]>li') ?? [])].slice(0, 4).map((e) => [...e.querySelectorAll('.study-bilingual-original')].map((n) => n.textContent ?? '').join('\n')).join('\n')
@@ -854,7 +855,7 @@ export function prepareStudyCard(display, detail = false) {
                     }
                     const recordId = savedStudyRecordId(display.history.state, display.query ?? '');
                     const savedEntry = recordId ? display.history.state?.savedRecordEntry : void 0;
-                    translation.render(context, sentence.text, display.query, {translation: display.history.state?.studySentenceTranslation ?? savedEntry?.translation, cancelCapture: display.history.state?.studyMediaToken ? (() => display.invokeContentOrigin('frontendCancelStudyMedia', {token: mediaToken})) : void 0, mediaRange: display.history.state?.studyMediaRange, supplementAudio: display.history.state?.studyOpenCard === 'audio', capture: display.history.state?.studyMediaToken ? ((start, duration, options = {}) => display.invokeContentOrigin('frontendCaptureStudyMedia', {token: mediaToken, start, duration, withFrame: options.withFrame === true, withVideo: options.withVideo === true})) : void 0, language, lemma: head?.term, reading: head?.reading, dictionaryNotes, savedTurnIds: recordId ? display.history.state?.savedRecordTurnIds : void 0, contextSelected: Boolean(savedEntry), notes: savedEntry?.notes, explanationSource: savedEntry?.explanationSource, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime, recordId, meaning: savedEntry?.meaning ?? (meaning ? `词典简释（未按当前句消歧）：${meaning}` : '')});
+                    translation.render(context, sentence.text, display.query, {translation: display.history.state?.studySentenceTranslation ?? savedEntry?.translation, cancelCapture: display.history.state?.studyMediaToken ? (() => display.invokeContentOrigin('frontendCancelStudyMedia', {token: mediaToken})) : void 0, mediaRange: display.history.state?.studyMediaRange, supplementAudio: display.history.state?.studyOpenCard === 'audio', capture: display.history.state?.studyMediaToken ? ((start, duration, options = {}) => display.invokeContentOrigin('frontendCaptureStudyMedia', {token: mediaToken, start, duration, withFrame: options.withFrame === true, withVideo: options.withVideo === true})) : void 0, language, lemma: savedEntry?.lemma || head?.term, reading: savedEntry?.reading || head?.reading, dictionaryNotes: dictionaryNotes || savedEntry?.dictionaryNotes, savedTurnIds: recordId ? display.history.state?.savedRecordTurnIds : void 0, contextSelected: Boolean(savedEntry), notes: savedEntry?.notes, explanationSource: savedEntry?.explanationSource, url: display.history.state?.url, title: display.history.state?.documentTitle, context: sentence.adjacent, videoTime: display.history.state?.videoTime, recordId, meaning: savedEntry?.meaning ?? (meaning ? `词典简释（未按当前句消歧）：${meaning}` : '')});
                     if (display.history.state?.studyOpenCard === true) {
                         const state = display.history.state;
                         requestAnimationFrame(() => {
@@ -874,7 +875,7 @@ export function prepareStudyCard(display, detail = false) {
                 if (sentence?.text.trim() && display.query.trim()) {
                     favoriteSource = {word: subtitleSnapshot?.word || display.query,
                         sentence: sentence.text,
-                        language: subtitleSnapshot?.language ?? 'en',
+                        language: subtitleSnapshot?.language ?? savedLanguage ?? 'en',
                         url: display.history.state?.url ?? '',
                         title: display.history.state?.documentTitle ?? '',
                         ...(typeof display.history.state?.videoTime === 'number' ? {videoTime: display.history.state.videoTime} : {})};

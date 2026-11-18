@@ -37,7 +37,7 @@ import {TextScanner} from '../language/text-scanner.js';
 import {checkPopupPreviewURL} from '../pages/settings/popup-preview-controller.js';
 import {readStudyRecord} from '../study/study-client.js';
 import {mediaKeyOf} from '../study/media-key.js';
-import {savedStudyRecordId, studyResumeParams} from '../study/study-data.js';
+import {savedStudyLanguage, studyResumeParams} from '../study/study-data.js';
 import {DisplayContentManager} from './display-content-manager.js';
 import {DisplayGenerator} from './display-generator.js';
 import {DisplayHistory} from './display-history.js';
@@ -1390,7 +1390,6 @@ export class Display extends EventDispatcher {
     async _setContentTermsOrKanji(type, urlSearchParams, token) {
         const lookup = (urlSearchParams.get('lookup') !== 'false');
         const wildcardsEnabled = (urlSearchParams.get('wildcards') !== 'off');
-        const hasEnabledDictionaries = this._options ? this._options.dictionaries.some(({enabled}) => enabled) : false;
 
         // Set query
         safePerformance.mark('display:setQuery:start');
@@ -1459,19 +1458,6 @@ export class Display extends EventDispatcher {
             changeHistory = true;
         }
 
-        let {dictionaryEntries} = content;
-        if (!Array.isArray(dictionaryEntries)) {
-            safePerformance.mark('display:findDictionaryEntries:start');
-            dictionaryEntries = hasEnabledDictionaries && lookup && query.length > 0 ? await this._findDictionaryEntries(type === 'kanji', query, primaryReading, wildcardsEnabled, optionsContext) : [];
-            safePerformance.mark('display:findDictionaryEntries:end');
-            safePerformance.measure('display:findDictionaryEntries', 'display:findDictionaryEntries:start', 'display:findDictionaryEntries:end');
-            if (this._setContentToken !== token) { return; }
-            if (lookup) {
-                content.dictionaryEntries = dictionaryEntries;
-            }
-            changeHistory = true;
-        }
-
         let contentOriginValid = false;
         const {contentOrigin} = content;
         if (typeof contentOrigin === 'object' && contentOrigin !== null) {
@@ -1495,6 +1481,23 @@ export class Display extends EventDispatcher {
             if (this._setContentToken !== token) { return; }
         }
 
+        const hasEnabledDictionaries = this._options?.dictionaries.some(({enabled}) => enabled) ?? false;
+        const savedLanguage = savedStudyLanguage(state, query);
+        let {dictionaryEntries} = content;
+        if (savedLanguage && savedLanguage !== this._options?.general.language) {
+            dictionaryEntries = [];
+        } else if (!Array.isArray(dictionaryEntries)) {
+            safePerformance.mark('display:findDictionaryEntries:start');
+            dictionaryEntries = hasEnabledDictionaries && lookup && query.length > 0 ? await this._findDictionaryEntries(type === 'kanji', query, primaryReading, wildcardsEnabled, optionsContext) : [];
+            safePerformance.mark('display:findDictionaryEntries:end');
+            safePerformance.measure('display:findDictionaryEntries', 'display:findDictionaryEntries:start', 'display:findDictionaryEntries:end');
+            if (this._setContentToken !== token) { return; }
+            if (lookup) {
+                content.dictionaryEntries = dictionaryEntries;
+            }
+            changeHistory = true;
+        }
+
         if (changeHistory) {
             this._replaceHistoryStateNoNavigate(state, content);
         }
@@ -1506,7 +1509,7 @@ export class Display extends EventDispatcher {
         safePerformance.mark('display:updateNavigationAuto:end');
         safePerformance.measure('display:updateNavigationAuto', 'display:updateNavigationAuto:start', 'display:updateNavigationAuto:end');
 
-        const savedWithoutDictionary = dictionaryEntries.length === 0 && state.savedRecordEntry && savedStudyRecordId(state, query);
+        const savedWithoutDictionary = dictionaryEntries.length === 0 && Boolean(savedLanguage);
         this._setNoContentVisible(!savedWithoutDictionary && hasEnabledDictionaries && dictionaryEntries.length === 0 && lookup);
         this._setNoDictionariesVisible(!savedWithoutDictionary && !hasEnabledDictionaries);
 

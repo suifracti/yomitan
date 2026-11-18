@@ -403,6 +403,55 @@ test('article expressions without a dictionary hit stay in the plugin learning f
     assert.match(context.textContent, /turn of phrase/);
 });
 
+test('a reopened English note keeps its language and record ID in a Japanese profile', async () => {
+    const {prepareStudyCard} = await import('../ext/js/display/study-card.js');
+    const {dom, callbacks, display} = setupDisplay();
+    const id = '1'.repeat(32);
+    const entry = {word: 'tired of', sentence: 'We are tired of this.', language: 'en',
+        lemma: 'tired of', meaning: '厌倦', translation: '我们厌倦了这件事。'};
+    display.getOptions = () => ({general: {language: 'ja'}, dictionaries: []});
+    Object.assign(display.history.state, {savedRecordId: id, savedRecordEntry: entry, savedRecordWord: entry.word});
+    const calls = [];
+    globalThis.chrome = {permissions: {request: async () => true}, runtime: {sendMessage: async ({studyAction, data}) => {
+        calls.push({studyAction, data});
+        const value = {
+            journalConversation: [], conversationUsage: [], pendingPeek: {count: 0},
+            generate: {result: {meaning: '厌倦', notes: '带宾语', translation: entry.translation}},
+            rememberEntry: {id, entry, vaultSaved: true}
+        }[studyAction] ?? {};
+        return {ok: true, value};
+    }}};
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    try {
+        prepareStudyCard(display);
+        callbacks.get('contentUpdateStart')();
+        callbacks.get('contentUpdateComplete')();
+        await settle();
+        document.querySelector('[data-study-translate=explain]').click();
+        await settle();
+        document.querySelector('[data-study-save=note]').click();
+        await settle();
+        const ask = calls.find(({studyAction}) => studyAction === 'generate').data;
+        const save = calls.find(({studyAction}) => studyAction === 'rememberEntry').data;
+        assert.equal(ask.language, 'en');
+        assert.equal(ask.recordId, id);
+        assert.equal(ask.lemma, entry.lemma);
+        assert.equal(save.entry.language, 'en');
+        assert.equal(save.recordId, id);
+        assert.match(document.querySelector('.study-save-destination').textContent, /英语/);
+
+        callbacks.get('contentUpdateStart')();
+        delete display.history.state.savedRecordId;
+        delete display.history.state.savedRecordEntry;
+        delete display.history.state.savedRecordWord;
+        callbacks.get('contentUpdateComplete')();
+        assert.match(document.querySelector('.study-save-destination').textContent, /日语/);
+    } finally {
+        callbacks.get('contentClear')();
+        dom.window.close();
+    }
+});
+
 
 test('empty or short AI previews never hide sentence editing or the neighbor context',async()=>{
  const {prepareStudyTranslation}=await import('../ext/js/display/study-translation.js');

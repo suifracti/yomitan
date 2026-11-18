@@ -151,8 +151,7 @@ await Application.main(true, async (application) => {
                     savedRecordEntry,
                     savedRecordTurnIds,
                     savedRecordWord: query,
-                    studyAddCard: resumeParams.get('studyAddCard') === '1',
-                    studyLanguage: lookupParams.get('studyLanguage') ?? 'en'},
+                    studyAddCard: resumeParams.get('studyAddCard') === '1'},
                 content: {}});
         } else {
             display.initializeState();
