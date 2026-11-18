@@ -38,7 +38,7 @@ test('mastery recommends stage cards that the facts allow', () => {
 });
 
 test('drafts use the card facts and never borrow a general sense for the context answer', () => {
-    expect(cardDrafts('cloze', facts)).toEqual([{front: '填空（实体的（brick and mortar））：\nI opened a […] and mortar shop.', back: 'brick\nI opened a brick and mortar shop.'}]);
+    expect(cardDrafts('cloze', facts)).toEqual([{front: '填空（实体的（[…] and mortar））：\nI opened a […] and mortar shop.', back: 'brick\nI opened a brick and mortar shop.'}]);
     expect(cardDrafts('produce', facts)[0]).toEqual({front: '用英文说出这句话（提示：brick）：\n我开了一家实体店。', back: 'I opened a brick and mortar shop.'});
     expect(cardDrafts('form-recognize', facts)).toEqual([{front: 'bricks 是哪个词的什么形式？', back: 'brick 的复数'}]);
     expect(cardDrafts('context', {...facts, contextMeaning: ''})[0].back).toBe('');
@@ -48,6 +48,10 @@ test('drafts use the card facts and never borrow a general sense for the context
         back: clip.sentence + '\n' + clip.translation,
     });
     expect(cardDrafts('listening', {...clip, sentence: 'Look at this display.'})[0].front).toBe('听原声，写下你听到的内容。');
+    expect(cardDrafts('cloze', clip)[0].back).toBe('played、play\n' + clip.sentence);
+    const noTarget = {...clip, sentence: 'Look at this display.'};
+    expect(cardDrafts('cloze', noTarget)).toEqual([]);
+    expect(recommendedKinds('known', noTarget)).not.toContain('cloze');
 });
 
 test('missing prerequisites explain themselves', () => {
