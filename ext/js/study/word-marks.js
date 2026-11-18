@@ -57,6 +57,20 @@ const TIER_OF = {new: 'learning', learning: 'learning', shaky: 'shaky', familiar
 /** Statuses that count as "still learning" for encounters. */
 const COUNTED = new Set(['new', 'learning', 'shaky', 'partial']);
 
+/**
+ * @param {Node} node
+ * @returns {boolean}
+ */
+function isEnglishText(node) {
+    const parent = node.parentElement;
+    if (!parent || parent.closest(SKIP)) { return false; }
+    const scope = parent.closest('[lang]');
+    const language = scope?.getAttribute('lang')?.trim().split('-')[0].toLowerCase();
+    if (!language || language === 'und' || language === 'en') { return true; }
+    // Chinese interfaces often leave English articles and comments unmarked.
+    return scope === document.documentElement && ['zh', 'cmn', 'yue'].includes(language);
+}
+
 /** @typedef {{s: string, lemma?: string, gloss?: string, iv?: number, lapses?: number, senses?: number, newSense?: boolean, manualKnown?: boolean}} WordInfo */
 /** @typedef {{learning: boolean, shaky: boolean, familiar: boolean, partial: boolean}} Tiers */
 /**
@@ -258,7 +272,7 @@ export class WordMarks {
         /**
          *
          */
-        this._levelsLoaded = false;
+        this._levelsRequested = false;
         /**
          *
          */
@@ -378,22 +392,6 @@ export class WordMarks {
             list.push({rest: parts.slice(1), key, info});
             this._phrases.set(parts[0], list);
         }
-        const pageText = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
-        let english = false;
-        if (this._enabled && this._possible && !this._levelsLoaded) {
-            for (let text = pageText.nextNode(); text; text = pageText.nextNode()) {
-                if (!text.parentElement?.closest(SKIP) && /[A-Za-z]{2,}/.test(text.textContent || '')) {
-                    english = true;
-                    break;
-                }
-            }
-        }
-        if (english) {
-            try {
-                this._levels = await readResponseJson(await fetch(chrome.runtime.getURL('data/study/word-levels.json')));
-                this._levelsLoaded = true;
-            } catch { /* Stored words still work when the bundled level table cannot be read. */ }
-        }
         this._reset();
         if (!this._enabled || !document.body) {
             return;
@@ -414,6 +412,9 @@ export class WordMarks {
                 if (record.type === 'characterData') {
                     this._forget(record.target);
                     this._queue.unshift(record.target);
+                } else if (record.type === 'attributes') {
+                    this._forget(record.target);
+                    this._queue.push(record.target);
                 } else {
                     this._queue.push(...record.addedNodes);
                     if (record.removedNodes.length > 0) {
@@ -423,12 +424,25 @@ export class WordMarks {
             }
             this._schedule();
         });
-        this._observer.observe(document.body, {childList: true, subtree: true, characterData: true});
+        this._observer.observe(document.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['lang']});
+        this._observer.observe(document.documentElement, {attributes: true, attributeFilter: ['lang']});
         this._queue.push(document.body);
         this._schedule();
         if (!this._hoverBound) {
             this._bindHover();
         }
+    }
+
+    /** Read the bundled level table only after the scanner finds eligible English. */
+    async _loadLevels() {
+        this._levelsRequested = true;
+        try {
+            this._levels = await readResponseJson(await fetch(chrome.runtime.getURL('data/study/word-levels.json')));
+            if (this._observer && this._possible) {
+                this._queue.push(document.body);
+                this._schedule();
+            }
+        } catch { /* Saved word status still works without the level table. */ }
     }
 
     /** */
@@ -520,15 +534,14 @@ export class WordMarks {
 
     /** @param {Text} node */
     _mark(node) {
-        if (!this._highlights || node.parentElement?.closest(SKIP)) {
-            return;
-        }
+        if (!this._highlights) { return; }
         this._forget(node);
         const text = node.data;
-        if (text.length < 2 || !/[A-Za-z]/.test(text)) {
+        if (text.length < 2 || !/[A-Za-z]{2}/.test(text) || !isEnglishText(node)) {
             return;
         }
         const tokens = [...text.matchAll(WORD)];
+        if (tokens.length > 0 && this._enabled && this._possible && !this._levelsRequested) { void this._loadLevels(); }
         /** @type {Range[]} */
         const ranges = [];
         /**
@@ -721,7 +734,7 @@ export class WordMarks {
     _showTipAt(x, y) {
         const position = /** @type {{caretPositionFromPoint?: (x: number, y: number) => {offsetNode: Node, offset: number}|null}} */ (/** @type {unknown} */(document)).caretPositionFromPoint?.(x, y);
         const node = position?.offsetNode;
-        if (!node || node.nodeType !== Node.TEXT_NODE) {
+        if (!node || node.nodeType !== Node.TEXT_NODE || !isEnglishText(node)) {
             return;
         }
         const range = (this._ranges.get(/** @type {Text} */ (node)) ?? []).find((item) => item.startOffset <= position.offset && position.offset <= item.endOffset);
@@ -820,7 +833,7 @@ export class WordMarks {
     _pointWord(x, y) {
         const position = (/** @type {{caretPositionFromPoint?:(x:number,y:number)=>{offsetNode:Node,offset:number}|null}} */(/** @type {unknown} */(document))).caretPositionFromPoint?.(x, y);
         const node = position?.offsetNode;
-        if (!position || !(node instanceof Text) || node.parentElement?.closest(SKIP)) {
+        if (!position || !(node instanceof Text) || !isEnglishText(node)) {
             return null;
         }
         const token = [...node.data.matchAll(WORD)].find((m) => m.index <= position.offset && position.offset <= m.index + m[0].length);
@@ -848,7 +861,7 @@ export class WordMarks {
         /** @type {Map<string, {node:Text, start:number, meaning:string}>} */
         const occurrences = new Map();
         for (const [node, ranges] of this._ranges) {
-            if (!node.isConnected || node.parentElement?.closest(SKIP)) { continue; }
+            if (!node.isConnected || !isEnglishText(node)) { continue; }
             for (const range of ranges) {
                 const info = this._rangeInfo.get(range);
                 if (info?.possible?.text === node.data) {
@@ -1038,7 +1051,7 @@ export class WordMarks {
         panel.append(done);
         done.onclick = async () => {
             if (source !== location.href || rows.some((r) => !r.ignored && (
-                !r.node.isConnected || r.node.data !== r.sourceText || r.node.parentElement?.closest(SKIP) || this._sentence(r.node, r.start) !== r.sentence
+                !r.node.isConnected || r.node.data !== r.sourceText || !isEnglishText(r.node) || this._sentence(r.node, r.start) !== r.sentence
             ))) {
                 note.textContent = '页面内容变了，刚才的选择没有保存。';
                 done.textContent = '重新读取本页';
