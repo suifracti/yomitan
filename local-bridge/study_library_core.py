@@ -323,7 +323,7 @@ def _normalize_request(p):
         if not isinstance(resolutions, dict) or len(resolutions) > 100 or any(not isinstance(k, str) or v not in ('local', 'remote') for k, v in resolutions.items()):
             raise ValueError('字段冲突选择无效。')
         return {**p, 'resolutions': resolutions}
-    if action == 'libraryUpdate' and set(p) <= {'action', 'id', 'entry', 'turns', 'remember'} and {'action', 'id'} <= set(p) and ('entry' in p or 'turns' in p):
+    if action == 'libraryUpdate' and set(p) <= {'action', 'id', 'entry', 'turns', 'remember', 'ifUnchanged'} and {'action', 'id'} <= set(p) and ('entry' in p or 'turns' in p):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
         if 'remember' in p and type(p['remember']) is not bool:
@@ -343,6 +343,12 @@ def _normalize_request(p):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 604800:
                 raise ValueError('视频时间无效。')
             partial['videoTime'] = int(value)
+        if 'ifUnchanged' in p:
+            expected = p['ifUnchanged']
+            if (not isinstance(expected, dict) or set(expected) - partial.keys()
+                    or any(v is not None and (type(v) is not int if k == 'videoTime' else not isinstance(v, str))
+                           for k, v in expected.items())):
+                raise ValueError('学习更新的核对字段无效。')
         turns = p.get('turns', [])
         if not isinstance(turns, list) or len(turns) > 20:
             raise ValueError('每次最多补充20轮。')

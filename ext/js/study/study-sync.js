@@ -21,6 +21,7 @@ import {SAVED_KEY} from './study-data.js';
 
 const LINKS = 'studySyncLinksV1';
 const OUTBOX = 'studySyncOutboxV1';
+const NOTE_WRITE_CONFLICT = '笔记已在别处修改；没有覆盖，改动留待核对。';
 
 /**
  * @param {string} language
@@ -32,12 +33,12 @@ export function studyUpdateKey(language, id) {
 }
 
 /**
- * Old entries could combine a selected note and a turn whose sense was never checked.
+ * Held edits and older updates without a verified destination or write baseline must not be sent.
  * @param {import('study').SyncTask} task
  * @returns {boolean}
  */
 export function needsStudyUpdateReview(task) {
-    return task.action === 'libraryUpdate' && task.key !== studyUpdateKey(task.language, task.id ?? '');
+    return task.action === 'libraryUpdate' && (task.key !== studyUpdateKey(task.language, task.id ?? '') || (task.remember === true && !task.ifUnchanged));
 }
 
 /** Existing browser storage holds delivery intents, never a second learning database. */
@@ -89,14 +90,22 @@ export class StudySync {
             const previous = rows.find((r) => r.key === task.key);
             // A late receipt must not discard an answer queued while the bridge was busy.
             if (expectedRevision !== void 0 && previous?.revision !== expectedRevision) { return rows; }
-            const old = task.action === 'libraryUpdate' && previous?.action === task.action ? previous : void 0;
+            const held = previous && needsStudyUpdateReview(previous);
+            const old = task.action === 'libraryUpdate' && previous?.action === task.action && !held ? previous : void 0;
             const turns = new Map([...(old?.turns ?? []), ...(task.turns ?? [])].map((t) => [t.id, t]));
+            const entry = {...old?.entry, ...task.entry};
+            for (const key of /** @type {(keyof import('study').LibraryEntry)[]} */ (Object.keys(old?.ifUnchanged ?? {}))) {
+                if (!Object.hasOwn(task.ifUnchanged ?? {}, key)) { Object.assign(entry, {[key]: old?.entry?.[key]}); }
+            }
             revision = crypto.randomUUID();
-            const next = [...rows.filter((r) => r.key !== task.key), {...old,
-                ...task,
-                revision,
-                ...(task.entry && task.action === 'libraryUpdate' ? {entry: {...old?.entry, ...task.entry}} : {}),
-                ...(turns.size > 0 ? {turns: [...turns.values()]} : {})}];
+            const next = [...rows.filter((r) => r.key !== task.key),
+                ...(held ? [{...previous, key: `review:${previous.key}:${previous.revision}`}] : []),
+                {...old,
+                    ...task,
+                    revision,
+                    ...(task.entry && task.action === 'libraryUpdate' ? {entry} : {}),
+                    ...(old?.ifUnchanged || task.ifUnchanged ? {ifUnchanged: {...old?.ifUnchanged, ...task.ifUnchanged}} : {}),
+                    ...(turns.size > 0 ? {turns: [...turns.values()]} : {})}];
             const retryable = next.filter((row) => !needsStudyUpdateReview(row));
             if (new TextEncoder().encode(JSON.stringify(retryable)).length > 2000000) { throw new Error('待同步内容较多，请先补齐；未删除旧记录。'); }
             if (task.action === 'libraryFavorite') {
@@ -195,7 +204,12 @@ export class StudySync {
                 for (let offset = 0; offset < Math.max(1, turns.length); offset += 4) {
                     const batch = turns.slice(offset, offset + 4);
                     const response = await this.service.native({...payload, ...(task.turns ? {turns: batch} : {})}).promise;
-                    if (!response.ok || !response.library) { throw new Error(response.error ?? '等待本机同步确认。'); }
+                    if (!response.ok || !response.library) {
+                        if (task.ifUnchanged && response.error === '不支持的学习库操作或字段。') {
+                            throw new Error('本机桥版本较旧；改动留在本机，更新后再补交。');
+                        }
+                        throw new Error(response.error ?? '等待本机同步确认。');
+                    }
                     row = /** @type {import('study').LibraryRecord} */ (response.library);
                     if (task.action === 'libraryUpdate') {
                         await this.service.journal.acknowledge(batch, row.entry && row.vaultSaved === true ? {...row.entry, recordId: row.id} : void 0);
@@ -203,8 +217,9 @@ export class StudySync {
                 }
                 if (row && task.action === 'libraryUpdate') {
                     const response = await this.service.native({action: 'libraryReconcile', id: task.id, language: task.language, ...(task.targetId ? {targetId: task.targetId} : {})}).promise;
-                    if (!response.ok) { throw new Error(response.error ?? '笔记已补充，Anki 更新待同步。'); }
-                    row = /** @type {import('study').LibraryRecord} */ (response.library ?? row);
+                    row = response.ok ?
+                        /** @type {import('study').LibraryRecord} */ (response.library ?? row) :
+                        {...row, syncState: 'pending', error: response.error ?? '笔记已补充，Anki 更新待同步。'};
                 }
                 if (task.action !== 'libraryFavorite' && row && (row.conflicts?.length || ['pending', 'missing', 'error', 'paused'].includes(row.syncState ?? ''))) {
                     const deferred = await this.enqueue({key,
@@ -228,7 +243,10 @@ export class StudySync {
                 }
                 await this.service.write(OUTBOX, (value) => /** @type {import('study').SyncTask[]} */ (Array.isArray(value) ? value : []).filter((r) => r.key !== key || r.revision !== revision));
             } catch (error) {
-                await this.service.write(OUTBOX, (value) => /** @type {import('study').SyncTask[]} */ (Array.isArray(value) ? value : []).map((r) => (r.key === task.key && r.revision === task.revision ? {...r, error: error instanceof Error ? error.message : '等待同步'} : r)));
+                const message = error instanceof Error ? error.message : '等待同步';
+                await this.service.write(OUTBOX, (value) => /** @type {import('study').SyncTask[]} */ (Array.isArray(value) ? value : []).map((r) => (r.key === task.key && r.revision === task.revision ?
+                    {...r, key: message === NOTE_WRITE_CONFLICT ? `review:${r.key}:${r.revision}` : r.key, error: message} :
+r)));
             }
         }
     }

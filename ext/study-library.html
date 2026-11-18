@@ -21,10 +21,11 @@
         </div>
         <p id="study-library-status" role="status" aria-live="polite">正在读取学习库…</p>
         <details id="study-library-old-updates" class="study-library-collection" hidden>
-            <summary>旧问答需核对</summary>
-            <p>旧版本没有确定这些内容该补进哪条笔记。它们仍留在这台设备，不会自动发送。核对后可以复制到正确的笔记。</p>
-            <textarea readonly rows="7" aria-label="留在本机的旧问答"></textarea>
-            <button type="button">复制旧问答</button>
+            <summary>待核对的改动</summary>
+            <p>有些改动还没写进笔记：原笔记在别处改过，或旧版本没记清要补到哪里。原笔记和本机草稿都保留，核对后再复制过去。</p>
+            <div data-study-review-links></div>
+            <textarea readonly rows="7" aria-label="留在本机的改动"></textarea>
+            <button type="button">复制待核对内容</button>
         </details>
         <section class="study-library-tools" aria-label="学习库筛选">
             <div class="study-library-tabs">

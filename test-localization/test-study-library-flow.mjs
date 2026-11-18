@@ -193,6 +193,7 @@ async function createHarness(t, {cards = [], loseSaveReply = false, grouped = fa
     let holdSave = null;
     let holdExplain = null;
     let nativeCancels = 0;
+    let updatesOffline = false;
     const native = (payload) => ({cancel() { nativeCancels += 1; }, promise: (async () => {
         if (payload.action === 'libraryTargetResolve') { return {ok: true, library: {targetId: 'd'.repeat(32)}}; }
         nativeCalls.push(structuredClone(payload));
@@ -208,6 +209,9 @@ async function createHarness(t, {cards = [], loseSaveReply = false, grouped = fa
             return {ok: true,
                 result: {items: payload.items.map((item) => ({id: item.id, reason: 'fixture: only a useful new review point', cards}))},
                 usage: {status: 'completed', inputTokens: 31, outputTokens: 12, totalTokens: 43}};
+        }
+        if (updatesOffline && payload.action === 'libraryUpdate' && payload.remember) {
+            return {ok: false, error: 'fixture: temporary bridge unavailable for writes'};
         }
         const response = await bridge.call(payload);
         if (!response.ok) { return response; }
@@ -239,6 +243,7 @@ async function createHarness(t, {cards = [], loseSaveReply = false, grouped = fa
     return {
         vault, bridge, service, storage, native, nativeCalls, modelCalls,
         nativeCancels: () => nativeCancels,
+        setUpdatesOffline(value) { updatesOffline = value; },
         holdNextExplain() { const gate = {entered: deferred(), release: deferred()}; holdExplain = gate; return gate; },
         holdNextSave() {
             const gate = {entered: deferred(), release: deferred()};
@@ -450,6 +455,47 @@ test('saving a partly edited card keeps newer text from the original note', asyn
     container.querySelector('[data-study-save="note"]').click();
     await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('没有覆盖'), 'same-field conflict');
     assert.equal((await readStudyRecord(id, 'en')).entry.context, 'The latest context from the note.');
+    assert.deepEqual((await latestState(h.bridge)).notes, {});
+});
+
+test('a delayed card edit never replaces a newer edit to the same note field', async (t) => {
+    const h = await createHarness(t);
+    const entry = {word: 'just', language: 'en', sentence: SENTENCE, context: '', url: ARTICLE_URL,
+        title: 'Synthetic article', meaning: 'Original meaning', translation: '', notes: ''};
+    const first = await h.native({action: 'librarySave', entry, makeCard: false}).promise;
+    assert.equal(first.ok, true, first.error);
+    const id = first.library.id;
+    const {dom, container, view} = mountUi(SENTENCE, {...entry, recordId: id, contextSelected: true});
+    t.after(() => { view.cancel(); dom.window.close(); });
+    h.setUpdatesOffline(true);
+    container.querySelector('[aria-label="补充语境"]').value = 'My queued change from the card.';
+    const save = container.querySelector('[data-study-save="note"]');
+    save.click();
+    await waitFor(() => !save.disabled, 'queued save back from the unavailable bridge');
+    assert.match(container.querySelector('.study-library-status').textContent, /还没确认写入笔记/);
+    assert.equal((await h.service.sync.pending()).length, 1);
+    const changed = await h.native({action: 'libraryUpdate', id, entry: {context: 'My newer change in the note.'}}).promise;
+    assert.equal(changed.ok, true, changed.error);
+    h.setUpdatesOffline(false);
+    const pending = await h.service.handle('syncPending');
+    assert.equal((await readStudyRecord(id, 'en')).entry.context, 'My newer change in the note.');
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].reviewOnly, true);
+    assert.equal(pending[0].entry.context, 'My queued change from the card.');
+    assert.equal(pending[0].id, id);
+
+    const baseEntry = {...(await readStudyRecord(id, 'en')).entry, recordId: id};
+    h.setUpdatesOffline(true);
+    await assert.rejects(h.service.handle('rememberEntry', {recordId: id, baseEntry,
+        entry: {...baseEntry, context: 'A new card edit after checking the note.'}}), /还没确认写入笔记/);
+    const meaning = 'A newer meaning in the note.';
+    await h.native({action: 'libraryUpdate', id, entry: {meaning}}).promise;
+    h.setUpdatesOffline(false);
+    const held = await h.service.handle('syncPending');
+    assert.deepEqual(held, pending, 'do not retry or merge an earlier conflict');
+    const {entry: final} = await readStudyRecord(id, 'en');
+    assert.equal(final.context, 'A new card edit after checking the note.');
+    assert.equal(final.meaning, meaning);
     assert.deepEqual((await latestState(h.bridge)).notes, {});
 });
 

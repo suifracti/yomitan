@@ -588,7 +588,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             await operation();
         }).catch((error) => {
             if (isCurrent()) {
-                status.textContent = `${error instanceof Error ? error.message : '暂未完成'}；可重试当前操作。`;
+                status.textContent = error instanceof Error ? error.message : '暂未完成；可重试当前操作。';
             }
         })
             .finally(() => {

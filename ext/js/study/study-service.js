@@ -783,6 +783,7 @@ export class StudyService {
                 if (entry.sense || originalRecord.entry.word.toLocaleLowerCase() !== entry.word.toLocaleLowerCase()) { return await this.rememberEntry(entry); }
                 const update = {...entry};
                 delete update.recordId;
+                delete update.language;
                 if (baseEntry?.recordId === existingId) {
                     for (const key of /** @type {(keyof import('study').LibraryEntry)[]} */ (Object.keys(update))) {
                         const before = baseEntry[key] ?? '';
@@ -796,19 +797,28 @@ export class StudyService {
                 }
                 const turns = await this.journal.get(entry);
                 const updateKey = studyUpdateKey(entry.language ?? 'en', existingId);
-                await this.sync.enqueue({key: updateKey,
+                const ifUnchanged = Object.fromEntries((/** @type {(keyof import('study').LibraryEntry)[]} */ (Object.keys(update)))
+                    .map((key) => [key, originalRecord.entry[key] ?? null]));
+                const revision = await this.sync.enqueue({key: updateKey,
                     action: 'libraryUpdate',
                     id: existingId,
                     language: entry.language ?? 'en',
                     remember: true,
                     entry: update,
+                    ifUnchanged,
                     turns});
                 await this.sync.flush();
+                const tasks = await this.sync.pending();
+                const held = tasks.find((task) => task.id === existingId && task.revision === revision && needsStudyUpdateReview(task));
+                if (held) { throw new Error(`${held.error ?? '这次改动还没有保存。'} 请到学习库查看「待核对的改动」。`); }
+                const pending = tasks.find((task) => task.key === updateKey);
+                if (pending?.action === 'libraryUpdate') {
+                    throw new Error(pending.error?.startsWith('本机桥版本较旧') ? pending.error : '改动留在本机，还没确认写入笔记；连接恢复后可在学习库补交。');
+                }
                 const response = await this.native({action: 'libraryRead', ids: [existingId], language: entry.language ?? 'en'}).promise;
                 const row = /** @type {{items?: import('study').LearningMaterial[]}|undefined} */ (response.library)?.items?.[0]?.record;
                 if (!response.ok || row?.id !== existingId) { throw new Error(response.error ?? '更新待同步；不会另建记录。'); }
                 await this.sync.bind(entry, row);
-                const pending = (await this.sync.pending()).find((task) => task.key === updateKey);
                 return pending ? {...row, syncState: 'pending', error: pending.error ?? '学习更新待同步'} : row;
             }
             return await this.rememberEntry(entry);

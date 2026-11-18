@@ -310,10 +310,14 @@ def update(lib, p):
         raise ValueError('另一个单词必须保存为自己的学习记录；未替换原对象。')
     if p.get('targetId') and r.get('targetId', lib.target_id) != p['targetId']:
         raise ValueError('记录目标与请求目标不同；未改投。')
-    changes = {k: v for k, v in p.get('entry', {}).items() if v != r['entry'].get(k)}
+    values = local_fields(r, body)
+    current = {**r['entry'], **{k: values[k] for k in SYNC_KEYS}}
+    proposed = p.get('entry', {})
+    if any(current.get(k) not in (v, proposed[k]) for k, v in p.get('ifUnchanged', {}).items()):
+        raise ValueError('笔记已在别处修改；没有覆盖，改动留待核对。')
+    changes = {k: v for k, v in proposed.items() if v != current.get(k)}
     r['entry'].update(changes)
     if set(changes) & set(SYNC_KEYS):
-        values = local_fields(r, body)
         values.update({k:r['entry'].get(k, '') for k in SYNC_KEYS if k in changes})
         body = with_local_fields(body, values)
     other_changes = {k:v for k,v in changes.items() if k not in SYNC_KEYS and v}

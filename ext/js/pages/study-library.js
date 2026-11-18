@@ -841,11 +841,11 @@ async function initializePage() {
             if (!oldText) { return; }
             try {
                 await navigator.clipboard.writeText(oldText.value);
-                setStatus('旧问答已复制；请粘贴到核对过的笔记。');
+                setStatus('内容已复制；请粘贴到核对过的笔记。');
             } catch {
                 oldText.focus();
                 oldText.select();
-                setStatus('已选中旧问答，请用复制快捷键。');
+                setStatus('已选中待核对内容，请用复制快捷键。');
             }
         });
         /** @param {import('study').PendingSyncTask[]} pending */
@@ -854,8 +854,19 @@ async function initializePage() {
             const held = pending.filter((task) => task.reviewOnly);
             oldUpdates.hidden = held.length === 0;
             const summary = oldUpdates.querySelector('summary');
-            if (summary) { summary.textContent = `有 ${held.length} 项旧问答需核对`; }
-            oldText.value = held.map(({entry, turns}, i) => {
+            if (summary) { summary.textContent = `待核对的改动 · ${held.length}`; }
+            const links = oldUpdates.querySelector('[data-study-review-links]');
+            links?.replaceChildren();
+            for (const [i, task] of held.entries()) {
+                if (!task.ifUnchanged || !task.id) { continue; }
+                const link = document.createElement('a');
+                link.href = createResumeUrl({id: task.id, entry: {language: task.language}}, chrome.runtime.getURL('/search.html'));
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = `第 ${i + 1} 条：打开原笔记 ↗`;
+                links?.append(link, document.createElement('br'));
+            }
+            oldText.value = held.map(({entry, turns, error}, i) => {
                 const saved = [entry?.word, entry?.sentence, entry?.title, entry?.url, entry?.context, entry?.meaning, entry?.translation, entry?.notes];
                 const conversation = (turns ?? []).flatMap((turn) => [
                     turn.question && `问：${turn.question}`,
@@ -864,7 +875,7 @@ async function initializePage() {
                     turn.notes,
                     turn.feedback === 'understood' ? '本人反馈：这次懂了' : (turn.feedback === 'unclear' ? '本人反馈：仍没懂' : ''),
                 ]);
-                return [`旧补充 ${i + 1}`, ...new Set([...saved, ...conversation].filter(Boolean))].join('\n');
+                return [`第 ${i + 1} 条`, ...new Set([error, ...saved, ...conversation].filter(Boolean))].join('\n');
             }).join('\n\n');
         };
         void prepareStudyLibraryLookup(application).catch((error) => {
