@@ -327,6 +327,8 @@ export function prepareStudyTranslation() {
             const isCurrent = () => version === generation;
             const d = container.ownerDocument;
             const restoredTurnIds = new Set(source.savedTurnIds ?? []);
+            let recordId = source.recordId;
+            let savedTurnIds = source.savedTurnIds ?? [];
             let historyInitialized = false;
             // Automatic sync can acknowledge a new answer before this view paints it.
             /**
@@ -612,7 +614,7 @@ export function prepareStudyTranslation() {
             /** @type {import('study').LearningTurn|null} */
             let latestExplanation = null;
             let latestSource = '';
-            const lookup = () => ({...(source.lemma ? {lemma: source.lemma} : {}), language: source.language ?? 'en', ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), word, context: context.value.trim(), question: question.value.trim(), url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})});
+            const lookup = () => ({...(recordId ? {recordId} : {}), ...(source.lemma ? {lemma: source.lemma} : {}), language: source.language ?? 'en', ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), word, context: context.value.trim(), question: question.value.trim(), url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})});
             /** @type {(import('study').Lookup & {url: string, title: string, recordId?: string, videoTime?: number, lemma?: string}) | null} */
             let activePayload = null;
             // Draft input is NOT conversation identity. Typing a new question never erases the previous answer.
@@ -667,7 +669,7 @@ export function prepareStudyTranslation() {
             };
             const refresh = async () => {
                 const identityAtRead = identity();
-                const turns = /** @type {import('study').LearningTurn[]} */ (await studyCall('journalConversation', lookup()));
+                const turns = /** @type {import('study').LearningTurn[]} */ (await studyCall('journalConversation', {...lookup(), savedTurnIds}));
                 if (!isCurrent() || identityAtRead !== identity() || !Array.isArray(turns)) {
                     return;
                 }
@@ -746,7 +748,7 @@ export function prepareStudyTranslation() {
                             for (const x of feedbackButtons) {
                                 x.disabled = true;
                             }
-                            void studyCall('journalFeedback', {...lookup(), turnId: turn.id, question: turn.question, feedback: value}).then(() => {
+                            void studyCall('journalFeedback', {...lookup(), savedTurnIds, turnId: turn.id, question: turn.question, feedback: value}).then(() => {
                                 if (!isCurrent()) {
                                     return;
                                 }
@@ -847,7 +849,8 @@ export function prepareStudyTranslation() {
                     const pendingSync = /** @type {unknown[]} */ (await studyCall('syncPending', {checkOnly: true}));
                     status.textContent = Array.isArray(pendingSync) && pendingSync.length > 0 ?
 '内容已保留 · 有更新待同步，可在学习库重试。' :
-                        (mode === 'translate' ? '原句译文已显示；已保存过的学习会自动补充。' : '点“记住它”留下这次学习；已保存过的学习会自动补充。');
+                        (mode === 'translate' ? '原句译文已显示。' : '本轮问答已保留。') +
+                        (payload.recordId ? '' : ' 点「记住它」存入学习记录。');
                 }).catch((e) => {
                     if (isCurrent() && id === requestId) {
                         status.textContent = e instanceof Error ? e.message : '请求未完成，用量可能未知。';
@@ -916,15 +919,17 @@ export function prepareStudyTranslation() {
                 updatePinnedExplanation(null);
                 void restore();
             });
-            const onSaved = () => {
+            /** @param {Event} event */
+            const onSaved = (event) => {
                 if (isCurrent()) {
-                    if (source.recordId) {
-                        if (latestExplanation) {
-                            source.meaning = latestExplanation.meaning;
-                            source.notes = latestExplanation.notes;
-                            source.explanationSource = 'AI 辅助解释（非词典原文）';
-                        }
-                        if (latest?.translation) { source.translation = latest.translation; }
+                    const row = /** @type {CustomEvent<import('study').LibraryRecord>} */ (event).detail;
+                    if (row?.vaultSaved && row.entry && row.entry.word.toLowerCase() === word.toLowerCase()) {
+                        recordId = row.id;
+                        savedTurnIds = row.turnIds ?? [];
+                        source.meaning = row.entry.meaning;
+                        source.notes = row.entry.notes;
+                        source.explanationSource = row.entry.explanationSource;
+                        source.translation = row.entry.translation;
                     }
                     void refresh().catch(() => {});
                     if (!globalButton.disabled && globalBody.textContent) {
@@ -965,7 +970,7 @@ export function prepareStudyTranslation() {
                 const translated = english?.querySelector('[data-study-translated=true]')?.textContent;
                 const dictionaryTranslation = translated ? `词典英文：${english?.querySelector('.study-english-original')?.textContent ?? ''}\nAI 辅助中文：${translated}` : '';
 
-                return {word, ...(source.recordId ? {recordId: source.recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: (sourceBox?.dataset.studySegmentSentence === editor.value.trim() ? sourceBox.dataset.studySegmentTranslation : '') || current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? source.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : source.explanationSource ?? '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
+                return {word, ...(recordId ? {recordId} : {}), ...(dictionaryTranslation ? {dictionaryTranslation} : {}), language: source.language ?? 'en', ...(source.lemma ? {lemma: source.lemma} : {}), ...(source.reading ? {reading: source.reading} : {}), ...(source.dictionaryNotes ? {dictionaryNotes: source.dictionaryNotes} : {}), sentence: editor.value.trim(), context: context.value.trim(), meaning: explanation?.meaning || source.meaning || '', translation: (sourceBox?.dataset.studySegmentSentence === editor.value.trim() ? sourceBox.dataset.studySegmentTranslation : '') || current?.translation || (editor.value.trim() === sentence.trim() ? source.translation || '' : ''), notes: explanation?.notes ?? source.notes ?? '', explanationSource: explanation ? 'AI 辅助解释（非词典原文）' : source.explanationSource ?? '词典简释（尚未按语境确认）', url: source.url ?? '', title: source.title ?? '', ...(source.videoTime !== void 0 ? {videoTime: source.videoTime} : {})};
             }, isCurrent, {capture: source.capture,
                 cancelCapture: source.cancelCapture,
                 range: source.mediaRange,

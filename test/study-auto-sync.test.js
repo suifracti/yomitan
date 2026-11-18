@@ -72,6 +72,39 @@ test('a failed pass is recorded without throwing', async () => {
     expect(describeAutoSync(void 0)).toContain('还没有运行过');
 });
 
+test('following up in a saved sense never writes into the last opened sense', async () => {
+    const firstId = 'a'.repeat(32);
+    const secondId = 'b'.repeat(32);
+    const source = {word: 'charge', sentence: 'They charged him.', url: 'https://reading.test/story', context: '', language: 'en'};
+    const legacyTurn = {id: 'previous', translation: '较早保存的解释'};
+    const {service, sent} = make({studyLearningJournalV1: [
+        {key: JSON.stringify([source.word, source.sentence, source.url, '', null]), turn: legacyTurn, saved: true},
+    ]}, (payload) => {
+        const {action, ids, id} = /** @type {{action: string, ids?: string[], id?: string}} */ (payload);
+        const recordId = ids?.[0] ?? id;
+        const record = {id: recordId, entry: {...source, sense: {key: recordId === firstId ? 'fee' : 'accuse', gloss: ''}}, vaultSaved: true};
+        if (action === 'libraryRead') { return {ok: true, library: {items: [{id: recordId, record}]}}; }
+        if (action === 'libraryUpdate' || action === 'libraryReconcile') { return {ok: true, library: record}; }
+        throw new Error(`Unexpected native action: ${action}`);
+    });
+    await service.handle('libraryRead', {ids: [firstId], language: 'en'});
+    await service.handle('libraryRead', {ids: [secondId], language: 'en'});
+    const first = {...source, recordId: firstId};
+    const second = {...source, recordId: secondId};
+    await service.handle('generate', {...first, mode: 'translate', sentenceTranslation: '他们向他收费。'});
+    await service.handle('generate', {...source, mode: 'translate', sentenceTranslation: '还没有选笔记。'});
+    await service.sync.flush();
+    const updates = sent.filter((p) => /** @type {{action: string}} */ (p).action === 'libraryUpdate');
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({id: firstId, turns: [{translation: '他们向他收费。'}]});
+    expect(await service.handle('journalConversation', {...first, savedTurnIds: [legacyTurn.id]})).toMatchObject([
+        {id: legacyTurn.id, translation: legacyTurn.translation, saved: true},
+        {translation: '他们向他收费。', saved: true},
+    ]);
+    expect(await service.handle('journalConversation', second)).toEqual([]);
+    expect(await service.handle('journalPeek', source)).toMatchObject([{translation: '还没有选笔记。'}]);
+});
+
 test('a late refresh cannot mark a word known again after undo', async () => {
     vi.stubGlobal('chrome', {permissions: {contains: async () => true}});
     const started = deferPromise();

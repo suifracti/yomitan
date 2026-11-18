@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import {sourceKey} from './study-journal.js';
+import {conversationKey, sourceKey} from './study-journal.js';
 import {SAVED_KEY} from './study-data.js';
 
 const LINKS = 'studySyncLinksV1';
@@ -49,7 +49,8 @@ export class StudySync {
      */
     async bind(source, row) {
         if (!/^[a-f0-9]{32}$/.test(row?.id) || row.learningState === 'favorite-only') { return; }
-        const key = sourceKey(source);
+        const entry = row.entry ?? /** @type {import('study').LibraryEntry} */ (source);
+        const key = conversationKey({...entry, recordId: row.id});
         const language = row.entry?.language ?? /** @type {{language?: string}} */ (source).language ?? 'en';
         await this.service.write(LINKS, (value) => {
             const rows = /** @type {import('study').SyncLink[]} */ (Array.isArray(value) ? value : []);
@@ -98,8 +99,11 @@ export class StudySync {
      * @param {import('study').Result} result
      */
     async learned(source, result) {
+        const key = conversationKey(source);
+        // Old unscoped links kept only the last read sense; they cannot prove which record is open.
+        if (!key.startsWith('record:') && !key.startsWith('r2:')) { return; }
         const links = /** @type {import('study').SyncLink[]} */ (await this.service.read(LINKS) ?? []);
-        const link = links.find((r) => r.key === sourceKey(source));
+        const link = links.find((r) => r.key === key);
         if (!link) { return; }
         const entry = Object.fromEntries(Object.entries(result).filter(([k, v]) => ['translation', 'meaning', 'notes'].includes(k) && typeof v === 'string' && v.trim()));
         const turns = await this.service.journal.get(source);
@@ -173,7 +177,9 @@ export class StudySync {
                     const response = await this.service.native({...payload, ...(task.turns ? {turns: batch} : {})}).promise;
                     if (!response.ok || !response.library) { throw new Error(response.error ?? '等待本机同步确认。'); }
                     row = /** @type {import('study').LibraryRecord} */ (response.library);
-                    if (task.action === 'libraryUpdate') { await this.service.journal.acknowledge(batch); }
+                    if (task.action === 'libraryUpdate') {
+                        await this.service.journal.acknowledge(batch, row.entry && row.vaultSaved === true ? {...row.entry, recordId: row.id} : void 0);
+                    }
                 }
                 if (row && task.action === 'libraryUpdate') {
                     const response = await this.service.native({action: 'libraryReconcile', id: task.id, language: task.language, ...(task.targetId ? {targetId: task.targetId} : {})}).promise;

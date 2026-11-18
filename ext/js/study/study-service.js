@@ -21,7 +21,7 @@ import {StudySync} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
 import {AUTO_SYNC_KEY, AUTO_SYNC_STATE_KEY, WORD_STATUS_KEY, CACHE_KEY, CACHE_LIMIT, DETAIL_KEY, detailSource, createResumeUrl, DICTIONARY_CACHE_KEY, dictionaryKey, dictionaryLookup, isDictionaryResult, isStudyResult, resultKey, SAVED_KEY, SAVE_TARGETS_KEY, sentenceKey, SETTINGS_KEY, studyConfig, studyLookup, TTL} from './study-data.js';
-import {StudyJournal, sourceKey} from './study-journal.js';
+import {StudyJournal, conversationRecordId, sourceKey} from './study-journal.js';
 import {nativeStudyCall} from './study-client.js';
 import {attestStudyCue} from './study-cue-attestation.js';
 import {prepareStudyCompanion} from './study-companion.js';
@@ -692,6 +692,7 @@ export class StudyService {
             source.url ?? '',
             source.url ? '' : source.title ?? '',
             source.videoTime ?? null,
+            conversationRecordId(value),
         ]);
     }
 
@@ -767,7 +768,7 @@ export class StudyService {
                 if (!/^[a-f0-9]{32}$/.test(existingId)) { throw new Error('原学习记录编号无效。'); }
                 const original = await this.native({action: 'libraryRead', ids: [existingId], language: entry.language ?? 'en'}).promise;
                 const originalRecord = /** @type {{items?: import('study').LearningMaterial[]}|undefined} */ (original.library)?.items?.[0]?.record;
-                if (!original.ok || !originalRecord) { throw new Error(original.error ?? '原学习记录暂不可读；未改投其他对象。'); }
+                if (!original.ok || originalRecord?.id !== existingId) { throw new Error(original.error ?? '原学习记录暂不可读；未改投其他对象。'); }
                 if (entry.sense || originalRecord.entry.word.toLocaleLowerCase() !== entry.word.toLocaleLowerCase()) { return await this.rememberEntry(entry); }
                 const update = {...entry};
                 delete update.recordId;
@@ -782,7 +783,7 @@ export class StudyService {
                 await this.sync.flush();
                 const response = await this.native({action: 'libraryRead', ids: [existingId], language: entry.language ?? 'en'}).promise;
                 const row = /** @type {{items?: import('study').LearningMaterial[]}|undefined} */ (response.library)?.items?.[0]?.record;
-                if (!response.ok || !row) { throw new Error(response.error ?? '更新待同步；不会另建记录。'); }
+                if (!response.ok || row?.id !== existingId) { throw new Error(response.error ?? '更新待同步；不会另建记录。'); }
                 await this.sync.bind(entry, row);
                 const pending = (await this.sync.pending()).find((task) => task.id === existingId);
                 return pending ? {...row, syncState: 'pending', error: pending.error ?? '学习更新待同步'} : row;
@@ -992,12 +993,14 @@ export class StudyService {
         const config = studyConfig(await this.read(SETTINGS_KEY));
         const originSource = /** @type {Partial<import('study').LibraryEntry>} */ (value ?? {});
         const origin = JSON.stringify([originSource.url ?? '', originSource.url ? '' : originSource.title ?? '', originSource.videoTime ?? null]);
-        const key = resultKey(lookup, config) + origin;
+        const recordId = conversationRecordId(value);
+        const requestOrigin = recordId ? `${origin}:${recordId}` : origin;
+        const key = resultKey(lookup, config) + requestOrigin;
         /**
          * @param {string} mode
          * @returns {string}
          */
-        const modeKey = (mode) => resultKey({...lookup, mode}, config) + origin;
+        const modeKey = (mode) => resultKey({...lookup, mode}, config) + requestOrigin;
         const skey = sentenceKey(lookup, config);
         if (action === 'saveWord') {
             const source = /** @type {{url?: string, title?: string, videoTime?: number}} */ (value);

@@ -24,6 +24,7 @@
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章，想看上次记过的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选 |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
+| 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
 | 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
@@ -60,6 +61,8 @@
 ## L-002 记笔记、选择制卡与真实同步是不同动作
 
 **笔记已写入，扩展本地记录没更新**：在 `StudyJournal.save` 区分本机桥的 `vaultSaved` 和本地问答/关联。已确认的笔记不因浏览器关联写失败变回待保存，批量继续下一个；界面提示后续问答暂不能依赖自动补充。原生保存未回执仍停，不抹掉问答、不重发已经确认的笔记。见[浏览器关联写失败](youtube-study-wiring.md#2026-11-18-笔记写入和浏览器本地关联分别确认)。
+
+**先后打开同句的两个意思，追问应留在原记录**：旧 `sourceKey` 按词、句和出处合并，用作同步关联时后打开的记录覆盖前一条，词卡追问也没带原记录号。现在普通词卡用 `conversationKey` 按有效记录号加原语境分离，没明确打开笔记、也没在当前卡保存时只留本地。确认保存只关联本次交付的轮次；用桥确认的轮次 ID 读旧历史，不把没有归属的旧问答塞给任意义项。受校验字幕和收藏仍用原来源键。见[两条笔记的连续追问](youtube-study-wiring.md#2026-11-18-同词同句的追问按笔记归属)。
 
 依据：既有 Vault 阶段反馈和当前项目保护约定。笔记保存不能隐式覆盖用户手工卡片或复习排程；同词不同原句/来源不能误归属。临时 Vault/FakeAnki、模拟字幕与真实 Profile 分层记录，图片或视频网址不能代替原声音频证据。
 

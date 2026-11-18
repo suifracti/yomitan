@@ -839,7 +839,8 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
                     if (typeof sourceTimeCurrent === 'number' && typeof entry.videoTime === 'number' && Math.floor(entry.videoTime) !== Math.floor(sourceTimeCurrent)) { return false; }
                     return true;
                 });
-                const matchingRecord = requestedRecord || (sourceMatches.length === 1 ? sourceMatches[0]?.record : null);
+                const complete = memory?.coverage?.status === 'complete' && exactRecords.length === ids.length && memory?.total === ids.length;
+                const matchingRecord = requestedRecord || (!validId(requestedId) && complete && sourceMatches.length === 1 ? sourceMatches[0]?.record : null);
                 if (matchingRecord && validId(matchingRecord.id)) {
                     context.dataset.studyRecordId = matchingRecord.id;
                     context.dispatchEvent(new d.defaultView.CustomEvent('study-record-current', {detail: matchingRecord}));

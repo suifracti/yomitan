@@ -612,7 +612,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 setAudioState('ready');
                 const extras = recorded.assets.filter((asset) => asset.kind !== 'audio').map((asset) => (asset.kind === 'image' ? '截图' : '视频片段'));
                 addStatus.textContent = [`真实原声${extras.length > 0 ? `和${extras.join('、')}` : ''}已保存；现在可选择“视频声音字幕”制卡。`, ...recorded.warnings].join(' ');
-                if (d.defaultView) { container.dispatchEvent(new d.defaultView.Event('study-saved')); }
+                if (d.defaultView) { container.dispatchEvent(new d.defaultView.CustomEvent('study-saved', {detail: row})); }
             } finally {
                 if (isCurrent() && !disposed) {
                     captureAudio.disabled = false;
@@ -734,7 +734,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
             manualCards.replaceChildren();
             for (const input of /** @type {NodeListOf<HTMLInputElement>} */ (draftCards.querySelectorAll('input[data-study-review-card]'))) { input.checked = false; }
             updateSubmitState();
-            if (d.defaultView) { container.dispatchEvent(new d.defaultView.Event('study-saved')); }
+            if (d.defaultView) { container.dispatchEvent(new d.defaultView.CustomEvent('study-saved', {detail: result})); }
         });
     });
     save.addEventListener('click', () => {
@@ -754,7 +754,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                     openNote.href = saved.openUrl;
                     openNote.hidden = false;
                 }
-                if (d.defaultView) { container.dispatchEvent(new d.defaultView.Event('study-saved')); }
+                if (d.defaultView) { container.dispatchEvent(new d.defaultView.CustomEvent('study-saved', {detail: row})); }
                 status.textContent = '笔记已保存';
             }
             if (!isCurrent()) { return; }
@@ -780,7 +780,6 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 status.textContent += ` · ${card.linkedExisting ? '关联已有卡' : '已有卡'}：${card.front}`;
             }
             status.title = row.error ?? row.reviewDraft?.reason ?? '';
-            if (d.defaultView) { container.dispatchEvent(new d.defaultView.Event('study-saved')); }
         });
     });
     actions.append(save);

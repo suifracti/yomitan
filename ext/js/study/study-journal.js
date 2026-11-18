@@ -72,6 +72,43 @@ export function sourceKey(value) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function conversationRecordId(value) {
+    const {recordId, subtitleSource} = /** @type {Partial<import('study').LibraryEntry>} */ (value ?? {});
+    return !subtitleSource && typeof recordId === 'string' && /^[a-f0-9]{32}$/.test(recordId) ? recordId : '';
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function conversationKey(value) {
+    const id = conversationRecordId(value);
+    const key = sourceKey(value);
+    return id ? `record:${id}:${key}` : key;
+}
+
+/**
+ * A legacy turn belongs here only if the saved note confirmed its exact ID.
+ * @param {import('study').JournalRow[]} rows
+ * @param {unknown} source
+ * @returns {import('study').JournalRow[]}
+ */
+function conversationRows(rows, source) {
+    const key = conversationKey(source);
+    const legacy = sourceKey(source);
+    if (key === legacy) { return rows.filter((row) => row.key === key); }
+    const {savedTurnIds} = /** @type {{savedTurnIds?: string[]}} */ (source);
+    const confirmed = new Set(savedTurnIds);
+    return rows.flatMap((row) => {
+        if ((row.key === key || row.key === legacy) && confirmed.has(row.turn.id)) { return [{...row, key, saved: true}]; }
+        return row.key === key ? [row] : [];
+    });
+}
+
+/**
  * Durable local outbox. Only explicit Save transfers this history to Obsidian.
  */
 export class StudyJournal {
@@ -98,7 +135,7 @@ export class StudyJournal {
      * @returns {Promise<import('study').LearningTurn[]>}
      */
     async get(source) {
-        const key = sourceKey(source);
+        const key = conversationKey(source);
         return (await this.rows()).filter((r) => r.key === key && !r.saved).map((r) => r.turn);
     }
 
@@ -107,7 +144,7 @@ export class StudyJournal {
      * @returns {Promise<import('study').LearningTurn[]>}
      */
     async conversation(source) {
-        const rows = (await this.rows()).filter((r) => r.key === sourceKey(source));
+        const rows = conversationRows(await this.rows(), source);
         return rows.filter((r) => r.turn.kind !== 'feedback').map((r) => {
             const events = rows.filter((e) => e.turn.kind === 'feedback' && e.turn.relatedTurnId === r.turn.id);
             const last = events.at(-1);
@@ -124,7 +161,7 @@ export class StudyJournal {
     async recordUsage(source, id, usage) {
         await this.service.write('studyConversationUsageV1', (value) => {
             const rows = /** @type {{key: string, id: string, usage: import('study').Usage}[]} */ (Array.isArray(value) ? value : []);
-            return [...rows.filter((r) => r.id !== id), {key: sourceKey(source), id, usage}];
+            return [...rows.filter((r) => r.id !== id), {key: conversationKey(source), id, usage}];
         });
     }
 
@@ -135,7 +172,7 @@ export class StudyJournal {
     async usage(source) {
         const value = await this.service.read('studyConversationUsageV1');
         const rows = /** @type {{key: string, usage: import('study').Usage}[]} */ (Array.isArray(value) ? value : []);
-        return rows.filter((r) => r.key === sourceKey(source) && r.usage.status !== 'cached').map((r) => r.usage);
+        return rows.filter((r) => r.key === conversationKey(source) && r.usage.status !== 'cached').map((r) => r.usage);
     }
 
     /**
@@ -158,7 +195,7 @@ export class StudyJournal {
         const lookup = studyLookup(source);
         /** @type {import('study').LearningTurn} */
         const turn = {id: crypto.randomUUID(), at: new Date().toISOString(), mode: lookup.mode === 'translate' ? 'translate' : 'explain', question: lookup.question ?? '', ...result, feedback, ...(usage ? {usage} : {})};
-        const row = {key: sourceKey(source), turn};
+        const row = {key: conversationKey(source), turn};
         await this.service.write(KEY, (value) => {
             const rows = /**
                           * @type {import('study').JournalRow[]}
@@ -181,16 +218,17 @@ export class StudyJournal {
         if (feedback !== 'understood' && feedback !== 'unclear') {
             throw new Error('请选择本人这次是否理解。');
         }
-        const key = sourceKey(source);
+        const key = conversationKey(source);
         const question = studyLookup(source).question ?? '';
         const turnId = /** @type {{turnId?: string}} */ (source ?? {}).turnId;
         await this.service.write(KEY, (value) => {
             const rows = /** @type {import('study').JournalRow[]} */ (Array.isArray(value) ? value : []);
-            const row = [...rows].reverse().find((r) => r.key === key && r.turn.kind !== 'feedback' && (turnId ? r.turn.id === turnId : r.turn.question === question));
+            const scoped = conversationRows(rows, source).reverse();
+            const row = scoped.find((r) => r.turn.kind !== 'feedback' && (turnId ? r.turn.id === turnId : r.turn.question === question));
             if (!row) {
                 throw new Error('请先读取这轮回答，再反馈；不会猜测关联。');
             }
-            const last = [...rows].reverse().find((r) => r.key === key && r.turn.kind === 'feedback' && r.turn.relatedTurnId === row.turn.id);
+            const last = scoped.find((r) => r.turn.kind === 'feedback' && r.turn.relatedTurnId === row.turn.id);
             if ((last?.turn.feedback ?? row.turn.feedback) === feedback) {
                 return rows;
             }
@@ -227,7 +265,7 @@ export class StudyJournal {
             }
             saved = /** @type {import('study').LibraryRecord} */ (response.library);
             try {
-                await this.acknowledge(batch);
+                await this.acknowledge(batch, saved.entry && saved.vaultSaved === true ? {...saved.entry, recordId: saved.id} : void 0);
             } catch (error) {
                 if (saved.vaultSaved !== true) { throw error; }
                 localSyncIncomplete = true;
@@ -244,9 +282,14 @@ export class StudyJournal {
         return localSyncIncomplete ? {...saved, localSyncIncomplete: true} : saved;
     }
 
-    /** @param {import('study').LearningTurn[]} batch */
-    async acknowledge(batch) {
+    /**
+     * @param {import('study').LearningTurn[]} batch
+     * @param {import('study').LibraryEntry} [savedSource]
+     */
+    async acknowledge(batch, savedSource) {
         if (batch.length === 0) { return; }
+        const confirmedKey = savedSource ? conversationKey(savedSource) : '';
+        const legacyKey = savedSource ? sourceKey(savedSource) : '';
         const snapshots = new Map(batch.map((t) => [t.id, t]));
         await this.service.write(KEY, (value) => {
             const rows = /** @type {import('study').JournalRow[]} */ (Array.isArray(value) ? value : []);
@@ -255,12 +298,16 @@ export class StudyJournal {
             const next = rows.map((r) => {
                 const snapshot = snapshots.get(r.turn.id);
                 if (!snapshot) {
+                    if (confirmedKey && r.key === legacyKey && !r.saved && r.turn.relatedTurnId && snapshots.has(r.turn.relatedTurnId)) {
+                        return {...r, key: confirmedKey};
+                    }
                     return r;
                 }
+                const key = confirmedKey || r.key;
                 if (r.turn.feedback !== snapshot.feedback) {
-                    repairs.push({key: r.key, turn: {id: crypto.randomUUID(), at: new Date().toISOString(), kind: 'feedback', relatedTurnId: r.turn.relatedTurnId ?? r.turn.id, question: r.turn.question, translation: '', meaning: '', notes: '', feedback: r.turn.feedback}});
+                    repairs.push({key, turn: {id: crypto.randomUUID(), at: new Date().toISOString(), kind: 'feedback', relatedTurnId: r.turn.relatedTurnId ?? r.turn.id, question: r.turn.question, translation: '', meaning: '', notes: '', feedback: r.turn.feedback}});
                 }
-                return {...r, turn: snapshot, saved: true};
+                return {...r, key, turn: snapshot, saved: true};
             });
             return bounded([...next, ...repairs]);
         });
