@@ -349,7 +349,7 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     const h = await createHarness(t, {grouped: true});
     const entry = {word: 'just', language: 'en', sentence: SENTENCE, context: 'The judge explains the decision.',
         url: ARTICLE_URL, title: 'Synthetic article', videoTime: 72,
-        meaning: '原来保存的含义', translation: '原来保存的译文', notes: '原来保存的学习提示', explanationSource: 'AI 辅助解释（非词典原文）'};
+        meaning: '原来保存的含义', translation: '', notes: '原来保存的学习提示', explanationSource: 'AI 辅助解释（非词典原文）'};
     // An unrelated earlier browser turn isn't part of either explicitly saved sense.
     await h.service.journal.append(entry, {meaning: '过期的本机解释', translation: '过期的本机译文', notes: '过期的提示'});
     await h.service.journal.acknowledge(await h.service.journal.get(entry));
@@ -394,8 +394,13 @@ test('reopening a saved context isolates older history and keeps new auto-synced
     await waitFor(() => [...container.querySelectorAll('.study-turn-answer')].some((row) => row.textContent.includes(ANSWER)), 'new answer after fast automatic acknowledgement');
     const turns = await h.service.journal.conversation({...entry, recordId: id});
     assert.equal(turns.find((turn) => turn.question === QUESTION)?.saved, true);
+    const afterFollowup = await readStudyRecord(id, 'en');
+    assert.equal(afterFollowup.entry.meaning, entry.meaning, 'automatic follow-up must not overwrite the note summary');
+    assert.equal(afterFollowup.entry.translation, TRANSLATION, 'a blank translation can still be filled automatically');
+    assert.equal(afterFollowup.entry.notes, entry.notes);
+    assert.equal(afterFollowup.savedTurns.find((turn) => turn.question === QUESTION)?.notes, ANSWER);
     container.querySelector('[data-study-save="note"]').click();
-    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存'), 'new answer save');
+    await waitFor(() => container.querySelector('.study-library-status')?.textContent.includes('笔记已保存') && !container.querySelector('[data-study-save="note"]').disabled, 'new answer save');
     read = await h.native({action: 'libraryRead', ids: [id], language: 'en'}).promise;
     for (const key of ['meaning', 'translation', 'notes']) { assert.equal(read.library.items[0].record.entry[key], answer[key]); }
     await waitFor(() => !container.querySelector('[data-study-save="note"]').disabled, 'save control ready');

@@ -315,6 +315,7 @@ def update(lib, p):
     proposed = p.get('entry', {})
     if any(current.get(k) not in (v, proposed[k]) for k, v in p.get('ifUnchanged', {}).items()):
         raise ValueError('笔记已在别处修改；没有覆盖，改动留待核对。')
+    proposed = {**{k: v for k, v in p.get('fillMissing', {}).items() if v and not current.get(k)}, **proposed}
     changes = {k: v for k, v in proposed.items() if v != current.get(k)}
     r['entry'].update(changes)
     if set(changes) & set(SYNC_KEYS):

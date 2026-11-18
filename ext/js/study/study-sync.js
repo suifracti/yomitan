@@ -41,6 +41,21 @@ export function needsStudyUpdateReview(task) {
     return task.action === 'libraryUpdate' && (task.key !== studyUpdateKey(task.language, task.id ?? '') || (task.remember === true && !task.ifUnchanged));
 }
 
+/**
+ * The previous queue format mixed automatic suggestions into entry without a write baseline.
+ * @param {import('study').SyncTask} [task]
+ * @returns {{entry: Partial<import('study').LibraryEntry>, fillMissing: NonNullable<import('study').SyncTask['fillMissing']>}}
+ */
+function updateFields(task) {
+    const fields = Object.entries(task?.entry ?? {});
+    const expected = task?.ifUnchanged ?? {};
+    return {
+        entry: Object.fromEntries(fields.filter(([key]) => Object.hasOwn(expected, key))),
+        fillMissing: {...Object.fromEntries(fields.filter(([key]) => !Object.hasOwn(expected, key) && ['translation', 'meaning', 'notes'].includes(key))),
+            ...task?.fillMissing},
+    };
+}
+
 /** Existing browser storage holds delivery intents, never a second learning database. */
 export class StudySync {
     /** @param {import('./study-service.js').StudyService} service */
@@ -93,17 +108,17 @@ export class StudySync {
             const held = previous && needsStudyUpdateReview(previous);
             const old = task.action === 'libraryUpdate' && previous?.action === task.action && !held ? previous : void 0;
             const turns = new Map([...(old?.turns ?? []), ...(task.turns ?? [])].map((t) => [t.id, t]));
-            const entry = {...old?.entry, ...task.entry};
-            for (const key of /** @type {(keyof import('study').LibraryEntry)[]} */ (Object.keys(old?.ifUnchanged ?? {}))) {
-                if (!Object.hasOwn(task.ifUnchanged ?? {}, key)) { Object.assign(entry, {[key]: old?.entry?.[key]}); }
-            }
+            const fields = updateFields(task);
+            const previousFields = updateFields(old);
+            const entry = {...previousFields.entry, ...fields.entry};
+            const fillMissing = {...previousFields.fillMissing, ...fields.fillMissing};
             revision = crypto.randomUUID();
             const next = [...rows.filter((r) => r.key !== task.key),
                 ...(held ? [{...previous, key: `review:${previous.key}:${previous.revision}`}] : []),
                 {...old,
                     ...task,
                     revision,
-                    ...(task.entry && task.action === 'libraryUpdate' ? {entry} : {}),
+                    ...(task.action === 'libraryUpdate' ? {entry, fillMissing} : {}),
                     ...(old?.ifUnchanged || task.ifUnchanged ? {ifUnchanged: {...old?.ifUnchanged, ...task.ifUnchanged}} : {}),
                     ...(turns.size > 0 ? {turns: [...turns.values()]} : {})}];
             const retryable = next.filter((row) => !needsStudyUpdateReview(row));
@@ -133,9 +148,9 @@ export class StudySync {
         const links = /** @type {import('study').SyncLink[]} */ (await this.service.read(LINKS) ?? []);
         const link = links.find((r) => r.key === key);
         if (!link) { return; }
-        const entry = Object.fromEntries(Object.entries(result).filter(([k, v]) => ['translation', 'meaning', 'notes'].includes(k) && typeof v === 'string' && v.trim()));
+        const fillMissing = Object.fromEntries(Object.entries(result).filter(([k, v]) => ['translation', 'meaning', 'notes'].includes(k) && typeof v === 'string' && v.trim()));
         const turns = await this.service.journal.get(source);
-        await this.enqueue({...link, key: studyUpdateKey(link.language, link.id), action: 'libraryUpdate', entry, turns});
+        await this.enqueue({...link, key: studyUpdateKey(link.language, link.id), action: 'libraryUpdate', fillMissing, turns});
         void this.flush();
     }
 
@@ -199,13 +214,20 @@ export class StudySync {
             try {
                 const {key, revision} = task;
                 const payload = Object.fromEntries(Object.entries(task).filter(([name]) => !['key', 'revision', 'error'].includes(name)));
+                if (task.action === 'libraryUpdate') {
+                    const {entry, fillMissing} = updateFields(task);
+                    delete payload.entry;
+                    delete payload.fillMissing;
+                    if (task.remember) { payload.entry = entry; }
+                    if (Object.keys(fillMissing).length > 0) { payload.fillMissing = fillMissing; }
+                }
                 let row;
                 const turns = task.turns ?? [];
                 for (let offset = 0; offset < Math.max(1, turns.length); offset += 4) {
                     const batch = turns.slice(offset, offset + 4);
                     const response = await this.service.native({...payload, ...(task.turns ? {turns: batch} : {})}).promise;
                     if (!response.ok || !response.library) {
-                        if (task.ifUnchanged && response.error === '不支持的学习库操作或字段。') {
+                        if ((task.ifUnchanged || payload.fillMissing) && response.error === '不支持的学习库操作或字段。') {
                             throw new Error('本机桥版本较旧；改动留在本机，更新后再补交。');
                         }
                         throw new Error(response.error ?? '等待本机同步确认。');

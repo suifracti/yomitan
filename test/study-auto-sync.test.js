@@ -116,7 +116,15 @@ test('old unverified note updates stay readable and cannot merge into a confirme
         language: 'en',
         entry: {meaning: '可能来自另一个意思'},
         turns: [{id: 'old-turn', question: '原先的问题'}]};
-    const data = {studySyncOutboxV1: [legacy]};
+    const mixed = {key: `update:v2:en:${id}`,
+        revision: 'queued',
+        action: 'libraryUpdate',
+        remember: true,
+        id,
+        language: 'en',
+        ifUnchanged: {context: ''},
+        entry: {context: '我改的上下文', meaning: '自动补的释义'}};
+    const data = {studySyncOutboxV1: [legacy, mixed]};
     const {service, sent} = make(data, (payload) => {
         const {action} = /** @type {{action: string}} */ (payload);
         const record = {id, entry: source, vaultSaved: true};
@@ -128,7 +136,10 @@ test('old unverified note updates stay readable and cannot merge into a confirme
     const pending = await service.handle('syncPending');
     const updates = sent.filter((p) => /** @type {{action: string}} */ (p).action === 'libraryUpdate');
     expect(updates).toHaveLength(1);
-    expect(updates[0]).toMatchObject({id, entry: {translation: '他们向他收费。'}, turns: [{translation: '他们向他收费。'}]});
+    expect(updates[0]).toMatchObject({id,
+        entry: {context: '我改的上下文'},
+        fillMissing: {translation: '他们向他收费。', meaning: '自动补的释义'},
+        turns: [{translation: '他们向他收费。'}]});
     expect(updates[0]).not.toHaveProperty('entry.meaning');
     expect(data.studySyncOutboxV1).toEqual([legacy]);
     expect(pending).toEqual([{...legacy, reviewOnly: true}]);

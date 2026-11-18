@@ -323,7 +323,7 @@ def _normalize_request(p):
         if not isinstance(resolutions, dict) or len(resolutions) > 100 or any(not isinstance(k, str) or v not in ('local', 'remote') for k, v in resolutions.items()):
             raise ValueError('字段冲突选择无效。')
         return {**p, 'resolutions': resolutions}
-    if action == 'libraryUpdate' and set(p) <= {'action', 'id', 'entry', 'turns', 'remember', 'ifUnchanged'} and {'action', 'id'} <= set(p) and ('entry' in p or 'turns' in p):
+    if action == 'libraryUpdate' and set(p) <= {'action', 'id', 'entry', 'turns', 'remember', 'ifUnchanged', 'fillMissing'} and {'action', 'id'} <= set(p) and {'entry', 'turns', 'fillMissing'} & set(p):
         if not isinstance(p['id'], str) or not ID_RE.fullmatch(p['id']):
             raise ValueError('学习记录编号无效。')
         if 'remember' in p and type(p['remember']) is not bool:
@@ -349,6 +349,9 @@ def _normalize_request(p):
                     or any(v is not None and (type(v) is not int if k == 'videoTime' else not isinstance(v, str))
                            for k, v in expected.items())):
                 raise ValueError('学习更新的核对字段无效。')
+        fill_missing = p.get('fillMissing', {})
+        if not isinstance(fill_missing, dict) or set(fill_missing) - {'meaning', 'translation', 'notes'}:
+            raise ValueError('学习补充字段无效。')
         turns = p.get('turns', [])
         if not isinstance(turns, list) or len(turns) > 20:
             raise ValueError('每次最多补充20轮。')
@@ -362,7 +365,7 @@ def _normalize_request(p):
                 raise ValueError('学习过程编号或反馈无效。')
             if turn.get('kind') == 'feedback' and (not isinstance(turn.get('relatedTurnId'), str) or any(turn[k] for k in ('translation','meaning','notes'))):
                 raise ValueError('反馈须关联原学习轮次，不重复答案。')
-        return {**p, 'entry': partial, 'turns': turns}
+        return {**p, 'entry': partial, 'turns': turns, 'fillMissing': {k: text(v, FIELDS[k]) for k, v in fill_missing.items()}}
     if action in ('libraryDraftSave', 'libraryDraftDiscard', 'libraryDraftCommit'):
         if set(p) != {'action', 'items'} or not isinstance(p['items'], list) or not 1 <= len(p['items']) <= 10:
             raise ValueError('每次处理1–10条明确选中的草稿。')
