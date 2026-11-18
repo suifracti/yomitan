@@ -180,6 +180,39 @@ class AutoSyncTests(unittest.TestCase):
         self.assertEqual([r['noteId'] for r in state['orphans']], [candidate])
         self.assertEqual(state['mastery']['notes']['1000'][0]['iv'], 30)
 
+    def test_upgrade_uses_the_linked_card_interval_not_another_notes_copied_tag(self):
+        lib = self.library.library_for(self.library.active_id)
+        records = {}
+        for n, word in enumerate(('brick', 'mortar', 'wall', 'gate'), 1):
+            ident = f'{n:032x}'
+            row = {'entry': {'word': word}, 'ankiState': 'synced', 'noteId': n}
+            if n < 3:
+                row['cards'] = [{'id': ident, 'noteId': n, 'kind': 'meaning', 'state': 'synced'}]
+            records[ident] = (lib, self.vault / f'{word}.md', row)
+        self.library.indexed = lambda: ({str(p): 1 for _, p, _ in records.values()}, records)
+        bodies = []
+        def anki(action, p):
+            if action == 'findNotes':
+                if 'edited:1' in p['query']: return []
+                if p['query'].startswith('nid:'): return [3]  # Only wall's legacy note has a stage tag.
+                return [1, 2, 3, 4]
+            if action == 'findCards':
+                if 'rated:' in p['query']: return []
+                if 'prop:ivl' in p['query']: return [12, 13]
+                return [11, 12, 13, 14]
+            if action == 'cardsToNotes': return [cid - 10 for cid in p['cards']]
+            if action == 'cardsInfo':
+                return [{'cardId': c, 'note': c - 10, 'interval': 2 if c == 11 else 21, 'lapses': 0} for c in p['cards']]
+            if action == 'notesInfo':
+                bodies.extend(p['notes'])
+                return [{'noteId': n, 'tags': ['studycard_' + f'{i:032x}' for i in (1, 2)] if n == 2 else ['study_stage::2']}
+                        for n in p['notes']]
+            self.fail(action)
+        self.library.anki = anki
+        self.assertEqual(self.library.auto_sync(1000)['upgrade'], [
+            {'id': f'{2:032x}', 'word': 'mortar'}, {'id': f'{3:032x}', 'word': 'wall'}])
+        self.assertEqual(bodies, [])
+
     def test_restored_card_clears_missing_without_an_edit_timestamp_change(self):
         import copy
         ident = self.make_card()

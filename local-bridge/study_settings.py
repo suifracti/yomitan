@@ -405,25 +405,15 @@ class YomitanLibrary:
             if path.is_file():
                 files[str(path)] = path.stat().st_mtime_ns
         upgrade = state.get('upgrade', []) if isinstance(state.get('upgrade'), list) else []
-        if anki_ok and not paused and now - state.get('upgradeAt', 0) > 600:
+        from study_senses import refresh_metrics, upgrade_words
+        previous = state.get('mastery', {})
+        state['mastery'] = refresh_metrics(self.anki, records, previous, now) if anki_ok and not paused else previous
+        if state['mastery'] is not previous and now - state.get('upgradeAt', 0) > 600:
             try:
-                mature = self.anki('findCards', {'query': '(tag:study_stage::1 OR tag:study_stage::2) prop:ivl>=21'})
-                note_ids = self.anki('cardsToNotes', {'cards': mature}) if mature else []
-                info = self.anki('notesInfo', {'notes': note_ids}) if note_ids else []
-                ready = {}
-                for note in info if isinstance(info, list) else []:
-                    for tag in note.get('tags', []):
-                        if tag in owner:
-                            target_id, ident = owner[tag]
-                            record = records[ident][2]
-                            if not any(study_sync.CARD_STAGES.get(c.get('kind')) == 3 for c in record.get('cards', [])):
-                                ready[ident] = record['entry']['word']
-                upgrade = [{'id': ident, 'word': word} for ident, word in sorted(ready.items())][:200]
+                upgrade = upgrade_words(self.anki, records, state['mastery'])
                 state['upgradeAt'] = now
             except Exception:
                 pass
-        from study_senses import refresh_metrics
-        state['mastery'] = refresh_metrics(self.anki, records, state.get('mastery', {}), now) if anki_ok and not paused else state.get('mastery', {})
         state.update({'files': files, 'notes': notes, 'retryRecords': retry, 'upgrade': upgrade, 'at': now, 'synced': synced, 'conflicts': conflicts})
         state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = state_path.with_suffix('.tmp')

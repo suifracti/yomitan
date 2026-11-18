@@ -65,25 +65,33 @@ KIND_LABELS = {kind: c.label for kind, c in CARDS.items()}
 AUDIO_KINDS = frozenset(kind for kind, c in CARDS.items() if c.needs == 'audio')
 
 
-def card_progress(row):
-    """Count last acknowledged cards, not drafts or an ID whose link just failed."""
+def card_receipts(row):
+    """Yield (confirmed Anki note ID or None if waiting, stage); skip broken links."""
     cards = row.get('cards', [])
     state = row.get('syncState')
     uncertain = state in ('missing', 'ambiguous')
     late = row.get('ankiState') == 'pending' or state == 'pending'
     linked = row.get('ankiState') in ('synced', 'linked')
-    seen, waiting, stage = set(), 0, 0
     for c in cards:
         if uncertain and (not row.get('repairCardId') or c['id'] == row['repairCardId']):
             continue
         ident, receipt = c.get('noteId'), c.get('syncState') or c.get('state')
         if ident and (receipt == 'synced' or (not receipt and linked)):
-            seen.add(ident)
-            stage = max(stage, CARD_STAGES.get(c.get('kind'), 0))
+            yield ident, CARD_STAGES.get(c.get('kind'), 0)
         elif receipt == 'pending' or (not ident and late):
-            waiting += 1
+            yield None, CARD_STAGES.get(c.get('kind'), 0)
     if not cards and row.get('noteId') and linked and not late and not uncertain:
-        seen.add(row['noteId'])
+        yield row['noteId'], 0
+
+
+def card_progress(row):
+    seen, waiting, stage = set(), 0, 0
+    for ident, level in card_receipts(row):
+        if ident is None:
+            waiting += 1
+        else:
+            seen.add(ident)
+            stage = max(stage, level)
     return {'confirmed': len(seen), 'waiting': waiting, 'stage': stage}
 
 

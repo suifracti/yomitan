@@ -7,10 +7,11 @@ import re
 import time
 
 from study_library import entry_id, entry_lemma as canonical, paragraph, text, source_url
-from study_sync import CARD_STAGES
+from study_cards import CARD_STAGES, card_receipts
 
 MISS_KINDS = ('newSense', 'collocation', 'structure', 'recall')
 MATURE = {'familiar', 'known'}
+MATURE_DAYS = 21
 MONTH = 30 * 86400
 
 
@@ -111,6 +112,25 @@ def metrics(library):
         return {}
 
 
+def upgrade_words(anki, records, snapshot):
+    mature = {int(n) for n, cards in snapshot['notes'].items() if any(c['iv'] >= MATURE_DAYS for c in cards)}
+    ready, legacy = set(), {}
+    for ident, (_, _, row) in records.items():
+        if row.get('syncState') == 'conflict' or any(CARD_STAGES.get(c.get('kind')) == 3 for c in row.get('cards', [])):
+            continue
+        for n, stage in card_receipts(row):
+            if n in mature:
+                if stage in (1, 2):
+                    ready.add(ident)
+                elif not stage:
+                    legacy.setdefault(n, []).append(ident)
+    if legacy:
+        query = 'nid:' + ','.join(map(str, legacy)) + ' (tag:study_stage::1 OR tag:study_stage::2)'
+        for n in anki('findNotes', {'query': query}):
+            ready.update(legacy[n])
+    return [{'id': i, 'word': records[i][2]['entry']['word']} for i in sorted(ready)[:200]]
+
+
 def status_for(records, snapshot, now):
     cards = {c['id']: c for row in records for n in note_ids(row) for c in snapshot.get('notes', {}).get(str(n), [])}
     have_cards = any(row.get('cards') or row.get('noteId') for row in records)
@@ -124,7 +144,7 @@ def status_for(records, snapshot, now):
         state = 'shaky'
     elif not have_cards:
         state = 'new'
-    elif not cards or not complete or min(c['iv'] for c in cards.values()) < 21:
+    elif not cards or not complete or min(c['iv'] for c in cards.values()) < MATURE_DAYS:
         state = 'learning'
     else:
         stage3 = any(CARD_STAGES.get(c.get('kind')) == 3 for row in records for c in row.get('cards', []))
