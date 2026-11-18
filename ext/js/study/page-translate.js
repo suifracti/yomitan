@@ -142,7 +142,7 @@ export class PageTranslate {
         this.selectionUi = null;
         /** @type {HTMLElement|null} */
         this.selectionCard = null;
-        /** @type {{url: string, text: string, element: Element}|null} */
+        /** @type {{url: string, text: string, element: Element, language: string, range: Range}|null} */
         this.selectionSource = null;
         /**
          *
@@ -440,9 +440,13 @@ export class PageTranslate {
         const element = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
         if (!element || element.closest(SKIP) || this.editing(selection.anchorNode?.parentElement || null) || this.editing(selection.focusNode?.parentElement || null)) { return; }
         const source = location.href;
+        const language = pageLanguage(element);
         const previous = this.selectionSource;
-        if (previous?.element === element && previous.url === source && previous.text === text && this.selectionUi?.isConnected) { return; }
-        this.selectionSource = {url: source, text, element};
+        if (previous?.element === element && previous.url === source && previous.text === text && previous.language === language &&
+        this.selectionUi?.isConnected && previous.range.compareBoundaryPoints(Range.START_TO_START, range) === 0 &&
+        previous.range.compareBoundaryPoints(Range.END_TO_END, range) === 0) { return; }
+        const selectionSource = {url: source, text, element, language, range: range.cloneRange()};
+        this.selectionSource = selectionSource;
         this.selectionUi?.remove();
         const ui = document.createElement('div');
         ui.className = 'study-selection-trigger scan-disable';
@@ -458,7 +462,7 @@ export class PageTranslate {
         trigger.textContent = '译';
         trigger.title = '翻译选中文字';
         trigger.setAttribute('aria-label', trigger.title);
-        trigger.onclick = () => { void this.openSelection(text, ui, original, source, element); };
+        trigger.onclick = () => { void this.openSelection(text, ui, original, selectionSource); };
         ui.append(trigger);
         if (this.prefs.selection === 'auto') { trigger.click(); }
     }
@@ -476,14 +480,17 @@ export class PageTranslate {
      * @param {string} text
      * @param {HTMLElement} ui
      * @param {Element} original
-     * @param {string} [sourceUrl]
-     * @param {Element} [languageElement]
+     * @param {{url: string, element: Element, language: string, range: Range}} [selection]
      */
-    async openSelection(text, ui, original, sourceUrl = location.href, languageElement = original) {
+    async openSelection(text, ui, original, selection) {
         const sourceNode = original;
         const originalText = this.source(sourceNode);
-        const language = pageLanguage(languageElement);
-        const isCurrent = () => sourceUrl === location.href && sourceNode.isConnected && languageElement.isConnected && pageLanguage(languageElement) === language && this.source(sourceNode) === originalText;
+        const sourceUrl = selection?.url ?? location.href;
+        const languageElement = selection?.element ?? original;
+        const language = selection?.language ?? pageLanguage(languageElement);
+        const isCurrent = () => sourceUrl === location.href && sourceNode.isConnected && languageElement.isConnected &&
+        pageLanguage(languageElement) === language && (!selection || selection.range.toString().trim() === text) &&
+        this.source(sourceNode) === originalText;
         if (!isCurrent()) {
             ui.remove();
             return;

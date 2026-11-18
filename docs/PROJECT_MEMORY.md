@@ -56,7 +56,7 @@
 | 切换词典配置后，打开旧笔记，追问和保存却用另一种语言 | L-007；study-data.savedStudyLanguage、Display._setContentTermsOrKanji |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 重复评论被删后词消失；链接或斜体里的词只带一个词；换了旁边原句却还能存旧句 | L-012；WordMarks.pageWords、_sentence 和提交时的原句快照 |
-| 换文章后「记住这句」找不到，或旧卡片保存到了新文章 | L-012；PageTranslate.openSelection、study-service.js 的 pageSentenceSave |
+| 换文章或原地换掉选中文字，旧「译」按钮或旧卡片还在 | L-012；PageTranslate.showSelection/openSelection、study-service.js 的 pageSentenceSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 换浏览器后旧问答只留在笔记，词卡学习历史看不到 | L-002；readStudyRecord、study_library_core.saved_learning_turns |
 | 只打开已存笔记，却查询相关词或 Anki | L-002；`libraryRead`、`includeRelated` |
@@ -430,7 +430,7 @@
 
 **本页生词沿实时标色找原句**：不要仅用每词最后一个 DOM 位置缓存原句。用实际标色位置去重；位置仍在本页且节点文字一致才供列表使用，原地改写触发重标。「本页生词」和 L 记住从词所在位置跨链接、斜体等行内元素读同一句，到标点或区块边界为止；跳过不供查词的控件和译文。完成前重读整句，即使只改过邻近链接里的文字也提示重新读而不提交。延时补存仍核原网址；认识、忽略、撤销和桥协议不变。见[动态评论](youtube-study-wiring.md#2026-11-19-本页生词跟随实际原句)及[行内原句验证](youtube-study-wiring.md#2026-11-19-本页生词保留链接和斜体所在的原句)。
 
-**网页上存整句也沿用当前网址**：保留选中时的地址和原段，译文回来或点保存时不跨到新文章。后台沿批量记词的做法核 Chrome 当前地址，消息的地址只作核对；没收到笔记写入确认不标星。保留 iframe 来源和哈希路由，不移动旧笔记。见[原地换页后的整句保存](youtube-study-wiring.md#2026-11-19-原地换文章后整句存到正确来源)。
+**网页划词翻译和存整句都沿用实际选中的来源**：刚画出「译」时固定网址、语言和选区，不能等点击才拿更新后的段落当旧选区。原地更换选中文字时，旧按钮不发翻译；回执和保存时继续核对选区及显示段，不跨到新文章。后台仍核 Chrome 当前地址，消息地址只作核对；没收到写入确认不标星。保留 iframe 来源、哈希路由及旧笔记编号。见[原地换页后的整句保存](youtube-study-wiring.md#2026-11-19-原地换文章后整句存到正确来源)和[旧选区验证](youtube-study-wiring.md#2026-11-19-划词按钮不会翻译已经被网页换掉的文字)。
 
 重复标相同状态时，以索引读出的当前原形标记为准，不为每个词重写已经相同的笔记。旧拼写的认识或忽略条目仍按真实指令清理；状态文件没有变化才不写。测试覆盖 charges 的真实撤销、旧拼写清理和撤销后再点没有写入。
 

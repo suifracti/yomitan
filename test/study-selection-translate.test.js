@@ -39,7 +39,8 @@ test('selection translation saves a sentence only on click, while Alt toggles th
         return action === 'librarySave' ? {vaultSaved: true, localSyncIncomplete: true} : {model: 'fixture', effort: 'low'};
     });
     const {PageTranslate} = await import('../ext/js/study/page-translate.js');
-    const controller = new PageTranslate({translate: async () => '我们从真实的句子学习。'});
+    const translate = vi.fn(async () => '我们从真实的句子学习。');
+    const controller = new PageTranslate({translate});
     try {
         prepareStudyService();
         Range.prototype.getBoundingClientRect = () => ({left: 10, right: 200, bottom: 20});
@@ -50,6 +51,13 @@ test('selection translation saves a sentence only on click, while Alt toggles th
         window.getSelection().addRange(range);
         controller.showSelection();
         expect(controller.selectionUi.textContent).toBe('译');
+        const picked = original.firstChild;
+        picked.data = 'A new comment replaced the selection.';
+        controller.selectionUi.querySelector('button').click();
+        expect(original.nextElementSibling).toBeNull();
+        expect(translate).not.toHaveBeenCalled();
+        picked.data = 'We learn from real sentences.';
+        controller.showSelection();
         controller.selectionUi.querySelector('button').click();
         await vi.waitFor(() => expect(original.nextElementSibling?.classList.contains('study-selection-translation')).toBe(true));
         expect(send.mock.calls.some(([m]) => m.studyAction === 'pageSentenceSave')).toBe(false);
