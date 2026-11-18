@@ -11,7 +11,7 @@ import tempfile
 import time
 
 from study_cards import card_receipts, linked_note_ids, with_card_progress
-from study_sources import page_source_key, with_article_href
+from study_sources import page_source_key, source_search_key, with_article_href
 from study_media import has_current_audio, with_audio_context
 
 PAGE_SIZE = 10
@@ -60,7 +60,7 @@ def saved_record(row):
     return row.get('vaultSaved') and row.get('learningState') != 'favorite-only'
 
 
-def indexed_sources(rows, query, offset):
+def indexed_sources(rows, query, offset, link_source):
     from study_senses import recent_recall
     now = time.time()
     groups = {}
@@ -70,6 +70,7 @@ def indexed_sources(rows, query, offset):
         url = entry['url']
         if not url or not saved_record(row): continue
         key = page_source_key(url)
+        if link_source and key != link_source: continue
         group = groups.setdefault(key, {'url': url, 'title': '', 'records': 0, 'audio': 0, 'recall': 0, 'created': ''})
         group['records'] += 1
         group['audio'] += bool(entry['sentence'] and has_current_audio(row))
@@ -91,10 +92,12 @@ def indexed_page(rows, p, *, complete=True):
     translating = practice == 'translation'
     cloze = practice == 'cloze'
     source = page_source_key(p['url']) if scope == 'source' else ''
-    query = ' '.join(p.get('query', '').casefold().split())
+    raw_query = p.get('query', '')
+    link_source = source_search_key(raw_query)
+    query = '' if link_source else ' '.join(raw_query.casefold().split())
     offset = p.get('offset', 0)
     if scope == 'sources':
-        return indexed_sources(rows, query, offset)
+        return indexed_sources(rows, query, offset, link_source)
     if scope == 'word':
         from study_senses import canonical, practice_material, word_aliases
         rows = [row for row in rows if saved_record(row) and row['entry'].get('kind') != 'sentence'
@@ -109,6 +112,7 @@ def indexed_page(rows, p, *, complete=True):
         now = time.time()
     for row in rows:
         e = row['entry']
+        if link_source and page_source_key(e.get('url', '')) != link_source: continue
         if scope == 'source' and (page_source_key(e['url']) != source or (not source and e['title'] != p['title'])): continue
         if scope == 'pending' and not needs_attention(row): continue
         if scope == 'anki-only' and row.get('syncState') != 'anki-only': continue
@@ -131,7 +135,7 @@ def indexed_page(rows, p, *, complete=True):
             row = {**row, 'searchHit': hit}
         matches.append((rank, order, row))
     matches.sort(key=lambda x: x[:2], reverse=True)
-    if scope == 'source' and not query:
+    if link_source or (scope == 'source' and not query):
         # For a single source, follow its video timeline when it has one.
         # The existing recency order still breaks ties and orders untimed notes.
         matches.sort(key=lambda match: match[2]['entry'].get('videoTime', float('inf')))

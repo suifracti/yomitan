@@ -25,7 +25,7 @@ import {escapeRegExp} from '../core/utilities.js';
 import {blankStudyWord} from '../display/study-card-kinds.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
-import {timedUrl, videoListenUrl} from '../study/media-key.js';
+import {pageSourceKey, timedUrl, videoListenUrl} from '../study/media-key.js';
 import {timeLabel} from '../study/subtitle-session.js';
 import {BILIBILI_HOST, YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
@@ -231,6 +231,10 @@ function matchesSearch(record, query) {
     if (!query) { return true; }
     // Local-only favorites, or a bridge too old to search its index.
     const entry = 'entry' in record ? record.entry : record;
+    if (/^https?:\/\/\S+$/u.test(query)) {
+        const source = pageSourceKey(query);
+        if (source) { return pageSourceKey(entry.url || '') === source; }
+    }
     /** @type {(string|undefined)[]} */
     const fields = [entry.word, entry.sentence, entry.title, (entry.url || '').split(/[?#]/, 1)[0]];
     if ('entry' in record) {
@@ -1024,7 +1028,7 @@ async function initializePage() {
         let loaded = false;
         const requested = new URL(location.href).searchParams;
         const requestedSource = requested.get('source') || '';
-        search.value = (requested.get('query') || '').slice(0, 240);
+        search.value = (requested.get('query') || '').slice(0, 2000);
         const sourceUrl = librarySource(requestedSource);
         const sourcePractice = sourceUrl ? requested.get('practice') : '';
         const requestedDictation = sourcePractice === 'dictation';
@@ -1742,7 +1746,7 @@ listedQuery :
                 } else if (loaded && category === 'recent-recall' && !query) {
                     empty.textContent = '这里显示近 30 天在已存原句上点过「一时没认出」的记录。还没有可显示的原句。';
                 } else if (loaded) {
-                    empty.textContent = query && canSearch ? '这个分类没有匹配的记录。试试单词、中文义或原句。' : (query ? '已加载的记录里没有匹配结果。' : '这个分类暂时没有已读取的记录。');
+                    empty.textContent = query && canSearch ? '这个分类没有匹配的记录。试试单词、原句、中文义或原链接。' : (query ? '已加载的记录里没有匹配结果。' : '这个分类暂时没有已读取的记录。');
                 } else {
                     empty.textContent = '正在读取学习库…';
                 }

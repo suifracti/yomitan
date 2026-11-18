@@ -11,6 +11,36 @@ from test_study_media_video import WEBM, asset
 
 
 class RecordIndexTests(AutoSyncTests):
+    def test_pasted_source_links_find_the_same_saved_material(self):
+        def save(word, url, second=4):
+            return self.library.handle({'action': 'librarySave', 'makeCard': False, 'entry': {
+                'word': word, 'sentence': f'We saw a {word}.', 'url': url, 'videoTime': second, 'title': 'Same title',
+            }})['id']
+
+        youtube = 'https://www.youtube.com/watch?v=AbCdEfGhIjK'
+        early = save('harbor', youtube, 4)
+        late = save('beacon', 'https://youtu.be/AbCdEfGhIjK?t=90', 90)
+        save('shore', youtube.lower())
+        bilibili = 'https://www.bilibili.com/video/BV1xx411c7mD'
+        part2 = save('charge', bilibili + '?p=2')
+        save('bridge', bilibili)
+        page = 'https://example.test/course?level=A'
+        article = save('island', page + '#/PartTwo')
+        save('boat', page + '#/PartOne')
+        request = {'action': 'libraryList', 'scope': 'all', 'url': '', 'title': ''}
+        self.library.handle(request)
+        self.calls.clear()
+        with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('link search reopened a note')):
+            def lookup(link, **params):
+                return self.library.handle({**request, 'query': link, **params})
+
+            shared = 'https://youtu.be/AbCdEfGhIjK?t=40s'
+            self.assertEqual([r['id'] for r in lookup(shared)['items']], [early, late])
+            self.assertEqual([r['id'] for r in lookup(bilibili + '?p=2&t=88')['items']], [part2])
+            self.assertEqual([r['id'] for r in lookup(page + '#/PartTwo:~:text=' + '%E4%BA%8C' * 40)['items']], [article])
+            self.assertEqual([row['records'] for row in lookup(shared, scope='sources')['sources']], [2])
+        self.assertEqual(self.calls, [])
+
     def test_source_shelf_groups_saved_contexts_and_search_keeps_whole_group_counts(self):
         yt = 'https://www.youtube.com/watch?v=abcdefghijk&t=4s'
         local = 'file:///examples/a/Lesson.mp4#study-duration=18'

@@ -10,6 +10,17 @@ FILE_DURATION_KEY = 'study-duration'
 VIDEO_QUERY_KEYS = ('v', 'p', 'id', 'vid', 'ep', 'episode', 'video', 'list', 'index')
 
 
+def source_search_key(query):
+    """A pasted web link is an exact source filter, not a case-folded word query."""
+    if not query.startswith(('http://', 'https://')) or any(c.isspace() for c in query):
+        return ''
+    try:
+        parsed = urllib.parse.urlsplit(query)
+        return page_source_key(query) if parsed.hostname and parsed.username is None and parsed.password is None else ''
+    except ValueError:
+        return ''
+
+
 def page_source_key(url):
     """Group related notes for browsing without changing their source identity."""
     if not url.startswith(('http://', 'https://')):
