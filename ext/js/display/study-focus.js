@@ -619,12 +619,13 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const summary = make('div', 'sf-saved-summary');
         summary.setAttribute('role', 'status'); summary.hidden = true;
         saveBar.append(summary); owned.push(summary);
-        for (const selector of ['.study-library-status', '.study-anki-status', '.study-pending-recovery', '.study-request-status', '.openNote', '.study-card-add-toggle']) {
+        for (const selector of ['.study-library-status', '.study-anki-status', '.study-pending-recovery', '.study-request-status', '.openNote']) {
             const node = context.querySelector(selector);
             if (node) { move(node, saveBar); }
         }
-        const cardControl = saveBar.querySelector('.study-card-add-toggle');
-        if (save && cardControl) { save.after(cardControl); }
+        const cardControls = [...context.querySelectorAll('.study-card-add-toggle')];
+        for (const control of cardControls) { move(control, saveBar); }
+        save?.after(...cardControls);
         learningScroll = make('div', 'sf-learning-scroll');
         learningScroll.setAttribute('aria-label', '原句与问答内容');
         context.prepend(learningScroll); owned.push(learningScroll);

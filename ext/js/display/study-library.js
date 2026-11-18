@@ -43,8 +43,10 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     let entryExtras = {};
     /** @returns {import('study').LibraryEntry} */
     const entryOf = () => /** @type {import('study').LibraryEntry} */ ({...getEntry(), ...entryExtras});
+    const language = entryOf().language ?? 'en';
     let mediaOperation = 0;
     let disposed = false;
+    let busy = false;
     const practiceReady = studyCall('settings').then((value) => /** @type {import('study').StudyConfig} */ (value)).catch(() => null);
     const actions = d.createElement('div');
     actions.className = 'study-learning-actions study-save-actions';
@@ -56,13 +58,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     save.title = '保存本次学习到 Obsidian；不会自动制卡。制卡请另点“选择制卡”。';
     const destination = d.createElement('p');
     destination.className = 'study-save-destination';
-    destination.textContent = `Obsidian · ${entryOf().language === 'ja' ? '日语 + Anki' : '英语笔记'}`;
-    if (entryOf().language !== 'ja' && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
-        void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
-            const settings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
-            if (isCurrent() && settings?.ankiEnabled === false) { destination.textContent = 'Obsidian · 英语 · Anki 未启用'; }
-        });
-    }
+    destination.textContent = `Obsidian · ${language === 'ja' ? '日语 + Anki' : '英语笔记'}`;
     const openNote = d.createElement('a');
     openNote.textContent = '查看学习记录 ↗';
     openNote.hidden = true;
@@ -77,7 +73,14 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     addCard.className = 'scan-disable study-card-add-toggle';
     addCard.dataset.studyAddCard = '';
     addCard.textContent = '制卡';
-    addCard.title = '选择单词意思或原句中的意思，预览确认后制卡；尚未保存时会同时保存笔记。';
+    const cardTitle = '选择单词意思或原句中的意思，预览确认后制卡；尚未保存时会同时保存笔记。';
+    addCard.title = cardTitle;
+    const openAudio = d.createElement('button');
+    openAudio.type = 'button';
+    openAudio.className = addCard.className;
+    openAudio.dataset.studyOpenAudio = '';
+    openAudio.textContent = '保存原声';
+    openAudio.hidden = true;
     const cardPanel = d.createElement('section');
     cardPanel.className = 'study-card-add';
     cardPanel.hidden = true;
@@ -101,15 +104,6 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         const time = typeof entry.videoTime === 'number' ? Math.trunc(entry.videoTime) : void 0;
         return saved?.sentence === entry.sentence.trim() && (saved.url ?? '') === (entry.url ?? '').trim() && saved.videoTime === time;
     };
-    if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
-        void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
-            cardSettings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
-            if (isCurrent() && cardSettings?.ankiEnabled === false) {
-                addCard.disabled = true;
-                addCard.title = 'Anki 制卡尚未启用，请在学习设置的保存与复习中启用。';
-            }
-        });
-    }
     /** @returns {import('./study-card-kinds.js').CardFacts} */
     const cardFacts = () => {
         const entry = entryOf();
@@ -464,7 +458,12 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         audioState.hidden = state === 'none' && captureAudio.hidden;
     };
     setAudioState('none');
-    cardPanel.append(upgradeHint, masteryRow, choices, choiceHint, audioState, captureOptions, captureAudio, cancelCapture, draftCards, manualCards, addRow, submitCards, addStatus);
+    const cardSetup = d.createElement('div');
+    const cardSubmission = d.createElement('div');
+    cardSetup.className = cardSubmission.className = 'study-card-controls';
+    cardSetup.append(upgradeHint, masteryRow, choices, choiceHint);
+    cardSubmission.append(draftCards, manualCards, addRow, submitCards);
+    cardPanel.append(cardSetup, audioState, captureOptions, captureAudio, cancelCapture, cardSubmission, addStatus);
     /**
      *
      */
@@ -487,6 +486,27 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     ankiRow.append(ankiLabel, retryCurrent);
     /** @type {?import('study').LibraryRecord} */
     let currentSaved = null;
+    const ankiUnavailable = () => currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false;
+    /** @param {boolean} open */
+    const setPanelOpen = (open) => {
+        cardPanel.hidden = !open;
+        container.closest('.study-focus-shell')?.classList.toggle('sf-card-editor-open', open);
+        addCard.textContent = open ? '收起制卡' : '制卡';
+        openAudio.textContent = open ? '收起原声' : '保存原声';
+    };
+    const updatePanelControls = () => {
+        const unavailable = ankiUnavailable();
+        const audioOnly = unavailable && !captureAudio.hidden;
+        addCard.disabled = busy || unavailable;
+        addCard.hidden = audioOnly;
+        addCard.title = unavailable ? 'Anki 制卡尚未启用，请在学习设置的保存与复习中启用。' : cardTitle;
+        openAudio.hidden = !audioOnly;
+        openAudio.disabled = busy;
+        cardSetup.hidden = cardSubmission.hidden = unavailable;
+        cardPanel.setAttribute('aria-label', audioOnly ? '保存本句原声' : '选择学习内容并制卡');
+        if (unavailable && !audioOnly) { setPanelOpen(false); }
+        if (language !== 'ja') { destination.textContent = unavailable ? 'Obsidian · 英语 · Anki 未启用' : 'Obsidian · 英语笔记'; }
+    };
     /** @param {(import('study').CardDraft & {deck?: string})[]} cards */
     const renderDraftCards = (cards = []) => {
         draftCards.replaceChildren();
@@ -519,8 +539,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         currentSaved = row;
         updateChoices();
         if (validLibraryId(row?.id)) { container.dataset.studyRecordId = row.id; }
-        addCard.disabled = row.ankiEnabled === false;
-        if (addCard.disabled) { addCard.title = 'Anki 制卡尚未启用，请在学习设置的保存与复习中启用。'; }
+        updatePanelControls();
         renderDraftCards(row?.reviewDraft?.cards);
         ankiRow.hidden = false;
         const receipt = cardReceipt(row);
@@ -545,7 +564,6 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     retry.className = 'scan-disable';
     retry.textContent = '继续补齐';
     recovery.append(pendingLabel, retry);
-    const language = entryOf().language ?? 'en';
     const refreshPending = async () => {
         const pending = /** @type {{count?: number}} */ (await studyCall('pendingPeek', {language}));
         if (!isCurrent()) { return; }
@@ -553,13 +571,12 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         recovery.hidden = count === 0 || (count === 1 && currentSaved?.ankiState === 'pending');
         pendingLabel.textContent = `还有 ${count} 条待处理学习 · `;
     };
-    let busy = false;
     /** @param {() => Promise<void>} operation */
     const run = (operation) => {
         if (busy) { return; }
         busy = true;
         save.disabled = true;
-        addCard.disabled = true;
+        updatePanelControls();
         retry.disabled = true;
         retryCurrent.disabled = true;
         submitCards.disabled = true;
@@ -575,7 +592,7 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
                 busy = false;
                 if (isCurrent()) {
                     save.disabled = false;
-                    addCard.disabled = currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false;
+                    updatePanelControls();
                     retry.disabled = false;
                     retryCurrent.disabled = false;
                     updateSubmitState();
@@ -715,20 +732,23 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         }
     };
     const stuck = mountStuckHint({doc: d, getEntry, call: studyCall, isCurrent, onChoice: prepareStuck});
-    addCard.addEventListener('click', () => {
-        if (busy || currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false) { return; }
-        cardPanel.hidden = !cardPanel.hidden;
-        container.closest('.study-focus-shell')?.classList.toggle('sf-card-editor-open', !cardPanel.hidden);
-        addCard.textContent = cardPanel.hidden ? '制卡' : '收起制卡';
+    const togglePanel = () => {
+        setPanelOpen(cardPanel.hidden);
         updateChoices();
         if (!cardPanel.hidden && typeof cardPanel.scrollIntoView === 'function') {
             d.defaultView?.requestAnimationFrame(() => {
                 if (isCurrent()) { cardPanel.scrollIntoView({block: 'nearest'}); }
             });
         }
+    };
+    addCard.addEventListener('click', () => {
+        if (!busy && !ankiUnavailable()) { togglePanel(); }
+    });
+    openAudio.addEventListener('click', () => {
+        if (!busy && !openAudio.hidden) { togglePanel(); }
     });
     submitCards.addEventListener('click', () => {
-        if (currentSaved?.ankiEnabled === false || cardSettings?.ankiEnabled === false) { return; }
+        if (ankiUnavailable()) { return; }
         /** @type {{front: string; back: string; kind: string; deck?: string}[]} */
         const cards = [];
         for (const row of /** @type {NodeListOf<HTMLInputElement>} */ (draftCards.querySelectorAll('input[data-study-review-card]:checked'))) {
@@ -840,9 +860,16 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     const primary = container.querySelector('.study-translation-actions');
     if (primary) {
         primary.append(actions);
-        primary.after(destination, openNote, status, ankiRow, recovery, addCard, cardPanel);
+        primary.after(destination, openNote, status, ankiRow, recovery, addCard, openAudio, cardPanel);
     } else {
-        container.append(stuck, actions, destination, openNote, status, ankiRow, recovery, addCard, cardPanel);
+        container.append(stuck, actions, destination, openNote, status, ankiRow, recovery, addCard, openAudio, cardPanel);
+    }
+    if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+        void chrome.storage.local.get(SAVE_TARGETS_KEY).then((value) => {
+            if (!isCurrent() || disposed) { return; }
+            cardSettings = /** @type {import('study').SaveTargetSettings | undefined} */ (value[SAVE_TARGETS_KEY]);
+            updatePanelControls();
+        });
     }
     void refreshPending().catch(() => {});
     return () => {

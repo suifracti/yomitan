@@ -287,7 +287,8 @@
 .study-card-editor textarea, .study-card-editor input:not([type='checkbox']), .study-card-editor select { box-sizing: border-box; width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid var(--sf-line); border-radius: 5px; color: var(--sf-ink); background: var(--sf-paper); font: inherit; font-size: 11px; resize: none; }
 .study-card-editor textarea { overflow: hidden; }
 .study-card-editor button { grid-column: 3; grid-row: 2 / span 3; font-size: 10px; }
-.study-card-add>button { margin-top: 6px; }
+.study-card-controls:not([hidden]) { display: contents; }
+.study-card-add>button, .study-card-controls>button { margin-top: 6px; }
 .study-card-add-status { display: inline; margin: 0 0 0 7px; color: var(--sf-muted); font-size: 10px; }
 @media (max-width: 350px) {
     .sf-heading { padding-inline: 12px; }

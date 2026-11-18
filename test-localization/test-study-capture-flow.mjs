@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {mountStudyLibrary} from '../ext/js/display/study-library.js';
 const tick=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
-function setup({capture=async()=>({assets:[{kind:'audio',mime:'audio/webm',data:'real'}],warnings:[]}),isSourceCurrent=()=>true,
+function setup({capture=async()=>({assets:[{kind:'audio',mime:'audio/webm',data:'real'}],warnings:[]}),isSourceCurrent=()=>true,ankiEnabled=true,
     attach=async (row)=>({...row,media:{audio:{name:'study-media-real.webm',start:1,end:3,origin:'capture',mime:'audio/webm'}}})}={}){
  const dom=new JSDOM('<section id="host"></section>'),d=dom.window.document,calls=[];let cancelled=0;
  const entry={word:'improve',sentence:'We improve daily.',context:'',language:'en',translation:'我们每天进步。',meaning:'',notes:'',url:'https://www.youtube.com/watch?v=abcdefghijk&t=1s',title:'Fixture',videoTime:1};
- const row={id:'a'.repeat(32),entry,version:'b'.repeat(64),ankiEnabled:true,cards:[],ankiState:'saved'};
- globalThis.chrome={permissions:{request:async()=>true},runtime:{sendMessage:async({studyAction,data})=>{calls.push([studyAction,data]);let value={};
+ const row={id:'a'.repeat(32),entry,version:'b'.repeat(64),ankiEnabled,cards:[],ankiState:'saved'};
+ globalThis.chrome={storage:{local:{get:async(key)=>({[key]:{ankiEnabled}})}},permissions:{request:async()=>true},runtime:{sendMessage:async({studyAction,data})=>{calls.push([studyAction,data]);let value={};
  if(studyAction==='pendingPeek')value={count:0};if(studyAction==='rememberEntry')value=row;
  if(studyAction==='libraryRead')value={items:[{record:row}]};
  if(studyAction==='libraryMedia')value=await attach(row);return {ok:true,value};}}};
@@ -21,6 +21,24 @@ test('explicit real capture saves a note then attaches audio, but never creates 
  const media=h.calls.find(([a])=>a==='libraryMedia');assert.equal(media[1].start,1);assert.equal(media[1].end,3);assert.equal(media[1].origin,'capture');
  assert.equal(h.calls.some(([a])=>['libraryCardsAdd','draftCards','generate'].includes(a)),false);
  assert.equal(h.d.querySelector('[data-study-card-choice=listening]').disabled,false);h.dispose();
+});
+test('Anki disabled still exposes explicit original audio, but not card editing', async () => {
+    const h = setup({ankiEnabled: false});
+    await tick();
+    const toggle = h.d.querySelector('[data-study-open-audio]');
+    assert.ok(toggle && !toggle.hidden);
+    const card = h.d.querySelector('[data-study-add-card]');
+    assert.equal(card.disabled, true);
+    toggle.click();
+    const capture = h.d.querySelector('[data-study-capture]');
+    assert.ok(!capture.closest('[hidden]'));
+    assert.ok(h.d.querySelector('[data-study-cards-submit]').closest('[hidden]'));
+    capture.click();
+    await tick();
+    assert.equal(h.d.querySelector('.study-card-audio-state').dataset.state, 'ready');
+    assert.deepEqual(h.calls.filter(([action]) => ['rememberEntry', 'libraryMedia', 'libraryCardsAdd'].includes(action)).map(([action]) => action),
+        ['rememberEntry', 'libraryMedia']);
+    h.dispose();
 });
 test('cancel or disposal never attaches a late recording',async()=>{
  let finish;const h=setup({capture:()=>new Promise(r=>finish=r)});
