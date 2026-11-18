@@ -42,6 +42,37 @@ test('real private row supplies exact original sentence, time and translation wi
     range.selectNodeContents(document.querySelector('#fake'));
     expect(context.read(range)).toBe(null);
 });
+
+test('replay pauses on the media clock even before the next coarse timeupdate', () => {
+    const {context, range} = setup();
+    const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+    const source = context.read(range);
+    vi.useFakeTimers();
+    const paused = vi.spyOn(video, 'paused', 'get').mockReturnValue(false);
+    const play = vi.spyOn(video, 'play').mockResolvedValue();
+    const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
+    const finished = vi.fn();
+    video.playbackRate = 2;
+    try {
+        const cancel = context.play(source.token, finished);
+        video.dispatchEvent(new Event('playing'));
+        vi.advanceTimersByTime(1124);
+        expect(pause).not.toHaveBeenCalled();
+        video.currentTime = 3.5;
+        vi.advanceTimersByTime(1);
+        expect(pause).toHaveBeenCalledOnce();
+        expect(finished).toHaveBeenCalledWith('ended');
+        cancel();
+        expect(pause).toHaveBeenCalledOnce();
+    } finally {
+        context.reset();
+        video.playbackRate = 1;
+        paused.mockRestore();
+        play.mockRestore();
+        pause.mockRestore();
+        vi.useRealTimers();
+    }
+});
 test('capture only uses the selected row range and reset invalidates old word-card tokens', async () => {
     const {context, capture, range} = setup();
     const result = context.read(range);

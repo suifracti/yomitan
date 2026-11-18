@@ -102,10 +102,14 @@ export class YoutubeStudyContext {
         if (this.active.size > 0) { throw new Error('正在采集原声，请稍后再回听。'); }
         const {start, end} = bound.row;
         this.replay?.('cancelled');
+        const clockEvents = ['timeupdate', 'playing', 'seeked', 'ratechange'];
+        /** @type {ReturnType<typeof setTimeout>|undefined} */
+        let timer;
         /** @param {'ended'|'cancelled'|'failed'} reason */
         const stop = (reason) => {
             if (this.replay !== stop) { return; }
-            video.removeEventListener('timeupdate', onTime);
+            clearTimeout(timer);
+            for (const event of clockEvents) { video.removeEventListener(event, onTime); }
             video.removeEventListener('seeking', onSeek);
             video.removeEventListener('ended', onEnded);
             video.removeEventListener('emptied', onEmptied);
@@ -113,21 +117,27 @@ export class YoutubeStudyContext {
             finished?.(reason);
         };
         const onTime = () => {
+            clearTimeout(timer);
+            const remaining = end - video.currentTime;
             if (!live()) {
                 stop('cancelled');
-            } else if (video.currentTime >= end) {
+            } else if (remaining <= 0) {
                 video.pause();
                 stop('ended');
+            } else if (!video.paused && !video.seeking && video.playbackRate > 0) {
+                // timeupdate can arrive a fraction of a second after the cue has ended.
+                timer = setTimeout(onTime, Math.max(12, remaining * 1000 / video.playbackRate));
             }
         };
         const onSeek = () => {
+            clearTimeout(timer);
             if (!live() || video.currentTime < start - 0.5 || video.currentTime > end + 0.5) { stop('cancelled'); }
         };
         const onEnded = () => { stop(live() && video.currentTime >= end - 0.1 ? 'ended' : 'cancelled'); };
         const onEmptied = () => { stop('cancelled'); };
         this.replay = stop;
         video.currentTime = start;
-        video.addEventListener('timeupdate', onTime);
+        for (const event of clockEvents) { video.addEventListener(event, onTime); }
         video.addEventListener('seeking', onSeek);
         video.addEventListener('ended', onEnded);
         video.addEventListener('emptied', onEmptied);
