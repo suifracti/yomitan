@@ -727,9 +727,10 @@ export class StudyService {
      * @param {unknown} value
      * @param {{generation: number, active: number} | null} [requestScope]
      * @param {{id: string, source: NonNullable<import('study').LibraryEntry['subtitleSource']>, check: (() => Promise<unknown>) | null} | null} [authority]
+     * @param {boolean} [publishWordStatus] A page batch publishes once, after saving its selected words.
      * @returns {Promise<unknown>}
      */
-    async handleRequest(action, value, requestScope = null, authority = null) {
+    async handleRequest(action, value, requestScope = null, authority = null, publishWordStatus = true) {
         const containsCue = (/** @type {unknown} */ v) => v && typeof v === 'object' &&
         (['subtitleSource', 'subtitle', 'studySubtitle', 'sourceConfirmed', 'cueAuthorization'].some((k) => k in v) || Object.values(v).some(containsCue));
         if (containsCue(value)) { throw new Error('字幕来源须由私有校验取得，不能从页面参数伪造。'); }
@@ -849,7 +850,7 @@ export class StudyService {
             if (action === 'libraryMemory') { void this.sync.flush(); }
             const response = await this.native({...value, action, ...(authority ? {cueAuthorization: {id: authority.id, source: authority.source}} : {})}).promise;
             if (!response.ok || !response.library) { throw new Error(response.error ?? '学习库未返回保存确认。'); }
-            if (action === 'libraryMarkKnown' || (action === 'knownWords' && ('known' in value || 'ignored' in value))) { await this.refreshWordStatus(); }
+            if (publishWordStatus && (action === 'libraryMarkKnown' || (action === 'knownWords' && ('known' in value || 'ignored' in value)))) { await this.refreshWordStatus(); }
             if ((action === 'libraryList' && !('query' in value) && !('scope' in value && value.scope === 'source')) || action === 'libraryMemory') {
                 const items = /** @type {{items?: import('study').LibraryRecord[]}} */ (response.library).items;
                 if (Array.isArray(items)) { await this.sync.favoritesFrom(items.filter((r) => r.entry && r.vaultSaved !== false)); }
@@ -1256,12 +1257,18 @@ export function prepareStudyService(lookupDictionary = null) {
                 reply({ok:false,error:'词和原句没读完整，请重试。'}); return false;
             }
             void (async () => {
-                for (const item of items) {
-                    const entry = {word:item.word,sentence:item.sentence,meaning:item.meaning,url:sender.url,title:sender.tab?.title?.slice(0,300) || '',language:'en',context:'',translation:'',notes:''};
-                    await service.handle('librarySave',{entry,makeCard:false});
-                    await service.handle('libraryMarkKnown',{word:item.word,known:false});
+                let changed = false;
+                try {
+                    for (const item of items) {
+                        const entry = {word: item.word, sentence: item.sentence, meaning: item.meaning, url: sender.url, title: sender.tab?.title?.slice(0, 300) || '', language: 'en', context: '', translation: '', notes: ''};
+                        await service.handle('librarySave', {entry, makeCard: false});
+                        changed = true;
+                        await service.handleRequest('libraryMarkKnown', {word: item.word, known: false}, null, null, false);
+                    }
+                    return true;
+                } finally {
+                    if (changed) { await service.refreshWordStatus(); }
                 }
-                await service.refreshWordStatus(); return true;
             })().then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message})); return true;
         }
         if (studyAction === 'youtubeCaptionTracks' && sender.id === chrome.runtime.id && sender.tab?.id && /^https:\/\/(www\.)?youtube\.com\//.test(sender.url || '')) {

@@ -106,3 +106,60 @@ test('opens a saved video word with its original source context and stops when i
         vi.unstubAllGlobals();
     }
 });
+
+test('saved page words update the shared word colours once after the whole batch', async () => {
+    /** @typedef {(message: unknown, sender: object, reply: (value: unknown) => void) => void} PageMessageHandler */
+    /** @type {PageMessageHandler} */
+    let receive = (_message, _sender, _reply) => { throw new Error('学习消息尚未注册'); };
+    /** @type {string[]} */
+    const calls = [];
+    let failing = false;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called below with its current service as the receiver.
+    const send = StudyService.prototype.handle;
+    const save = vi.spyOn(StudyService.prototype, 'handle').mockImplementation(async function saveFixture(action, value) {
+        if (action === 'librarySave') {
+            calls.push(action);
+            if (failing && /** @type {{entry: {word: string}}} */ (value).entry.word === 'receipt') { throw new Error('暂时未写入'); }
+            return {vaultSaved: true};
+        }
+        return await send.call(this, action, value);
+    });
+    vi.stubGlobal('chrome', {
+        storage: {local: {get: async () => ({}), set: async () => {}}},
+        permissions: {contains: async () => true},
+        runtime: {
+            id: 'fixture',
+            getURL: (/** @type {string} */ name) => `chrome-extension://fixture/${name}`,
+            onMessage: {addListener: (/** @type {PageMessageHandler} */ fn) => { receive = fn; }},
+            connectNative: () => {
+                /** @type {((value: unknown) => void)|undefined} */
+                let replyNative;
+                return {
+                    onMessage: {addListener: (/** @type {(value: unknown) => void} */ fn) => { replyNative = fn; }},
+                    onDisconnect: {addListener() {}},
+                    postMessage: (/** @type {{action: string}} */ value) => {
+                        calls.push(value.action);
+                        replyNative?.({ok: true, library: {words: {}}});
+                    },
+                    disconnect() {},
+                };
+            },
+        },
+    });
+    try {
+        prepareStudyService();
+        const items = ['harbor', 'receipt', 'charge'].map((word) => ({word, sentence: `Remember ${word}.`, meaning: '示例'}));
+        const request = () => new Promise((resolve) => {
+            receive({studyAction: 'pageWordsSave', data: {items}}, {id: 'fixture', url: 'https://reading.test/story'}, resolve);
+        });
+        expect(await request()).toEqual({ok: true, value: true});
+        expect(calls).toEqual([...items.flatMap(() => ['librarySave', 'libraryMarkKnown']), 'libraryWordStatus']);
+        calls.length = 0;
+        failing = true;
+        expect(await request()).toEqual({ok: false, error: '暂时未写入'});
+        expect(calls).toEqual(['librarySave', 'libraryMarkKnown', 'librarySave', 'libraryWordStatus']);
+    } finally {
+        save.mockRestore();
+        vi.unstubAllGlobals();
+    }
+});
