@@ -101,6 +101,10 @@ export type ApiSurface = {
         params: {token: string};
         return: void;
     };
+    frontendReadCaptionTranslation: {
+        params: {token: string; sentence: string};
+        return: string | null;
+    };
     frontendPlayStudyClip: {
         params: {token: string};
         return: void;

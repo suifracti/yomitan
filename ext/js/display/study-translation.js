@@ -56,10 +56,10 @@ export function splitStudySentence(text) {
 
 /**
  * @param {HTMLElement} source
- * @param {{call: typeof studyCall, isCurrent: () => boolean, language: string}} options
+ * @param {{call: typeof studyCall, isCurrent: () => boolean, language: string, captionTranslation?: (sentence: string) => Promise<string|null>}} options
  * @returns {() => void}
  */
-export function prepareParallelSentence(source, {call, isCurrent, language}) {
+export function prepareParallelSentence(source, {call, isCurrent, language, captionTranslation}) {
     const original = source.querySelector('p');
     const action = source.querySelector('[data-study-translate-sentence]');
     if (!original || !action) { return () => {}; }
@@ -72,6 +72,8 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
     let request = '';
     let sentence = '';
     let manual = false;
+    let awaitingCaption = false;
+    let captionInterrupted = false;
     const shownInline = () => inline?.dataset.studyTranslationFor === sentence && Boolean(inline?.textContent?.trim());
     const cancel = () => {
         ++sequence; abort.abort();
@@ -83,11 +85,13 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
     const paint = async (explicit = false) => {
         const nextSentence = original.textContent.trim();
         const completed = source.dataset.studySegmentSentence === sentence && Boolean(source.dataset.studySegmentTranslation) && view.childElementCount > 0;
-        if (!explicit && nextSentence === sentence && (manual || completed)) { return; }
+        if (nextSentence === sentence && (awaitingCaption || (!explicit && (manual || completed || captionInterrupted)))) { return; }
+        const retryCaption = explicit && nextSentence === sentence && captionInterrupted;
         cancel();
         const run = sequence;
         sentence = nextSentence;
         manual = explicit;
+        awaitingCaption = captionInterrupted = false;
         const split = splitStudySentence(sentence);
         const parts = split.length > 0 ? split : [sentence];
         source.classList.remove('sf-segmented-source');
@@ -128,6 +132,20 @@ export function prepareParallelSentence(source, {call, isCurrent, language}) {
             const prefs = await readSubtitlePrefs();
             const engine = prefs.engine;
             if (run !== sequence || !isCurrent()) { return; }
+            if (captionTranslation && !retryCaption && !shownInline()) {
+                awaitingCaption = true;
+                const inherited = await captionTranslation(sentence).catch(() => '');
+                if (run !== sequence || !isCurrent()) { return; }
+                awaitingCaption = false;
+                if (inherited !== null) {
+                    if (inherited && !shownInline()) {
+                        source.dispatchEvent(new CustomEvent('study-caption-translation', {detail: {sentence, translation: inherited}}));
+                    }
+                    // A cancelled or failed subtitle request leaves the existing manual button available.
+                    captionInterrupted = inherited === '';
+                    return;
+                }
+            }
             const inlineReady = !explicit && shownInline();
             if (inlineReady ? split.length === 0 : (!explicit && !prefs.autoTranslate)) { return; }
             const config = /** @type {Partial<import('study').StudyConfig>} */ (engine === 'model' ? await call('subtitleSettings') : {});
@@ -927,6 +945,15 @@ export function prepareStudyTranslation() {
                 if (text) { runGeneration('translate', text); }
             };
             sourceBox?.addEventListener('study-sentence-translated', onSentenceTranslated);
+            /** @param {Event} event */
+            const onCaptionTranslation = (event) => {
+                const {sentence: original, translation} = /** @type {CustomEvent<{sentence: string, translation: string}>} */ (event).detail;
+                if (editor.value.trim() !== original || (original === translatedSourceSentence && source.translation)) { return; }
+                source.translation = translation;
+                translatedSourceSentence = original;
+                paintSentenceTranslation();
+            };
+            sourceBox?.addEventListener('study-caption-translation', onCaptionTranslation);
             stop.addEventListener('click', () => {
                 ++requestId;
                 if (poll !== null) {
@@ -1033,6 +1060,7 @@ export function prepareStudyTranslation() {
             const previousCleanup = cleanup;
             cleanup = () => {
                 sourceBox?.removeEventListener('study-sentence-translated', onSentenceTranslated);
+                sourceBox?.removeEventListener('study-caption-translation', onCaptionTranslation);
                 previousCleanup?.();
                 disposeLibrary();
             };

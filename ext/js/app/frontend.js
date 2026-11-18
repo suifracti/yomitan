@@ -451,6 +451,7 @@ export class Frontend {
             ['frontendClosePopup',       this._onApiClosePopup.bind(this)],
             ['frontendCaptureStudyMedia', (/** @type {{token: string, start: number, duration: number, withFrame?: boolean, withVideo?: boolean}} */ {token, start, duration, withFrame, withVideo}) => youtubeStudyContext.capture(token, start, duration, {withFrame: withFrame === true, withVideo: withVideo === true})],
             ['frontendCancelStudyMedia', (/** @type {{token: string}} */ {token}) => { youtubeStudyContext.cancel(token); }],
+            ['frontendReadCaptionTranslation', (/** @type {{token: string, sentence: string}} */ {token, sentence}) => youtubeStudyContext.waitTranslation(token, sentence)],
             ['frontendPlayStudyClip',    (/** @type {{token: string}} */ {token}) => { youtubeStudyContext.play(token); }],
             ['frontendStudyShortcut',    this._onApiStudyShortcut.bind(this)],
             ['frontendCopySelection',    this._onApiCopySelection.bind(this)],

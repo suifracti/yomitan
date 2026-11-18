@@ -67,6 +67,7 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         const sourceUrlCurrent = cleanText(display.history?.state?.url);
         const sourceTitleCurrent = cleanText(display.history?.state?.documentTitle) || cleanText(display.history?.state?.title);
         const sourceTimeCurrent = display.history?.state?.videoTime;
+        const mediaToken = cleanText(display.history?.state?.studyMediaToken);
         const sourceLabel = source.querySelector('.study-source-label')?.textContent || '';
         // A dictionary gloss or a bare headword is not the page or subtitle the user is reading.
         const dictionarySource = sentenceState?.sourceKind === 'dictionary' || sourceLabel.includes('来自词典解释') || sourceLabel.includes('暂无完整原句');
@@ -676,7 +677,12 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
             shell.style.setProperty('--sf-input-height', `${compose.getBoundingClientRect().height}px`);
         });
         dockSizeObserver.observe(saveBar); dockSizeObserver.observe(compose); observers.push(dockSizeObserver);
-        const disposeParallel = prepareParallelSentence(source, {call, isCurrent: current, language});
+        const disposeParallel = prepareParallelSentence(source, {
+            call,
+            isCurrent: current,
+            language,
+            ...(mediaToken ? {captionTranslation: (sentence) => display.invokeContentOrigin('frontendReadCaptionTranslation', {token: mediaToken, sentence})} : {}),
+        });
         const readingGloss = make('div', 'sf-reading-gloss'); readingGloss.hidden = true;
         const readingWord = make('strong', '', word);
         const readingMeanings = make('span', 'sf-reading-meanings');
@@ -1027,7 +1033,6 @@ export function prepareStudyFocus(display, {call = studyCall} = {}) {
         // A lookup from our video captions is a different learning object: say so, and
         // offer the clip itself. Ordinary web lookups show none of this.
         const mediaRange = /** @type {{start?: unknown, end?: unknown}|undefined} */ (display.history?.state?.studyMediaRange);
-        const mediaToken = cleanText(display.history?.state?.studyMediaToken);
         const fromVideo = typeof videoTime === 'number' && Number.isFinite(videoTime) && videoTime >= 0 && /^https?:\/\//.test(sourceUrl);
         if (fromVideo) {
             /**

@@ -49,7 +49,7 @@ const WAIT_MS = 10000;
  */
 
 /**
- * @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} RowInfo
+ * @typedef {import('./youtube-study-context.js').Row} RowInfo
  */
 
 /** @typedef {import('study').SavedVideoListening} SavedPlayback */
@@ -130,7 +130,7 @@ export class YoutubeReader extends EventTarget {
         this._segmentRun = 0;
         /** @type {typeof studyCall} */
         this._call = call;
-        /** @type {{id: string, controller: AbortController}|null} */
+        /** @type {{id: string, controller: AbortController, batch: Set<string>, waiting: Map<string, ((value: string) => void)[]>}|null} */
         this._translation = null;
         /** @type {string} Model consent for this video and selected model. */
         this._fullConsent = '';
@@ -138,7 +138,9 @@ export class YoutubeReader extends EventTarget {
         this._failed = new Set();
         /** @type {TranslationQueue} */
         this._queue = new TranslationQueue(async ({items, config, signal}) => {
-            const requestId = this._translation?.id ?? '';
+            const run = this._translation;
+            const requestId = run?.id ?? '';
+            if (run) { run.batch = new Set(items.map((item) => item.id)); }
             const cancel = () => { void this._call('subtitleCancel', {requestId}).catch(() => {}); };
             signal.addEventListener('abort', cancel, {once: true});
             try {
@@ -1361,6 +1363,7 @@ export class YoutubeReader extends EventTarget {
                 get end() { return Math.max(0, cue.endMs + session.offsetMs) / 1000; },
                 get url() { return timedUrl(session.source.url || location.href, Math.max(0, cue.startMs + session.offsetMs) / 1000).url; },
                 translation: () => session.translation(cue.id),
+                waitTranslation: () => this._waitCaptionTranslation(session, cue.id),
                 video: () => {
                     this._markLookup(cue.id);
                     return this._video;
@@ -1531,12 +1534,34 @@ export class YoutubeReader extends EventTarget {
         return [session.cues[index - 1]?.text, session.cues[index + 1]?.text].filter(Boolean).join('\n').slice(0, 1200);
     }
 
+    /**
+     * A word card joins only the batch already sent for its own cue.
+     * @param {SubtitleSession} session
+     * @param {string} id
+     * @returns {Promise<string|null>}
+     */
+    async _waitCaptionTranslation(session, id) {
+        if (this._session !== session) { return ''; }
+        const ready = session.translation(id);
+        if (ready) { return ready; }
+        const run = this._translation;
+        if (!run?.batch.has(id)) { return null; }
+        return await new Promise((resolve) => {
+            const listeners = run.waiting.get(id) ?? [];
+            listeners.push(resolve);
+            run.waiting.set(id, listeners);
+        });
+    }
+
     /** @param {boolean} [cancelled] */
     _finishTranslation(cancelled = false) {
         const run = this._translation;
         if (!run) { return; }
         this._translation = null;
         if (cancelled) { run.controller.abort(); }
+        for (const listeners of run.waiting.values()) {
+            for (const resolve of listeners) { resolve(''); }
+        }
         const view = this._view;
         if (!view) { return; }
         view.translate.disabled = false;
@@ -1570,7 +1595,7 @@ export class YoutubeReader extends EventTarget {
             this._status('这些句子已经翻译好了。');
             return;
         }
-        const run = {id: crypto.randomUUID(), controller: new AbortController()};
+        const run = {id: crypto.randomUUID(), controller: new AbortController(), batch: new Set(), waiting: new Map()};
         const live = () => this._translation === run;
         this._translation = run;
         view.translate.disabled = true;
@@ -1609,6 +1634,9 @@ export class YoutubeReader extends EventTarget {
                         this._failed.add(row.id);
                         if (target) { target.textContent = `翻译未完成：${row.error || '可重试'}`; }
                     }
+                    run.batch.delete(row.id);
+                    for (const resolve of run.waiting.get(row.id) ?? []) { resolve(session.translation(row.id)); }
+                    run.waiting.delete(row.id);
                 }});
             if (live() && !result.cancelled) {
                 this._status(`已译 ${session.progress().translated}/${session.cues.length} · ${ENGINE_LABELS[this._prefs.engine]}${this._failed.size > 0 ? ' · 有失败，可重试或换服务' : ''}`);

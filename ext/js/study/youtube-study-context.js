@@ -16,7 +16,7 @@
  */
 
 // Private content-script row identity. DOM attributes never grant a capture or save permission.
-/** @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} Row */
+/** @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, waitTranslation?: () => Promise<string|null>, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} Row */
 /** @typedef {{element: Element, row: Row, video: HTMLVideoElement|null, src: string, media: string, srcObject: HTMLVideoElement['srcObject']}} Bound */
 /** @typedef {(video: HTMLVideoElement, start: number, duration: number, options: {signal: AbortSignal, isCurrent: () => boolean, withFrame?: boolean, withVideo?: boolean}) => Promise<import('study').MediaCapture>} Capture */
 export class YoutubeStudyContext {
@@ -83,6 +83,18 @@ export class YoutubeStudyContext {
 
     /** @param {string} token */
     cancel(token) { this.active.get(token)?.abort(); }
+
+    /**
+     * @param {string} token
+     * @param {string} sentence
+     * @returns {Promise<string|null>}
+     */
+    async waitTranslation(token, sentence) {
+        const bound = this.tokens.get(token);
+        if (!bound || !bound.element.isConnected || !bound.row.isCurrent()) { return ''; }
+        if (bound.row.text.trim() !== sentence) { return null; }
+        return await bound.row.waitTranslation?.() ?? null;
+    }
 
     /**
      * Replays exactly the looked-up sentence in the page's video and pauses at its end.

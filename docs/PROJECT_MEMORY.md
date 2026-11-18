@@ -61,6 +61,7 @@
 | 长句翻完后改字幕显示，结果又空了／刷新想继续读译文 | L-010；study-translation 的 prepareParallelSentence、paintSentenceTranslation |
 | 问过 AI 后手动点「记住它」，笔记的原句译文变了 | L-010；study-translation 的 translationFor |
 | 翻译中途切轨后「翻译全文」一直灰色；确认条留着不走 | L-010；YoutubeReader._finishTranslation、confirmTranslation |
+| 字幕正在翻，查词卡又把同一句翻了一遍 | L-010；YoutubeReader._waitCaptionTranslation、frontendReadCaptionTranslation |
 | 同一版再同步却被拒；新增桥模块要不要手工复制 | L-011；bridge_files.py、dev/sync-local.py |
 | 看 charges 只见一个意思；用另一个词形撤销「认识了」没用；熟悉单词不等于熟悉搭配 | L-012；study_senses.word_rows / word_status / mark_known |
 | 学习词多了之后网页标色／字幕推荐不更新；没改也重新标色 | L-012；study_translator.write_frame、study-service.refreshWordStatus |
@@ -308,6 +309,8 @@
 **原句旁显示什么，就保存什么**：同一句先用笔记读回或字幕带来的现成译文，再用实际已完成的分段／单句翻译，最后才用本句问答附带的译文。问答里可以有不同译法，但不会借「记住它」或制卡覆盖原句旁已有译文；仍可正常保存新解释，也不为已译原句重发请求。原有自动同步仍只补空字段。见[临时笔记读回验证](youtube-study-wiring.md#2026-11-18-保存原句旁显示的译文)。
 
 **字幕翻译任务在换轨后失效**：旧流程取消队列，却让旧字幕会话负责解锁按钮；一换轨，它永远不再解锁。现在字幕读取器在换轨、重组字幕或明确取消时结束对应任务，晚到结果不改新轨；同行号也不能复用。未确认的费用提示一起收起；同页同时尝试整页和字幕翻译，一张确认条只同意自己的操作。已有同视频模型确认、已译进度和原服务缓存照旧。见[换轨验证](youtube-study-wiring.md#2026-11-18-字幕换轨不再锁住翻译)。
+
+**打开词卡不另翻正在翻译的字幕**：已经有译文时直接显示；正在请求时先打开词卡，借该行原有私有令牌和原句等同一批返回，不按英文串猜。取消、失败或等待超时则留「翻译本句」，不因设置通知自动补发；还没交给服务的字幕不挡住词卡翻译。复用的译文可随原句保存，不记作新的翻译轮次。见[浏览器双轨与请求数](youtube-study-wiring.md#2026-11-18-正在翻译的字幕与词卡共享结果)。
 
 ## L-011 同步到日常使用的版本可以原样再跑一次
 
