@@ -17,6 +17,7 @@
  */
 // @vitest-environment jsdom
 
+import {Blob} from 'node:buffer';
 import {afterEach, describe, expect, test, vi} from 'vitest';
 import {parseJson} from '../dev/json.js';
 import {deferPromise} from '../ext/js/core/utilities.js';
@@ -68,6 +69,7 @@ function makePageDom() {
             <button id="study-library-refresh"></button>
             <button id="study-library-practice-button" hidden>用旧原句辨词义</button>
             <button id="study-library-cloze-button" hidden>练原句填空</button>
+            <button id="study-library-dictation-button" hidden>练原声听写</button>
             <button id="study-library-listen-source" hidden>回视频练一轮</button>
             <section id="study-library-practice" hidden></section>
             <button id="study-library-export-saved">导出已收集收藏</button>
@@ -211,6 +213,54 @@ describe('study library page', () => {
         await new Promise((resolve) => { setTimeout(resolve, 0); });
         expect(decodeAudioData).not.toHaveBeenCalled();
         expect(mocks.studyCall.mock.calls.filter(([action]) => action === 'libraryAudioRead')).toEqual([['libraryAudioRead', {id: items[0].id}]]);
+    });
+
+    test('dictates only matching recordings, then reveals the complete sentence and returns to its record', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        const startAudio = vi.fn();
+        vi.stubGlobal('Blob', Blob);
+        vi.stubGlobal('AudioContext', class {
+            resume = vi.fn().mockResolvedValue(void 0);
+            close = vi.fn().mockResolvedValue(void 0);
+            decodeAudioData = vi.fn().mockResolvedValue({});
+            createBufferSource = () => ({buffer: null, connect: vi.fn(), addEventListener: vi.fn(), start: startAudio});
+        });
+        const items = [
+            {id: '1'.repeat(32), vaultSaved: true, entry: {word: 'silent', sentence: 'A silent record.'}},
+            {id: '2'.repeat(32), vaultSaved: true, audioContextChanged: true, entry: {word: 'edited', sentence: 'An edited record.'}, media: {audio: {name: 'old.webm'}}},
+            {id: '3'.repeat(32), vaultSaved: true, entry: {word: 'on', sentence: 'We went on and on!', translation: '我们接着说个不停！'}, media: {audio: {name: 'exact.webm'}}},
+        ];
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        mocks.studyCall.mockImplementation(async (action) => {
+            if (action === 'libraryList') { return {items, total: items.length, canSearch: true}; }
+            if (action === 'libraryAudioRead') { return {parts: ['YQ==']}; }
+            return [];
+        });
+        await import('../ext/js/pages/study-library.js');
+        const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-dictation-button'));
+        const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+        await vi.waitFor(() => expect(start.hidden).toBe(false));
+        const baseline = mocks.studyCall.mock.calls.length;
+        start.click();
+        expect(panel.textContent).toContain('1 / 1');
+        expect(panel.textContent).not.toContain('We went');
+        expect(panel.textContent).not.toContain('我们接着');
+        expect(mocks.studyCall.mock.calls).toHaveLength(baseline);
+        /** @type {HTMLButtonElement} */ (panel.querySelector('button')).click();
+        await vi.waitFor(() => expect(startAudio).toHaveBeenCalledOnce());
+        const field = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'));
+        field.value = 'we went on and on';
+        field.form?.dispatchEvent(new Event('submit', {cancelable: true}));
+        expect(panel.textContent).toContain('和原句一致');
+        expect(panel.textContent).toContain('We went on and on!');
+        expect(panel.textContent).toContain('我们接着说个不停！');
+        const link = /** @type {HTMLAnchorElement} */ (panel.querySelector('a'));
+        expect(new URL(link.href).searchParams.get('studyRecordId')).toBe(items[2].id);
+        /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
+        expect(panel.textContent).toContain('本轮结束');
+        expect(mocks.studyCall.mock.calls.slice(baseline)).toEqual([['libraryAudioRead', {id: items[2].id}]]);
     });
 
     test('uses saved sentences for a short cloze without grading or changing the records', async () => {

@@ -33,12 +33,12 @@ import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, crea
 export {createResumeUrl} from '../study/study-data.js';
 
 const PAGE_SIZE = 10;
-const CLOZE_LIMIT = 5;
+const SENTENCE_PRACTICE_LIMIT = 5;
 
 /** @typedef {import('study').LibraryRecord & {favorite?: boolean, learningState?: string, syncState?: string | {status?: string}, conflicts?: {key: string, local: unknown, remote: unknown}[], reconcileState?: 'checking'|'verified'|'failed', reconcileError?: string}} StudyLibraryRecord */
 /** @typedef {import('study').SavedWord & {language?: string, libraryId?: string, syncPending?: boolean}} LocalSavedWord */
 /** @typedef {{id: string, articleHref?: string, entry: Parameters<typeof createResumeUrl>[0]['entry'] & {word: string, sentence: string, sense: {gloss: string}}}} SensePracticeItem */
-/** @typedef {{row: StudyLibraryRecord, text: string, answer: string, hint: string}} ClozePrompt */
+/** @typedef {{row: StudyLibraryRecord, text: string, answer: string, hint: string}} SentencePrompt */
 
 /**
  * @param {unknown} value
@@ -352,16 +352,23 @@ function showSensePractice(panel, pair, examples = false) {
 
 /**
  * @param {StudyLibraryRecord[]} rows
- * @param {ClozePrompt[]} [picked]
- * @returns {ClozePrompt[]}
+ * @param {SentencePrompt[]} picked
+ * @param {boolean} dictation
+ * @returns {SentencePrompt[]}
  */
-function clozePrompts(rows, picked = []) {
+function sentencePrompts(rows, picked, dictation) {
     const prompts = [...picked];
     const seen = new Set(picked.map(({text}) => text));
     for (const row of rows) {
-        if (prompts.length >= CLOZE_LIMIT) { break; }
+        if (prompts.length >= SENTENCE_PRACTICE_LIMIT) { break; }
         const {entry} = row;
         if (!matchesCategory(row, 'saved') || !entry?.sentence || !entry.word || !/^en(?:-|$)/i.test(entry.language || 'en')) { continue; }
+        if (dictation) {
+            if (!savedAudioAttachment(row) || seen.has(entry.sentence)) { continue; }
+            seen.add(entry.sentence);
+            prompts.push({row, text: entry.sentence, answer: entry.sentence, hint: ''});
+            continue;
+        }
         const facts = {word: entry.word, sentence: entry.sentence, forms: []};
         const {text, answers} = blankStudyWord(facts);
         if (answers.length !== 1 || seen.has(text)) { continue; }
@@ -374,11 +381,12 @@ function clozePrompts(rows, picked = []) {
 
 /**
  * @param {HTMLElement} panel
- * @param {ClozePrompt[]} prompts
+ * @param {SentencePrompt[]} prompts
+ * @param {boolean} dictation
  * @param {(row: StudyLibraryRecord, report?: (message: string) => void) => HTMLButtonElement | null} makeAudioButton
  * @param {() => void} stopAudio
  */
-function showClozePractice(panel, prompts, makeAudioButton, stopAudio) {
+function showSentencePractice(panel, prompts, dictation, makeAudioButton, stopAudio) {
     const heading = document.createElement('h2');
     heading.tabIndex = -1;
     let index = 0;
@@ -390,35 +398,49 @@ function showClozePractice(panel, prompts, makeAudioButton, stopAudio) {
             return;
         }
         const {row, text, answer, hint} = prompts[index];
-        heading.textContent = `练原句填空 · ${index + 1} / ${prompts.length}`;
+        heading.textContent = `${dictation ? '练原声听写' : '练原句填空'} · ${index + 1} / ${prompts.length}`;
         const quote = document.createElement('p');
         quote.lang = 'en';
         quote.className = 'study-library-practice-quote';
         quote.textContent = text;
-        const clue = Object.assign(document.createElement('p'), {textContent: hint ? `你当时的提示：${hint}` : '想想你当时在这里读到的用法。'});
+        const clue = Object.assign(document.createElement('p'), {textContent: dictation ? '先听录音，写下听到的整句。大小写和句末标点不计。' : (hint ? `你当时的提示：${hint}` : '想想你当时在这里读到的用法。')});
         const form = document.createElement('form');
         form.className = 'study-library-practice-choices';
-        const label = Object.assign(document.createElement('label'), {htmlFor: 'study-library-cloze-answer', textContent: '填原句里的词或短语'});
-        const input = document.createElement('input');
+        const label = Object.assign(document.createElement('label'), {htmlFor: 'study-library-cloze-answer', textContent: dictation ? '写下听到的原句' : '填原句里的词或短语'});
+        const input = dictation ? Object.assign(document.createElement('textarea'), {rows: 3}) : Object.assign(document.createElement('input'), {type: 'text'});
         input.id = label.htmlFor;
         input.lang = 'en';
-        input.type = 'text';
         input.autocomplete = 'off';
         input.required = true;
         input.spellcheck = false;
         input.setAttribute('autocapitalize', 'none');
         const check = Object.assign(document.createElement('button'), {type: 'submit', textContent: '核对原文'});
-        const reveal = Object.assign(document.createElement('button'), {type: 'button', textContent: '直接看答案'});
+        const reveal = Object.assign(document.createElement('button'), {type: 'button', textContent: dictation ? '直接看原句' : '直接看答案'});
+        const advance = () => {
+            stopAudio();
+            ++index;
+            show();
+        };
         const showAnswer = (/** @type {string} */ guess = '') => {
-            const normalize = (/** @type {string} */ value) => value.trim().toLowerCase()
-                .replaceAll('’', "'")
-                .replaceAll(/\s+/g, ' ');
-            writeSentence(quote, row.entry.sentence, answer, true);
-            const prefix = !guess ? '' : (normalize(guess) === normalize(answer) ? '和原句一致。' : '和原句用词不同。');
+            const normalize = (/** @type {string} */ value) => {
+                const clean = value.trim().toLowerCase()
+                    .replaceAll('’', "'")
+                    .replaceAll(/\s+/g, ' ');
+                return dictation ? clean.replace(/[.!?]+$/, '') : clean;
+            };
+            if (dictation) {
+                form.before(quote);
+                if (row.entry.translation) { form.before(Object.assign(document.createElement('p'), {textContent: row.entry.translation})); }
+            } else {
+                writeSentence(quote, row.entry.sentence, answer, true);
+            }
+            const agrees = Boolean(guess) && normalize(guess) === normalize(answer);
+            const different = dictation ? '和原句有不同，可对照着再听一次。' : '和原句用词不同。';
+            const prefix = guess ? (agrees ? '和原句一致。' : different) : '';
             const feedback = document.createElement('p');
             feedback.tabIndex = -1;
             feedback.className = 'study-library-practice-answer';
-            feedback.textContent = `${prefix}原句用的是「${answer}」。`;
+            feedback.textContent = dictation ? (prefix || '这是这段录音对应的原句。') : `${prefix}原句用的是「${answer}」。`;
             const actions = document.createElement('div');
             actions.className = 'study-library-practice-choices';
             const resume = document.createElement('a');
@@ -428,13 +450,12 @@ function showClozePractice(panel, prompts, makeAudioButton, stopAudio) {
             resume.rel = 'noopener noreferrer';
             const next = Object.assign(document.createElement('button'), {type: 'button', textContent: index + 1 === prompts.length ? '完成这轮' : '下一句'});
             next.dataset.clozeNext = '';
-            next.onclick = () => {
-                stopAudio();
-                ++index;
-                show();
-            };
+            next.onclick = advance;
             actions.append(next, resume);
             form.replaceWith(feedback, actions);
+            if (dictation && guess && !agrees) {
+                feedback.before(Object.assign(document.createElement('p'), {textContent: `你写的：${guess.trim()}`}));
+            }
             feedback.focus();
         };
         form.onsubmit = (event) => {
@@ -443,10 +464,15 @@ function showClozePractice(panel, prompts, makeAudioButton, stopAudio) {
         };
         reveal.onclick = () => showAnswer();
         form.append(label, input, check, reveal);
+        if (dictation) {
+            form.append(Object.assign(document.createElement('button'), {type: 'button', textContent: '跳过', onclick: advance}));
+        }
         const audioStatus = document.createElement('span');
         audioStatus.setAttribute('role', 'status');
         const listen = makeAudioButton(row, (message) => { audioStatus.textContent = message; });
-        panel.replaceChildren(heading, quote, clue);
+        panel.replaceChildren(heading);
+        if (!dictation) { panel.append(quote); }
+        panel.append(clue);
         if (listen) {
             const tools = document.createElement('div');
             tools.className = 'study-library-practice-choices';
@@ -568,6 +594,7 @@ async function initializePage() {
         const more = /** @type {HTMLButtonElement} */ (document.getElementById('study-library-more'));
         const practiceButton = byId('study-library-practice-button');
         const clozeButton = byId('study-library-cloze-button');
+        const dictationButton = byId('study-library-dictation-button');
         const listenSource = /** @type {HTMLButtonElement} */ (byId('study-library-listen-source'));
         const practice = byId('study-library-practice');
         let lookupWarning = '';
@@ -711,18 +738,21 @@ async function initializePage() {
         let practicePair = [];
         let compareExamples = false;
         const practiceLabel = () => (compareExamples ? '用旧原句看用法' : '用旧原句辨词义');
-        /** @type {ClozePrompt[]} */
+        /** @type {SentencePrompt[]} */
         let cloze = [];
-        /** @type {symbol|null} */
-        let clozeSearch = null;
+        /** @type {SentencePrompt[]} */
+        let dictation = [];
+        /** @type {{button: HTMLElement, label: string} | null} */
+        let sentenceSearch = null;
+        const sentenceButtons = [clozeButton, dictationButton];
         const moreScopedPrompts = () => {
             if (!['source', 'recent-recall'].includes(category) || loading || listError || offset >= total) { return false; }
             return listedCategory === category && (!canSearch || listedQuery === search.value.trim());
         };
-        const cancelClozeSearch = () => {
-            if (!clozeSearch) { return; }
-            clozeSearch = null;
-            clozeButton.textContent = '练原句填空';
+        const cancelSentenceSearch = () => {
+            if (!sentenceSearch) { return; }
+            sentenceSearch.button.textContent = sentenceSearch.label;
+            sentenceSearch = null;
         };
         /** @type {HTMLElement|null} */
         let activePractice = null;
@@ -745,7 +775,8 @@ async function initializePage() {
             if (searchLabel) { searchLabel.hidden = false; }
             practiceButton.textContent = practiceLabel();
             clozeButton.textContent = '练原句填空';
-            for (const button of [practiceButton, clozeButton]) { button.setAttribute('aria-expanded', 'false'); }
+            dictationButton.textContent = '练原声听写';
+            for (const button of [practiceButton, ...sentenceButtons]) { button.setAttribute('aria-expanded', 'false'); }
         }
         /**
          * @param {HTMLElement} button
@@ -753,6 +784,7 @@ async function initializePage() {
          */
         function togglePractice(button, show) {
             const closing = activePractice === button;
+            cancelSentenceSearch();
             closePractice();
             if (closing) {
                 render();
@@ -762,32 +794,39 @@ async function initializePage() {
             activePractice = button;
             list.hidden = status.hidden = more.hidden = true;
             listenSource.hidden = true;
-            search.hidden = button === clozeButton;
+            search.hidden = sentenceButtons.includes(button);
             if (searchLabel) { searchLabel.hidden = search.hidden; }
-            button.textContent = button === clozeButton ? '返回学习库' : '返回搜索结果';
+            button.textContent = search.hidden ? '返回学习库' : '返回搜索结果';
             button.setAttribute('aria-expanded', 'true');
             show();
         }
         practiceButton.addEventListener('click', () => togglePractice(practiceButton, () => showSensePractice(practice, practicePair, compareExamples)));
 
         /**
-         * @param {ClozePrompt[]} prompts
-         * @returns {void}
+         * @param {HTMLElement} button
+         * @returns {Promise<void>}
          */
-        const openCloze = (prompts) => togglePractice(clozeButton, () => showClozePractice(practice, prompts, makeSavedAudioButton, clearSavedAudio));
-        clozeButton.addEventListener('click', async () => {
-            if (clozeSearch) {
-                cancelClozeSearch();
+        async function startSentencePractice(button) {
+            if (sentenceSearch?.button === button) {
+                cancelSentenceSearch();
                 setStatus('已取消找题，原列表保留。');
                 return;
             }
-            if (activePractice === clozeButton || cloze.length >= CLOZE_LIMIT || !moreScopedPrompts()) {
-                openCloze(cloze);
+            cancelSentenceSearch();
+            const listening = button === dictationButton;
+            /**
+             * @param {SentencePrompt[]} prompts
+             * @returns {void}
+             */
+            const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, listening, makeSavedAudioButton, clearSavedAudio));
+            let prompts = listening ? dictation : cloze;
+            if (activePractice === button || prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()) {
+                open(prompts);
                 return;
             }
-            const request = Symbol();
-            clozeSearch = request;
-            clozeButton.textContent = '取消找题';
+            const request = {button, label: listening ? '练原声听写' : '练原句填空'};
+            sentenceSearch = request;
+            button.textContent = '取消找题';
             const scope = category;
             const url = scope === 'source' ? articleUrl : '';
             setStatus('正在找可练的原句…');
@@ -795,26 +834,28 @@ async function initializePage() {
             const indexed = canSearch;
             const end = total;
             let next = offset;
-            let prompts = cloze;
             let failed = false;
             try {
-                while (prompts.length < CLOZE_LIMIT && next < end) {
+                while (prompts.length < SENTENCE_PRACTICE_LIMIT && next < end) {
                     const payload = {language: 'en', scope, url, title: '', offset: next, ...(indexed && query ? {query} : {})};
                     const page = normalizeRecords(await studyCall('libraryList', payload));
-                    if (clozeSearch !== request) { return; }
+                    if (sentenceSearch !== request) { return; }
                     if (page.length === 0) { break; }
                     next += page.length;
-                    prompts = clozePrompts(indexed ? page : page.filter((row) => matchesSearch(row, query)), prompts);
+                    prompts = sentencePrompts(indexed ? page : page.filter((row) => matchesSearch(row, query)), prompts, listening);
                 }
             } catch { failed = true; }
-            if (clozeSearch !== request) { return; }
-            cancelClozeSearch();
+            if (sentenceSearch !== request) { return; }
+            cancelSentenceSearch();
             if (prompts.length > 0) {
-                openCloze(prompts);
+                open(prompts);
             } else {
-                setStatus(failed ? '后面的原句没有读到，可以再试一次。' : '这次没找到能做成填空的原句，可以继续看记录。');
+                setStatus(failed ? '后面的原句没有读到，可以再试一次。' : (listening ? '没找到带原声的原句，可以继续看记录。' : '这次没找到能做成填空的原句，可以继续看记录。'));
             }
-        });
+        }
+        for (const button of sentenceButtons) {
+            button.addEventListener('click', () => { void startSentencePractice(button); });
+        }
 
         /** @returns {Promise<void>} */
         async function refreshSavedWords() {
@@ -1250,11 +1291,13 @@ listedQuery :
             sourceVideoId = category === 'source' && !loading && !listError ?
                 rows.find((row) => matchesCategory(row, 'saved') && videoListenUrl(row.entry))?.id ?? '' :
                 '';
-            const clozeRows = category === 'all' && practiceWord && query === practiceWord ?
+            const practiceRows = category === 'all' && practiceWord && query === practiceWord ?
                 rows.filter(({entry}) => (entry?.lemma || entry?.word)?.toLowerCase() === practiceWord.toLowerCase()) :
                 rows;
-            cloze = loading || listError ? [] : clozePrompts(clozeRows);
+            cloze = loading || listError ? [] : sentencePrompts(practiceRows, [], false);
+            dictation = loading || listError ? [] : sentencePrompts(practiceRows, [], true);
             clozeButton.hidden = cloze.length === 0 && !moreScopedPrompts() && (activePractice !== clozeButton || loading || Boolean(listError));
+            dictationButton.hidden = dictation.length === 0 && !moreScopedPrompts() && (activePractice !== dictationButton || loading || Boolean(listError));
             if (activePractice?.hidden) { closePractice(); }
             listenSource.hidden = !sourceVideoId || !practice.hidden;
             const localRows = category === 'favorites' ? savedWords.filter((saved) => !hasNativeFavorite(saved) && matchesSearch(saved, query)) : [];
@@ -1324,7 +1367,7 @@ listedQuery :
          * @param {boolean} [searchOnly] Typing or clearing a search never reconciles notes.
          */
         async function loadPage(reset, searchOnly = false) {
-            cancelClozeSearch();
+            cancelSentenceSearch();
             if (loading) {
                 if (reset) { queuedSearch = searchOnly; }
                 return;
@@ -1505,7 +1548,7 @@ listedQuery :
             });
         }
         search.addEventListener('input', (event) => {
-            cancelClozeSearch();
+            cancelSentenceSearch();
             openRequestedPractice = false;
             window.clearTimeout(searchTimer);
             render();

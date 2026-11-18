@@ -15,7 +15,7 @@ nav, .study-library-tabs, .study-library-toolbar-actions, .study-library-actions
 .study-library-tools { display: grid; grid-template-columns: 1fr minmax(200px, 340px); gap: 14px; align-items: center; margin-bottom: 18px; }
 .study-library-tabs { grid-column: 1 / -1; }
 label { display: block; font-weight: 600; }
-input[type='search'], .study-library-practice-choices input { width: 100%; padding: 10px 12px; border: 1px solid var(--lib-line); border-radius: 8px; background: var(--lib-bg); color: var(--lib-text); font: inherit; }
+input[type='search'], .study-library-practice-choices input, .study-library-practice-choices textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--lib-line); border-radius: 8px; background: var(--lib-bg); color: var(--lib-text); font: inherit; }
 #study-library-search[hidden], label[for='study-library-search'][hidden] { display: none; }
 button { background: var(--lib-card); color: var(--lib-accent); border: 1px solid var(--lib-line); border-radius: 8px; padding: 8px 13px; cursor: pointer; font: inherit; }
 button:hover { filter: brightness(0.95); } button:disabled { opacity: 0.6; cursor: wait; }
