@@ -24,7 +24,7 @@ import {HotkeyHandler} from '../input/hotkey-handler.js';
 import {escapeRegExp} from '../core/utilities.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
-import {timedUrl} from '../study/media-key.js';
+import {timedUrl, videoListenUrl} from '../study/media-key.js';
 import {YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
 import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
@@ -672,6 +672,18 @@ listedQuery :
             resume.rel = 'noopener noreferrer';
             resume.textContent = '继续学习 ↗';
             actions.append(resume);
+            if (record.syncState !== 'anki-only' && videoListenUrl(record.entry)) {
+                const listen = document.createElement('button');
+                listen.type = 'button';
+                listen.textContent = '回视频听这句';
+                listen.onclick = () => {
+                    listen.disabled = true;
+                    void studyCall('openVideoListening', {id: record.id})
+                        .catch((error) => setStatus(error instanceof Error ? error.message : '没能打开视频。可点原来的来源链接。'))
+                        .finally(() => { listen.disabled = false; });
+                };
+                actions.append(listen);
+            }
             const cardUrl = new URL(resume.href);
             cardUrl.searchParams.set('studyAddCard', '1');
             const useLink = document.createElement('a');

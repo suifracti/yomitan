@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import {mediaKeyOf, timedUrl} from './media-key.js';
+import {mediaKeyOf, timedUrl, videoListenUrl} from './media-key.js';
 import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
 import {log} from '../core/log.js';
@@ -1195,6 +1195,8 @@ export function prepareStudyService(lookupDictionary = null) {
     }
     const service = new StudyService(chrome.storage.local);
     const companionOpen = prepareStudyCompanion(service, lookupDictionary);
+    const listeningKey = (/** @type {number} */ tabId) => `studyVideoListening:${tabId}`;
+    chrome.tabs?.onRemoved?.addListener((tabId) => { void chrome.storage.session.remove(listeningKey(tabId)); });
     /**
      * @param {chrome.runtime.MessageSender} sender
      * @returns {string | undefined}
@@ -1344,6 +1346,22 @@ export function prepareStudyService(lookupDictionary = null) {
             })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '词卡没有打开，请从学习库里点「制卡」。'}));
             return true;
         }
+        if (studyAction === 'claimVideoListening' && sender.id === chrome.runtime.id && sender.frameId === 0 && typeof sender.tab?.id === 'number' && /^https?:/.test(sender.url ?? '')) {
+            const key = listeningKey(sender.tab.id);
+            const own = mediaKeyOf(pageUrl(sender) ?? '');
+            void (async () => {
+                const {[key]: pending} = /** @type {Record<string, {mediaKey: string, until: number, item: import('study').SavedVideoListening}|undefined>} */ (await chrome.storage.session.get(key));
+                if (!pending) { return null; }
+                if (pending.until < Date.now()) {
+                    await chrome.storage.session.remove(key);
+                    return null;
+                }
+                if (pending.mediaKey !== own) { return null; }
+                await chrome.storage.session.remove(key);
+                return pending.item;
+            })().then((value) => reply({ok: true, value}), () => reply({ok: true, value: null}));
+            return true;
+        }
         // Readers run in their own web frame or a top-level local file. Remembering
         // playback is local to the extension; writing a video note is a separate action.
         if (['videoStateUpdate', 'subtitlePrefsUpdate', 'subtitleModels', 'subtitleSettings', 'subtitleTranslate', 'subtitleCancel', 'subtitleSegment', 'libraryVideoWords', 'libraryVideoSummary', 'libraryMarkKnown', 'knownWords'].includes(studyAction) && sender.id === chrome.runtime.id &&
@@ -1398,6 +1416,30 @@ export function prepareStudyService(lookupDictionary = null) {
         if (studyAction === 'openDetail') {
             reply({ok: false, error: '详解已留在当前查词卡，不再打开其他页面。'});
             return false;
+        }
+        if (studyAction === 'openVideoListening' && pathname === 'study-library.html') {
+            const {id} = /** @type {{id?: string}} */ (data ?? {});
+            void (async () => {
+                if (!id || !/^[a-f0-9]{32}$/.test(id)) { throw new Error('没读到这条原句，请刷新学习库。'); }
+                if (!(await service.subtitlePrefs()).enabled) { throw new Error('请先在扩展菜单打开「视频字幕学习」。'); }
+                const {items} = /** @type {{items?: import('study').LearningMaterial[]}} */ (await service.handle('libraryRead', {ids: [id], language: 'en'}));
+                const entry = items?.find((item) => item.id === id && item.record?.id === id)?.record?.entry;
+                const url = videoListenUrl(entry);
+                if (!url || !entry) { throw new Error('这条记录没有可回听的网页视频。可试试原来的来源链接。'); }
+                const {word, sentence, sense, videoTime} = entry;
+                const {id: tabId} = await chrome.tabs.create({url: 'about:blank'});
+                if (typeof tabId !== 'number') { throw new Error('没能打开视频，请再试一次。'); }
+                try {
+                    const pending = {mediaKey: mediaKeyOf(url.href), until: Date.now() + 120_000, item: {id, word, sentence, sense, videoTime}};
+                    await chrome.storage.session.set({[listeningKey(tabId)]: pending});
+                    await chrome.tabs.update(tabId, {url: url.href});
+                } catch (error) {
+                    await chrome.tabs.remove(tabId).catch(() => {});
+                    throw error;
+                }
+                return true;
+            })().then((value) => reply({ok: true, value}), (error) => reply({ok: false, error: error instanceof Error ? error.message : '没能打开原视频。'}));
+            return true;
         }
         if (studyAction === 'companionOpen') {
             void companionOpen(data, sender).then((/** @type {unknown} */ value) => reply({ok: true, value}), (/** @type {unknown} */ error) => reply({ok: false, error: error instanceof Error ? error.message : '打开未完成。'}));

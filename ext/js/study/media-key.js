@@ -74,3 +74,20 @@ export function timedUrl(url, seconds) {
     if (parsed.hash.startsWith('#t=')) { parsed.hash = ''; }
     return {url: parsed.href, timed: true};
 }
+
+/**
+ * The original web video, without the jump we add to ordinary source links.
+ * @param {import('study').LibraryEntry|undefined} entry
+ * @returns {URL|null}
+ */
+export function videoListenUrl(entry) {
+    if (!entry?.sentence || typeof entry.videoTime !== 'number' || !Number.isFinite(entry.videoTime) || entry.videoTime < 0 ||
+    (entry.language && !/^en(?:-|$)/i.test(entry.language))) { return null; }
+    const url = parse(entry.url);
+    if (!url || url.protocol === 'file:' || !mediaKeyOf(url.href)) { return null; }
+    if (timedUrl(url.href, entry.videoTime).timed) {
+        url.searchParams.delete('t');
+        if (url.hash.startsWith('#t=')) { url.hash = ''; }
+    }
+    return url;
+}

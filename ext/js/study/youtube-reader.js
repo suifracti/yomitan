@@ -52,7 +52,7 @@ const WAIT_MS = 10000;
  * @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} RowInfo
  */
 
-/** @typedef {{id: string, word: string, sentence: string, videoTime: number|null, sense?: {gloss?: string}}} SavedPlayback */
+/** @typedef {import('study').SavedVideoListening} SavedPlayback */
 /** @typedef {import('./youtube-site.js').YoutubeSite|WebVideoSite} ReaderSite */
 
 const SUBTITLE_ACCEPT = '.srt,.vtt,.webvtt,.sbv,.ass,.ssa,.ttml,.dfxp,.xml,.json,.txt';
@@ -87,6 +87,8 @@ export class YoutubeReader extends EventTarget {
         this._restoreReplay = null;
         /** @type {{panel: HTMLElement, listHidden: boolean, wordsHidden: boolean, cancel?: () => void}|null} */
         this._listen = null;
+        /** @type {SavedPlayback|null} */
+        this._libraryListening = null;
         /** @type {number} */
         this._shadowTimer = 0;
         /** @type {number} */
@@ -380,6 +382,7 @@ export class YoutubeReader extends EventTarget {
         this._syncMenu();
         this._emit('offset', {ms: value});
         if (remember && this._mediaKey && this._rawSession) { void writeVideoState(this._mediaKey, {offsetMs: value, trackKey: this._rawSession.source.trackKey}); }
+        this._tryLibraryListening();
     }
 
     /** Jumps to the offered resume point. */
@@ -413,6 +416,7 @@ export class YoutubeReader extends EventTarget {
         if (this._rawSession !== raw) { return; }
         if (!state) {
             this._restoringVideoState = false;
+            this._tryLibraryListening();
             return;
         }
         if (typeof state.offsetMs === 'number' && state.trackKey === raw.source.trackKey) { this.setOffset(state.offsetMs, false); }
@@ -425,6 +429,7 @@ export class YoutubeReader extends EventTarget {
             this._emit('resume', {ms: at});
         }
         this._restoringVideoState = false;
+        this._tryLibraryListening();
     }
 
     /** Starts or stops the shadowing check with the preference. */
@@ -676,11 +681,13 @@ export class YoutubeReader extends EventTarget {
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._video = video;
         video.addEventListener('timeupdate', this._timeListener);
+        this._tryLibraryListening();
     }
 
     /** */
     _reset() {
         this._endListening();
+        this._libraryListening = null;
         this._restoreReplay?.();
         ++this._generation;
         this._loadController?.abort();
@@ -941,7 +948,25 @@ export class YoutubeReader extends EventTarget {
         this._place();
         if (this._site.pinFirst()) { this._keepFirst(host); }
         this._syncMenu();
+        void this._claimLibraryListening(generation);
         void this._load(generation);
+    }
+
+    /** @param {number} generation */
+    async _claimLibraryListening(generation) {
+        if (window !== window.top || !/^https?:$/.test(location.protocol)) { return; }
+        const item = /** @type {SavedPlayback|null} */ (await this._call('claimVideoListening').catch(() => null));
+        if (!item?.id || generation !== this._generation) { return; }
+        this._libraryListening = item;
+        this._site.toggleDock(true);
+        this._tryLibraryListening();
+    }
+
+    /** */
+    _tryLibraryListening() {
+        if (this._libraryListening && this._session && this._video && !this._restoringVideoState && !this._listen) {
+            this._beginListening([this._libraryListening]);
+        }
     }
 
     /**
@@ -1325,6 +1350,7 @@ export class YoutubeReader extends EventTarget {
             this._onTime();
         }
         this._armShadow();
+        this._tryLibraryListening();
     }
 
     /**
@@ -1743,6 +1769,7 @@ export class YoutubeReader extends EventTarget {
             this._status('当前字幕对不上已记下的原句和时间。切回原来的字幕或偏移再试。');
             return;
         }
+        this._libraryListening = null;
         this._restoreReplay?.();
         this._stopLoop('');
         this._shadowRow = this._shadowPause = null;
@@ -1899,7 +1926,7 @@ export class YoutubeReader extends EventTarget {
         view.words.replaceChildren(note, recommended, saved);
         saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
-            const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: {id: string, word: string, sentence: string, videoTime: number|null, stage: number, cards: number, cardHint?: string, sense?: {gloss?: string}}[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
+            const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: (SavedPlayback & {stage: number, cards: number, cardHint?: string})[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
             if (generation !== this._generation) { return; }
             const items = result.items ?? [];
             this._cardContexts = result.cardContexts ?? items.filter((item) => item.cards > 0);

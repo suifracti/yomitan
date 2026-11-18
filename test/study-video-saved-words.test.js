@@ -17,6 +17,8 @@
 
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {prepareStudyService, StudyService} from '../ext/js/study/study-service.js';
+import {VIDEO_STATE_KEY} from '../ext/js/study/subtitle-prefs.js';
 
 test('explains saved video words, opens uncarded words for card selection, and reports a saved summary clearly', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>', url: 'https://www.youtube.com/watch?v=abcdefghijk'}});
@@ -110,4 +112,82 @@ test('explains saved video words, opens uncarded words for card selection, and r
         await reader.writeSummary();
         expect(savedPanel.querySelector('.r-summary').textContent).toContain('已保存 · 打开笔记 ↗');
     } finally { reader._reset(); youtubeStudyContext.openCard = null; vi.unstubAllGlobals(); await env.teardown(global); }
+});
+
+test('a library handoff starts blind listening in the new video tab at the saved occurrence', async () => {
+    const url = 'https://www.youtube.com/watch?v=abcdefghijk';
+    const id = '4'.repeat(32);
+    const sentence = 'A successful project needs patient work from the whole team.';
+    const record = {id, entry: {url: `${url}&t=25s`, videoTime: 25, sentence, word: 'successful', language: 'en'}};
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>', url}});
+    const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
+    /** @type {Map<string, unknown>} */
+    const session = new Map();
+    const update = vi.fn();
+    /** @typedef {{id: string, url: string, frameId?: number, tab?: {id: number, url: string}}} ListeningSender */
+    /** @typedef {(message: unknown, sender: ListeningSender, reply: (value: unknown) => void) => boolean} ListeningReceiver */
+    /** @type {ListeningReceiver} */
+    let receive;
+    vi.stubGlobal('chrome', {
+        runtime: {id: 'test',
+            getURL: (/** @type {string} */ path) => `chrome-extension://test/${path}`,
+            onMessage: {addListener: (/** @type {ListeningReceiver} */ fn) => { receive = fn; }}},
+        tabs: {create: async () => ({id: 41}), update},
+        storage: {
+            local: {
+                get: async () => ({[VIDEO_STATE_KEY]: {'youtube:abcdefghijk': {offsetMs: 1000, trackKey: 'en|'}}}),
+                set: async () => {},
+            },
+            session: {
+                get: async (/** @type {string} */ key) => ({[key]: session.get(key)}),
+                set: async (/** @type {Record<string, unknown>} */ values) => { for (const [key, value] of Object.entries(values)) { session.set(key, value); } },
+                remove: async (/** @type {string} */ key) => { session.delete(key); },
+            },
+            onChanged: {addListener() {}, removeListener() {}},
+        },
+    });
+    const handle = vi.spyOn(StudyService.prototype, 'handle').mockResolvedValue({items: [{id, record}]});
+    const events = [0, 24500].map((tStartMs) => ({tStartMs, dDurationMs: 4000, segs: [{utf8: sentence}]}));
+    vi.stubGlobal('fetch', async () => ({ok: true, text: async () => JSON.stringify({events})}));
+    const sender = {id: 'test', frameId: 0, url, tab: {id: 41, url}};
+    /**
+     * @param {string} studyAction
+     * @param {ListeningSender} from
+     * @param {unknown} data
+     * @returns {Promise<unknown>}
+     */
+    function request(studyAction, from, data = null) {
+        return new Promise((resolve) => { receive({studyAction, data}, from, resolve); });
+    }
+    /** @type {import('../ext/js/study/study-client.js').studyCall} */
+    const call = async (action) => {
+        if (action !== 'claimVideoListening') { return []; }
+        const reply = /** @type {{value?: unknown}} */ (await request(action, sender));
+        return reply.value;
+    };
+    const reader = new YoutubeReader({prefs: {merge: false}, call});
+    try {
+        prepareStudyService();
+        await request('openVideoListening', {id: 'test', url: 'chrome-extension://test/study-library.html'}, {id});
+        expect(update).toHaveBeenCalledWith(41, {url});
+        const otherVideo = 'https://www.youtube.com/watch?v=01234567890';
+        expect(await request('claimVideoListening', {...sender, url: otherVideo, tab: {...sender.tab, url: otherVideo}})).toEqual({ok: true, value: null});
+        expect(await request('claimVideoListening', {...sender, tab: {...sender.tab, id: 42}})).toEqual({ok: true, value: null});
+        const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+        const play = vi.spyOn(video, 'play').mockResolvedValue();
+        vi.spyOn(video, 'pause').mockImplementation(() => {});
+        reader.rememberRequest('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en');
+        reader.start();
+        await vi.waitFor(() => expect(document.querySelector('.r-listen-practice strong')?.textContent).toContain('1/1'));
+        expect(session.size).toBe(0);
+        expect(play).not.toHaveBeenCalled();
+        expect(document.querySelector('.r-listen-practice')?.textContent).not.toContain(sentence);
+        /** @type {HTMLButtonElement} */ (document.querySelector('[data-listen-play]')).click();
+        expect(video.currentTime).toBe(25.5);
+    } finally {
+        reader.setPrefs({...reader.prefs, enabled: false});
+        handle.mockRestore();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
 });
