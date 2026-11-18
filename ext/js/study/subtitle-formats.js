@@ -284,6 +284,7 @@ export function cuesFromRows(rows) {
  */
 export function splitBilingual(cues, pairAligned = false) {
     const cjk = /[\u3400-\u9FFF\uF900-\uFAFF]/;
+    const kanaOrHangul = /[\u3040-\u30ff\uac00-\ud7af]/u;
     let paired = 0;
     const split = cues.map((cue) => {
         const lines = cue.text.split('\n');
@@ -308,7 +309,7 @@ export function splitBilingual(cues, pairAligned = false) {
         for (const rows of times.values()) {
             if (rows.length !== 2) { continue; }
             const original = rows.find((row) => !row.zh && guessLanguage([{text: row.source}]) === 'en');
-            const translated = rows.find((row) => !row.source && row.zh && !/[\u3040-\u30ff\uac00-\ud7af]/u.test(row.zh));
+            const translated = rows.find((row) => !row.source && row.zh && !kanaOrHangul.test(row.zh));
             if (original && translated) {
                 original.zh = translated.zh;
                 consumed.add(translated.cue.id);
@@ -316,7 +317,10 @@ export function splitBilingual(cues, pairAligned = false) {
             }
         }
     }
-    if (paired < Math.max(3, (cues.length - consumed.size) * 0.6)) { return null; }
+    const total = cues.length - consumed.size;
+    // Tiny imported clips have fewer than three cues; all of them must be bilingual.
+    const short = pairAligned && total > 0 && total < 3 && split.every((row) => !kanaOrHangul.test(row.zh));
+    if (paired < Math.max(short ? total : 3, total * 0.6)) { return null; }
     /** @type {Map<string, string>} */
     const translations = new Map();
     const kept = split.filter((row) => row.source.trim()).map((row) => {

@@ -18,6 +18,7 @@
 
 import {expect, test} from 'vitest';
 import {guessLanguage, parseSubtitles, splitBilingual, SUBTITLE_URL} from '../ext/js/study/subtitle-formats.js';
+import {SubtitleSession} from '../ext/js/study/subtitle-session.js';
 
 const rows = (/** @type {{cues: {startMs: number, endMs: number, text: string}[]}} */ {cues}) => cues.map(({startMs, endMs, text}) => [startMs, endMs, text]);
 
@@ -53,6 +54,20 @@ test('separate English and Chinese ASS lines at the same exact times become read
     expect(result?.cues).toEqual(input.filter((_, i) => i % 2 === 1));
     expect([...result?.translations.values() ?? []]).toEqual(pairs.map(([, zh]) => zh));
     expect(guessLanguage(result?.cues ?? input)).toBe('en');
+});
+
+test('a two-line bilingual VTT download can be read again as a bilingual clip', () => {
+    const original = new SubtitleSession({mediaKey: 'file:tiny|5', trackKey: 'en', language: 'en', revision: 'tiny', acquisition: 'fixture'}, [
+        {id: '0', startMs: 1000, endMs: 2000, text: 'Keep the receipt.'},
+        {id: '1', startMs: 3000, endMs: 4100, text: 'Wait here.'},
+    ]);
+    original.acceptTranslation('0', '请把购物小票留下来。');
+    original.acceptTranslation('1', '请在这边等一下。');
+    const parsed = parseSubtitles(original.exportVtt(true), 'tiny.zh.vtt');
+    const restored = splitBilingual(parsed.cues, true);
+    expect(restored?.cues).toEqual(original.cues);
+    expect(restored?.translations.get('1')).toBe('请在这边等一下。');
+    expect(splitBilingual(parsed.cues)).toBeNull();
 });
 
 test('TTML clock times, ticks and durations', () => {
