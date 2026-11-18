@@ -244,12 +244,12 @@ export function cuesFromRows(rows) {
 }
 
 /**
- * Splits bilingual files (an English line plus a Chinese line in each cue) into the
- * source text and a ready translation. Returns null for ordinary single-language files.
+ * Splits bilingual captions into the original and their already supplied translation.
  * @param {import('./subtitle-session.js').SubtitleCue[]} cues
+ * @param {boolean} [pairAligned] For imported files, also accept two separate lines with exactly the same times.
  * @returns {{cues: import('./subtitle-session.js').SubtitleCue[], translations: Map<string, string>}|null}
  */
-export function splitBilingual(cues) {
+export function splitBilingual(cues, pairAligned = false) {
     const cjk = /[\u3400-\u9FFF\uF900-\uFAFF]/;
     let paired = 0;
     const split = cues.map((cue) => {
@@ -259,7 +259,31 @@ export function splitBilingual(cues) {
         if (zh.length > 0 && source.length > 0) { ++paired; }
         return {cue, source: source.join('\n'), zh: zh.join('\n')};
     });
-    if (paired < Math.max(3, cues.length * 0.6)) { return null; }
+    const consumed = new Set();
+    if (pairAligned) {
+        /** @type {Map<string, {cue: import('./subtitle-session.js').SubtitleCue, source: string, zh: string}[]>} */
+        const times = new Map();
+        for (const row of split) {
+            const key = `${row.cue.startMs}:${row.cue.endMs}`;
+            const sameTime = times.get(key);
+            if (sameTime) {
+                sameTime.push(row);
+            } else {
+                times.set(key, [row]);
+            }
+        }
+        for (const rows of times.values()) {
+            if (rows.length !== 2) { continue; }
+            const original = rows.find((row) => !row.zh && guessLanguage([{text: row.source}]) === 'en');
+            const translated = rows.find((row) => !row.source && row.zh && !/[\u3040-\u30ff\uac00-\ud7af]/u.test(row.zh));
+            if (original && translated) {
+                original.zh = translated.zh;
+                consumed.add(translated.cue.id);
+                ++paired;
+            }
+        }
+    }
+    if (paired < Math.max(3, (cues.length - consumed.size) * 0.6)) { return null; }
     /** @type {Map<string, string>} */
     const translations = new Map();
     const kept = split.filter((row) => row.source.trim()).map((row) => {

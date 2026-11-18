@@ -17,7 +17,7 @@
 
 
 import {expect, test} from 'vitest';
-import {guessLanguage, parseSubtitles, SUBTITLE_URL} from '../ext/js/study/subtitle-formats.js';
+import {guessLanguage, parseSubtitles, splitBilingual, SUBTITLE_URL} from '../ext/js/study/subtitle-formats.js';
 
 const rows = (/** @type {{cues: {startMs: number, endMs: number, text: string}[]}} */ {cues}) => cues.map(({startMs, endMs, text}) => [startMs, endMs, text]);
 
@@ -40,6 +40,19 @@ test('ASS uses the Format order and drops override tags', () => {
     const result = parseSubtitles(ass);
     expect(result.format).toBe('ass');
     expect(rows(result)).toEqual([[1500, 3000, 'Hi, there\nfriend']]);
+});
+
+test('separate English and Chinese ASS lines at the same exact times become ready translations', () => {
+    const pairs = [['Keep the receipt.', '请把收据留好。'], ['Wait here.', '请在这里等一下。'], ['They charge a fee.', '他们要收取费用。']];
+    const dialogue = pairs.flatMap(([en, zh], i) => {
+        const times = `0:00:0${i * 2 + 1}.00,0:00:0${i * 2 + 2}.00`;
+        return [`Dialogue: 0,${times},Chinese,,0,0,0,,${zh}`, `Dialogue: 0,${times},English,,0,0,0,,${en}`];
+    });
+    const input = parseSubtitles(`[Script Info]\n[Events]\n${dialogue.join('\n')}`, 'parallel.ass').cues;
+    const result = splitBilingual(input, true);
+    expect(result?.cues).toEqual(input.filter((_, i) => i % 2 === 1));
+    expect([...result?.translations.values() ?? []]).toEqual(pairs.map(([, zh]) => zh));
+    expect(guessLanguage(result?.cues ?? input)).toBe('en');
 });
 
 test('TTML clock times, ticks and durations', () => {

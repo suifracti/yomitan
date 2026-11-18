@@ -18,6 +18,7 @@
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
+| 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
@@ -130,6 +131,8 @@
 现行做法：复用 selectedTrackKey，WebVideoSite.load 区分显式 sourceId 与自动恢复 preferredId，自动恢复的轨道失效/读不到时试原有可用来源，显式选择仍不悄悄换语言。恢复前阻止初始进度写入，恢复后继续原节流；标题区挂回现成 resume 按钮，仍只在点击时跳转。2026-11-11 的队列只在同一页生效。现由各页把编辑的字段交给同一个后台写队列，读回先等本页已发出的修改；不同视频、同一视频的进度/选轨/偏移不再互相覆盖。恢复已存偏移不是手动修改；自动退到可用轨道时，只有原来的选择还未变化才记下退回轨道，不能盖过另一页刚手选的语言。见[两个标签同时学习的复现](youtube-study-wiring.md#2026-11-18-两个视频标签同时记进度)。原字段、每视频身份与300条上限保留，不引入设置或迁移旧笔记。
 
 证据：test/study-web-reader.test.js 中新增一个连续场景，先复现错误默认英语，再覆盖恢复中文/偏移与继续入口、显式切英语、旧轨失效退回、并发三种保存后再次载入；原跟读/偏移用例也通过。旧用例查侧栏的 offset output 已与“偏移只放视频面板”的现行UI不符，移除该过时位置断言，实际会话时间和持久偏移断言保留。测试使用临时DOM和内存storage，无真实站点、模型、Vault或Anki调用；源码安装与用户浏览器重载另记交接。
+
+**双语字幕按两个条目写**：旧识别只认一条里同时有英中行。手动导入时，若两条完全同起止、只有一原句一译文，且整个文件达到原双语识别门槛，就沿同一路径用英文原句的 ID 与秒数显示。中文取文件已有的字，不新翻译；不按近似时间配，不把一般网站轨道按此猜合。见[导入临时 ASS](youtube-study-wiring.md#2026-11-18-双语字幕分两条也能中英对照)。
 
 ## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
 

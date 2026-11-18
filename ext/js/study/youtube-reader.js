@@ -1027,7 +1027,7 @@ export class YoutubeReader extends EventTarget {
     _useCues(input, meta) {
         const key = this._mediaKey;
         if (!key) { return; }
-        const bilingual = splitBilingual(input);
+        const bilingual = splitBilingual(input, meta.acquisition === 'import');
         const cues = bilingual?.cues ?? input;
         // A session always needs a language; "und" is the standard code for an unknown one.
         const language = meta.language || guessLanguage(cues) || 'und';
