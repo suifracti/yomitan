@@ -52,6 +52,8 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(words.textContent).toBe('我在这个视频记的词');
         await vi.waitFor(() => expect(savedPanel.textContent).toContain('已制 2 张卡'));
         expect(savedPanel.textContent).toContain('看视频时点过『记住它』的词。点时间可以回到那一刻。');
+        /** @type {HTMLButtonElement} */ (savedPanel.querySelector('[data-review-source]')).click();
+        expect(call).toHaveBeenCalledWith('openPageLibrary', {mediaKey: 'youtube:abcdefghijk'});
         expect(savedPanel.textContent).toContain('还没制卡'); expect(savedPanel.textContent).toContain('已制 2 张卡');
         expect(savedPanel.textContent).not.toContain('—');
         savedPanel.querySelector('[data-saved-card]').click(); await Promise.resolve();

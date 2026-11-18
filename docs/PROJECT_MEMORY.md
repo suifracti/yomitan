@@ -39,6 +39,7 @@
 | 读回同一篇文章或同一视频选集，想找同来源的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选、page_source_key |
 | 本地视频的已记词、小结和听写混入别处的同名文件 | L-007；学习库的 librarySource、study_sources.page_source_key、StudyService 的 localVideoSource |
 | 不记得存了哪个词，想按看过的文章或视频找原句和原声 | L-007；学习库「按素材」、libraryList(scope=sources)、study_index.indexed_sources |
+| 在视频里想直接打开已记的原句；倒着记的句子，复习想按视频顺序 | L-007；openPageLibrary 和 study_index.indexed_page |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
 | 同词同句两个意思；打开后一条后，前一条的追问串到它 | L-002；study-journal.js 的 conversationKey、StudySync.bind / learned |
 | 收起后同词同句只剩一个标签，或者切回草稿错了 | L-002；study-word-tabs.js、study-data.js 的 savedStudyRecordId |
@@ -215,6 +216,8 @@
 **找同一来源的已存原句**：「本页生词」从顶层消息来源打开学习库，不把笔记结果返回网页；学习库的来源行也能从这条记录打开「同来源原句」。两处共用 `source` 分类和分页只读索引。普通网页忽略章节／文本定位而保留查询和哈希路由；`page_source_key` 按 YouTube 视频 ID 或同一 B 站视频和选集归并不同跳时链接，未指定 B 站选集视为第 1 P。只改查询归组，不动原 URL、记录编号、字幕媒体 key 或制卡来源。见[12 条的浏览器往返](youtube-study-wiring.md#2026-11-18-从本页生词找回这篇文章的原句)、[同一选集的临时库对照](youtube-study-wiring.md#2026-11-18-从学习库找同来源的原句)。
 
 **不先找词，按素材集中回顾**：学习库「按素材」从已有记录索引聚合，命中一条也显示整份素材的数量，按最近保存排列。还与原句匹配的已存录音才计入「有原声」；这一数量是记录数，听写仍会去掉重复句。两种入口沿完整来源进入同一范围，不打开原视频、不自动播放或读出附件。旧桥不能列素材时，保留「全部」里的搜索；不另存素材表。见[素材入口与临时验证](youtube-study-wiring.md#2026-11-18-从素材直接回到原句和听写)。
+
+**从字幕栏直接打开素材的时间线**：「复习本视频」沿 `openPageLibrary`，与网页的「本页记过的原句」打开同一个学习库范围。后台从浏览器报告的网页、字幕 iframe 或本地文件取来源；本地的时长只从当前读者的媒体键取，不允许换文件。没有搜索词时，原句列表和源内听写按保存的秒数排列，无时间排后；搜索仍按相关度。时间用字幕的同一个格式，本地只显示、不打开文件。没有接入仓库之外的旧 IINA 候选。见[素材时间线](youtube-study-wiring.md#2026-11-18-从播放器打开素材时间线)。
 
 **翻译是对照，不是原文的一部分**：整页及下方单句译文虽然没有改原 DOM，插入的 `.study-page-translation` 仍会被句子扫描走进，抢走真正邻句。原文扫描跳过这个生成的节点，不增换行，保留原句和选词位置；不按语言把网页原生中文段落删掉。见[开译文前后对照](youtube-study-wiring.md#2026-11-18-打开网页译文不再把邻句换成中文)。
 

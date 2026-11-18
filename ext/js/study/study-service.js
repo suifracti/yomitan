@@ -1348,8 +1348,23 @@ export function prepareStudyService(lookupDictionary = null) {
             void chrome.tabs.create({url: chrome.runtime.getURL(`settings.html#${section}`)}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '设置没有打开，请从扩展图标里打开设置。'}));
             return true;
         }
-        if (studyAction === 'openPageLibrary' && sender.id === chrome.runtime.id && sender.frameId === 0 && /^https?:\/\//.test(sender.url || '')) {
-            const url = createSourceLibraryUrl(pageUrl(sender) || '', chrome.runtime.getURL('study-library.html'));
+        if (studyAction === 'openPageLibrary' && sender.id === chrome.runtime.id) {
+            const {mediaKey} = /** @type {{mediaKey?: string}} */ (data ?? {});
+            const web = /^https?:\/\//.test(sender.url || '');
+            const current = pageUrl(sender) ?? '';
+            let source = '';
+            if (typeof mediaKey === 'undefined' && web && sender.frameId === 0) {
+                source = current;
+            } else if (mediaKey && sender.url?.startsWith('file:') && sender.frameId === 0) {
+                source = localVideoSource(current, mediaKey);
+            } else if (mediaKey && web && mediaKeyOf(current) === mediaKey) {
+                source = current.split('#')[0];
+            }
+            if (!source) {
+                reply({ok: false, error: '找不到当前素材，请从学习库的「按素材」打开。'});
+                return false;
+            }
+            const url = createSourceLibraryUrl(source, chrome.runtime.getURL('study-library.html'));
             void chrome.tabs.create({url}).then(() => reply({ok: true, value: true}), () => reply({ok: false, error: '没有打开学习库。'}));
             return true;
         }

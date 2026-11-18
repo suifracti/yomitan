@@ -113,6 +113,10 @@ def indexed_page(rows, p):
             row = {**row, 'searchHit': hit}
         matches.append((rank, order, row))
     matches.sort(key=lambda x: x[:2], reverse=True)
+    if scope == 'source' and not query:
+        # For a single source, follow its video timeline when it has one.
+        # The existing recency order still breaks ties and orders untimed notes.
+        matches.sort(key=lambda match: match[2]['entry'].get('videoTime', float('inf')))
     if dictation:
         unique = {}
         for match in matches:

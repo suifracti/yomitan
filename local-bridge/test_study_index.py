@@ -66,6 +66,22 @@ class RecordIndexTests(AutoSyncTests):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.library.handle(request)['total'], normal['total'])
 
+    def test_video_source_uses_playback_order_for_the_list_and_dictation(self):
+        local = 'file:///examples/a/Lesson.mp4#study-duration=80'
+        for word, second in [('later', 52), ('first', 0), ('middle', 10), ('unknown', None)]:
+            entry = {'word': word, 'sentence': f'We can say {word} here.', 'url': local}
+            if second is not None: entry['videoTime'] = second
+            row = self.library.handle({'action': 'librarySave', 'makeCard': False, 'entry': entry})
+            if second is not None:
+                self.library.handle({'action': 'libraryMedia', 'id': row['id'], 'version': row['version'],
+                                     'start': second, 'end': second + 2, 'origin': 'capture',
+                                     'assets': [asset('audio', 'audio/webm', WEBM)]})
+        request = {'action': 'libraryList', 'scope': 'source', 'url': local, 'title': ''}
+        match = lambda **p: [r['entry']['word'] for r in self.library.handle({**request, **p})['items']]
+        self.assertEqual(match(), ['first', 'middle', 'later', 'unknown'])
+        self.assertEqual(match(practice='dictation', offset=1), ['middle', 'later'])
+        self.assertEqual(match(query='later'), ['later'])
+
     def test_find_an_older_sentence_by_meaning_or_word_before_paging(self):
         def save(word, sentence, meaning):
             return self.library.handle({'action': 'librarySave', 'makeCard': False,

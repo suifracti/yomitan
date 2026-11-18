@@ -31,12 +31,18 @@ test('video lists and summaries use the browser source, with fallback only when 
     /** @typedef {(message: object, sender: VideoSender, reply: (value: unknown) => void) => boolean} ReceiveVideo */
     /** @type {ReceiveVideo} */
     let receive;
+    let openedUrl = '';
+    const openTab = vi.fn(async (/** @type {{url: string}} */ tab) => {
+        openedUrl = tab.url;
+        return {id: 21};
+    });
     vi.stubGlobal('chrome', {
         runtime: {
             id: 'test',
             getURL: (/** @type {string} */ name) => `chrome-extension://test/${name}`,
             onMessage: {addListener: (/** @type {ReceiveVideo} */ fn) => { receive = fn; }},
         },
+        tabs: {create: openTab},
         permissions: {contains: async () => true},
         storage: {local: {get: async () => ({}), set: async () => {}}},
     });
@@ -59,6 +65,12 @@ test('video lists and summaries use the browser source, with fallback only when 
         const sourceUrl = `${local}#study-duration=120`;
         const localMedia = 'file:lesson one.mp4|120';
         const fileSender = {...sender, url: local, tab: {url: local}};
+        expect(await ask({mediaKey: localMedia}, fileSender, 'openPageLibrary')).toEqual({ok: true, value: true});
+        const opened = new URL(openedUrl);
+        expect(opened.pathname).toBe('/study-library.html');
+        expect(opened.searchParams.get('source')).toBe(sourceUrl);
+        expect(await ask({mediaKey: 'file:another.mp4|120'}, fileSender, 'openPageLibrary')).toMatchObject({ok: false});
+        expect(openTab).toHaveBeenCalledOnce();
         expect(await ask({mediaKey: localMedia}, fileSender)).toMatchObject({ok: true});
         expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey: localMedia, sourceUrl});
         read.mockClear().mockRejectedValueOnce(new Error('这不是当前视频的来源。'));

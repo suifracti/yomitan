@@ -1940,6 +1940,14 @@ export class YoutubeReader extends EventTarget {
         recommended.replaceChildren('正在挑选适合制卡的句子…');
         const saved = document.createElement('div');
         const note = Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '看视频时点过『记住它』的词。点时间可以回到那一刻。'});
+        const review = this._button('复习本视频 ↗', () => {
+            review.disabled = true;
+            void this._call('openPageLibrary', {mediaKey}).catch(() => {
+                if (generation === this._generation) { this._status('没能打开本视频的原句，请从学习库的「按素材」找。'); }
+            }).finally(() => { review.disabled = false; });
+        });
+        review.dataset.reviewSource = '';
+        note.append(' ', review);
         view.words.replaceChildren(note, recommended, saved);
         saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {

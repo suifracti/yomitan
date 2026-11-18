@@ -460,6 +460,7 @@ describe('study library page', () => {
             const {createSourceLine} = await import('../ext/js/pages/study-library.js');
             const source = createSourceLine(row.entry, '', '', 'chrome-extension://test/study-library.html');
             expect(source?.querySelector('strong')?.textContent).toBe('lesson one.mp4');
+            expect(source?.textContent).toContain('lesson one.mp4 · 0:12');
             const anchors = [...(source?.querySelectorAll('a') ?? [])];
             expect(anchors.map((a) => a.textContent)).toEqual(['同来源原句 ↗']);
             expect(new URL(anchors[0].href).searchParams.get('source')).toBe(url);

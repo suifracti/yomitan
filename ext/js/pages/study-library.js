@@ -26,6 +26,7 @@ import {blankStudyWord} from '../display/study-card-kinds.js';
 import {studyCall} from '../study/study-client.js';
 import {sourceKey} from '../study/study-journal.js';
 import {timedUrl, videoListenUrl} from '../study/media-key.js';
+import {timeLabel} from '../study/subtitle-session.js';
 import {BILIBILI_HOST, YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, normalizeInfo, wordInfo} from '../study/word-marks.js';
 import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, canSupplementAudio, cardReceipt, createResumeUrl, createSourceLibraryUrl, parseLegacySourceLocator, savedAudioAttachment} from '../study/study-data.js';
@@ -108,6 +109,8 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
     let name = title.trim();
     let href = '';
     let source = '';
+    const seconds = entry.videoTime;
+    const stamp = typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 ? timeLabel(Math.floor(seconds) * 1000) : '';
     try {
         const url = new URL(entry.url);
         if (url.protocol === 'file:') {
@@ -117,10 +120,7 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
             const platform = YOUTUBE_HOSTS.has(url.hostname) ? 'YouTube' : host;
             name = name ? `${platform} · ${name}` : platform;
             href = articleHref || timedUrl(url.href, entry.videoTime).url;
-            if (Number.isFinite(entry.videoTime) && entry.videoTime >= 0) {
-                const seconds = Math.floor(entry.videoTime);
-                name += ` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-            }
+            if (stamp) { name += ` · ${stamp}`; }
         }
         source = librarySource(entry.url ?? '');
     } catch { /* A title without a usable URL remains plain text. */ }
@@ -134,6 +134,7 @@ export function createSourceLine(entry, title, articleHref = '', libraryUrl = ''
         text.target = '_blank'; text.rel = 'noopener noreferrer';
     }
     line.append(text);
+    if (source.startsWith('file:') && stamp) { line.append(` · ${stamp}`); }
     if (source && libraryUrl) {
         const related = document.createElement('a');
         related.href = createSourceLibraryUrl(source, libraryUrl);
