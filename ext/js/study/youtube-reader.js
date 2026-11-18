@@ -130,17 +130,15 @@ export class YoutubeReader extends EventTarget {
         this._segmentRun = 0;
         /** @type {typeof studyCall} */
         this._call = call;
-        /** @type {string} */
-        this._translateRun = '';
-        /** @type {boolean} */
-        this._translating = false;
+        /** @type {{id: string, controller: AbortController}|null} */
+        this._translation = null;
         /** @type {string} Model consent for this video and selected model. */
         this._fullConsent = '';
         /** @type {Set<string>} */
         this._failed = new Set();
         /** @type {TranslationQueue} */
         this._queue = new TranslationQueue(async ({items, config, signal}) => {
-            const requestId = this._translateRun;
+            const requestId = this._translation?.id ?? '';
             const cancel = () => { void this._call('subtitleCancel', {requestId}).catch(() => {}); };
             signal.addEventListener('abort', cancel, {once: true});
             try {
@@ -275,8 +273,9 @@ export class YoutubeReader extends EventTarget {
      */
     setPrefs(prefs) {
         const previous = this._prefs;
-        if (previous.engine !== prefs.engine) {
-            this._translateRun = ''; this._queue.cancel();
+        if (previous.engine !== prefs.engine && this._translation) {
+            this._status('已切换翻译服务；原文和已完成译文保留。');
+            this._finishTranslation(true);
         }
         this._prefs = normalizeSubtitlePrefs(prefs);
         if (!this._prefs.shortcuts) { this._restoreReplay?.(); }
@@ -710,9 +709,7 @@ export class YoutubeReader extends EventTarget {
         ++this._generation;
         this._loadController?.abort();
         this._loadController = null;
-        this._translateRun = '';
-        this._queue.cancel();
-        this._translating = false;
+        this._finishTranslation(true);
         this._failed.clear();
         youtubeStudyContext.reset();
         this._video?.removeEventListener('timeupdate', this._timeListener);
@@ -804,9 +801,8 @@ export class YoutubeReader extends EventTarget {
         const retry = this._button('重试失败', () => { void this._translate(true); });
         retry.hidden = true;
         const cancel = this._button('取消', () => {
-            this._translateRun = '';
-            this._queue.cancel();
             this._status('已取消；原文和已完成译文保留。');
+            this._finishTranslation(true);
         });
         cancel.hidden = true;
         // Less frequent actions live behind one menu so the list stays the first thing to read.
@@ -1248,8 +1244,10 @@ export class YoutubeReader extends EventTarget {
             if (generation === this._generation) { this._status(timedOut ? '字幕读取超时，请重试。' : `字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
             if (timeout !== null) { clearTimeout(timeout); }
-            if (this._loadController === controller) { this._loadController = null; }
-            view.load.disabled = false;
+            if (this._loadController === controller) {
+                this._loadController = null;
+                view.load.disabled = this._translation !== null;
+            }
         }
     }
 
@@ -1290,8 +1288,10 @@ export class YoutubeReader extends EventTarget {
             if (generation === this._generation) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
             clearTimeout(timeout);
-            if (this._loadController === controller) { this._loadController = null; }
-            view.load.disabled = false;
+            if (this._loadController === controller) {
+                this._loadController = null;
+                view.load.disabled = this._translation !== null;
+            }
         }
     }
 
@@ -1339,9 +1339,10 @@ export class YoutubeReader extends EventTarget {
         this._restoreReplay?.();
         const view = this._view;
         if (!view) { return; }
-        this._queue.cancel();
-        youtubeStudyContext.reset();
         this._failed.clear();
+        this._finishTranslation(true);
+        this._autoBackoff = 0;
+        youtubeStudyContext.reset();
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._loop = null;
         this._lookup = '';
@@ -1530,6 +1531,22 @@ export class YoutubeReader extends EventTarget {
         return [session.cues[index - 1]?.text, session.cues[index + 1]?.text].filter(Boolean).join('\n').slice(0, 1200);
     }
 
+    /** @param {boolean} [cancelled] */
+    _finishTranslation(cancelled = false) {
+        const run = this._translation;
+        if (!run) { return; }
+        this._translation = null;
+        if (cancelled) { run.controller.abort(); }
+        const view = this._view;
+        if (!view) { return; }
+        view.translate.disabled = false;
+        view.retry.disabled = false;
+        view.load.disabled = this._loadController !== null;
+        view.cancel.hidden = true;
+        view.retry.hidden = this._failed.size === 0;
+        if (!view.retry.hidden) { view.status.append(' ', view.retry); }
+    }
+
     /**
      * @param {boolean} retryOnly
      * @param {boolean} [full]
@@ -1538,7 +1555,7 @@ export class YoutubeReader extends EventTarget {
     async _translate(retryOnly, full = false, onlyId) {
         const session = this._session;
         const view = this._view;
-        if (!session || !view || this._translating || /^(zh|cmn|yue)(?:-|$)/i.test(session.source.language)) { return; }
+        if (!session || !view || this._translation || /^(zh|cmn|yue)(?:-|$)/i.test(session.source.language)) { return; }
         const active = session.active((this._video?.currentTime || 0) * 1000)[0];
         const index = active ? session.cues.indexOf(active) : 0;
         const ordered = [...session.cues.slice(index), ...session.cues.slice(0, index)];
@@ -1553,9 +1570,9 @@ export class YoutubeReader extends EventTarget {
             this._status('这些句子已经翻译好了。');
             return;
         }
-        this._translating = true;
-        this._translateRun = crypto.randomUUID();
-        const runId = this._translateRun;
+        const run = {id: crypto.randomUUID(), controller: new AbortController()};
+        const live = () => this._translation === run;
+        this._translation = run;
         view.translate.disabled = true;
         view.retry.disabled = true;
         view.load.disabled = true;
@@ -1563,12 +1580,14 @@ export class YoutubeReader extends EventTarget {
         this._status(`正在翻译 ${items.length} 句 · ${ENGINE_LABELS[this._prefs.engine]}…`);
         try {
             const config = /** @type {import('study').StudyConfig} */ (await this._call('subtitleSettings'));
-            if (this._session !== session || this._translateRun !== runId) { return; }
+            if (!live()) { return; }
             const consent = JSON.stringify([session.source.mediaKey, this._prefs.engine, config.model, config.effort]);
             if (full && this._prefs.engine === 'model' && this._fullConsent !== consent) {
                 // Token estimate only; no provider pricing or billing precision is claimed.
                 const estimate = Math.ceil(items.reduce((sum, item) => sum + item.text.length + item.context.length, 0) / 3 + items.length * 80);
-                if (!await confirmTranslation(`全文 ${session.cues.length} 句，大约消耗 ${estimate.toLocaleString()} Token（估算，实际用量由模型决定）。继续吗？`)) {
+                const approved = await confirmTranslation(`全文 ${session.cues.length} 句，大约消耗 ${estimate.toLocaleString()} Token（估算，实际用量由模型决定）。继续吗？`, run.controller.signal);
+                if (!live()) { return; }
+                if (!approved) {
                     this._status('没有开始翻译。'); return;
                 }
                 this._fullConsent = consent;
@@ -1576,8 +1595,9 @@ export class YoutubeReader extends EventTarget {
             const result = await this._queue.translate(items, {...config,
                 // The service owns cache language, expiry and clearing; do not bypass it with a second memo.
                 cacheEnabled: false,
+                signal: run.controller.signal,
                 onItem: (row) => {
-                    if (this._session !== session || this._translateRun !== runId) { return; }
+                    if (!live()) { return; }
                     const target = this._rows.get(row.id)?.querySelector('.r-translation');
                     if (row.translation) {
                         session.acceptTranslation(row.id, row.translation);
@@ -1590,23 +1610,17 @@ export class YoutubeReader extends EventTarget {
                         if (target) { target.textContent = `翻译未完成：${row.error || '可重试'}`; }
                     }
                 }});
-            if (this._session === session && !result.cancelled) {
+            if (live() && !result.cancelled) {
                 this._status(`已译 ${session.progress().translated}/${session.cues.length} · ${ENGINE_LABELS[this._prefs.engine]}${this._failed.size > 0 ? ' · 有失败，可重试或换服务' : ''}`);
                 if (this._failed.size > 0) { this._autoBackoff = Date.now() + 20000; }
             }
         } catch (error) {
-            this._autoBackoff = Date.now() + 20000;
-            if (this._session === session) { this._status(error instanceof Error ? error.message : String(error)); }
-        } finally {
-            if (this._session === session) {
-                this._translating = false;
-                view.translate.disabled = false;
-                view.retry.disabled = false;
-                view.load.disabled = false;
-                view.cancel.hidden = true;
-                view.retry.hidden = this._failed.size === 0;
-                if (!view.retry.hidden) { view.status.append(' ', view.retry); }
+            if (live()) {
+                this._autoBackoff = Date.now() + 20000;
+                this._status(error instanceof Error ? error.message : String(error));
             }
+        } finally {
+            if (live()) { this._finishTranslation(); }
         }
     }
 
@@ -2148,7 +2162,7 @@ export class YoutubeReader extends EventTarget {
      */
     _autoTranslate(playbackMs) {
         const session = this._session;
-        if (!session || !this._prefs.autoTranslate || this._translating || document.hidden || Date.now() < this._autoBackoff) { return; }
+        if (!session || !this._prefs.autoTranslate || this._translation || document.hidden || Date.now() < this._autoBackoff) { return; }
         const until = playbackMs + this._prefs.aheadSeconds * 1000;
         const needed = session.cues.some((cue) => cue.endMs + session.offsetMs >= playbackMs && cue.startMs + session.offsetMs <= until && !session.translation(cue.id));
         if (needed) { void this._translate(false); }

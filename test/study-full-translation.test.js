@@ -17,6 +17,7 @@
 
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {confirmTranslation} from '../ext/js/study/translation-confirm.js';
 
 test('translates the full track forward then back, keeps progress on cancel, and confirms the model only once', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk', html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>'}});
@@ -24,7 +25,6 @@ test('translates the full track forward then back, keeps progress on cancel, and
     const cues = Array.from({length: 20}, (_, i) => ({tStartMs: i * 1000, dDurationMs: 1000, segs: [{utf8: `Sentence number ${i}.`}]}));
     vi.stubGlobal('fetch', async () => ({ok: true, text: async () => JSON.stringify({events: cues})}));
     vi.stubGlobal('chrome', {runtime: {getURL: (p) => `chrome-extension://test/${p}`}});
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const batches = [];
     let release;
     const blocked = new Promise((resolve) => { release = resolve; });
@@ -43,15 +43,27 @@ test('translates the full track forward then back, keeps progress on cancel, and
         const session = reader.session;
         document.querySelector('video').currentTime = 10;
         const run = reader._translate(false, true);
+        const prompt = await vi.waitFor(() => {
+            const element = document.querySelector('.study-translation-confirm');
+            expect(element?.textContent).toContain('全文 20 句，大约消耗');
+            return element;
+        });
+        const otherApproval = confirmTranslation('另一个翻译任务。');
+        /** @type {HTMLButtonElement|null} */ (prompt?.querySelector('button'))?.click();
+        expect(await otherApproval).toBe(false);
         await vi.waitFor(() => expect(batches.length).toBe(2));
         reader._view.cancel.click(); release(); await run;
         expect(session.progress().translated).toBe(8);
-        await reader._translate(false, true);
+        const translate = /** @type {HTMLButtonElement|null} */ (document.querySelector('.r-translate'));
+        translate?.click();
+        await vi.waitFor(() => {
+            expect(session.progress().translated).toBe(20);
+            expect(translate?.disabled).toBe(false);
+        });
         expect(session.progress().translated).toBe(20);
         expect(batches[0]).toEqual(session.cues.slice(10, 18).map((c) => c.id));
         expect(batches.at(-1)).toEqual(session.cues.slice(6, 10).map((c) => c.id));
         expect(reader._view.progress.textContent).toBe('已翻译 20/20');
-        expect(confirm).toHaveBeenCalledTimes(1);
-        expect(confirm.mock.calls[0][0]).toContain('全文 20 句，大约消耗');
+        expect(document.querySelector('.study-translation-confirm')).toBeNull();
     } finally { release(); reader._reset(); vi.unstubAllGlobals(); await env.teardown(global); }
 });

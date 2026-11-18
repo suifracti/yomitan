@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Exercise the reader load path directly without mounting the video UI.
+// Exercise caption loading and track changes with controlled player responses.
 /* eslint-disable no-underscore-dangle */
 
 import {expect, test, vi} from 'vitest';
@@ -97,6 +97,81 @@ test('does not publish an old video after its track preference finishes saving',
         expect(reader._rawSession).toBeNull();
         expect(present).not.toHaveBeenCalled();
         expect(reader._view.root.dataset.captionSource).toBeUndefined();
+    } finally {
+        release();
+        reader._reset();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
+test('switching tracks during translation releases the new track and discards the old reply', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk',
+        html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>'}});
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const urls = ['en', 'fr'].map((lang) => `https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=${lang}`);
+    vi.stubGlobal('fetch', async (/** @type {string} */ url) => new Response(JSON.stringify({events: [
+        {tStartMs: 0, dDurationMs: 1000, segs: [{utf8: new URL(url).searchParams.get('lang') === 'fr' ? 'Bonjour.' : 'Good morning.'}]},
+    ]})));
+    /** @type {() => void} */
+    let release = () => {};
+    const oldReply = new Promise((resolve) => { release = () => resolve(void 0); });
+    const languages = [];
+    const cancelled = [];
+    const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
+    const reader = new YoutubeReader({
+        prefs: {merge: false, engine: 'google', autoTranslate: false},
+        call: async (action, data) => {
+            if (action === 'youtubeCaptionTracks') {
+                return urls.map((baseUrl, i) => ({baseUrl, languageCode: i ? 'fr' : 'en', vssId: i ? '.fr' : '.en'}));
+            }
+            if (action === 'subtitleSettings') { return {model: 'fixture', effort: 'low'}; }
+            if (action === 'subtitleCancel') { cancelled.push(data.requestId); }
+            if (action !== 'subtitleTranslate') { return []; }
+            const {language, items, requestId} = /** @type {{language: string, items: {id: string}[], requestId: string}} */ (data);
+            languages.push({language, requestId});
+            if (language === 'en') { await oldReply; }
+            return {items: items.map(({id}) => ({id, translation: language === 'fr' ? '你好。' : '早上好。'}))};
+        },
+    });
+    try {
+        reader.rememberRequest(urls[0]);
+        reader.start();
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('en'));
+        const button = /** @type {HTMLButtonElement} */ (document.querySelector('.r-translate'));
+        const original = reader._translate(false, true);
+        await vi.waitFor(() => expect(languages.map((x) => x.language)).toEqual(['en']));
+        expect(button.disabled).toBe(true);
+        const select = /** @type {HTMLSelectElement} */ (document.querySelector('select[data-source]'));
+        select.value = select.options[1].value;
+        select.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('fr'));
+        expect(cancelled).toEqual([languages[0].requestId]);
+        expect(button.disabled).toBe(false);
+        button.click();
+        await vi.waitFor(() => expect(document.querySelector('.r-translation')?.textContent).toBe('你好。'));
+        release();
+        await original;
+        expect(languages.map((x) => x.language)).toEqual(['en', 'fr']);
+        expect(document.querySelector('.r-translation')?.textContent).toBe('你好。');
+
+        select.value = select.options[0].value;
+        select.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('en'));
+        reader.updatePrefs({engine: 'model'});
+        const pending = reader._translate(false, true);
+        const consent = await vi.waitFor(() => {
+            const approve = /** @type {HTMLButtonElement|null} */ (document.querySelector('.study-translation-confirm button'));
+            expect(approve).not.toBeNull();
+            return approve;
+        });
+        select.value = select.options[1].value;
+        select.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('fr'));
+        expect(document.querySelector('.study-translation-confirm')).toBeNull();
+        consent?.click();
+        await pending;
+        expect(languages.map((x) => x.language)).toEqual(['en', 'fr']);
     } finally {
         release();
         reader._reset();

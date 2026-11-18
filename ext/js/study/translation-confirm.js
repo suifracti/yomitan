@@ -15,18 +15,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** @type {Promise<boolean>|null} */
-let pending = null;
+/** @type {HTMLElement|null} */
+let active = null;
 
 /**
  * A non-blocking, study-styled cost prompt shared by page and caption translation.
  * @param {string} message
+ * @param {AbortSignal} [signal]
  * @returns {Promise<boolean>}
  */
-export function confirmTranslation(message) {
-    if (pending) { return pending; }
-    pending = new Promise((resolve) => {
-        const bar = document.createElement('section');
+export function confirmTranslation(message, signal) {
+    if (active || signal?.aborted) { return Promise.resolve(false); }
+    const bar = document.createElement('section');
+    active = bar;
+    return new Promise((resolve) => {
         bar.className = 'study-translation-confirm scan-disable';
         bar.dataset.studyUi = '';
         bar.setAttribute('role', 'alertdialog');
@@ -36,19 +38,24 @@ export function confirmTranslation(message) {
         text.textContent = message;
         text.style.flex = '1 1 360px';
         bar.append(text);
+        const abort = () => finish(false);
+        /** @param {boolean} approved */
+        const finish = (approved) => {
+            if (active !== bar) { return; }
+            bar.remove();
+            active = null;
+            signal?.removeEventListener('abort', abort);
+            resolve(approved);
+        };
+        signal?.addEventListener('abort', abort, {once: true});
         for (const [label, yes] of /** @type {[string,boolean][]} */ ([['继续', true], ['取消', false]])) {
             const button = document.createElement('button');
             button.type = 'button';
             button.textContent = label;
             button.style.cssText = 'font:inherit;cursor:pointer;padding:5px 14px;border:1px solid #dce2eb;border-radius:6px;background:var(--st-sheet,#fff);color:var(--st-accent,#505ead)';
-            button.onclick = () => {
-                bar.remove();
-                pending = null;
-                resolve(yes);
-            };
+            button.onclick = () => finish(yes);
             bar.append(button);
         }
         document.documentElement.append(bar);
     });
-    return pending;
 }
