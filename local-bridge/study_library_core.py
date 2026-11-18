@@ -406,10 +406,15 @@ def _normalize_request(p):
                 if 'kind' in card and not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', text(card['kind'], 40, True)):
                     raise ValueError('卡片类型无效。')
         return p
-    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice', 'word', 'focus'}:
+    if action == 'libraryList' and 'action' in p and not set(p) - {'action', 'url', 'title', 'offset', 'scope', 'query', 'practice', 'word', 'focus', 'exclude'}:
         scope = p.get('scope', 'source')
-        if 'practice' in p and p['practice'] not in ('dictation', 'translation', 'cloze'):
+        if 'practice' in p and p['practice'] not in ('dictation', 'translation', 'cloze', 'recall'):
             raise ValueError('练习类型无效。')
+        if p.get('practice') == 'recall' or 'exclude' in p:
+            exclude = p.get('exclude', [])
+            if (p.get('practice') != 'recall' or scope not in ('source', 'recent-recall') or p.get('offset', 0)
+                    or not isinstance(exclude, list) or any(not isinstance(i, str) or not ID_RE.fullmatch(i) for i in exclude)):
+                raise ValueError('卡点练习范围无效。')
         if (scope != 'all' and not {'url', 'title'} <= set(p)) or type(p.get('offset', 0)) is not int or not 0 <= p.get('offset', 0) <= 100000 or scope not in ('source', 'sources', 'word', 'pending', 'all', 'anki-only', 'manual-known', 'saved', 'linked', 'favorites', 'recent-recall') or ('word' in p) != (scope == 'word'):
             raise ValueError('学习列表范围无效。')
         if 'focus' in p:

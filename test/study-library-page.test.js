@@ -789,6 +789,52 @@ describe('study library page', () => {
         }
     });
 
+    test('source recall opens the next group only on request without repeating records', async () => {
+        vi.resetModules();
+        makePageDom();
+        const previousUrl = location.href;
+        const url = 'https://reading.example/article?chapter=2';
+        history.replaceState(null, '', `?source=${encodeURIComponent(url)}&practice=recall`);
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const items = Array.from({length: 7}, (_, i) => ({
+            id: String(i).padStart(32, '0'),
+            vaultSaved: true,
+            entry: {word: 'shelter', sentence: `A shelter was found in example ${i + 1}.`, url},
+        }));
+        mocks.studyCall.mockImplementation(async (_action, value) => {
+            if (value?.practice === 'recall') { return {items: items.slice(5), total: 2}; }
+            return {items, recallRound: items.slice(0, 5), recallTotal: 7, total: items.length, canSearch: true};
+        });
+        try {
+            await import('../ext/js/pages/study-library.js');
+            const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+            const press = (/** @type {string} */ text) => [...panel.querySelectorAll('button')].find((button) => button.textContent === text)?.click();
+            const complete = (/** @type {number} */ count) => {
+                for (let i = 0; i < count; ++i) {
+                    press('直接看答案');
+                    press(i === count - 1 ? '完成这轮' : '下一句');
+                }
+            };
+            await vi.waitFor(() => expect(panel.textContent).toContain('复习最近卡点 · 1 / 5'));
+            complete(5);
+            const scope = {language: 'en', scope: 'source', url, title: ''};
+            expect(mocks.studyCall.mock.calls).toEqual([['libraryList', {...scope, offset: 0}]]);
+            press('练下一组');
+            await vi.waitFor(() => expect(panel.textContent).toContain('复习最近卡点 · 1 / 2'));
+            expect(panel.textContent).toContain('example 6');
+            complete(2);
+            expect(panel.textContent).not.toContain('练下一组');
+            expect(mocks.studyCall.mock.calls.slice(1)).toEqual([
+                ['libraryList', {...scope, practice: 'recall', exclude: items.slice(0, 5).map((row) => row.id)}],
+            ]);
+            /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-source-recall')).click();
+            expect(document.querySelectorAll('#study-library-list article')).toHaveLength(7);
+        } finally {
+            history.replaceState(null, '', previousUrl);
+        }
+    });
+
     test('drops outdated list work but keeps the pending filter selected during loading', async () => {
         vi.resetModules();
         makePageDom();

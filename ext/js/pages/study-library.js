@@ -1089,6 +1089,7 @@ async function initializePage() {
         let cloze = [];
         /** @type {StudyLibraryRecord[]|null} */
         let recallRound = null;
+        let recallTotal = 0;
         /** @type {SentencePrompt[]} */
         let dictation = [];
         /** @type {SentencePrompt[]} */
@@ -1160,6 +1161,31 @@ async function initializePage() {
 
         /**
          * @param {HTMLElement} button
+         * @param {SentencePrompt[]} first
+         */
+        function openRecall(button, first) {
+            const scope = libraryScope(category);
+            const query = search.value.trim();
+            const seen = new Set(first.map((prompt) => prompt.row.id));
+            /**
+             * @param {() => boolean} isCurrent
+             * @returns {Promise<SentenceRound>}
+             */
+            const nextRound = async (isCurrent) => {
+                const result = /** @type {{total: number}} */ (await studyCall('libraryList', {
+                    ...scope, practice: 'recall', ...(query ? {query} : {}), exclude: [...seen],
+                }));
+                if (!isCurrent()) { return {prompts: [], hasMore: false}; }
+                const prompts = sentencePrompts(normalizeRecords(result), [], 'recall');
+                for (const prompt of prompts) { seen.add(prompt.row.id); }
+                return {prompts, hasMore: prompts.length > 0 && result.total > prompts.length};
+            };
+            const loadNextRound = recallTotal > seen.size ? nextRound : void 0;
+            togglePractice(button, () => showSentencePractice(practice, first, 'recall', makeSavedAudioButton, clearSavedAudio, loadNextRound));
+        }
+
+        /**
+         * @param {HTMLElement} button
          * @returns {Promise<void>}
          */
         async function startSentencePractice(button) {
@@ -1186,7 +1212,11 @@ async function initializePage() {
              */
             const open = (prompts) => togglePractice(button, () => showSentencePractice(practice, prompts, mode, makeSavedAudioButton, clearSavedAudio, loadNextRound, reconstruct));
             let prompts = listening ? dictation : (translating ? translations : cloze);
-            if (activePractice === button || (mode === 'recall' && recallRound) || (!indexedPractice && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
+            if (mode === 'recall' && recallRound) {
+                openRecall(button, prompts);
+                return;
+            }
+            if (activePractice === button || (!indexedPractice && (prompts.length >= SENTENCE_PRACTICE_LIMIT || !moreScopedPrompts()))) {
                 open(prompts);
                 return;
             }
@@ -1267,7 +1297,7 @@ async function initializePage() {
             }
         }
         sourceRecallButton.addEventListener('click', () => {
-            togglePractice(sourceRecallButton, () => showSentencePractice(practice, sourceRecall, 'recall', makeSavedAudioButton, clearSavedAudio));
+            openRecall(sourceRecallButton, sourceRecall);
         });
         for (const button of [clozeButton, dictationButton, translationButton, reconstructButton]) {
             button.addEventListener('click', () => { void startSentencePractice(button); });
@@ -1850,7 +1880,7 @@ listedQuery :
                     focusRecall = '';
                     value = await studyCall('libraryList', {...libraryScope(scope), ...params});
                 }
-                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, canFindCloze?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], recallRound?: StudyLibraryRecord[], sources?: SourceShelfItem[]}|null} */ (value);
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, canFindCloze?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], recallRound?: StudyLibraryRecord[], recallTotal?: number, sources?: SourceShelfItem[]}|null} */ (value);
                 if (shelf && !result?.sources) { throw new Error(SOURCES_UPDATE_BRIDGE); }
                 canSearch = result?.canSearch === true;
                 if (!shelf && !indexed && canSearch && ((tab !== 'word' && search.value.trim()) || scope !== category)) { queuedSearch = true; }
@@ -1863,6 +1893,7 @@ listedQuery :
                     records.clear();
                     sourceShelf.length = 0;
                     recallRound = ['source', 'recent-recall'].includes(tab) ? result?.recallRound ?? null : null;
+                    recallTotal = recallRound ? result?.recallTotal ?? 0 : 0;
                     const contrast = result?.practicePair ?? [];
                     const examples = result?.practiceExamples ?? [];
                     compareExamples = contrast.length !== 2 && examples.length === 2;

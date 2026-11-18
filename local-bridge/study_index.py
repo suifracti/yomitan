@@ -91,6 +91,8 @@ def indexed_page(rows, p, *, complete=True):
     dictation = practice == 'dictation'
     translating = practice == 'translation'
     cloze = practice == 'cloze'
+    recalling = practice == 'recall'
+    excluded = set(p.get('exclude', []))
     source = page_source_key(p['url']) if scope == 'source' else ''
     raw_query = p.get('query', '')
     link_source = source_search_key(raw_query)
@@ -107,11 +109,13 @@ def indexed_page(rows, p, *, complete=True):
         rows = [row for row in rows if canonical(row['entry']) == head]
     matches = []
     source_recall = scope == 'source' and bool(source) and not offset and not practice
-    if scope == 'recent-recall' or source_recall:
+    recent_only = scope == 'recent-recall' or recalling
+    if recent_only or source_recall:
         from study_senses import recall_round, recent_recall
         now = time.time()
     for row in rows:
         e = row['entry']
+        if row['id'] in excluded: continue
         if link_source and page_source_key(e.get('url', '')) != link_source: continue
         if scope == 'source' and (page_source_key(e['url']) != source or (not source and e['title'] != p['title'])): continue
         if scope == 'pending' and not needs_attention(row): continue
@@ -120,8 +124,8 @@ def indexed_page(rows, p, *, complete=True):
         if scope == 'favorites' and not row.get('favorite'): continue
         if (scope == 'saved' or practice) and not saved_record(row): continue
         if scope == 'linked' and row.get('ankiState') != 'linked' and not linked_note_ids((row,)): continue
-        order = recent_recall(row, now) if scope == 'recent-recall' else row['created']
-        if scope == 'recent-recall' and not order: continue
+        order = recent_recall(row, now) if recent_only else row['created']
+        if recent_only and not order: continue
         if dictation and (not e['sentence'] or not has_current_audio(row)): continue
         if translating and (e.get('kind') != 'sentence' or e.get('language', 'en') != 'en' or not e['translation'].strip()): continue
         # Only prefilter candidates. The same browser masking rule used by cards decides if a blank is valid.
@@ -135,7 +139,7 @@ def indexed_page(rows, p, *, complete=True):
             row = {**row, 'searchHit': hit}
         matches.append((rank, order, row))
     matches.sort(key=lambda x: x[:2], reverse=True)
-    if link_source or (scope == 'source' and not query):
+    if not recalling and (link_source or (scope == 'source' and not query)):
         # For a single source, follow its video timeline when it has one.
         # The existing recency order still breaks ties and orders untimed notes.
         matches.sort(key=lambda match: match[2]['entry'].get('videoTime', float('inf')))
@@ -152,7 +156,7 @@ def indexed_page(rows, p, *, complete=True):
                 focus_ids.add(row['id'])
     if focus:
         matches.sort(key=lambda match: (match[2]['id'] != focus.get('id'), match[2]['id'] not in focus_ids))
-    if practice:
+    if practice and not recalling:
         unique = {}
         for match in matches:
             entry = match[2]['entry']
@@ -169,13 +173,16 @@ def indexed_page(rows, p, *, complete=True):
     def list_item(row):
         return with_article_href(with_card_progress(with_audio_context(row)))
 
-    if (scope == 'recent-recall' and not offset) or source_recall:
+    if recalling or (scope == 'recent-recall' and not offset) or source_recall:
         ranked = matches
         if source_recall:
             ranked = [(rank, at, row) for rank, _, row in matches if (at := recent_recall(row, now))]
             ranked.sort(key=lambda match: match[:2], reverse=True)
         chosen = recall_round(row for _, at, row in ranked if at)
+        if recalling:
+            return {'items': [list_item(row) for row in chosen], 'total': len(ranked)}
         extras['recallRound'] = [list_item(row) for row in chosen]
+        extras['recallTotal'] = len(ranked)
     return {'items': [list_item(row) for row in page], 'total': len(matches), 'canSearch': True, 'canFindCloze': True, **extras}
 
 

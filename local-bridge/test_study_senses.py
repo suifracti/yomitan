@@ -72,6 +72,14 @@ class SenseTests(AutoSyncTests):
         self.assertEqual([item['id'] for item in focused['recallRound']], [later['id'], different['id'], *crowded[-1:-4:-1]])
         filtered = self.library.handle({**scope, 'query': 'dawn', 'focus': {'id': later['id']}})
         self.assertEqual([item['id'] for item in filtered['recallRound']], [different['id']])
+        used = [item['id'] for item in focused['recallRound']]
+        self.assertEqual(focused['recallTotal'], 13)
+        next_group = self.library.handle({**scope, 'practice': 'recall', 'exclude': used})
+        self.assertEqual(next_group['total'], 8)
+        self.assertEqual([item['id'] for item in next_group['items']], crowded[-4:-9:-1])
+        scoped = {'action': 'libraryList', 'scope': 'source', 'url': earlier['entry']['url'], 'title': '', 'query': 'dawn'}
+        self.assertEqual(self.library.handle(scoped)['recallTotal'], 1)
+        self.assertEqual(self.library.handle({**scoped, 'practice': 'recall', 'exclude': [different['id']]})['items'], [])
         self.assertEqual(self.calls, [])
 
     def test_manual_known_is_word_wide_undoable_and_never_changes_anki(self):
