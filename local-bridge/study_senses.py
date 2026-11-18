@@ -183,10 +183,11 @@ def word_rows(library, word):
             (row['entry'].get('kind') == 'expression' and row['entry'].get('baseWord', '').casefold() in forms)]
 
 
-def practice_pair(rows, word):
+def practice_material(rows, word):
+    """Prefer a sense contrast; otherwise compare two actual uses of the same sense."""
     head = word_aliases(row['entry'] for row in rows).get(word.strip().casefold())
     if not head:
-        return []
+        return {}
     by_sentence = {}
     for row in sorted(rows, key=lambda r: r['created'], reverse=True):
         e = row['entry']
@@ -197,22 +198,30 @@ def practice_pair(rows, word):
                 not re.search(r'(?<!\w)' + re.escape(e['word']) + r'(?!\w)', e['sentence'], re.I)):
             continue
         by_sentence.setdefault(sentence, {}).setdefault(sense_key(e), row)
-    pair, seen_senses, seen_glosses = [], set(), set()
+    def pack(pair):
+        fields = ('word', 'sentence', 'sense', 'context', 'url', 'title', 'videoTime', 'language')
+        return [with_article_href({'id': row['id'], 'entry': {k: row['entry'][k] for k in fields if k in row['entry']}})
+                for row in pair]
+
+    pair, examples, first_by_key, seen_senses, seen_glosses = [], [], {}, set(), set()
     for senses in by_sentence.values():
         if len(senses) != 1:
             continue  # The learner saved more than one reading of this exact sentence.
         row = next(iter(senses.values()))
         e = row['entry']
         key, short = sense_key(e), gloss(e)
+        if row.get('vaultSaved') and row.get('learningState') != 'favorite-only':
+            if not examples and key in first_by_key:
+                examples = [first_by_key[key], row]
+            first_by_key.setdefault(key, row)
         if key in seen_senses or short in seen_glosses:
             continue
         seen_senses.add(key)
         seen_glosses.add(short)
-        fields = ('word', 'sentence', 'sense', 'context', 'url', 'title', 'videoTime', 'language')
-        pair.append(with_article_href({'id': row['id'], 'entry': {k: e[k] for k in fields if k in e}}))
+        pair.append(row)
         if len(pair) == 2:
-            return pair
-    return []
+            return {'practicePair': pack(pair)}
+    return {'practiceExamples': pack(examples)} if examples else {}
 
 
 def senses(library, word, now=None):

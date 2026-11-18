@@ -271,20 +271,44 @@ function writeSentence(element, sentence, word, wholeWord = false) {
 }
 
 /**
+ * @param {HTMLElement} answer
+ * @param {SensePracticeItem} row
+ * @param {boolean} [includeContext]
+ */
+function appendPracticeSource(answer, row, includeContext = false) {
+    const {entry} = row;
+    const legacy = parseLegacySourceLocator(entry.context);
+    if (includeContext && entry.context && !legacy) {
+        const context = document.createElement('p');
+        context.textContent = entry.context;
+        answer.append(context);
+    }
+    const source = createSourceLine(entry, entry.title || (typeof legacy?.title === 'string' ? legacy.title : ''), row.articleHref);
+    if (source) { answer.append(source); }
+    const resume = document.createElement('a');
+    resume.textContent = '继续学习 ↗';
+    resume.href = createResumeUrl(row, chrome.runtime.getURL('/search.html'));
+    resume.target = '_blank';
+    resume.rel = 'noopener noreferrer';
+    answer.append(resume);
+}
+
+/**
  * A short, local exercise: compare with the learner's own saved meaning, not a model's answer.
  * @param {HTMLElement} panel
  * @param {SensePracticeItem[]} pair
+ * @param {boolean} [examples]
  */
-function showSensePractice(panel, pair) {
+function showSensePractice(panel, pair, examples = false) {
     const heading = document.createElement('h2');
-    heading.textContent = '这两句里的词，各是什么意思？';
+    heading.textContent = examples ? '同一个意思，在这两句里怎么用？' : '这两句里的词，各是什么意思？';
     heading.tabIndex = -1;
     const help = document.createElement('p');
-    help.textContent = '先按原句选，选完看你当时记下的意思。';
+    help.textContent = examples ? '对照原句，留意这个词和哪些词搭配、分别用在什么场景。' : '先按原句选，选完看你当时记下的意思。';
     const questions = document.createElement('div');
     questions.className = 'study-library-practice-questions';
     const labels = pair.map(({entry}) => entry.sense.gloss);
-    if (Math.random() < 0.5) { labels.reverse(); }
+    if (!examples && Math.random() < 0.5) { labels.reverse(); }
     for (const row of pair) {
         const {entry} = row;
         const question = document.createElement('article');
@@ -292,10 +316,18 @@ function showSensePractice(panel, pair) {
         sentence.lang = 'en';
         sentence.className = 'study-library-practice-quote';
         writeSentence(sentence, entry.sentence, entry.word, true);
-        const choices = document.createElement('div');
-        choices.className = 'study-library-practice-choices';
         const answer = document.createElement('div');
         answer.className = 'study-library-practice-answer';
+        question.append(sentence);
+        questions.append(question);
+        if (examples) {
+            answer.textContent = `当时记的是「${entry.sense.gloss}」。`;
+            appendPracticeSource(answer, row, true);
+            question.append(answer);
+            continue;
+        }
+        const choices = document.createElement('div');
+        choices.className = 'study-library-practice-choices';
         answer.tabIndex = -1;
         for (const label of labels) {
             const button = document.createElement('button');
@@ -304,22 +336,13 @@ function showSensePractice(panel, pair) {
             button.addEventListener('click', () => {
                 const saved = entry.sense.gloss;
                 answer.textContent = label === saved ? `你当时记的是「${saved}」。` : `你选了「${label}」，这句你当时记的是「${saved}」。`;
-                const legacy = parseLegacySourceLocator(entry.context);
-                const source = createSourceLine(entry, entry.title || (typeof legacy?.title === 'string' ? legacy.title : ''), row.articleHref);
-                if (source) { answer.append(source); }
-                const resume = document.createElement('a');
-                resume.textContent = '继续学习 ↗';
-                resume.href = createResumeUrl(row, chrome.runtime.getURL('/search.html'));
-                resume.target = '_blank';
-                resume.rel = 'noopener noreferrer';
-                answer.append(resume);
+                appendPracticeSource(answer, row);
                 choices.replaceWith(answer);
                 answer.focus();
             }, {once: true});
             choices.append(button);
         }
-        question.append(sentence, choices);
-        questions.append(question);
+        question.append(choices);
     }
     panel.replaceChildren(heading, help, questions);
     panel.hidden = false;
@@ -601,6 +624,8 @@ async function initializePage() {
         let searchTimer = 0;
         /** @type {SensePracticeItem[]} */
         let practicePair = [];
+        let compareExamples = false;
+        const practiceLabel = () => (compareExamples ? '用旧原句看用法' : '用旧原句辨词义');
         /** @type {ClozePrompt[]} */
         let cloze = [];
         /** @type {HTMLElement|null} */
@@ -621,7 +646,7 @@ async function initializePage() {
             activePractice = null;
             list.hidden = status.hidden = search.hidden = false;
             if (searchLabel) { searchLabel.hidden = false; }
-            practiceButton.textContent = '用旧原句辨词义';
+            practiceButton.textContent = practiceLabel();
             clozeButton.textContent = '练原句填空';
             for (const button of [practiceButton, clozeButton]) { button.setAttribute('aria-expanded', 'false'); }
         }
@@ -645,7 +670,7 @@ async function initializePage() {
             button.setAttribute('aria-expanded', 'true');
             show();
         }
-        practiceButton.addEventListener('click', () => togglePractice(practiceButton, () => showSensePractice(practice, practicePair)));
+        practiceButton.addEventListener('click', () => togglePractice(practiceButton, () => showSensePractice(practice, practicePair, compareExamples)));
         clozeButton.addEventListener('click', () => togglePractice(clozeButton, () => showClozePractice(practice, cloze)));
 
         /** @returns {Promise<void>} */
@@ -1069,6 +1094,7 @@ listedQuery :
             const query = search.value.trim();
             const waiting = canSearch && (query !== listedQuery || category !== listedCategory);
             practiceButton.hidden = waiting || Boolean(listError) || category !== 'all' || practicePair.length !== 2;
+            if (activePractice !== practiceButton) { practiceButton.textContent = practiceLabel(); }
             const rows = waiting ? [] : [...records.values()].filter((record) => matchesCategory(record, category) && (canSearch || matchesSearch(record, query)));
             sourceVideoId = category === 'source' && !loading && !listError ?
                 rows.find((row) => matchesCategory(row, 'saved') && videoListenUrl(row.entry))?.id ?? '' :
@@ -1174,14 +1200,17 @@ listedQuery :
                 if (obsolete()) { return; }
                 const scope = indexed || ['pending', 'anki-only', 'manual-known', 'source'].includes(tab) ? tab : 'all';
                 const value = await studyCall('libraryList', {language: 'en', url: scope === 'source' ? articleUrl : '', title: '', scope, offset: start, ...(indexed && (query || searchOnly) ? {query} : {})});
-                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[]}|null} */ (value);
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[]}|null} */ (value);
                 canSearch = result?.canSearch === true;
                 if (!indexed && canSearch && (search.value.trim() || scope !== category)) { queuedSearch = true; }
                 if (obsolete()) { return; }
                 const page = normalizeRecords(value).slice(0, PAGE_SIZE);
                 if (reset) {
                     records.clear();
-                    practicePair = result?.practicePair ?? [];
+                    const contrast = result?.practicePair ?? [];
+                    const examples = result?.practiceExamples ?? [];
+                    compareExamples = contrast.length !== 2 && examples.length === 2;
+                    practicePair = compareExamples ? examples : contrast;
                     if (!practice.hidden) { closePractice(); }
                 }
                 listedQuery = query;

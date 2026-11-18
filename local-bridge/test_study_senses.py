@@ -22,6 +22,15 @@ class SenseTests(AutoSyncTests):
         example = next(item['entry'] for item in pair if item['id'] == fee['id'])
         self.assertEqual((example['title'], example['videoTime']), ('At the counter', 33))
         self.assertNotIn('practicePair', self.library.handle({**request, 'query': '收费'}))
+        jog = self.save_word('run', 'We run at sunrise.', title='At the park', sense={'key': 'new', 'gloss': '跑步'})
+        other = self.save_word('runs', 'She runs by the river.', lemma='run', title='By the river', sense=jog['entry']['sense'])
+        self.save_word('run', 'We run at sunrise.', title='Repeated quotation', url='https://example.test/second-copy', sense=jog['entry']['sense'])
+        self.calls.clear()
+        result = self.library.handle({**request, 'query': 'RUNS'})
+        self.assertNotIn('practicePair', result)
+        self.assertEqual({item['entry']['sentence'] for item in result['practiceExamples']},
+                         {'We run at sunrise.', 'She runs by the river.'})
+        self.assertEqual(next(item['id'] for item in result['practiceExamples'] if item['entry']['word'] == 'runs'), other['id'])
         self.assertEqual(self.calls, [])
 
     def test_manual_known_is_word_wide_undoable_and_never_changes_anki(self):

@@ -571,9 +571,8 @@ class YomitanLibrary:
             needs = sum(needs_attention(row) for row in rows) + len(orphans)
             extras = {}
             if p.get('scope') == 'all' and p.get('query') and not p.get('offset'):
-                from study_senses import practice_pair
-                if pair := practice_pair(rows, p['query']):
-                    extras['practicePair'] = pair
+                from study_senses import practice_material
+                extras = practice_material(rows, p['query'])
             if p.get('scope') in ('all', 'pending', 'anki-only', 'linked'): rows += orphans
             return {**indexed_page(rows, p), **extras, 'needsAttention': needs, 'ankiEnabled': self.anki_enabled, 'target': self.settings()}
         ids = p.get('ids', []) or [r['id'] for r in p.get('items', [])] or ([p['id']] if p.get('id') else [])

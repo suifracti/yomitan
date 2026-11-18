@@ -75,6 +75,49 @@ function makePageDom() {
 }
 
 describe('study library page', () => {
+    test('compares two saved uses of one sense in the existing practice panel', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const previousUrl = location.href;
+        const items = ['We run at sunrise.', 'She runs by the river.'].map((sentence, index) => ({
+            id: String(index + 1).repeat(32),
+            entry: {
+                word: index === 0 ? 'run' : 'runs',
+                sentence,
+                context: 'A morning routine.',
+                title: index === 0 ? 'Park journal' : 'River journal',
+                url: `https://reading.example/story?id=${index}`,
+                sense: {key: 'run#2', gloss: '跑步'},
+            },
+        }));
+        mocks.studyCall.mockImplementation(async (action, payload) => {
+            if (action !== 'libraryList') { return []; }
+            return {items: [], total: 0, canSearch: true, ...(payload?.query === 'runs' ? {practiceExamples: items} : {})};
+        });
+        history.replaceState(null, '', '?query=runs');
+        try {
+            await import('../ext/js/pages/study-library.js');
+            const start = /** @type {HTMLButtonElement} */ (document.querySelector('#study-library-practice-button'));
+            await vi.waitFor(() => expect(start.hidden).toBe(false));
+            expect(start.textContent).toBe('用旧原句看用法');
+            const calls = mocks.studyCall.mock.calls.length;
+            const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
+            start.click();
+            expect(panel.hidden).toBe(false);
+            expect([...panel.querySelectorAll('mark')].map((word) => word.textContent)).toEqual(['run', 'runs']);
+            expect(panel.querySelectorAll('button')).toHaveLength(0);
+            expect(panel.textContent).toContain('River journal');
+            expect(panel.textContent).toContain('跑步');
+            const links = [...panel.querySelectorAll('a')].filter((link) => link.textContent.includes('继续学习'));
+            expect(links.map((link) => new URL(link.href).searchParams.get('studyRecordId'))).toEqual(items.map(({id}) => id));
+            start.click();
+            expect(panel.hidden).toBe(true);
+            expect(mocks.studyCall.mock.calls).toHaveLength(calls);
+        } finally { history.replaceState(null, '', previousUrl); }
+    });
+
     test('uses saved sentences for a short cloze without grading or changing the records', async () => {
         vi.resetModules();
         makePageDom();
