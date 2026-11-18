@@ -52,6 +52,7 @@ const WAIT_MS = 10000;
  * @typedef {{text: string, context: string, start: number, end: number, url: string, translation: () => string, video: () => HTMLVideoElement|null, isCurrent: () => boolean}} RowInfo
  */
 
+/** @typedef {{sentence: string, videoTime: number|null}} SavedPlayback */
 /** @typedef {import('./youtube-site.js').YoutubeSite|WebVideoSite} ReaderSite */
 
 const SUBTITLE_ACCEPT = '.srt,.vtt,.webvtt,.sbv,.ass,.ssa,.ttml,.dfxp,.xml,.json,.txt';
@@ -84,6 +85,8 @@ export class YoutubeReader extends EventTarget {
         this._shadowPause = null;
         /** @type {(()=>void)|null} */
         this._restoreReplay = null;
+        /** @type {{panel: HTMLElement, listHidden: boolean, wordsHidden: boolean, cancel?: () => void}|null} */
+        this._listen = null;
         /** @type {number} */
         this._shadowTimer = 0;
         /** @type {number} */
@@ -365,6 +368,7 @@ export class YoutubeReader extends EventTarget {
      * @param {boolean} [remember] A restored shift isn't a new learner edit.
      */
     setOffset(ms, remember = true) {
+        this._endListening();
         const value = Math.max(-600000, Math.min(600000, Math.round(ms / 50) * 50));
         this._offsetMs = value;
         for (const target of new Set([this._rawSession, this._session])) {
@@ -381,6 +385,7 @@ export class YoutubeReader extends EventTarget {
     /** Jumps to the offered resume point. */
     resume() {
         if (this._resumeMs < 0 || !this._video) { return; }
+        this._endListening();
         this._video.currentTime = this._resumeMs / 1000;
         this._clearResume();
         this._resumeFollow();
@@ -440,7 +445,7 @@ export class YoutubeReader extends EventTarget {
     _shadowTick() {
         const session = this._session;
         const video = this._video;
-        if (!session || !video || video.paused || this._loop || this._restoreReplay || !this._prefs.shadow) { return; }
+        if (!session || !video || video.paused || this._loop || this._restoreReplay || this._listen || !this._prefs.shadow) { return; }
         const offset = session.offsetMs;
         const now = video.currentTime * 1000 - offset;
         let row = this._shadowRow;
@@ -666,6 +671,7 @@ export class YoutubeReader extends EventTarget {
         if (!this._session) { return; }
         const video = this._site.video();
         if (!video || video === this._video) { return; }
+        this._endListening();
         this._restoreReplay?.();
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._video = video;
@@ -674,6 +680,7 @@ export class YoutubeReader extends EventTarget {
 
     /** */
     _reset() {
+        this._endListening();
         this._restoreReplay?.();
         ++this._generation;
         this._loadController?.abort();
@@ -897,6 +904,7 @@ export class YoutubeReader extends EventTarget {
             tab.setAttribute('aria-selected', String(name === 'captions'));
             tab.textContent = label;
             tab.addEventListener('click', () => {
+                this._endListening();
                 for (const other of tabButtons) { other.setAttribute('aria-selected', String(other === tab)); }
                 list.hidden = name !== 'captions';
                 words.hidden = name !== 'words';
@@ -1268,6 +1276,7 @@ export class YoutubeReader extends EventTarget {
      * @param {SubtitleSession} session
      */
     _render(session) {
+        this._endListening();
         this._restoreReplay?.();
         const view = this._view;
         if (!view) { return; }
@@ -1476,6 +1485,7 @@ export class YoutubeReader extends EventTarget {
      * @param {string} id
      */
     _seek(id) {
+        this._endListening();
         this._restoreReplay?.();
         if (!this._session || !this._video) { return; }
         if (this._loop && this._loop.id !== id) { this._stopLoop('已退出循环'); }
@@ -1508,8 +1518,10 @@ export class YoutubeReader extends EventTarget {
         this._active = key;
         for (const [id, row] of this._rows) { row.classList.toggle('is-current', active.includes(id)); }
         this._emit('active', {ids: active});
-        this._autoTranslate(video.currentTime * 1000);
-        if (this._prefs.resume) { this._saveProgress(video.currentTime * 1000); }
+        if (!this._listen) {
+            this._autoTranslate(video.currentTime * 1000);
+            if (this._prefs.resume) { this._saveProgress(video.currentTime * 1000); }
+        }
         const first = active.length > 0 && this._follow ? this._list.ensure(active[0]) : void 0;
         if (this._follow && first) {
             const list = this._view.list;
@@ -1521,6 +1533,7 @@ export class YoutubeReader extends EventTarget {
      * @param {string} id
      */
     _toggleLoop(id) {
+        this._endListening();
         const session = this._session;
         const video = this._video;
         if (!session || !video) { return; }
@@ -1692,6 +1705,132 @@ export class YoutubeReader extends EventTarget {
         await this._call('openStudyRecord', {id: item.id, word: item.word, sentence: item.sentence});
     }
 
+    /** @returns {boolean} */
+    get listening() { return this._listen !== null; }
+
+    /** @param {SavedPlayback[]} items */
+    _beginListening(items) {
+        const view = this._view;
+        const session = this._session;
+        if (!view || !this._video || !/^en(?:-|$)/i.test(session?.source.language || '')) {
+            this._status('请先载入原来的英语字幕，再练回听。');
+            return;
+        }
+        /**
+         * @param {number} second
+         * @param {string} sentence
+         * @returns {string}
+         */
+        const key = (second, sentence) => `${Math.floor(second)}:${sentence.replaceAll(/\s+/g, ' ').trim().toLowerCase()}`;
+        /** @type {Map<string, string|null>} */
+        const index = new Map();
+        for (const [id, info] of this._rowInfo) {
+            if (info.end <= info.start) { continue; }
+            const match = key(info.start, info.text);
+            index.set(match, index.has(match) ? null : id);
+        }
+        const ids = [...new Set(items.flatMap((item) => {
+            const id = typeof item.videoTime === 'number' ? index.get(key(item.videoTime, item.sentence)) : null;
+            return id ? [id] : [];
+        }))];
+        if (ids.length === 0) {
+            this._status('当前字幕对不上已记下的原句和时间。切回原来的字幕或偏移再试。');
+            return;
+        }
+        this._restoreReplay?.();
+        this._stopLoop('');
+        this._shadowRow = this._shadowPause = null;
+        this._shadowDone = '';
+        const panel = document.createElement('section');
+        panel.className = 'r-listen-practice scan-disable';
+        const title = document.createElement('strong');
+        const hint = document.createElement('p');
+        hint.setAttribute('role', 'status');
+        const answer = document.createElement('p');
+        answer.className = 'r-listen-answer';
+        const controls = document.createElement('div');
+        controls.className = 'r-listen-actions';
+        /** @type {NonNullable<YoutubeReader['_listen']>} */
+        const practice = {panel, listHidden: view.list.hidden, wordsHidden: view.words.hidden};
+        let current = 0;
+        const prompt = () => {
+            title.textContent = `先听，再看原句 · ${current + 1}/${ids.length}`;
+            hint.textContent = '不看字幕，试着听懂这一句。';
+            answer.hidden = true;
+            answer.textContent = '';
+            reveal.hidden = false;
+        };
+        const play = this._button('播放本句', () => {
+            practice.cancel?.();
+            const id = ids[current];
+            const original = this._list.ensure(id)?.querySelector('.r-text')?.firstChild;
+            const info = this._rowInfo.get(id);
+            if (!original || !info) {
+                hint.textContent = '这句的字幕已改变。请退出后重开练习。';
+                return;
+            }
+            try {
+                const range = document.createRange();
+                range.setStart(original, 0); range.setEnd(original, info.text.length);
+                const source = youtubeStudyContext.read(range);
+                if (!source) {
+                    hint.textContent = '找不到这一句的原声，请退出后重试。';
+                    return;
+                }
+                hint.textContent = this._video?.muted || this._video?.volume === 0 ? '正在播放；播放器已静音，请打开声音。' : '正在播放本句…';
+                practice.cancel = youtubeStudyContext.play(source.token, (reason) => {
+                    practice.cancel = void 0;
+                    hint.textContent = {ended: '已播完。可以再听，或看原句。', failed: '播放没开始，请再点一次。', cancelled: '已停止。可以再听，或换一句。'}[reason];
+                });
+            } catch (error) {
+                hint.textContent = error instanceof Error ? error.message : '播放没开始，请再点一次。';
+            }
+        });
+        play.dataset.listenPlay = '';
+        const reveal = this._button('看原句', () => {
+            const id = ids[current];
+            answer.textContent = [this._rowInfo.get(id)?.text, session?.translation(id)].filter(Boolean).join('\n');
+            answer.hidden = false;
+            reveal.hidden = true;
+        });
+        reveal.dataset.listenReveal = '';
+        const next = this._button('换一句', () => {
+            practice.cancel?.();
+            current = (current + 1) % ids.length;
+            prompt();
+            play.focus();
+        });
+        next.dataset.listenNext = '';
+        next.hidden = ids.length === 1;
+        const stop = this._button('退出', () => {
+            this._endListening();
+            view.words.querySelector('button[data-listen-saved]')?.focus();
+        });
+        controls.append(play, reveal, next, stop);
+        panel.append(title, hint, controls, answer);
+        prompt();
+        this._listen = practice;
+        view.words.hidden = true;
+        view.list.hidden = true;
+        view.words.before(panel);
+        this._emit('listening');
+        play.focus();
+    }
+
+    /** */
+    _endListening() {
+        const practice = this._listen;
+        if (!practice) { return; }
+        this._listen = null;
+        practice.cancel?.();
+        practice.panel.remove();
+        if (this._view) {
+            this._view.words.hidden = practice.wordsHidden;
+            this._view.list.hidden = practice.listHidden;
+        }
+        this._emit('listening');
+    }
+
     /**
      * Lists the words already saved from this video; clicking one returns to its moment.
      * @returns {Promise<void>}
@@ -1729,7 +1868,9 @@ export class YoutubeReader extends EventTarget {
             const summaryState = document.createElement('span');
             summaryState.setAttribute('role', 'status');
             const explanation = Object.assign(document.createElement('small'), {className: 'r-summary-help', textContent: '把这个视频里记的词、原句和时间链接，整理成一页笔记'});
-            summary.append(write, explanation, summaryState);
+            const listen = this._button('先听，再看原句', () => this._beginListening(items));
+            listen.dataset.listenSaved = '';
+            summary.append(listen, write, explanation, summaryState);
             saved.replaceChildren(summary, ...items.map((item) => {
                 const row = document.createElement('div');
                 row.className = 'r-word';

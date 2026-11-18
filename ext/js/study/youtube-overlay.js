@@ -148,6 +148,10 @@ export class YoutubeOverlay {
         reader.addEventListener('translation', (event) => this._onTranslation(/** @type {CustomEvent<{id: string}>} */ (event).detail.id));
         reader.addEventListener('lookup', () => this._paintStates());
         reader.addEventListener('loop', () => this._paintStates());
+        reader.addEventListener('listening', () => {
+            this._clearShadow();
+            this._applyPrefs();
+        });
         reader.addEventListener('prefs', () => {
             if (!reader.prefs.shadow) {
                 this._clearShadow();
@@ -340,9 +344,9 @@ export class YoutubeOverlay {
         const loaded = this._reader.session !== null;
         if (this._button) { this._button.hidden = !prefs.enabled; }
         if (this._panel && !prefs.enabled) { this._togglePanel(false); }
-        this._site.hideNative(prefs.overlay && loaded);
+        this._site.hideNative((prefs.overlay || this._reader.listening) && loaded);
         if (this._overlay) {
-            this._overlay.hidden = (!prefs.overlay || !loaded || !this._shown) && (this._chip?.hidden ?? true);
+            this._overlay.hidden = this._reader.listening || ((!prefs.overlay || !loaded || !this._shown) && (this._chip?.hidden ?? true));
             this._overlay.classList.toggle('o-mono', !prefs.bilingual);
             this._overlay.classList.toggle('o-blur', prefs.blur);
         }
@@ -450,7 +454,7 @@ export class YoutubeOverlay {
      */
     _hint(text, label = '', action = null, ms = 0) {
         const chip = this._chip;
-        if (!chip) { return; }
+        if (!chip || this._reader.listening) { return; }
         clearTimeout(this._chipTimer);
         chip.classList.remove('o-shadow');
         chip.hidden = !text;

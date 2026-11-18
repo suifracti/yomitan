@@ -21,6 +21,7 @@
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
 | 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
 | 视频已记词补卡丢来源、时间跳回零、章节链接失效；重复台词或重开丢旧解释 | L-007；study_sources.py、YoutubeReader._openSavedWord、openStudyRecord、studyResumeParams |
+| 在原视频不看字幕，先听自己保存的句子 | L-007；YoutubeReader._beginListening、YoutubeStudyContext.play |
 | 普通文章来源只开到顶部，找不到当时选的句子 | L-007；study_sources.article_href、study-library.js 的 createSourceLine |
 | 读回同一篇文章，想看上次记过的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选 |
 | 批量记词到一半报错，不知道存了几个；原地换文章后不该补到新页 | L-012；WordMarks._remember、study-service.js 的 pageWordsSave |
@@ -152,6 +153,8 @@
 **下载 JSON 要能重新导入**：现有导出用 `startMs/endMs`，原通用 JSON 进口只认其他时间键。读自家导出时用 `rows` 的原文、译文与时间、明确语言及偏移；不替换文件中给其他工具使用的 `cues`，不让旧 `source.url` 取得任何权限。当前视频里同一导入文件后来手调的偏移优先，手调归零也是有效选择。一律作为当前页的手动文件，不开模型。见[实际下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
 
 ## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
+
+**字幕栏的「先听，再看原句」**：用已保存的原句和秒数在当前英语轨唯一对回播放行；同一范围的多个义项只听一次，零个或多个匹配不选。复用 `YoutubeStudyContext.play` 的真实播放器，来源或轨道变了就停止；练习时隐藏可控制的字幕层、暂停自动翻译和进度写入，退出恢复原显示设置。只在用户点看原句时显示原文及已有译文；无新练习档案、不打分、不写排程。见[独立播放器和两次重复台词](youtube-study-wiring.md#2026-11-18-先听已记下的原声再揭晓原句)。
 
 **来源链接和记录编号不是同一回事。** 改视频分组键时看 `study_sources.py`（浏览器站点表由同一文件生成）；不能因此改 `entry_id` 或归档笔记的编号。没有实际播放时间就保留原链接：曾将分享地址的 83 秒写成 0 秒，也会把普通页面的章节锚点丢掉。只有确实知道时间，才为 YouTube/B站生成跳时链接；普通网页不加时间参数，本地文件在来源行只显示文件名。见[临时笔记复现](youtube-study-wiring.md#2026-11-18-来源链接不再从零秒开始)。
 

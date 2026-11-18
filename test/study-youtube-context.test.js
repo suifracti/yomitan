@@ -61,7 +61,7 @@ test('existing Frontend popup path receives cue time and translation, not the AS
     const p = document.querySelector('#cue');
     youtubeStudyContext.register(p, {text: 'We improve daily.', context: 'Neighbor.', start: 1.25, end: 3.5, url: location.href, translation: () => '我们每天进步。', video: () => document.querySelector('video'), isCurrent: () => true});
     const show = vi.fn();
-    const view = {_pageType: 'web', _application: {tabId: 1, frameId: 0}, _textScanner: {}, _showPopupContent: show};
+    const view = {_pageType: 'web', _application: {tabId: 1, frameId: 0}, _textScanner: {}, _studyCardSources: new WeakMap(), _showPopupContent: show};
     // eslint-disable-next-line no-underscore-dangle
     Frontend.prototype._showContent.call(view, TextSourceRange.create(range), false, [], 'terms', {text: 'old scanner text', offset: 0}, 'Fixture', {url: location.href}, 'light');
     const state = /** @type {{state: import('display').HistoryState}} */ (show.mock.calls[0][2]).state;

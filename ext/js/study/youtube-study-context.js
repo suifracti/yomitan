@@ -30,7 +30,7 @@ export class YoutubeStudyContext {
         this.tokens = new Map();
         /** @type {Map<string, AbortController>} */
         this.active = new Map();
-        /** @type {(() => void)|null} Stops the replay listeners, if a replay is running. */
+        /** @type {((reason: 'ended'|'cancelled'|'failed') => void)|null} Stops the current replay listeners. */
         this.replay = null;
         /** @type {((range: Range, openPanel?: boolean, recordId?: string) => Promise<void>)|null} Opens the existing scanner and card panel. */
         this.openCard = null;
@@ -41,8 +41,9 @@ export class YoutubeStudyContext {
      * @param {Row} row
      */
     register(element, row) { this.rows.set(element, row); }
-    /** Clear source tokens and stop any active capture. */
+    /** Clear source tokens and stop any active capture or replay. */
     reset() {
+        this.replay?.('cancelled');
         for (const controller of this.active.values()) { controller.abort(); }
         this.active.clear();
         this.tokens.clear();
@@ -87,34 +88,55 @@ export class YoutubeStudyContext {
      * Replays exactly the looked-up sentence in the page's video and pauses at its end.
      * Moving the playhead elsewhere ends the replay without pausing.
      * @param {string} token
+     * @param {(reason: 'ended'|'cancelled'|'failed') => void} [finished]
+     * @returns {() => void} Cancels this replay and pauses only its still-current video.
      * @throws {Error}
      */
-    play(token) {
+    play(token, finished) {
         const bound = this.tokens.get(token);
-        const video = bound?.row.video() ?? null;
-        if (!bound || !video || !bound.element.isConnected || !bound.row.isCurrent() || video !== bound.video) { throw new Error('视频或字幕已改变，请回到视频里重新选词。'); }
+        const video = bound?.video;
+        if (!bound || !video) { throw new Error('没找到这句的播放器，请回到视频里重试。'); }
+        const live = () => bound.element.isConnected && bound.row.isCurrent() && video.isConnected && video === bound.row.video() &&
+        video.src === bound.src && (video.currentSrc || video.src) === bound.media && (video.srcObject ?? null) === bound.srcObject;
+        if (!live()) { throw new Error('视频或字幕已改变，请回到视频里重试。'); }
         if (this.active.size > 0) { throw new Error('正在采集原声，请稍后再回听。'); }
         const {start, end} = bound.row;
-        this.replay?.();
-        const stop = () => {
+        this.replay?.('cancelled');
+        /** @param {'ended'|'cancelled'|'failed'} reason */
+        const stop = (reason) => {
+            if (this.replay !== stop) { return; }
             video.removeEventListener('timeupdate', onTime);
             video.removeEventListener('seeking', onSeek);
+            video.removeEventListener('ended', onEnded);
+            video.removeEventListener('emptied', onEmptied);
             this.replay = null;
+            finished?.(reason);
         };
         const onTime = () => {
-            if (video.currentTime >= end) {
+            if (!live()) {
+                stop('cancelled');
+            } else if (video.currentTime >= end) {
                 video.pause();
-                stop();
+                stop('ended');
             }
         };
         const onSeek = () => {
-            if (video.currentTime < start - 0.5 || video.currentTime > end + 0.5) { stop(); }
+            if (!live() || video.currentTime < start - 0.5 || video.currentTime > end + 0.5) { stop('cancelled'); }
         };
+        const onEnded = () => { stop(live() && video.currentTime >= end - 0.1 ? 'ended' : 'cancelled'); };
+        const onEmptied = () => { stop('cancelled'); };
         this.replay = stop;
         video.currentTime = start;
         video.addEventListener('timeupdate', onTime);
         video.addEventListener('seeking', onSeek);
-        void video.play()?.catch?.(() => stop());
+        video.addEventListener('ended', onEnded);
+        video.addEventListener('emptied', onEmptied);
+        void video.play()?.catch?.(() => stop('failed'));
+        return () => {
+            if (this.replay !== stop) { return; }
+            if (live()) { video.pause(); }
+            stop('cancelled');
+        };
     }
 
     /**

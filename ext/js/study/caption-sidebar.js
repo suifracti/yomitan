@@ -92,6 +92,10 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-list[hidden],#${ROOT_ID} .r-words[hidden]{display:none}
 #${ROOT_ID} .r-words{max-height:min(60vh,520px);overflow:auto;border-top:1px solid var(--r-line)}
 #${ROOT_ID} .r-words-note{margin:0;padding:12px;color:var(--r-muted);font-size:12px}
+#${ROOT_ID} .r-listen-practice{padding:12px;border-top:1px solid var(--r-line)}
+#${ROOT_ID} .r-listen-practice p{margin:8px 0;font-size:13px}
+#${ROOT_ID} .r-listen-actions{display:flex;flex-wrap:wrap;gap:6px}
+#${ROOT_ID} .r-listen-answer{white-space:pre-wrap;overflow-wrap:anywhere}
 #${ROOT_ID} .r-word{display:grid;grid-template-columns:46px auto minmax(0,1fr);column-gap:6px;align-items:baseline;padding:7px 8px 7px 0;border-bottom:1px solid var(--r-line)}
 #${ROOT_ID} .r-word-text{font-family:var(--st-serif,Georgia,serif);font-size:15px}
 #${ROOT_ID} .r-word-meta{color:var(--r-muted);font-size:11px;text-align:right}
