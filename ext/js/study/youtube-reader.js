@@ -88,6 +88,8 @@ export class YoutubeReader extends EventTarget {
         this._sources = [];
         /** @type {Map<string, string>} Translations that came inside a bilingual file. */
         this._fileTranslations = new Map();
+        /** @type {Map<string, string>} Finished rows of the loaded track, across display regrouping only. */
+        this._regroupedTranslations = new Map();
         /** @type {number} Caption shift for this video, kept across regrouping and reloads. */
         this._offsetMs = 0;
         /** @type {{id: string, startMs: number, endMs: number, plays: number}|null} Sentence being shadowed. */
@@ -285,7 +287,7 @@ export class YoutubeReader extends EventTarget {
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
         if ((previous.merge !== this._prefs.merge || previous.aiSegment !== this._prefs.aiSegment) && this._rawSession && this._view) {
-            this._present(this._rawSession);
+            this._present(this._rawSession, true);
         }
         if (this._prefs.aiSegment && !previous.aiSegment) { void this._runSegmentation(); }
         this._armShadow();
@@ -327,17 +329,36 @@ export class YoutubeReader extends EventTarget {
     }
 
     /**
-     * Renders the reading rows of a track, carrying over translations a bilingual file brought.
+     * Renders the reading rows, preserving translations only for unchanged rows of this loaded track.
      * @param {SubtitleSession} raw
+     * @param {boolean} [regroup]
      */
-    _present(raw) {
+    _present(raw, regroup = false) {
+        const saved = this._regroupedTranslations;
+        if (!regroup) { saved.clear(); }
+        const key = (/** @type {import('./subtitle-session.js').SubtitleCue} */ cue) => JSON.stringify([this._members.get(cue.id), cue.startMs, cue.endMs, cue.text]);
+        const previous = regroup ? this._session : null;
+        if (previous) {
+            for (const cue of previous.cues) {
+                const text = previous.translation(cue.id);
+                if (!text) { continue; }
+                const rowKey = key(cue);
+                saved.delete(rowKey);
+                saved.set(rowKey, text);
+            }
+            // Bound per-track memory even if AI proposes new groupings repeatedly.
+            for (const rowKey of saved.keys()) {
+                if (saved.size <= raw.cues.length * 3) { break; }
+                saved.delete(rowKey);
+            }
+        }
         const session = this._readingSession(raw);
         for (const target of new Set([raw, session])) {
             try { target.setOffset(this._offsetMs); } catch { /* keep the previous shift */ }
         }
-        if (this._fileTranslations.size > 0) {
+        if (saved.size > 0 || this._fileTranslations.size > 0) {
             for (const cue of session.cues) {
-                const text = this.members(cue.id).map((id) => this._fileTranslations.get(id) ?? '').filter(Boolean)
+                const text = saved.get(key(cue)) || this.members(cue.id).map((id) => this._fileTranslations.get(id) ?? '').filter(Boolean)
                     .join('\n');
                 if (text) { session.acceptTranslation(cue.id, text.slice(0, 6000)); }
             }
@@ -724,6 +745,7 @@ export class YoutubeReader extends EventTarget {
         this._restoringVideoState = false;
         this._aiGroups = null;
         this._fileTranslations = new Map();
+        this._regroupedTranslations.clear();
         this._sources = [];
         this._offsetMs = 0;
         this._resumeMs = -1;
@@ -1864,7 +1886,7 @@ export class YoutubeReader extends EventTarget {
             }
             if (!live()) { return; }
             this._aiGroups = groups;
-            this._present(raw);
+            this._present(raw, true);
             this._status(`AI 断句完成 · ${groups.length} 句`);
         } catch (error) {
             if (live()) { this._status(`AI 断句未完成：${error instanceof Error ? error.message : String(error)}；已保留规则断句。`); }

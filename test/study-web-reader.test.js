@@ -189,6 +189,52 @@ test('finds a caption by its saved translation and jumps using the same row', as
     }
 });
 
+test('regrouping retains finished translations only for exact rows of the same loaded track', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const site = fakeSite(null);
+    const translated = new Map([
+        ['The brain', '大脑'],
+        ['can change.', '可以改变。'],
+        ['The brain can change.', '大脑是可以改变的。'],
+        ['Keep going.', '继续。'],
+    ]);
+    const request = vi.fn(async (/** @type {string} */ action, /** @type {unknown} */ data) => {
+        if (action === 'subtitleSettings') { return {model: 'fixture', effort: 'low'}; }
+        if (action === 'subtitleTranslate') {
+            const {items} = /** @type {{items: {id: string, text: string}[]}} */ (data);
+            return {items: items.map(({id, text}) => ({id, translation: translated.get(text)}))};
+        }
+        return {items: []};
+    });
+    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: false, engine: 'google', resume: false}, site: /** @type {never} */ (site), call: request});
+    try {
+        reader.start();
+        await vi.waitFor(() => expect(document.querySelector('#study-yt-reader')).not.toBeNull());
+        const file = '1\n00:00:01,000 --> 00:00:02,000\nThe brain\n\n2\n00:00:02,100 --> 00:00:03,000\ncan change.\n\n3\n00:00:05,000 --> 00:00:06,000\nKeep going.\n';
+        reader.importText(file, 'lesson.srt');
+        const rows = () => [...document.querySelectorAll('#study-yt-reader .r-translation')].map((node) => node.textContent);
+        const requests = () => request.mock.calls.filter(([action]) => action === 'subtitleTranslate').map(([, data]) => data);
+        reader.translateNext();
+        await vi.waitFor(() => expect(rows()).toEqual(['大脑', '可以改变。', '继续。']));
+        reader.updatePrefs({merge: true});
+        expect(rows()).toEqual(['', '继续。']);
+        expect(requests()).toHaveLength(1);
+        reader.translateNext();
+        await vi.waitFor(() => expect(rows()).toEqual(['大脑是可以改变的。', '继续。']));
+        expect(requests()[1]).toMatchObject({items: [{text: 'The brain can change.'}]});
+        reader.updatePrefs({merge: false});
+        expect(rows()).toEqual(['大脑', '可以改变。', '继续。']);
+        reader.updatePrefs({merge: true});
+        expect(rows()).toEqual(['大脑是可以改变的。', '继续。']);
+        reader.importText(file, 'lesson.srt');
+        expect(rows()).toEqual(['', '']);
+        expect(requests()).toHaveLength(2);
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
 test('other sites: nothing found explains how to get subtitles', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}, site: /** @type {never} */ (fakeSite(null))});
