@@ -92,7 +92,8 @@ button:hover:not(:disabled) { filter: none; border-color: var(--lib-accent); bac
 .study-library-state { grid-area: state; max-width: none; margin: 2px 0 0; color: var(--lib-muted); font-size: 12px; text-align: left; }
 .study-library-actions { grid-area: actions; flex-direction: column; align-items: stretch; align-self: start; gap: 6px; margin: 0; }
 .study-library-actions .study-library-primary-action { justify-content: center; min-height: 32px; padding: 5px 12px; border-radius: var(--st-radius-1); font-size: 13px; }
-.study-library-record:not([data-open='true']) .study-library-actions>:not(.study-library-primary-action, .study-library-detail-toggle),
+.study-library-actions a[data-use-card-for][hidden],
+.study-library-record:not([data-open='true']) .study-library-actions>:not(.study-library-primary-action, .study-library-detail-toggle, [data-use-card-for]),
 .study-library-record:not([data-open='true'])>.study-library-context,
 .study-library-record:not([data-open='true'])>.study-library-technical-details { display: none; }
 .study-library-record[data-open='true'] { background: var(--lib-card); }

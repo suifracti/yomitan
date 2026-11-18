@@ -126,6 +126,37 @@ describe('study library page', () => {
         expect(mocks.studyCall.mock.calls.map(([action]) => action)).toEqual(['saved', 'saved']);
     });
 
+    test('previews use cards for the exact saved sentence without rating the learner or adding a card', async () => {
+        vi.resetModules();
+        const id = 'a'.repeat(32);
+        const entry = {word: 'charge',
+            sentence: 'They charge a fee.',
+            meaning: '收费',
+            translation: '他们要收费。',
+            url: '',
+            title: '',
+            context: '',
+            notes: '',
+            explanationSource: '词典简释'};
+        const record = {id, entry, ankiState: 'synced', ankiEnabled: true, noteId: 21, cards: [{kind: 'meaning', noteId: 21, state: 'synced'}]};
+        vi.stubGlobal('chrome', {storage: {local: {get: async () => ({studyAutoSyncState: {upgrade: [{id}]}})}}});
+        mocks.studyCall.mockResolvedValue([]);
+        const panel = document.createElement('div');
+        document.body.append(panel);
+        const {mountStudyLibrary} = await import('../ext/js/display/study-library.js');
+        const dispose = mountStudyLibrary(panel, () => entry, () => true);
+        panel.dispatchEvent(new CustomEvent('study-record-current', {detail: record}));
+        panel.querySelector('[data-study-add-card]').click();
+        const hint = panel.querySelector('.study-card-upgrade');
+        await vi.waitFor(() => expect(hint.hidden).toBe(false));
+        hint.querySelector('button').click();
+        expect([...panel.querySelectorAll('[data-study-card-kind]')].map((option) => option.value)).toEqual(['produce', 'cloze']);
+        expect(panel.querySelector('[data-study-mastery][aria-checked=true]')).toBeNull();
+        expect([...panel.querySelectorAll('[data-study-card-back]')].every((box) => box.value.includes(entry.sentence))).toBe(true);
+        expect(mocks.studyCall.mock.calls.some(([action]) => action === 'libraryCardsAdd' || action === 'librarySave')).toBe(false);
+        dispose();
+    });
+
     test('wires the standard web selection scanner so Control can look up selected card text', async () => {
         vi.resetModules();
         makePageDom();

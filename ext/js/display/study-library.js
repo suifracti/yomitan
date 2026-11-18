@@ -17,7 +17,7 @@
  */
 
 import {CARD_CATALOG} from '../study/card-catalog.js';
-import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY, cardReceipt} from '../study/study-data.js';
+import {AUTO_SYNC_STATE_KEY, SAVE_TARGETS_KEY, canOfferUseCard, cardReceipt} from '../study/study-data.js';
 import {studyCall} from '../study/study-client.js';
 import {CARD_KINDS, MASTERY_LABELS, STAGE_LABELS, cardDrafts, cardKind, deckKindFor, missingFor, recommendedKinds} from './study-card-kinds.js';
 import {explainWordForm} from './study-word-forms.js';
@@ -127,7 +127,9 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
     /** @param {string} kind */
     const draftKind = (kind) => {
         const facts = cardFacts();
-        for (const draft of cardDrafts(kind, facts)) {
+        const drafts = cardDrafts(kind, facts);
+        if (drafts.length === 0) { return; }
+        for (const draft of drafts) {
             addManualRow({kind: /** @type {import('study').CardKind} */ (kind), ...draft});
         }
         draftedKinds.add(kind);
@@ -184,27 +186,36 @@ export function mountStudyLibrary(container, getEntry, isCurrent, media = {}) {
         }
         choices.append(group);
     }
-    // When automatic sync finds this word's earlier cards mature, suggest stage-3 cards.
+    // A practice suggestion opens drafts; it is not the learner rating their mastery.
     const upgradeHint = d.createElement('p');
     upgradeHint.className = 'study-card-upgrade';
     upgradeHint.hidden = true;
     const showUpgrade = () => {
-        const id = currentSaved?.id || container.dataset.studyRecordId || '';
-        if (!id || typeof chrome === 'undefined' || !chrome.storage?.local?.get) { return; }
+        const saved = currentSaved;
+        upgradeHint.hidden = true;
+        if (!saved || cardPanel.hidden || typeof chrome === 'undefined' || !chrome.storage?.local?.get) { return; }
         void chrome.storage.local.get(AUTO_SYNC_STATE_KEY).then((value) => {
-            const state = /** @type {{upgrade?: {id: string}[]}|undefined} */ (value[AUTO_SYNC_STATE_KEY]);
-            const ready = Array.isArray(state?.upgrade) && state.upgrade.some((item) => item?.id === id);
-            if (!isCurrent() || !ready) { return; }
+            if (disposed || !isCurrent() || saved !== currentSaved || cardPanel.hidden || !canOfferUseCard(saved, value[AUTO_SYNC_STATE_KEY]) ||
+            [...draftedKinds].some((kind) => cardKind(kind)?.stage === 3)) { return; }
+            const kinds = recommendedKinds('known', cardFacts());
+            upgradeHint.textContent = '这条记录有一张卡，复习间隔已满 21 天。';
+            upgradeHint.hidden = false;
+            if (kinds.length === 0) {
+                upgradeHint.append('这条原句还不能直接出填空或中译英。你可以在下面选「用词造句」。');
+                return;
+            }
             const accept = d.createElement('button');
             accept.type = 'button';
             accept.className = 'scan-disable';
-            accept.textContent = '加会用卡';
+            accept.textContent = '预览会用卡';
             accept.addEventListener('click', () => {
-                /** @type {HTMLButtonElement|null} */ (masteryRow.querySelector('[data-study-mastery=known]'))?.click();
+                if (disposed || !isCurrent() || saved !== currentSaved) { return; }
+                for (const kind of recommendedKinds('known', cardFacts())) {
+                    if (!draftedKinds.has(kind)) { draftKind(kind); }
+                }
                 upgradeHint.hidden = true;
             });
-            upgradeHint.replaceChildren('这个词之前的卡已经复习得很熟（间隔超过 3 周），可以加“会用”卡了。', accept);
-            upgradeHint.hidden = false;
+            upgradeHint.append(accept);
         }).catch(() => {});
     };
     const updateChoices = () => {

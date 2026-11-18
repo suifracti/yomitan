@@ -26,12 +26,9 @@ import {sourceKey} from '../study/study-journal.js';
 import {timedUrl} from '../study/media-key.js';
 import {YOUTUBE_HOSTS} from '../study/media-rules.js';
 import {markWordKnown, wordInfo} from '../study/word-marks.js';
-import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, cardReceipt, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
+import {WORD_STATUS_KEY, AUTO_SYNC_STATE_KEY, canOfferUseCard, cardReceipt, createResumeUrl, parseLegacySourceLocator} from '../study/study-data.js';
 
 export {createResumeUrl} from '../study/study-data.js';
-
-/** @type {Set<string>} Records whose earlier cards are mature enough for stage-3 cards. */
-let upgradeIds = new Set();
 
 const PAGE_SIZE = 10;
 
@@ -325,9 +322,10 @@ async function initializePage() {
     await Application.main(true, async (application) => {
         const themeController = new ThemeController(document.documentElement);
         themeController.prepare();
+        /** @type {Parameters<typeof canOfferUseCard>[1]} */
+        let upgrades;
         try {
-            const synced = /** @type {{upgrade?: {id?: unknown}[]}|undefined} */ ((await chrome.storage.local.get(AUTO_SYNC_STATE_KEY))[AUTO_SYNC_STATE_KEY]);
-            upgradeIds = new Set((Array.isArray(synced?.upgrade) ? synced.upgrade : []).map((item) => (typeof item?.id === 'string' ? item.id : '')));
+            upgrades = (await chrome.storage.local.get(AUTO_SYNC_STATE_KEY))[AUTO_SYNC_STATE_KEY];
         } catch { /* The reminder is optional. */ }
         try {
             const optionsFull = await application.api.optionsGetFull();
@@ -487,7 +485,7 @@ async function initializePage() {
             if (record.entry?.sense?.gloss) { title.append(` · ${record.entry.sense.gloss}`); }
             const state = document.createElement('p');
             state.className = 'study-library-state';
-            state.textContent = stateSummary(record) + (upgradeIds.has(record.id) ? ' · 之前的卡已熟，可以加“会用”卡' : '');
+            state.textContent = stateSummary(record);
             top.append(title, state);
             article.append(top);
             if (record.entry?.sentence) {
@@ -516,6 +514,16 @@ async function initializePage() {
             resume.rel = 'noopener noreferrer';
             resume.textContent = '继续学习 ↗';
             actions.append(resume);
+            const cardUrl = new URL(resume.href);
+            cardUrl.searchParams.set('studyAddCard', '1');
+            const useLink = document.createElement('a');
+            useLink.href = cardUrl.href;
+            useLink.target = resume.target; useLink.rel = resume.rel;
+            useLink.textContent = '选会用卡 ↗';
+            useLink.title = '有一张卡的复习间隔已满 21 天。打开这条原句，先看草稿再决定。';
+            useLink.dataset.useCardFor = record.id;
+            useLink.hidden = !canOfferUseCard(record, upgrades);
+            actions.append(useLink);
             if (record.manualKnown) {
                 const reset = document.createElement('button'); reset.type = 'button';
                 reset.textContent = '改回在学';
@@ -588,8 +596,7 @@ async function initializePage() {
             }
             addDetailToggle(article, actions);
             const createCard = () => {
-                const url = new URL(createResumeUrl(record, chrome.runtime.getURL('/search.html')));
-                url.searchParams.set('studyAddCard', '1'); window.open(url.href, '_blank');
+                window.open(cardUrl.href, '_blank', 'noopener');
             };
             const originalWord = record.syncState === 'anki-only' && !record.entry?.word ? document.createElement('input') : null;
             if (originalWord) {
@@ -938,6 +945,13 @@ async function initializePage() {
         more.addEventListener('click', () => { void loadPage(false); });
         document.getElementById('study-library-refresh')?.addEventListener('click', () => { void loadPage(true); });
         chrome.storage?.onChanged?.addListener((changes, area) => {
+            if (area === 'local' && changes[AUTO_SYNC_STATE_KEY]) {
+                upgrades = changes[AUTO_SYNC_STATE_KEY].newValue;
+                for (const link of /** @type {NodeListOf<HTMLAnchorElement>} */ (list.querySelectorAll('a[data-use-card-for]'))) {
+                    const record = records.get(link.dataset.useCardFor || '');
+                    link.hidden = !record || !canOfferUseCard(record, upgrades);
+                }
+            }
             if (area === 'local' && changes[WORD_STATUS_KEY]) {
                 const state = /** @type {{words?: Record<string, unknown>}|undefined} */ (changes[WORD_STATUS_KEY].newValue);
                 const words = state?.words || {};

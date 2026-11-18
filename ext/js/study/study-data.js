@@ -17,6 +17,7 @@
  */
 
 import {parseJson} from '../core/json.js';
+import {CARD_CATALOG} from './card-catalog.js';
 
 export const SETTINGS_KEY = 'studySettingsV2';
 
@@ -253,6 +254,18 @@ export function cardReceipt(record) {
         text = record.noteId || cards.length > 0 ? '已有关联，尚未核实' : '尚未制卡';
     }
     return {text, retry, needsAttention, repair: Boolean(problem)};
+}
+
+/**
+ * The ten-minute suggestion can outlive the link or a newly chosen practice card.
+ * @param {Parameters<typeof cardReceipt>[0]} record
+ * @param {{upgrade?: {id: string}[]}|undefined} state
+ * @returns {boolean}
+ */
+export function canOfferUseCard(record, state) {
+    return state?.upgrade?.some(({id}) => id === record.id) === true && record.ankiEnabled !== false &&
+    Boolean(record.noteId || record.cardProgress?.confirmed || record.cards?.some((c) => c.noteId)) &&
+    !cardReceipt(record).needsAttention && !record.cards?.some((c) => CARD_CATALOG.some(({kind, stage}) => kind === c.kind && stage === 3));
 }
 
 /**
