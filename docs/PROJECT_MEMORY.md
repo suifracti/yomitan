@@ -18,6 +18,7 @@
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
 | YouTube HTTP 200 但字幕空；截取有内容却没载入；capture / refetch | L-003；youtube-caption-capture.js、YoutubeReader.start / _load |
+| 明明手选了法语，字幕却还在英语或读的是另一条法语 | L-003；captionCaptureKey、YoutubeReader._load 的已选轨道与英语兜底 |
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
@@ -201,6 +202,8 @@
 证据与限制：[切回英语后 capture 命中](youtube-study-wiring.md#2026-10-23-影片-2-切回英语后的补充验收capture-命中)，记录提交 359756ae。2026-10-23 影片 XqS7kIWMIDE 在用户选回英语并刷新后载入 444 句，首句 `This quote has been living in my head rent free for the past year.`，0:00；DOM data-caption-source=capture、data-caption-track=en-US|。影片 arj7oStGLkU 英语 168 句、法语翻译 169/169 的成功记录是 refetch，不能拼接成两个视频或所有轨道截取通过。
 
 原因边界：之前 739241 字符的缓存回复只证明有非空内容；没有核到那份的 v/轨道/请求发起者，不能认定轨道不匹配是唯一根因。另一个双语字幕扩展画出的内容不是原生播放器或本产品成功证据。阿拉伯语状态的失败仍保留；LOGIN_REQUIRED 下的手动 SRT 导入只证明导入。adb01af3 的空正文提示已改为选择英语再刷新。下次先读成功会话的两个 DOM 属性；不要仅凭 HTTP 状态、截图或缓存长度宣布获取修复。测试位置 test/study-caption-capture.test.js；本轮只读，未重跑。
+
+**选了轨道就不能悄悄换轨**：截取缓存把 `lang / kind / name / tlang` 都作为身份。手选或恢复有效的历史轨道时，只有完全一致的截取才能替代原重发；未截到指定轨就按旧参数替换重发，不借英语或另一条同语言轨。未指定轨道才保留历史的英语截取兜底。请求失败保留已用轨道并刷新可选轨。截取脚本、签名参数和翻译服务都不改。见[两条法语轨的复现](youtube-study-wiring.md#2026-11-19-手选字幕不再被别的轨道覆盖)。
 
 ## L-004 TED 选错语言：英语预取文件被有限窗口挤掉
 

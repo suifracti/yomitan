@@ -59,6 +59,14 @@ const SUBTITLE_ACCEPT = '.srt,.vtt,.webvtt,.sbv,.ass,.ssa,.ttml,.dfxp,.xml,.json
 const FILE_LIMIT = 4_000_000;
 
 /**
+ * @param {URL} url
+ * @returns {string}
+ */
+function captionCaptureKey(url) {
+    return JSON.stringify(['lang', 'kind', 'name', 'tlang'].map((part) => url.searchParams.get(part) || ''));
+}
+
+/**
  * @param {number} second
  * @param {string} sentence
  * @returns {string}
@@ -218,7 +226,7 @@ export class YoutubeReader extends EventTarget {
                     if (this._captionVideoId !== videoId) {
                         this._capturedCaptions.clear(); this._captionVideoId = videoId;
                     }
-                    const key = ['lang', 'kind', 'tlang'].map((part) => url.searchParams.get(part) || '').join('|');
+                    const key = captionCaptureKey(url);
                     this._capturedCaptions.delete(key);
                     this._capturedCaptions.set(key, {url, body: data.body});
                     if (this._capturedCaptions.size > 10) { this._capturedCaptions.delete(this._capturedCaptions.keys().next().value); }
@@ -1203,6 +1211,7 @@ export class YoutubeReader extends EventTarget {
         const view = this._view;
         const videoId = this._videoId;
         if (!view || !videoId || generation !== this._generation || this._loadController) { return; }
+        const previous = this._rawSession;
         const controller = new AbortController();
         this._loadController = controller;
         /** @type {ReturnType<typeof setTimeout>|null} */
@@ -1217,14 +1226,20 @@ export class YoutubeReader extends EventTarget {
             this._sources = available.map((track) => ({id:captionTrackId(track),label:`${track.name?.simpleText || track.name?.runs?.map((r) => r.text).join('') || track.languageCode}${track.kind === 'asr' ? ' · 自动' : ''}`}));
             const source = {mediaKey: `youtube:${videoId}`, url: `https://www.youtube.com/watch?v=${videoId}`};
             const state = await readVideoState(source);
+            if (generation !== this._generation) { return; }
             const requested = sourceId || state?.selectedTrackKey;
+            const selected = available.find((t) => captionTrackId(t) === requested);
+            if (sourceId && !selected) {
+                this._status('刚选的字幕已经找不到，请重新选择。');
+                return;
+            }
             /** @type {(typeof available)[number]|undefined} */
-            let chosen = available.find((t) => captionTrackId(t) === requested) || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
+            let chosen = selected || available.find((t) => /^en(?:-|$)/i.test(t.languageCode)) || available[0];
             const captured = await this._findCaptionUrl(videoId, generation);
             let url = captured || (chosen ? captionUrl(chosen.baseUrl, videoId) : null);
-            if (captured && chosen && requested) {
+            if (captured && selected) {
                 // Keep the player's signed URL and proof token; change only the track identity.
-                const trackUrl = new URL(chosen.baseUrl, location.href);
+                const trackUrl = new URL(selected.baseUrl, location.href);
                 for (const key of ['lang', 'kind', 'name']) {
                     const value = trackUrl.searchParams.get(key);
                     if (value) {
@@ -1253,8 +1268,10 @@ export class YoutubeReader extends EventTarget {
                 timedOut = true;
                 controller.abort();
             }, WAIT_MS);
-            const track = ['lang', 'kind', 'tlang'].map((part) => url.searchParams.get(part) || '').join('|');
-            const capturedBody = this._capturedCaptions.get(track) || [...this._capturedCaptions.values()].find(({url: candidate}) => /^en/i.test(candidate.searchParams.get('lang') || '') && !candidate.searchParams.get('tlang'));
+            let capturedBody = this._capturedCaptions.get(captionCaptureKey(url));
+            if (!capturedBody && !selected) {
+                capturedBody = [...this._capturedCaptions.values()].find(({url: candidate}) => /^en/i.test(candidate.searchParams.get('lang') || '') && !candidate.searchParams.get('tlang'));
+            }
             if (capturedBody) {
                 url = capturedBody.url;
                 chosen = available.find((entry) => {
@@ -1301,6 +1318,7 @@ export class YoutubeReader extends EventTarget {
             if (this._loadController === controller) {
                 this._loadController = null;
                 view.load.disabled = this._translation !== null;
+                if (this._rawSession === previous) { this._syncMenu(); }
             }
         }
     }

@@ -22,21 +22,34 @@ import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 import {installReaderStorage} from './mocks/study-reader-storage.js';
 
+/**
+ * @param {string} url
+ * @param {string} body
+ */
+function capture(url, body) {
+    window.dispatchEvent(new MessageEvent('message', {
+        origin: location.origin,
+        source: window,
+        data: {type: 'yomitan-caption-response', url, body},
+    }));
+}
+
 test('selects captured tracks before English fallback and finally refetch', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk'}});
-    vi.stubGlobal('chrome', {storage: {local: {get: async () => ({})}}});
+    installReaderStorage({get: async () => ({}), set: async () => {}});
     const fetcher = vi.fn(async () => ({ok: true, status: 200, text: async () => body}));
     vi.stubGlobal('fetch', fetcher);
     const body = JSON.stringify({events: [{tStartMs: 12645, dDurationMs: 1000, segs: [{utf8: 'So in college,'}]}]});
     try {
         const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
-        const reader = new YoutubeReader({prefs: {merge: false, aiSegment: false}, call: async () => []});
+        const reader = new YoutubeReader({prefs: {enabled: false, merge: false, aiSegment: false}, call: async () => []});
+        reader.start();
         reader._videoId = 'abcdefghijk';
-        reader._view = {load: document.createElement('button'), root: document.createElement('div')};
         const english = new URL('https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&kind=asr');
         const french = new URL(english); french.searchParams.set('lang', 'fr');
-        reader._capturedCaptions.set('en|asr|', {url: english, body});
-        reader._capturedCaptions.set('fr|asr|', {url: french, body: body.replace('So in college,', 'À l’université,')});
+        capture(english.href, body);
+        capture(french.href, body.replace('So in college,', 'À l’université,'));
+        reader._view = {load: document.createElement('button'), root: document.createElement('div')};
         const find = vi.spyOn(reader, '_findCaptionUrl').mockImplementation(async () => new URL(french));
         vi.spyOn(reader, '_status').mockImplementation(() => {});
         vi.spyOn(reader, '_present').mockImplementation(() => {});
@@ -109,10 +122,11 @@ test('switching tracks during translation releases the new track and discards th
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {url: 'https://www.youtube.com/watch?v=abcdefghijk',
         html: '<div id="movie_player"><video></video></div><div id="secondary-inner"></div>'}});
     installReaderStorage({get: async () => ({}), set: async () => {}});
-    const urls = ['en', 'fr'].map((lang) => `https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=${lang}`);
-    vi.stubGlobal('fetch', async (/** @type {string} */ url) => new Response(JSON.stringify({events: [
+    const urls = ['en', 'fr&name=French'].map((lang) => `https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=${lang}`);
+    const fetcher = vi.fn(async (/** @type {string} */ url) => new Response(JSON.stringify({events: [
         {tStartMs: 0, dDurationMs: 1000, segs: [{utf8: new URL(url).searchParams.get('lang') === 'fr' ? 'Bonjour.' : 'Good morning.'}]},
     ]})));
+    vi.stubGlobal('fetch', fetcher);
     /** @type {() => void} */
     let release = () => {};
     const oldReply = new Promise((resolve) => { release = () => resolve(void 0); });
@@ -138,6 +152,10 @@ test('switching tracks during translation releases the new track and discards th
         reader.rememberRequest(urls[0]);
         reader.start();
         await vi.waitFor(() => expect(reader.session?.source.language).toBe('en'));
+        capture(urls[0], JSON.stringify({events: [{tStartMs: 0, dDurationMs: 1000, segs: [{utf8: 'Good morning.'}]}]}));
+        capture(urls[1].replace('name=French', 'name=French-alternate'), JSON.stringify({events: [
+            {tStartMs: 0, dDurationMs: 1000, segs: [{utf8: 'La mauvaise piste.'}]},
+        ]}));
         const button = /** @type {HTMLButtonElement} */ (document.querySelector('.r-translate'));
         const original = reader._translate(false, true);
         await vi.waitFor(() => expect(languages.map((x) => x.language)).toEqual(['en']));
@@ -146,6 +164,9 @@ test('switching tracks during translation releases the new track and discards th
         select.value = select.options[1].value;
         select.dispatchEvent(new Event('change'));
         await vi.waitFor(() => expect(reader.session?.source.language).toBe('fr'));
+        expect(reader.session?.cues[0].text).toBe('Bonjour.');
+        expect(new URL(fetcher.mock.lastCall?.[0] ?? '').searchParams.get('name')).toBe('French');
+        expect(document.querySelector('#study-yt-reader')?.getAttribute('data-caption-source')).toBe('refetch');
         expect(cancelled).toEqual([languages[0].requestId]);
         expect(button.disabled).toBe(false);
         button.click();
@@ -172,6 +193,16 @@ test('switching tracks during translation releases the new track and discards th
         consent?.click();
         await pending;
         expect(languages.map((x) => x.language)).toEqual(['en', 'fr']);
+
+        select.value = select.options[0].value;
+        select.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(reader.session?.source.language).toBe('en'));
+        fetcher.mockResolvedValueOnce(new Response(''));
+        select.value = select.options[1].value;
+        select.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(document.querySelector('.r-status')?.textContent).toContain('YouTube 没有返回字幕内容'));
+        expect(reader.session?.source.language).toBe('en');
+        expect(select.value).toBe(reader.session?.source.trackKey);
     } finally {
         release();
         reader._reset();
