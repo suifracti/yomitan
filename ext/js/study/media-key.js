@@ -53,6 +53,38 @@ export function mediaKeyOf(url) {
 }
 
 /**
+ * Keep route fragments, not ordinary anchors or browser text directives.
+ * @param {string} url
+ * @returns {string}
+ */
+export function pageSourceAddress(url) {
+    const hash = url.indexOf('#');
+    if (hash < 0 || !/^https?:\/\//.test(url)) { return url; }
+    const anchor = url.slice(hash + 1).split(':~:', 1)[0];
+    return anchor.startsWith('/') || anchor.startsWith('!') || anchor.includes('=') ? `${url.slice(0, hash)}#${anchor}` : url.slice(0, hash);
+}
+
+/**
+ * Match the saved-note grouping in study_sources.page_source_key, not playback progress.
+ * @param {string} url
+ * @returns {string}
+ */
+export function pageSourceKey(url) {
+    const parsed = parse(url);
+    if (!parsed) { return ''; }
+    const host = parsed.hostname;
+    if (YOUTUBE_HOSTS.has(host)) {
+        const key = mediaKeyOf(url);
+        if (key) { return key; }
+    }
+    if ((host === BILIBILI_HOST || host.endsWith(`.${BILIBILI_HOST}`)) && /^\/video\/(?:BV[0-9A-Za-z]+|av[0-9]+)\/?$/.test(parsed.pathname)) {
+        const part = (parsed.searchParams.get('p') || '1').replace(/^0+/, '');
+        if (/^\d*$/.test(part)) { return mediaKeyOf(`https://${BILIBILI_HOST}${parsed.pathname}?p=${part || '1'}`); }
+    }
+    return pageSourceAddress(url);
+}
+
+/**
  * A page link that opens at a moment, for the sites known to accept `t=`.
  * Other sites keep the plain page link; the time is shown next to it instead.
  * @param {string} url

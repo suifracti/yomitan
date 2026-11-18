@@ -24,7 +24,7 @@
  * and the caption list lives in a floating panel that is closed by default.
  */
 import {readResponseJson} from '../core/json.js';
-import {mediaKeyOf} from './media-key.js';
+import {mediaKeyOf, pageSourceAddress, pageSourceKey} from './media-key.js';
 import {FILE_DURATION_KEY} from './media-rules.js';
 import {SUBTITLE_URL, cuesFromRows, guessLanguage, parseSubtitles} from './subtitle-formats.js';
 
@@ -181,6 +181,8 @@ export class WebVideoSite {
         this.kind = 'web';
         /** @type {string[]} Subtitle-looking files the page requested, newest last. */
         this._seen = [];
+        /** @type {string} */
+        this._seenSource = '';
         /** @type {HTMLElement|null} */
         this._dock = null;
         /** @type {HTMLElement|null} */
@@ -206,7 +208,7 @@ export class WebVideoSite {
     /** @returns {string} The page itself; other sites have no shared time parameter. */
     pageUrl() {
         const video = this.video();
-        if (location.protocol !== 'file:' || !video) { return location.href.split('#')[0]; }
+        if (location.protocol !== 'file:' || !video) { return pageSourceAddress(location.href); }
         const url = new URL(video.currentSrc || video.src || location.href);
         url.hash = `${FILE_DURATION_KEY}=${Math.round(Number.isFinite(video.duration) ? video.duration : 0)}`;
         return url.href;
@@ -214,7 +216,13 @@ export class WebVideoSite {
 
     /** @param {string} name */
     remember(name) {
-        if (!SUBTITLE_URL.test(name) || this._seen.includes(name)) { return; }
+        if (!SUBTITLE_URL.test(name)) { return; }
+        const source = pageSourceKey(this.pageUrl());
+        if (source !== this._seenSource) {
+            this._seen.length = 0;
+            this._seenSource = source;
+        }
+        if (this._seen.includes(name)) { return; }
         this._seen.push(name);
         if (this._seen.length > 100) { this._seen.shift(); }
     }
@@ -261,7 +269,8 @@ export class WebVideoSite {
                 });
             }
         }
-        for (const url of [...this._seen].reverse()) {
+        const observed = this._seenSource === pageSourceKey(this.pageUrl()) ? this._seen : [];
+        for (const url of [...observed].reverse()) {
             if (video && [...video.querySelectorAll('track')].some((item) => item.src === url)) { continue; }
             let name = url;
             let hint = '';

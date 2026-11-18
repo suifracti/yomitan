@@ -88,6 +88,19 @@ test('video lists and summaries use the browser source, with fallback only when 
         expect(await ask({mediaKey, cue})).toEqual({ok: false, error: '本机桥还不能查单句笔记；可以去「我在这个视频记的词」找。'});
         expect(read).toHaveBeenCalledOnce();
         expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey, sourceUrl: url, cue});
+        const course = 'https://course.example.org/watch?id=7#/units/2';
+        const courseKey = 'web:course.example.org/watch?id=7';
+        const courseSender = {...sender, url: course.replace('/2', '/1'), tab: {url: course}};
+        read.mockClear().mockResolvedValueOnce({items: [{word: 'mortar'}]});
+        expect(await ask({mediaKey: courseKey}, courseSender)).toEqual({ok: true, value: {items: [{word: 'mortar'}]}});
+        expect(read).toHaveBeenLastCalledWith('libraryVideoWords', {mediaKey: courseKey, sourceUrl: course});
+        expect(await ask({mediaKey: courseKey}, courseSender, 'openPageLibrary')).toMatchObject({ok: true});
+        expect(new URL(openedUrl).searchParams.get('source')).toBe(course);
+        read.mockClear().mockRejectedValueOnce(new Error('视频编号无效。'));
+        expect(await ask({mediaKey: courseKey}, courseSender)).toMatchObject({ok: false});
+        expect(read).toHaveBeenCalledOnce();
+        expect(await ask({mediaKey: courseKey, title: 'Chapter two'}, courseSender, 'libraryVideoSummary')).toMatchObject({ok: true});
+        expect(read).toHaveBeenLastCalledWith('libraryVideoSummary', {mediaKey: courseKey, title: 'Chapter two', url: course});
     } finally {
         read.mockRestore();
         vi.unstubAllGlobals();

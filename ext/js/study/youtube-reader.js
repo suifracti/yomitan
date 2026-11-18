@@ -34,7 +34,7 @@ import {youtubeStudyContext} from './youtube-study-context.js';
 import {confirmTranslation} from './translation-confirm.js';
 import {enhanceStudyUi} from './study-ui.js';
 import {captionUrl, captionTrackId, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
-import {timedUrl} from './media-key.js';
+import {pageSourceKey, timedUrl} from './media-key.js';
 import {guessLanguage, parseSubtitles, splitBilingual} from './subtitle-formats.js';
 import {WebVideoSite} from './web-video-site.js';
 import {youtubeSite} from './youtube-site.js';
@@ -80,6 +80,10 @@ export class YoutubeReader extends EventTarget {
         this._site = site;
         /** @type {string|null} Identity of the watched video (see media-key.js). */
         this._mediaKey = null;
+        /** @type {string} Saved-note grouping for the active page, independent of playback progress. */
+        this._sourceKey = '';
+        /** @type {(() => void)|null} */
+        this._removeModelSettingsListener = null;
         /** @type {{id: string, label: string}[]} Subtitle sources found on other sites. */
         this._sources = [];
         /** @type {Map<string, string>} Translations that came inside a bilingual file. */
@@ -672,12 +676,14 @@ export class YoutubeReader extends EventTarget {
     /** */
     _sync() {
         const key = this._prefs.enabled ? this._site.mediaKey() : null;
-        if (key === this._mediaKey && (key === null || this._view?.root.isConnected)) {
+        const source = key ? pageSourceKey(this._site.pageUrl()) : '';
+        if (key === this._mediaKey && source === this._sourceKey && (key === null || this._view?.root.isConnected)) {
             this._rebindVideo();
             return;
         }
         this._reset();
         this._mediaKey = key;
+        this._sourceKey = source;
         this._videoId = key?.startsWith('youtube:') ? key.slice(8) : null;
         if (this._captionVideoId !== this._videoId) {
             this._capturedCaptions.clear(); this._captionVideoId = this._videoId;
@@ -737,6 +743,8 @@ export class YoutubeReader extends EventTarget {
         this._follow = true;
         this._pin?.disconnect();
         this._pin = null;
+        this._removeModelSettingsListener?.();
+        this._removeModelSettingsListener = null;
         this._view?.root.remove();
         this._view = null;
         this._emit('reset');
@@ -854,8 +862,18 @@ export class YoutubeReader extends EventTarget {
             loadingModels = true; modelStatus.textContent = '正在读取模型列表…';
             void studyCall('subtitleModels').then((rows) => { catalog = rows; modelStatus.textContent = ''; return fillModel(); }, () => { modelStatus.textContent = '没读到模型列表，请在设置里授权本机连接后再点一次。'; }).finally(() => { loadingModels = false; });
         });
-        if (typeof chrome !== 'undefined' && chrome.storage?.local) { void fillModel(); }
-        chrome.storage?.onChanged?.addListener((changes, area) => { if (area === 'local' && changes[SETTINGS_KEY] && root.isConnected) { void fillModel(); } });
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            void fillModel();
+            /**
+             * @param {Record<string, chrome.storage.StorageChange>} changes
+             * @param {string} area
+             */
+            const updateModel = (changes, area) => {
+                if (area === 'local' && changes[SETTINGS_KEY] && root.isConnected) { void fillModel(); }
+            };
+            chrome.storage.onChanged?.addListener(updateModel);
+            this._removeModelSettingsListener = () => chrome.storage.onChanged?.removeListener(updateModel);
+        }
         const processing = group('字幕处理');
         const source = document.createElement('label');
         source.className = 'r-source';
@@ -1245,6 +1263,8 @@ export class YoutubeReader extends EventTarget {
         const site = this._site;
         if (!view || !this._mediaKey || generation !== this._generation || this._loadController || site.kind !== 'web') { return; }
         const key = this._mediaKey;
+        const source = this._sourceKey;
+        const current = () => generation === this._generation && source === pageSourceKey(site.pageUrl());
         const controller = new AbortController();
         this._loadController = controller;
         const timeout = setTimeout(() => controller.abort(), WAIT_MS);
@@ -1252,11 +1272,11 @@ export class YoutubeReader extends EventTarget {
         this._status('正在查找这个视频的字幕…');
         try {
             const state = sourceId ? null : await readVideoState(key);
-            if (generation !== this._generation || controller.signal.aborted) { return; }
+            if (!current() || controller.signal.aborted) { return; }
             const found = await site.load({signal: controller.signal, sourceId, preferredId: state?.selectedTrackKey, learning: 'en'});
-            if (generation !== this._generation) { return; }
+            if (!current()) { return; }
             const sources = found?.all ?? (await site.sources('en')).map(({id, label}) => ({id, label}));
-            if (generation !== this._generation) { return; }
+            if (!current()) { return; }
             this._sources = sources;
             if (!found) {
                 this._status(controller.signal.aborted ? '字幕读取超时，可在「⋯」里重新载入，或导入字幕。' : '没有找到字幕，可导入字幕文件。');
@@ -1329,6 +1349,7 @@ export class YoutubeReader extends EventTarget {
         this._shadowPause = null;
         this._session = session;
         this._rowInfo.clear();
+        const source = this._sourceKey;
         for (const [index, cue] of session.cues.entries()) {
             // Times are read when used, so a later offset change still captures the right clip.
             /** @type {RowInfo} */
@@ -1343,7 +1364,7 @@ export class YoutubeReader extends EventTarget {
                     this._markLookup(cue.id);
                     return this._video;
                 },
-                isCurrent: () => this._session === session && this._mediaKey !== null && this._mediaKey === this._site.mediaKey(),
+                isCurrent: () => this._session === session && this._mediaKey !== null && this._mediaKey === this._site.mediaKey() && source === pageSourceKey(this._site.pageUrl()),
             };
             this._rowInfo.set(cue.id, info);
         }
@@ -1805,6 +1826,7 @@ export class YoutubeReader extends EventTarget {
 
     /** @param {{id: string, word: string, sentence: string, videoTime: number|null}} item */
     async _openSavedWord(item) {
+        if (this._sourceKey !== pageSourceKey(this._site.pageUrl())) { return; }
         const normalize = (/** @type {string} */ text) => text.replaceAll(/\s+/g, ' ').trim().toLowerCase();
         const sentence = normalize(item.sentence);
         const cues = [...this._rowInfo].filter(([, row]) => normalize(row.text) === sentence &&
@@ -2008,6 +2030,7 @@ export class YoutubeReader extends EventTarget {
         const mediaKey = this._mediaKey;
         if (!view || !mediaKey) { return; }
         const generation = this._generation;
+        const source = this._sourceKey;
         const recommended = this._recommendations();
         recommended.replaceChildren('正在挑选适合制卡的句子…');
         const saved = document.createElement('div');
@@ -2024,7 +2047,7 @@ export class YoutubeReader extends EventTarget {
         saved.replaceChildren(Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '正在读取这个视频里记住的词…'}));
         try {
             const result = /** @type {{cardContexts?: {word: string, sentence: string}[], items?: (SavedPlayback & {stage: number, cards: number, cardHint?: string})[]}} */ (await this._call('libraryVideoWords', {mediaKey}));
-            if (generation !== this._generation) { return; }
+            if (generation !== this._generation || source !== pageSourceKey(this._site.pageUrl())) { return; }
             const items = result.items ?? [];
             this._cardContexts = result.cardContexts ?? items.filter((item) => item.cards > 0);
             this._refreshLearning();
@@ -2098,7 +2121,7 @@ export class YoutubeReader extends EventTarget {
         const view = this._view;
         const mediaKey = this._mediaKey;
         const box = view?.words.querySelector('.r-summary');
-        if (!view || !mediaKey || !box) { return; }
+        if (!view || !mediaKey || !box || this._sourceKey !== pageSourceKey(this._site.pageUrl())) { return; }
         const button = /** @type {HTMLButtonElement} */ (box.querySelector('button'));
         const state = /** @type {HTMLElement} */ (box.querySelector('[role=status]'));
         const generation = this._generation;

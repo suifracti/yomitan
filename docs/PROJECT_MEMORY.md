@@ -39,6 +39,7 @@
 | 读回同一篇文章或同一视频选集，想找同来源的原句 | L-007；WordMarks.openPageWords、study_index 的 source 筛选、page_source_key |
 | 本地视频的已记词、小结和听写混入别处的同名文件 | L-007；学习库的 librarySource、study_sources.page_source_key、StudyService 的 localVideoSource |
 | 想按看过的文章或视频找原句、原声，或只复习这份素材的卡点 | L-007；学习库「按素材」、study_index.indexed_sources / indexed_page |
+| 课程在同一播放器切章节，上一课字幕或词表还在／小结混课 | L-007；media-key.pageSourceKey、YoutubeReader._sync、StudyService 的 libraryVideoWords |
 | 在视频里想直接打开已记的原句；倒着记的句子，复习想按视频顺序 | L-007；openPageLibrary 和 study_index.indexed_page |
 | 字幕播到这句，想找当时记的哪个词义，不想翻完整词表 | L-007；YoutubeReader._addCueNotes、libraryVideoWords 的 cue |
 | 已经从字幕打开旧笔记，怎样不退回视频就开始同素材复习 | L-007；study-focus 的来源区、createSourceLibraryUrl |
@@ -241,6 +242,8 @@
 **文章来源直达原句**：`study_sources.article_href` 用原句生成浏览器文本片段，合适的是不含已有锚点或视频时间的 HTTP(S) 页面（不含 YouTube/B 站，原文 3 词以上、最多 400 字符）。学习库、辨词义和新笔记共用派生链接，不用它替换保存的 URL 或编号。明确的章节锚点优先；浏览器找不到原句仍能打开页面，重复文本不能保证是哪一次。见[浏览器实际点击](youtube-study-wiring.md#2026-11-18-普通网页的出处也能回到原句)。
 
 **找同一来源的已存原句**：「本页生词」从顶层消息来源打开学习库，不把笔记结果返回网页；学习库的来源行也能从这条记录打开「同来源原句」。两处共用 `source` 分类和分页只读索引。普通网页忽略章节／文本定位而保留查询和哈希路由；`page_source_key` 按 YouTube 视频 ID 或同一 B 站视频和选集归并不同跳时链接，未指定 B 站选集视为第 1 P。只改查询归组，不动原 URL、记录编号、字幕媒体 key 或制卡来源。见[12 条的浏览器往返](youtube-study-wiring.md#2026-11-18-从本页生词找回这篇文章的原句)、[同一选集的临时库对照](youtube-study-wiring.md#2026-11-18-从学习库找同来源的原句)。
+
+**同一课程播放器壳可能有不同素材**：`mediaKeyOf` 保留用于播放进度，不拿它替代笔记来源。`pageSourceKey` 对齐桥的 `page_source_key`，保留通用网页的查询和哈希路由、忽略普通锚点，YouTube 和 B 站仍按视频／选集归组。同页切到另一个来源，要停止旧会话和旧词卡的媒体权限；后台从浏览器当前 URL 补完整来源，词表、小结和同来源练习同组。旧桥辨不出普通网页的不退回短键。历史小结不迁移，新路由各有小结。见[同壳课程反例](youtube-study-wiring.md#2026-11-18-同播放器的不同课程不再混笔记)。
 
 **不先找词，按素材集中回顾**：学习库「按素材」从已有记录索引聚合，命中一条也显示整份素材的数量，按最近保存排列。还与原句匹配的已存录音才计入「有原声」；这一数量是记录数，听写仍会去掉重复句。两种入口沿完整来源进入同一范围，不打开原视频、不自动播放或读出附件。旧桥不能列素材时，保留「全部」里的搜索；不另存素材表。见[素材入口与临时验证](youtube-study-wiring.md#2026-11-18-从素材直接回到原句和听写)。
 

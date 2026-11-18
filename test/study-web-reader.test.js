@@ -31,7 +31,7 @@ vi.stubGlobal('ResizeObserver', class {
 
 const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
 const {YoutubeOverlay} = await import('../ext/js/study/youtube-overlay.js');
-const {mediaKeyOf, timedUrl} = await import('../ext/js/study/media-key.js');
+const {mediaKeyOf, pageSourceKey, timedUrl} = await import('../ext/js/study/media-key.js');
 const {WebVideoSite} = await import('../ext/js/study/web-video-site.js');
 const {readVideoState, writeVideoState} = await import('../ext/js/study/subtitle-prefs.js');
 
@@ -41,6 +41,9 @@ test('media keys and time links match the bridge rules', () => {
     expect(mediaKeyOf('https://www.bilibili.com/video/BV1xx411c7mD/?p=2&spm=abc')).toBe('web:www.bilibili.com/video/BV1xx411c7mD?p=2');
     expect(mediaKeyOf('https://course.example.org/watch?id=7&utm=x#a')).toBe('web:course.example.org/watch?id=7');
     expect(mediaKeyOf('file:///x.mp4')).toBe('');
+    expect(pageSourceKey('https://course.example.org/watch?id=7#/unit/2:~:text=example')).toBe('https://course.example.org/watch?id=7#/unit/2');
+    expect(pageSourceKey('https://course.example.org/watch?id=7#heading')).toBe('https://course.example.org/watch?id=7');
+    expect(pageSourceKey('https://m.bilibili.com/video/BV1xx411c7mD/?p=02&t=9')).toBe('web:bilibili.com/video/BV1xx411c7mD?p=2');
     expect(timedUrl('https://www.youtube.com/watch?v=abcdefghijk', 72.6)).toEqual({url: 'https://www.youtube.com/watch?v=abcdefghijk&t=72s', timed: true});
     expect(timedUrl('https://www.bilibili.com/video/BV1xx411c7mD?p=2', 72)).toEqual({url: 'https://www.bilibili.com/video/BV1xx411c7mD?p=2&t=72', timed: true});
     expect(timedUrl('https://course.example.org/watch?id=7', 72)).toEqual({url: 'https://course.example.org/watch?id=7', timed: false});
@@ -253,6 +256,11 @@ test('web captions restore the chosen track and its learning position, with defa
             {id: 'track:1', label: '中文', language: 'zh', read: async () => [{...cues[0], text: '继续学习。'}]},
         ];
         const site = fakeSite(null);
+        let refresh = () => {};
+        site.watch = (/** @type {() => void} */ change) => {
+            refresh = change;
+            change();
+        };
         site.sources = async () => sources;
         site.load = (/** @type {Parameters<import('../ext/js/study/web-video-site.js').WebVideoSite['load']>[0]} */ options) => WebVideoSite.prototype.load.call(/** @type {never} */ (site), options);
         const reader = new YoutubeReader({prefs: {merge: false, resume: true}, site: /** @type {never} */ (site), call: async () => ({items: []})});
@@ -304,6 +312,21 @@ test('web captions restore the chosen track and its learning position, with defa
         await vi.waitFor(() => expect(reader.session?.offsetMs).toBe(500));
         expect(reader.resumeMs).toBe(120000);
         expect(video.currentTime).toBe(0);
+
+        const previousUrl = location.href;
+        const oldRow = reader.rowInfo('0');
+        expect(oldRow?.isCurrent()).toBe(true);
+        try {
+            history.replaceState(null, '', '#/lessons/next');
+            expect(mediaKeyOf(location.href)).toBe(key);
+            expect(oldRow?.isCurrent()).toBe(false);
+            const previousSession = reader.session;
+            refresh();
+            await vi.waitFor(() => expect(reader.session?.source.url).toBe(previousUrl + '#/lessons/next'));
+            expect(reader.session).not.toBe(previousSession);
+        } finally {
+            history.replaceState(null, '', previousUrl);
+        }
     } finally {
         vi.unstubAllGlobals();
     }

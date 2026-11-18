@@ -14,11 +14,11 @@
     "study_protocol.py": "9aad714e87dff49654138618b330256eb422020d816404ea1610a5b350166b6e",
     "study_review_view.py": "1d4d63d6c3efb2f977789b6ad26f901487564a51624b55a7d13b3b7020641b5d",
     "study_senses.py": "5b9679a47b6beca8afe830d6333a99b221792a95d6c9ff1e06c4d39a9828f9a0",
-    "study_settings.py": "e3a7bcdbffdc507e7be1041c7dbfa299892eac3ea1376b0c24a8cf975dd21a33",
+    "study_settings.py": "da3187cbcca5ab89c4e19b02a02c25cb476e1caf47b579583f509ccf8cf8dadb",
     "study_sources.py": "0efdd065c76a896db4c0cb29909c6abc8b9491eac3d31bdc265595925b4772cf",
     "study_stats.py": "58d8de190fa304321021b7fa78819d31ac8df4788ac435c843505ef416f81cc3",
     "study_sync.py": "7231fc9ce4b11c411ace90285991154066c909e56d358ed87c5582ae53d2af56",
     "study_translator.py": "a757326f0a654a6964fc6d15566432426fd9b550fc2a024908ca36ed958f348f",
     "study_usage.py": "3dc4a5dd0af9b2bf10d78979dfaaa00c85c1a63961cdf01d6d77050a4fa1a56d",
-    "study_video.py": "b500ab8bd7b54bf8e13e1a4c4b53f78c51e7ce3bf4ee0b60a873bc15483fa36a"
+    "study_video.py": "32b722826413fc22ae9fdbe64158854a7a1ddee83453256af9ad7768cf3bd3af"
 }

@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import {mediaKeyOf, timedUrl, videoListenUrl} from './media-key.js';
+import {mediaKeyOf, pageSourceAddress, pageSourceKey, timedUrl, videoListenUrl} from './media-key.js';
 import {BILIBILI_HOST, FILE_DURATION_KEY} from './media-rules.js';
 import {StudySync, needsStudyUpdateReview, studyUpdateKey} from './study-sync.js';
 import {SubtitleTranslation} from './subtitle-translation.js';
@@ -1384,7 +1384,7 @@ export function prepareStudyService(lookupDictionary = null) {
             } else if (mediaKey && sender.url?.startsWith('file:') && sender.frameId === 0) {
                 source = localVideoSource(current, mediaKey);
             } else if (mediaKey && web && mediaKeyOf(current) === mediaKey) {
-                source = current.split('#')[0];
+                source = pageSourceAddress(current);
             }
             if (!source) {
                 reply({ok: false, error: '找不到当前素材，请从学习库的「按素材」打开。'});
@@ -1412,15 +1412,16 @@ export function prepareStudyService(lookupDictionary = null) {
         }
         if (studyAction === 'claimVideoListening' && sender.id === chrome.runtime.id && sender.frameId === 0 && typeof sender.tab?.id === 'number' && /^https?:/.test(sender.url ?? '')) {
             const key = listeningKey(sender.tab.id);
-            const own = mediaKeyOf(pageUrl(sender) ?? '');
+            const current = pageUrl(sender) ?? '';
+            const own = mediaKeyOf(current);
             void (async () => {
-                const {[key]: pending} = /** @type {Record<string, {mediaKey: string, until: number, items: import('study').SavedVideoListening[]}|undefined>} */ (await chrome.storage.session.get(key));
+                const {[key]: pending} = /** @type {Record<string, {mediaKey: string, sourceKey: string, until: number, items: import('study').SavedVideoListening[]}|undefined>} */ (await chrome.storage.session.get(key));
                 if (!pending) { return null; }
                 if (pending.until < Date.now()) {
                     await chrome.storage.session.remove(key);
                     return null;
                 }
-                if (pending.mediaKey !== own) { return null; }
+                if (pending.mediaKey !== own || pending.sourceKey !== pageSourceKey(current)) { return null; }
                 await chrome.storage.session.remove(key);
                 return pending.items;
             })().then((value) => reply({ok: true, value}), () => reply({ok: true, value: null}));
@@ -1450,14 +1451,12 @@ export function prepareStudyService(lookupDictionary = null) {
                     }
                     if (Object.keys(/** @type {object} */ (data ?? {})).some((key) => key !== 'mediaKey' && key !== 'cue')) { throw new Error('只能读取当前视频的生词。'); }
                     const {cue} = /** @type {{cue?: unknown}} */ (data);
-                    const source = new URL(url);
-                    if (source.protocol === 'file:') {
+                    if (local) {
                         const sourceUrl = localVideoSource(url, asked);
                         if (!sourceUrl) { throw new Error('请直接打开要学习的本地视频，再读取它的生词。'); }
                         forwarded = {mediaKey: own, sourceUrl};
-                    } else if (typeof cue !== 'undefined' || ((source.hostname === BILIBILI_HOST || source.hostname.endsWith(`.${BILIBILI_HOST}`)) && source.pathname.startsWith('/video/'))) {
-                        source.hash = '';
-                        forwarded = {mediaKey: own, sourceUrl: source.href};
+                    } else {
+                        forwarded = {mediaKey: own, sourceUrl: pageSourceAddress(url)};
                     }
                     if (typeof cue !== 'undefined') { forwarded = {...forwarded, cue}; }
                 }
@@ -1465,7 +1464,7 @@ export function prepareStudyService(lookupDictionary = null) {
                 if (studyAction === 'libraryVideoSummary') {
                     const local = sender.url?.startsWith('file:');
                     const {mediaKey, title, url: localUrl} = /** @type {{mediaKey?: unknown, title?: unknown, url?: unknown}} */ (data ?? {});
-                    const current = sender.url ?? '';
+                    const current = pageUrl(sender) ?? '';
                     const url = local ? localVideoSource(current, mediaKey) : current;
                     const own = mediaKeyOf(url);
                     if (!own || mediaKey !== own || (local && localUrl !== url) || typeof title !== 'string' || Object.keys(/** @type {object} */ (data ?? {})).length !== (local ? 3 : 2)) { throw new Error('只能为当前视频写小结。'); }
@@ -1489,7 +1488,11 @@ export function prepareStudyService(lookupDictionary = null) {
                             throw new Error('本机桥还不能区分同名视频。请先更新本机桥，再打开这页。');
                         }
                         if (error.message === '视频编号无效。') {
-                            return await service.handle(action, {mediaKey: forwarded.mediaKey});
+                            const key = pageSourceKey(forwarded.sourceUrl);
+                            if (key.startsWith('youtube:') || key.startsWith(`web:${BILIBILI_HOST}/video/`)) {
+                                return await service.handle(action, {mediaKey: forwarded.mediaKey});
+                            }
+                            throw new Error('本机桥还不能区分这份视频的来源。请更新后再试，或从学习库按素材查看。');
                         }
                     }
                     throw error;
@@ -1537,7 +1540,7 @@ export function prepareStudyService(lookupDictionary = null) {
                 const {id: tabId} = await chrome.tabs.create({url: 'about:blank'});
                 if (typeof tabId !== 'number') { throw new Error('没能打开视频，请再试一次。'); }
                 try {
-                    const pending = {mediaKey, until: Date.now() + 120_000, items: listening};
+                    const pending = {mediaKey, sourceKey: pageSourceKey(url.href), until: Date.now() + 120_000, items: listening};
                     await chrome.storage.session.set({[listeningKey(tabId)]: pending});
                     await chrome.tabs.update(tabId, {url: url.href});
                 } catch (error) {

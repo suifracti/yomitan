@@ -168,6 +168,20 @@ class VideoMediaTests(unittest.TestCase):
             self.library.handle({**source, 'sourceUrl': source['sourceUrl'].replace('p=2', 'p=1')})
         rows = self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'web:course.example.org/watch?id=7'})['items']
         self.assertEqual([r['word'] for r in rows], ['lamp'])
+        lesson = 'https://course.example.org/watch?id=7#/lesson/1'
+        for word, url in [('glass', lesson), ('stone', lesson.replace('/1', '/2'))]:
+            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} here.',
+                                 'url': url, 'videoTime': 9}, 'makeCard': False})
+        summaries = []
+        for url, word in [(lesson, 'glass'), (lesson.replace('/1', '/2'), 'stone')]:
+            request = {'mediaKey': 'web:course.example.org/watch?id=7'}
+            listed = self.library.handle({**request, 'action': 'libraryVideoWords', 'sourceUrl': url})['items']
+            self.assertEqual([r['word'] for r in listed], [word])
+            saved = self.library.handle({**request, 'action': 'libraryVideoSummary', 'url': url, 'title': 'Same course title'})
+            summaries.append(saved['path'])
+            self.assertEqual(saved['words'], 1)
+            self.assertIn(f'**{word}**', (self.vault / saved['path']).read_text())
+        self.assertNotEqual(*summaries)
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryVideoWords', 'mediaKey': 'file:/etc/passwd'})
 

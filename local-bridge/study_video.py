@@ -12,7 +12,7 @@ import re
 import tempfile
 import urllib.parse
 from study_library import text, source_url, safe_markdown, paragraph
-from study_sources import BILIBILI_HOST, YOUTUBE_HOSTS, time_link
+from study_sources import BILIBILI_HOST, YOUTUBE_HOSTS, page_source_key, time_link
 
 ROOT = pathlib.Path('02-个人与生活/阅读与观影/观影/视频记录')
 PROMPT_VERSION = 1
@@ -248,7 +248,9 @@ class VideoLibrary:
         """Writes (or refreshes) one marked study-summary block in the video note.
         Only the block between the markers is ours; everything else in the note is kept."""
         from study_sync import MASTERY_LABELS, STAGE_NAMES
-        url = canonical_url(url)
+        source = page_source_key(url)
+        clean = canonical_url(url)
+        url = clean + '#' + source.split('#', 1)[1] if source.startswith(('http://', 'https://')) and '#' in source else clean
         title = text(title or '视频', 300, True)
         video = digest(url)
         links = links or {}

@@ -36,7 +36,7 @@ import {HotkeyHelpController} from '../input/hotkey-help-controller.js';
 import {TextScanner} from '../language/text-scanner.js';
 import {checkPopupPreviewURL} from '../pages/settings/popup-preview-controller.js';
 import {readStudyRecord} from '../study/study-client.js';
-import {mediaKeyOf} from '../study/media-key.js';
+import {pageSourceKey} from '../study/media-key.js';
 import {savedStudyLanguage, studyResumeParams} from '../study/study-data.js';
 import {DisplayContentManager} from './display-content-manager.js';
 import {DisplayGenerator} from './display-generator.js';
@@ -1428,7 +1428,7 @@ export class Display extends EventDispatcher {
                 if (this._setContentToken !== token) { return; }
                 const {entry} = record;
                 const normalize = (/** @type {string} */ text) => text.trim().replace(/\s+/g, ' ').toLowerCase();
-                if ((state.studyOpenCard === 'audio' && (!state.url || mediaKeyOf(entry.url) !== mediaKeyOf(state.url))) ||
+                if (!state.url || pageSourceKey(entry.url) !== pageSourceKey(state.url) ||
                 normalize(entry.word) !== normalize(query) || normalize(entry.sentence) !== normalize(state.sentence.text) ||
                 (typeof entry.videoTime === 'number' && entry.videoTime !== Math.floor(state.videoTime ?? -1))) {
                     throw new Error('这条笔记和当前字幕已不一样，请从学习库重新打开。');
