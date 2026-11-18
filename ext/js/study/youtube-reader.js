@@ -2014,7 +2014,8 @@ export class YoutubeReader extends EventTarget {
     _beginListening(items, chronological = false) {
         const view = this._view;
         const session = this._session;
-        if (!view || !this._video || !/^en(?:-|$)/i.test(session?.source.language || '')) {
+        const video = this._video;
+        if (!view || !video || !/^en(?:-|$)/i.test(session?.source.language || '')) {
             this._status('请先载入原来的英语字幕，再练回听。');
             return;
         }
@@ -2086,23 +2087,15 @@ export class YoutubeReader extends EventTarget {
         };
         const play = this._button('播放本句', () => {
             practice.cancel?.();
-            const id = queue[current];
-            const original = this._list.ensure(id)?.querySelector('.r-text')?.firstChild;
-            const info = this._rowInfo.get(id);
-            if (!original || !info) {
+            const info = this._rowInfo.get(queue[current]);
+            if (!info) {
                 hint.textContent = '这句的字幕已改变。请退出后重开练习。';
                 return;
             }
             try {
-                const range = document.createRange();
-                range.setStart(original, 0); range.setEnd(original, info.text.length);
-                const source = youtubeStudyContext.read(range);
-                if (!source) {
-                    hint.textContent = '找不到这一句的原声，请退出后重试。';
-                    return;
-                }
-                hint.textContent = this._video?.muted || this._video?.volume === 0 ? '正在播放；播放器已静音，请打开声音。' : '正在播放本句…';
-                practice.cancel = youtubeStudyContext.play(source.token, (reason) => {
+                const isCurrent = () => this._video === video && info.isCurrent();
+                hint.textContent = video.muted || video.volume === 0 ? '正在播放；播放器已静音，请打开声音。' : '正在播放本句…';
+                practice.cancel = youtubeStudyContext.playRange(video, {start: info.start, end: info.end, isCurrent}, (reason) => {
                     practice.cancel = void 0;
                     hint.textContent = {ended: '已播完。可以再听，或看原句。', failed: '播放没开始，请再点一次。', cancelled: '已停止。可以再点一次播放。'}[reason];
                 });

@@ -47,6 +47,7 @@
 | 本地视频的已记词、小结和听写混入别处的同名文件 | L-007；学习库的 librarySource、study_sources.page_source_key、StudyService 的 localVideoSource |
 | 普通本地文件被当成视频来源；合法本地视频存不进笔记 | L-007；study_library_core.source_url、study_sources.media_key_of |
 | 想按看过的文章或视频找原句、原声，或只复习这份素材的卡点 | L-007；学习库「按素材」、study_index.indexed_sources / indexed_page |
+| 字幕搜索没有结果，切去练已存原句却播不出 | L-007；YoutubeReader._beginListening 按匹配的原句时间直接回听 |
 | 课程在同一播放器切章节，上一课字幕或词表还在／小结混课 | L-007；media-key.pageSourceKey、YoutubeReader._sync、StudyService 的 libraryVideoWords |
 | 在视频里想直接打开已记的原句；倒着记的句子，复习想按视频顺序 | L-007；openPageLibrary 和 study_index.indexed_page |
 | 字幕播到这句，想找当时记的哪个词义，不想翻完整词表 | L-007；YoutubeReader._addCueNotes、libraryVideoWords 的 cue |
@@ -247,7 +248,7 @@
 
 ## L-007 视频已记词退回制卡：恢复原记录，而不是只带词和句子
 
-**字幕栏的「先听，再看原句」**：用已保存的原句和秒数在当前英语轨唯一对回播放行；同一范围的多个义项只听一次，零个或多个匹配不选。复用 `YoutubeStudyContext.play` 的真实播放器，来源或轨道变了就停止；练习时隐藏可控制的字幕层、暂停自动翻译和进度写入，退出恢复原显示设置。只在用户点看原句时显示原文及已有译文；无新练习档案、不打分、不写排程。见[独立播放器和两次重复台词](youtube-study-wiring.md#2026-11-18-先听已记下的原声再揭晓原句)。
+**字幕栏的「先听，再看原句」**：用已保存的原句和秒数在当前英语轨唯一对回播放行；同一范围的多个义项只听一次，零个或多个匹配不选。按已匹配字幕的偏移后起止时间调 `YoutubeStudyContext.playRange`，无需渲染过那一行，保留搜索，不发查词或取声凭证；仍核播放器和来源，变动即停止。练习隐藏可控制的字幕层、暂停自动翻译和进度写入；只在点看原句时显示原文及已有译文。不建练习档案、不打分、不写排程。见[两次重复台词](youtube-study-wiring.md#2026-11-18-先听已记下的原声再揭晓原句)和[搜索时仍能回听](youtube-study-wiring.md#2026-11-19-字幕搜索不拦住已存原句的回听)。
 
 **听完想回到当时记的意思**：`_beginListening` 按字幕行保留匹配的记录，去重的是待播行而非义项；揭晓后才显示各条笔记入口，换一句即清除。用 `openStudyRecord` 读原记录号并在搜索词卡里继续，传 `openPanel:false` 不自动显示制卡；没传这项的旧制卡入口照旧。搜索词卡不因此得到对原视频的取声权限。见[同一句不同义项的回听接续](youtube-study-wiring.md#2026-11-18-回听揭晓后接回原笔记)。
 

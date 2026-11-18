@@ -81,6 +81,14 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(open).toHaveBeenCalledOnce();
         expect(opened).toEqual({text: 'successful', panel: true, at: 24.5, recordId: '1'.repeat(32)});
         expect(savedPanel.textContent).toContain('暂时没有：至少要有一个还在学的词出现在字幕里');
+        const captions = /** @type {HTMLButtonElement} */ (document.querySelector('[data-tab=captions]'));
+        captions.click();
+        const search = /** @type {HTMLInputElement} */ (document.querySelector('.r-search input'));
+        search.value = 'unrelated line';
+        search.dispatchEvent(new Event('input'));
+        expect(document.querySelectorAll('.r-list .r-cue')).toHaveLength(0);
+        words.click();
+        await vi.waitFor(() => expect(savedPanel.querySelector('[data-listen-saved]')).not.toBeNull());
         const video = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
         const play = vi.spyOn(video, 'play').mockResolvedValue();
         const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
@@ -141,6 +149,11 @@ test('explains saved video words, opens uncarded words for card selection, and r
         reader.setOffset(500, false);
         expect(document.querySelector('.r-listen-practice')).toBeNull();
         expect(savedPanel.hidden).toBe(false);
+        captions.click();
+        expect(search.value).toBe('unrelated line');
+        expect(document.querySelectorAll('.r-list .r-cue')).toHaveLength(0);
+        words.click();
+        await vi.waitFor(() => expect(savedPanel.querySelector('[data-listen-saved]')).not.toBeNull());
         await reader.writeSummary();
         expect(savedPanel.querySelector('.r-summary').textContent).toContain('已保存 · 打开笔记 ↗');
     } finally { reader._reset(); youtubeStudyContext.openCard = null; vi.unstubAllGlobals(); await env.teardown(global); }
