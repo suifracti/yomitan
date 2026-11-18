@@ -24,6 +24,7 @@ import {parseTimedText} from './vendor/kiss/youtube-caption-source.js';
  * @typedef {{mediaKey: string, trackKey: string, revision: string, language: string, acquisition: 'provider'|'import'|'fixture', url?: string, trackIndex?: number, trackName?: string}} SubtitleSource
  * @typedef {{sessionKey: string, cueId: string, source: SubtitleSource, word: string, sentence: string, selectionStart: number, selectionEnd: number, originalStartMs: number, originalEndMs: number, subtitleOffsetMs: number}} SubtitleSelection
  * @typedef {{cueIds: string[], text: string, startMs: number, endMs: number}} SubtitleGroup
+ * @typedef {{lastId: string, lines: number}} SubtitleSearchRange
  */
 
 /**
@@ -230,7 +231,7 @@ export class SubtitleSession {
     /**
      * Match connected text, but keep original cue IDs and timestamps for the results.
      * @param {string} text
-     * @returns {SubtitleCue[]}
+     * @returns {{rows: SubtitleCue[], ranges: Map<string, SubtitleSearchRange>}}
      */
     search(text) {
         const normalize = (/** @type {string} */ value) => value
@@ -239,7 +240,9 @@ export class SubtitleSession {
             .trim()
             .replace(/\s+/g, ' ');
         const query = normalize(text);
-        if (!query) { return this.cues; }
+        /** @type {Map<string, SubtitleSearchRange>} */
+        const ranges = new Map();
+        if (!query) { return {rows: this.cues, ranges}; }
         const matches = new Set();
         /** @type {Map<string, string>} */
         const originals = new Map(this.cues.map((cue) => [cue.id, cue.text]));
@@ -253,8 +256,13 @@ export class SubtitleSession {
             const spans = [];
             const flush = () => {
                 for (let start = joined.indexOf(query); start >= 0; start = joined.indexOf(query, start + 1)) {
-                    for (const span of spans) {
-                        if (span.end > start && span.start < start + query.length) { matches.add(span.id); }
+                    const found = spans.filter((span) => span.end > start && span.start < start + query.length);
+                    for (const {id} of found) { matches.add(id); }
+                    if (found.length > 1) {
+                        const first = found[0].id;
+                        if (found.length > (ranges.get(first)?.lines ?? 0)) {
+                            ranges.set(first, {lastId: found[found.length - 1].id, lines: found.length});
+                        }
                     }
                 }
                 joined = '';
@@ -277,7 +285,7 @@ export class SubtitleSession {
             collect(cueIds, originals);
             if (this.#translations.size > 0) { collect(cueIds, this.#translations); }
         }
-        return this.cues.filter((cue) => matches.has(cue.id));
+        return {rows: this.cues.filter((cue) => matches.has(cue.id)), ranges};
     }
 
     /**

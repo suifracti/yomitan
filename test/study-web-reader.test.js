@@ -189,7 +189,7 @@ test('finds a caption by its saved translation and jumps using the same row', as
     }
 });
 
-test('finds a phrase split across connected captions without stitching across speech pauses', async () => {
+test('finds and replays a phrase split across connected captions without crossing speech pauses', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     installReaderStorage({get: async () => ({}), set: async () => {}});
     const calls = vi.fn(async (/** @type {string} */ _action) => null);
@@ -213,6 +213,23 @@ test('finds a phrase split across connected captions without stitching across sp
         };
         expect(rows('CAN take it from')).toEqual(['I can', 'take it', 'from here.']);
         expect(video.currentTime).toBe(0);
+        const play = vi.spyOn(video, 'play').mockResolvedValue();
+        const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
+        const replay = /** @type {HTMLButtonElement|null} */ (document.querySelector('.r-search-play'));
+        expect(replay?.textContent).toBe('▶ 回听 3 行');
+        reader.setOffset(100, false);
+        replay?.click();
+        expect(play).toHaveBeenCalledOnce();
+        expect(video.currentTime).toBe(1.1);
+        video.currentTime = 3.2;
+        video.dispatchEvent(new Event('timeupdate'));
+        expect(pause).not.toHaveBeenCalled();
+        video.currentTime = 4.1;
+        video.dispatchEvent(new Event('timeupdate'));
+        expect(pause).toHaveBeenCalledOnce();
+        play.mockRestore();
+        pause.mockRestore();
+        reader.setOffset(0, false);
         expect(rows('能接手')).toEqual(['I can', 'take it']);
         /** @type {HTMLButtonElement} */ (document.querySelectorAll('.r-time')[1]).click();
         expect(video.currentTime).toBe(2.2);

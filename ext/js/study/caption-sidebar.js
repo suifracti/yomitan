@@ -90,6 +90,7 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-loop{font:inherit;font-size:11px;line-height:20px;color:var(--r-muted);background:none;border:1px solid transparent;border-radius:6px;padding:1px 6px;cursor:pointer}
 #${ROOT_ID} .r-loop:hover{color:var(--r-accent);border-color:var(--r-line)}
 #${ROOT_ID} .r-loop[aria-pressed=true]{color:var(--r-accent);border-color:var(--r-accent)}
+#${ROOT_ID} .r-search-play{grid-column:2/-1;justify-self:start;color:var(--r-accent)}
 #${ROOT_ID} .r-cue-notes{grid-column:2/-1;margin:4px 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:4px;color:var(--r-muted);font-size:12px}
 #${ROOT_ID} .r-tabs{display:flex;gap:14px;padding:0 12px;border-top:1px solid var(--r-line)}
 #${ROOT_ID} .r-tab{padding:6px 0 5px;border:0;border-bottom:2px solid transparent;background:none;color:var(--r-muted);font:inherit;font-size:12px;cursor:pointer}

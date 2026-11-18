@@ -122,6 +122,8 @@ export class YoutubeReader extends EventTarget {
         this._members = new Map();
         /** @type {Map<string, RowInfo>} */
         this._rowInfo = new Map();
+        /** @type {Map<string, import('./subtitle-session.js').SubtitleSearchRange>} */
+        this._searchRanges = new Map();
         /** @type {MutationObserver|null} */
         this._pin = null;
         /** @type {number} Automatic translation waits until this time after a failure. */
@@ -283,7 +285,7 @@ export class YoutubeReader extends EventTarget {
             this._finishTranslation(true);
         }
         this._prefs = normalizeSubtitlePrefs(prefs);
-        if (!this._prefs.shortcuts) { this._restoreReplay?.(); }
+        if (previous.shortcuts && !this._prefs.shortcuts) { this._restoreReplay?.(); }
         if (previous.enabled !== this._prefs.enabled) { this._sync(); }
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
         this._view?.root.classList.toggle('r-mono', !this._prefs.bilingual);
@@ -602,30 +604,49 @@ export class YoutubeReader extends EventTarget {
         }
         const index = Math.max(0, Math.min(session.cues.length - 1, current + (key === 'a' ? -1 : (key === 'd' ? 1 : 0))));
         const cue = session.cues[index];
+        if (key === 's') {
+            this._playCaptionRange(session, cue.id, cue.id, {slow});
+        } else {
+            this._resetCuePlayback();
+            if (this._seek(cue.id)) { this.continueShadow(); }
+        }
+        return true;
+    }
+
+    /** */
+    _resetCuePlayback() {
         this._stopLoop('');
         this._shadowRow = null;
         this._shadowDone = '';
         this._shadowPause = null;
-        if (key !== 's') {
-            if (this._seek(cue.id)) { this.continueShadow(); }
-            return true;
-        }
+    }
+
+    /**
+     * @param {SubtitleSession} session
+     * @param {string} firstId
+     * @param {string} lastId
+     * @param {{slow?: boolean, follow?: boolean}} [options]
+     */
+    _playCaptionRange(session, firstId, lastId, {slow = false, follow = true} = {}) {
+        const video = this._video;
+        if (!video || this._session !== session) { return; }
+        this._restoreReplay?.();
+        this._resetCuePlayback();
         this._endListening();
         try {
-            const start = session.seekSeconds(cue.id);
-            const end = (cue.endMs + session.offsetMs) / 1000;
-            const info = this._rowInfo.get(cue.id);
+            const start = session.seekSeconds(firstId);
+            const end = (session.cue(lastId).endMs + session.offsetMs) / 1000;
+            const info = this._rowInfo.get(firstId);
             const isCurrent = () => this._video === video && info?.isCurrent() === true;
             const cancel = youtubeStudyContext.playRange(video, {start, end, isCurrent, rate: slow ? 0.75 : void 0}, (reason) => {
                 this._restoreReplay = null;
                 if (reason === 'failed') { this._status('播放没有开始，请点播放器的播放按钮。'); }
             });
             this._restoreReplay = () => cancel(false);
-            this._resumeFollow();
+            if (follow) { this._resumeFollow(); }
         } catch (error) {
             this._status(error instanceof Error ? error.message : String(error));
         }
-        return true;
     }
 
     /** Replay the paused sentence; the next pause counts this listen too. */
@@ -733,6 +754,7 @@ export class YoutubeReader extends EventTarget {
         this._loop = null;
         this._lookup = '';
         this._session = null;
+        this._searchRanges.clear();
         this._cardContexts = []; this._recommendationItems = [];
         this._rawSession = null;
         this._restoringVideoState = false;
@@ -1429,7 +1451,8 @@ export class YoutubeReader extends EventTarget {
         const {_view: view, _session: session} = this;
         if (!view || !session) { return; }
         const query = view.search.value.trim();
-        const rows = session.search(query);
+        const {rows, ranges} = session.search(query);
+        this._searchRanges = ranges;
         const top = resetScroll ? 0 : view.list.scrollTop;
         this._list.render(view.list, rows);
         view.list.scrollTop = top;
@@ -1508,6 +1531,12 @@ export class YoutubeReader extends EventTarget {
         time.append(star);
         tools.append(loop);
         row.append(time, text, tools, translated);
+        const range = this._searchRanges.get(cue.id);
+        if (range) {
+            const replay = this._button(`▶ 回听 ${range.lines} 行`, () => this._playCaptionRange(session, cue.id, range.lastId, {follow: false}));
+            replay.className = 'r-search-play r-loop scan-disable';
+            row.append(replay);
+        }
         if (/^en(?:-|$)/i.test(session.source.language)) { this._addCueNotes(cue.id, info, row, tools); }
         return row;
     }
