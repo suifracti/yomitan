@@ -16,7 +16,7 @@
 | 切了 Anki 账户后，旧列表的卡片编号在另一边也存在 | L-002；`orphanAccount` 核显示用的账户，`orphan_action` 读卡前后核当前账户。[恢复归属](youtube-study-wiring.md#2026-11-19-只在-anki-恢复时不认错账户) |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
 | 手里只有带时间的视频链接或课程链接，想找以前记的原句 | L-002；study_sources.source_search_key / source_search_time、study_index.indexed_page |
-| 切分类还在读上一个分类；取消的收藏又出现 | L-002；study-library.js 的 loadPage、refreshSavedWords |
+| 切分类还在读上一个分类；收藏或刷新一条后，旧记录混进新搜索 | L-002；`pages/study-library.js` 的 `loadPage`、`refreshSavedWords` 和 `recordResultScope` |
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
 | 删除或改名复习牌组后，学习库却说今天已完成 | L-002；ankiToday 的 decks、study-library.js 的 refreshToday |
@@ -197,6 +197,8 @@
 “卡已恢复却一直提示被删除”：自动同步原先只在记录还不是missing时比较ID是否消失；处于missing的记录即使同一Anki ID重新出现也不会核对，且mod未变时edited:1无法补触发。现复用每轮已有的带学习标签ID清单，关联ID缺失状态与记录missing状态不一致时才reconcile；恢复后安静轮次不再重复核对。新增临时删除→同ID/同mod返回→清除missing→安静一轮用例通过，原2000卡notesInfo只读当日编辑与候选用例也通过。没有实测Anki撤销按钮，不把替身情景冒充正式库行为；未新增扫描或改变排程。
 
 “点需处理没反应／切分类后空白”：学习库 `loadPage` 在加载时只保留最新待刷新请求，旧列表返回后不提交过期快照；等待同步或本地收藏时换分类，则不再发错误分类的列表请求。收藏读取也按发起顺序丢掉旧回应，避免慢回执盖掉后来取消的星标。复用原分类队列与本地收藏监听，不新建第二套加载或同步。见[延迟切分类及星标反例](youtube-study-wiring.md#2026-11-18-快速切分类和取消收藏只采用最新读取)。
+
+**单条刷新或收藏不能把旧记录插进新的搜索**：`recordResultScope` 在提交时记下分类、搜索词和页面所用记录，回执只修改仍显示这份记录的列表。显式同步、冲突选择和收藏照常提交，不需要撤销已送出的操作或重查新列表。见[迟到回执测试](youtube-study-wiring.md#2026-11-19-换了搜索不再混入旧记录的回执)。
 
 **听音练习的题目是声音，不是题面文字（2026-11-18）**。若两个语境都用“听原声，拼写这个词。”考 just，纯文本的学习点指纹会相同，旧桥会返回已同步，却让第二条也关联第一张卡和第一段音频。新建听原声→意思、视频声音字幕、听音拼写卡时只认这条记录自己的卡片标签；不拿题面/答案查重替代对录音的选择。丢回执仍用原标签找回，不重复送卡。文字卡仍可跨例句关联同一学习点；不批量改过去的关联、媒体、模板或排程。复现与边界见[原声卡记录](youtube-study-wiring.md#2026-11-18-相同题面不同原声的听写卡)。
 

@@ -939,6 +939,60 @@ describe('study library page', () => {
         expect(document.querySelector('[data-library-category="pending"]').textContent).toBe('需处理 1');
     });
 
+    test('late row actions do not inject the old record into newer indexed search results', async () => {
+        vi.resetModules();
+        makePageDom();
+        vi.stubGlobal('chrome', {runtime: {getURL: (path) => `chrome-extension://test${path}`}});
+        mocks.applicationMain.mockImplementation(async (_enabled, callback) => callback(makeApplication()));
+        const first = {
+            id: 'a'.repeat(32),
+            vaultSaved: true,
+            favorite: false,
+            entry: {word: 'harbor', sentence: 'The harbor was still.', url: '', title: ''},
+        };
+        const second = {...first, id: 'b'.repeat(32), entry: {...first.entry, word: 'brick', sentence: 'A brick wall.'}};
+        /** @type {import('core').DeferredPromiseDetails<unknown>} */
+        const refresh = deferPromise();
+        /** @type {import('core').DeferredPromiseDetails<unknown>} */
+        const favorite = deferPromise();
+        let holdRefresh = false;
+        mocks.studyCall.mockImplementation(async (action, args) => {
+            switch (action) {
+                case 'libraryList': return {items: [args.query ? second : first], total: 1, canSearch: true};
+                case 'libraryReconcile': return holdRefresh ? refresh.promise : first;
+                case 'libraryFavorite': return args.id === first.id ? favorite.promise : {...second, favorite: true};
+                case 'ankiToday': return {paused: true};
+                default: return [];
+            }
+        });
+        await import('../ext/js/pages/study-library.js');
+        const status = document.getElementById('study-library-status');
+        await vi.waitFor(() => expect(status?.textContent).toContain('本页 1 条已逐条核对'));
+        const button = (/** @type {string} */ label) => /** @type {HTMLButtonElement} */ (
+            [...document.querySelectorAll('#study-library-list button')].find((node) => node.textContent === label)
+        );
+        holdRefresh = true;
+        const oldRefresh = button('刷新 / 同步');
+        const oldFavorite = button('☆ 收藏');
+        oldRefresh.click();
+        oldFavorite.click();
+        const search = /** @type {HTMLInputElement} */ (document.getElementById('study-library-search'));
+        search.value = 'brick';
+        search.dispatchEvent(new Event('input', {bubbles: true}));
+        const visibleIds = () => Array.from(
+            /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-record-id]')),
+            (node) => node.dataset.recordId,
+        );
+        await vi.waitFor(() => expect(visibleIds()).toEqual([second.id]));
+        refresh.resolve(first);
+        favorite.resolve({...first, favorite: true});
+        await vi.waitFor(() => expect(oldRefresh.disabled || oldFavorite.disabled).toBe(false));
+        expect(visibleIds()).toEqual([second.id]);
+        expect(status?.textContent).toContain('找到 1 条，已显示 1 条');
+        button('☆ 收藏').click();
+        await vi.waitFor(() => expect(button('★ 已收藏')?.getAttribute('aria-pressed')).toBe('true'));
+    });
+
     test('an open favorites view follows local stars without calling a model or reloading all records', async () => {
         vi.resetModules();
         makePageDom();

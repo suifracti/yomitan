@@ -1437,7 +1437,7 @@ async function initializePage() {
                             resolutions[key] = selected.value === 'remote' ? 'remote' : 'local';
                         }
                         resolve.disabled = true;
-                        await refreshOne(record.id, {resolutions});
+                        await refreshOne(record, {resolutions});
                     })().catch((error) => setStatus(error instanceof Error ? error.message : '冲突处理未完成。'))
                         .finally(() => { resolve.disabled = false; });
                 });
@@ -1574,17 +1574,23 @@ listedQuery :
             favorite.textContent = record.favorite ? '★ 已收藏' : '☆ 收藏';
             favorite.setAttribute('aria-pressed', `${record.favorite === true}`);
             favorite.addEventListener('click', () => {
+                const current = recordResultScope(record);
+                if (!current()) { return; }
                 favorite.disabled = true;
-                void studyCall('libraryFavorite', {id: record.id, language: 'en', favorite: record.favorite !== true}).then((value) => {
+                const checked = record.favorite !== true;
+                void studyCall('libraryFavorite', {id: record.id, language: 'en', favorite: checked}).then((value) => {
+                    if (!current()) { return; }
                     const updated = normalizeRecord(value, record.id);
                     if (updated) {
                         records.set(record.id, updated);
                     } else {
-                        record.favorite = record.favorite !== true;
+                        record.favorite = checked;
                     }
                     render();
                     setStatus((updated?.favorite ?? record.favorite) ? '已收藏到学习库。' : '已从学习库收藏中移除。');
-                }).catch((error) => setStatus(error instanceof Error ? error.message : '收藏状态未改变。'))
+                }).catch((error) => {
+                    if (current()) { setStatus(error instanceof Error ? error.message : '收藏状态未改变。'); }
+                })
                     .finally(() => { favorite.disabled = false; });
             });
             actions.append(favorite);
@@ -1593,7 +1599,7 @@ listedQuery :
             refresh.textContent = '刷新 / 同步';
             refresh.addEventListener('click', () => {
                 refresh.disabled = true;
-                void refreshOne(record.id).catch((error) => setStatus(error instanceof Error ? error.message : '同步尚未完成。')).finally(() => { refresh.disabled = false; });
+                void refreshOne(record).catch((error) => setStatus(error instanceof Error ? error.message : '同步尚未完成。')).finally(() => { refresh.disabled = false; });
             });
             actions.append(refresh);
             if (record.syncState === 'anki-only') {
@@ -1845,23 +1851,37 @@ listedQuery :
         }
 
         /**
-         * @param {string} id
+         * @param {StudyLibraryRecord} record
+         * @returns {() => boolean}
+         */
+        function recordResultScope(record) {
+            const tab = category;
+            const query = search.value.trim();
+            return () => category === tab && search.value.trim() === query && records.get(record.id) === record;
+        }
+
+        /**
+         * @param {StudyLibraryRecord} record
          * @param {{resolutions?: Record<string, 'local'|'remote'>}} [options]
          * @returns {Promise<void>}
          */
-        async function refreshOne(id, options = {}) {
+        async function refreshOne(record, options = {}) {
+            const {id} = record;
+            const current = recordResultScope(record);
+            if (!current()) { return; }
             setStatus('正在刷新该条记录的 Obsidian / Anki 状态…');
-            const previous = records.get(id);
             try {
-                const value = await studyCall('libraryReconcile', {id, language: previous?.entry?.language ?? 'en', ...options});
+                const value = await studyCall('libraryReconcile', {id, language: record.entry?.language ?? 'en', ...options});
+                if (!current()) { return; }
                 const updated = normalizeRecord(value, id);
                 if (!updated) { throw new Error('刷新没有返回这条记录。'); }
                 records.set(id, {...updated, reconcileState: 'verified'});
                 render();
                 setStatus(Array.isArray(updated.conflicts) && updated.conflicts.length > 0 ? `已读取 ${updated.conflicts.length} 个字段冲突，请逐项选择。` : '该条记录已刷新。');
             } catch (error) {
+                if (!current()) { return; }
                 const message = error instanceof Error ? error.message : '刷新失败。';
-                if (previous) { records.set(id, {...previous, reconcileState: 'failed', reconcileError: message}); }
+                records.set(id, {...record, reconcileState: 'failed', reconcileError: message});
                 render();
                 setStatus(`该条记录未核对最新状态，保留了原显示：${message}`);
             }
