@@ -110,10 +110,19 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(progress).not.toHaveBeenCalled();
         expect(practice.textContent).not.toContain(sentence);
         expect(call.mock.calls.filter(([, request]) => request?.cue)).toHaveLength(1);
-        /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-reveal]')).click();
+        const dictation = /** @type {HTMLInputElement} */ (practice.querySelector('.r-listen-dictation input'));
+        const reveal = /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-reveal]'));
+        expect(reveal.textContent).toBe('看原句');
+        dictation.value = sentence.replace('patient', 'patience');
+        dictation.dispatchEvent(new Event('input'));
+        expect(reveal.textContent).toBe('核对听写');
+        reveal.click();
+        expect(practice.querySelector('.r-listen-written mark')?.textContent).toBe('patience');
+        expect(practice.querySelector('[data-listen-miss]')?.getAttribute('aria-pressed')).toBe('false');
         expect(practice.textContent).toContain(sentence);
         await vi.waitFor(() => expect(practice.querySelector('.r-listen-answer')?.textContent)
             .toBe(`${sentence}\n项目要成功，团队得一起耐心投入。\n有成效的项目离不开全队耐心协作。`));
+        expect(practice.querySelector('.r-listen-answer mark')?.textContent).toBe('patient');
         expect(call.mock.calls.filter(([, request]) => request?.cue)).toHaveLength(2);
         const notes = [...practice.querySelectorAll('button[data-listen-note]')];
         expect(notes.map((button) => button.textContent)).toEqual(['继续学习：successful · 成功的', '继续学习：successful · 有成效的']);
@@ -124,6 +133,9 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(miss.getAttribute('aria-pressed')).toBe('true');
         const next = /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-next]'));
         next.click();
+        expect(dictation.value).toBe('');
+        expect(reveal.textContent).toBe('看原句');
+        expect(practice.querySelector('.r-listen-written')?.textContent).toBe('');
         expect(practice.textContent).not.toContain(sentence);
         expect(practice.querySelector('[data-listen-note]')).toBeNull();
         const playSentence = /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-play]'));

@@ -73,7 +73,7 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-list:empty{display:none}
 #${ROOT_ID} .r-search{display:flex;align-items:center;gap:8px;padding:6px 12px;color:var(--r-muted);font-size:12px}
 #${ROOT_ID} .r-search[hidden]{display:none}
-#${ROOT_ID} .r-search input{flex:1 1 auto;width:100%;min-width:0;font:inherit;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:4px 7px}
+#${ROOT_ID} .r-search input,#${ROOT_ID} .r-listen-dictation input{flex:1 1 auto;width:100%;min-width:0;font:inherit;color:var(--r-fg);background:var(--st-sheet,transparent);border:1px solid var(--r-line);border-radius:6px;padding:4px 7px}
 #${ROOT_ID} .r-search small{flex-shrink:0}
 #${ROOT_ID} .r-cue{position:relative;display:grid;grid-template-columns:46px minmax(0,1fr) auto;column-gap:6px;padding:7px 8px 7px 0;border-left:3px solid transparent}
 #${ROOT_ID} .r-cue.is-current{background:var(--r-tint);border-left-color:var(--r-accent)}
@@ -100,9 +100,13 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-words-note{margin:0;padding:12px;color:var(--r-muted);font-size:12px}
 #${ROOT_ID} .r-listen-practice{padding:12px;border-top:1px solid var(--r-line)}
 #${ROOT_ID} .r-listen-practice p{margin:8px 0;font-size:13px}
+#${ROOT_ID} .r-listen-dictation{display:flex;gap:6px;margin:8px 0}
+#${ROOT_ID} .r-listen-dictation[hidden]{display:none}
+#${ROOT_ID} .r-listen-dictation button{flex:none}
 #${ROOT_ID} .r-listen-actions{display:flex;flex-wrap:wrap;gap:6px}
 #${ROOT_ID} .r-listen-actions button[aria-pressed=true]{border-color:var(--r-accent);background:var(--r-tint)}
-#${ROOT_ID} .r-listen-answer{white-space:pre-wrap;overflow-wrap:anywhere}
+#${ROOT_ID} .r-listen-answer,#${ROOT_ID} .r-listen-written{white-space:pre-wrap;overflow-wrap:anywhere}
+#${ROOT_ID} .r-listen-practice mark{color:inherit;background:var(--r-mark);text-decoration:underline;text-underline-offset:3px}
 #${ROOT_ID} .r-word{display:grid;grid-template-columns:46px auto minmax(0,1fr);column-gap:6px;align-items:baseline;padding:7px 8px 7px 0;border-bottom:1px solid var(--r-line)}
 #${ROOT_ID} .r-word-text{font-family:var(--st-serif,Georgia,serif);font-size:15px}
 #${ROOT_ID} .r-word-meta{color:var(--r-muted);font-size:11px;text-align:right}

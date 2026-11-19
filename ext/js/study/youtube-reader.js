@@ -27,6 +27,7 @@ import {ENGINE_LABELS, chromeTranslate} from './free-translators.js';
 import {DEFAULT_SUBTITLE_PREFS, normalizeSubtitlePrefs, onSubtitlePrefsChanged, readSubtitlePrefs, readVideoState, writeSubtitlePrefs, writeVideoState} from './subtitle-prefs.js';
 import {TranslationQueue} from './translation-queue.js';
 import {studyCall} from './study-client.js';
+import {differingWords, markDictation} from './study-dictation.js';
 import {wordForms} from './word-marks.js';
 import {YoutubeOverlay, translationEngineSelect, shadowContinueSelect, syncControls} from './youtube-overlay.js';
 import {CaptionList, learningCaptions, ROOT_ID, SIDEBAR_STYLE as STYLE} from './caption-sidebar.js';
@@ -2130,6 +2131,17 @@ export class YoutubeReader extends EventTarget {
         hint.setAttribute('role', 'status');
         const answer = document.createElement('p');
         answer.className = 'r-listen-answer';
+        answer.tabIndex = -1;
+        const written = Object.assign(document.createElement('p'), {className: 'r-listen-written', lang: 'en'});
+        const dictation = Object.assign(document.createElement('form'), {className: 'r-listen-dictation'});
+        const input = Object.assign(document.createElement('input'), {
+            type: 'text', placeholder: '也可以写下听到的英文', maxLength: 2400, autocomplete: 'off', spellcheck: false,
+        });
+        input.setAttribute('aria-label', '写下听到的英文（可选）');
+        const reveal = Object.assign(document.createElement('button'), {type: 'submit', className: 'r-btn', textContent: '看原句'});
+        reveal.dataset.listenReveal = '';
+        input.oninput = () => { reveal.textContent = input.value.trim() ? '核对听写' : '看原句'; };
+        dictation.append(input, reveal);
         const controls = document.createElement('div');
         controls.className = 'r-listen-actions';
         const notes = document.createElement('div');
@@ -2145,10 +2157,15 @@ export class YoutubeReader extends EventTarget {
         const prompt = () => {
             answer.hidden = true;
             answer.textContent = '';
+            written.hidden = true;
+            written.textContent = '';
+            input.value = '';
+            reveal.textContent = '看原句';
             notes.replaceChildren();
             notes.remove();
             const done = current === queue.length;
-            for (const button of [play, reveal, miss, next]) { button.hidden = done; }
+            dictation.hidden = done;
+            for (const button of [play, miss, next]) { button.hidden = done; }
             retry.hidden = !done || missed.size === 0;
             if (done) {
                 title.textContent = '本轮结束';
@@ -2182,24 +2199,36 @@ export class YoutubeReader extends EventTarget {
             }
         });
         play.dataset.listenPlay = '';
-        const reveal = this._button('看原句', () => {
+        dictation.onsubmit = (event) => {
+            event.preventDefault();
             const id = queue[current];
             const info = index.get(id);
-            if (!info) { return; }
+            if (!info?.isCurrent()) { return; }
             const {cueId} = info;
-            const revealed = document.createTextNode([info.text, cueId ? session.translation(cueId) : ''].filter(Boolean).join('\n'));
-            answer.replaceChildren(revealed);
+            const original = Object.assign(document.createElement('span'), {lang: 'en', textContent: info.text});
+            const captionTranslation = cueId ? session.translation(cueId) : '';
+            const translation = document.createTextNode(captionTranslation ? `\n${captionTranslation}` : '');
+            const guess = input.value.trim();
+            if (guess) {
+                const diff = differingWords(guess, info.text);
+                markDictation(written, guess, diff.written);
+                written.prepend('你写的：');
+                written.hidden = false;
+                markDictation(original, info.text, diff.original);
+                hint.textContent = diff.written.length + diff.original.length > 0 ? '划线的是没对上的词，可以再听一次。' : '和原句一致。';
+            }
+            answer.replaceChildren(original, translation);
             answer.hidden = false;
-            reveal.hidden = true;
+            dictation.hidden = true;
             const records = savedByCue.get(id) ?? [];
             if (this._mediaKey && records.length > 0) {
                 const ids = new Set(records.map((record) => record.id));
                 const cue = {sentence: info.text, videoTime: Math.floor(info.start)};
                 void this._call('libraryVideoWords', {mediaKey: this._mediaKey, cue}).then((value) => {
-                    if (this._listen !== practice || revealed.parentNode !== answer || !info.isCurrent()) { return; }
+                    if (this._listen !== practice || translation.parentNode !== answer || !info.isCurrent()) { return; }
                     const {items: matched} = /** @type {{items: SavedPlayback[]}} */ (value);
                     const translations = new Set(matched.filter((item) => ids.has(item.id)).map((item) => item.translation?.trim()).filter(Boolean));
-                    if (translations.size > 0) { revealed.data = [info.text, ...translations].join('\n'); }
+                    if (translations.size > 0) { translation.data = `\n${[...translations].join('\n')}`; }
                 }).catch(() => {});
             }
             for (const {id: recordId, word, sentence, sense, supplementAudio} of records) {
@@ -2224,8 +2253,8 @@ export class YoutubeReader extends EventTarget {
                 }
             }
             answer.after(notes);
-        });
-        reveal.dataset.listenReveal = '';
+            answer.focus();
+        };
         const miss = this._button('没听清', () => {
             const id = queue[current];
             const marked = !missed.delete(id);
@@ -2252,8 +2281,8 @@ export class YoutubeReader extends EventTarget {
             this._endListening();
             view.words.querySelector('button[data-listen-saved]')?.focus();
         });
-        controls.append(play, reveal, miss, next, retry, stop);
-        panel.append(title, hint, controls, answer);
+        controls.append(miss, next, retry, stop);
+        panel.append(title, hint, play, dictation, written, answer, controls);
         this._listen = practice;
         view.words.hidden = true;
         view.list.hidden = true;
