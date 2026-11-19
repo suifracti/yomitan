@@ -89,6 +89,7 @@ export type LibraryRecord = {
     candidates?: {noteId: number; front: string}[];
     repairCardId?: string;
     confirmRestoreTo?: {targetId: string; path: string};
+    orphanAccount?: string;
     media?: Partial<Record<'audio' | 'image' | 'video', SavedStudyAsset>>;
     audioContextChanged?: true;
     favorite?: boolean;

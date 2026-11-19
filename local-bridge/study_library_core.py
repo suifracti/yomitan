@@ -311,7 +311,9 @@ def _normalize_request(p):
         if not ID_RE.fullmatch(str(p.get('id', ''))) or p.get('choice') not in ('unlink', 'recreate', 'select') or (p['choice'] == 'select' and (type(p.get('noteId')) is not int or p['noteId'] <= 0)):
             raise ValueError('请选择要处理的记录和卡片。')
         return p
-    if action == 'libraryOrphan' and set(p) in ({'action', 'noteId', 'choice'}, {'action', 'noteId', 'choice', 'word'}):
+    if action == 'libraryOrphan' and {'action', 'noteId', 'choice'} <= set(p) <= {'action', 'noteId', 'choice', 'word', 'orphanAccount'}:
+        if 'orphanAccount' in p and (not isinstance(p['orphanAccount'], str) or not ID_RE.fullmatch(p['orphanAccount'])):
+            raise ValueError('请刷新学习库后再选择卡片。')
         if p['choice'] not in ('restore', 'ignore') or type(p['noteId']) is not int or p['noteId'] <= 0:
             raise ValueError('请选择要处理的卡片。')
         if 'word' in p:

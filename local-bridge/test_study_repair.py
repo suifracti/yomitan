@@ -40,8 +40,51 @@ class RepairTests(unittest.TestCase):
         # Existing cards only have the note link, not a saved target ID.
         fields = h.notes[1000]['fields']
         fields['Source'] = re.sub(r' data-study-target="[^"]*"', '', fields['Source'])
+        original = h.library.anki
+        accounts = {'Study': h.notes, 'Other': copy.deepcopy(h.notes)}
+        accounts['Other'][1000]['fields']['Definition'] = '另一账户里相同卡号的释义'
+        active = 'Study'
+        switch_on_read = False
+
+        def anki(action, params):
+            nonlocal active
+            if action == 'getActiveProfile':
+                return active
+            h.notes = accounts[active]
+            result = original(action, params)
+            if action == 'notesInfo' and switch_on_read:
+                active = 'Other'
+            return result
+
+        h.library.anki = anki
         h.library.handle({'action': 'libraryAutoSync'})
-        restore = {'action': 'libraryOrphan', 'noteId': 1000, 'choice': 'restore'}
+        page = {'action': 'libraryList', 'scope': 'anki-only', 'url': '', 'title': ''}
+        item, = h.library.handle(page)['items']
+        restore = {'action': 'libraryOrphan', 'noteId': item['noteId'], 'choice': 'restore'}
+        restore['orphanAccount'] = item['orphanAccount']
+
+        active = 'Other'
+        with self.assertRaisesRegex(ValueError, '另一个账户'):
+            h.library.handle(restore)
+        self.assertFalse(path.is_file())
+        h.library.handle({'action': 'libraryAutoSync'})
+        with self.assertRaisesRegex(ValueError, '刷新学习库'):
+            h.library.handle(restore)
+        self.assertFalse(path.is_file())
+
+        other, = h.library.handle(page)['items']
+        h.library.handle({**restore, 'choice': 'ignore', 'orphanAccount': other['orphanAccount']})
+        self.assertEqual(h.library.handle(page)['items'], [])
+
+        active = 'Study'
+        h.library.handle({'action': 'libraryAutoSync'})
+        switch_on_read = True
+        with self.assertRaisesRegex(ValueError, '另一个账户'):
+            h.library.handle(restore)
+        self.assertFalse(path.is_file())
+
+        active = 'Study'
+        switch_on_read = False
         h.library.handle(restore)
         self.assertTrue(path.is_file(), 'The note belongs in course A even though B is now selected.')
         self.assertEqual(h.library.locate(saved['id']).target_id, first['targetId'])

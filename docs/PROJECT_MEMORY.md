@@ -13,6 +13,7 @@
 | 同一 B 站选集换网址后，字幕栏和学习库的已记词数不同 | L-007；study-service 的 libraryVideoWords、study_settings.video_words |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
 | Anki 换了账户，一批已有的卡突然显示被删；读卡期间切了账户 | L-002；study_settings.auto_sync、study_sync.sync_profile / reconcile |
+| 切了 Anki 账户后，旧列表的卡片编号在另一边也存在 | L-002；`orphanAccount` 核显示用的账户，`orphan_action` 读卡前后核当前账户。[恢复归属](youtube-study-wiring.md#2026-11-19-只在-anki-恢复时不认错账户) |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
 | 手里只有带时间的视频链接或课程链接，想找以前记的原句 | L-002；study_sources.source_search_key / source_search_time、study_index.indexed_page |
 | 切分类还在读上一个分类；取消的收藏又出现 | L-002；study-library.js 的 loadPage、refreshSavedWords |
@@ -221,6 +222,8 @@
 **换了 Anki 账户不是删卡**：自动同步用已有的关联 ID 看到原卡后，才记当前 Anki profile；只看到一个账户名不算归属。切到其他账户，自动同步和学习库逐条核对暂停，原同步进度不推进；切回后继续比较，同账户真删卡仍进「需处理」。今日复习也走同一判断，不按同名牌组误计另一个账户的数字。首次只采基线，旧连接器从未报告过账户时仍走老流程。没有把同步改成多账户合并，不替人认领迁移或改名的账户。见[切换账户和真正删卡的对照](youtube-study-wiring.md#2026-11-18-换了-anki-账户不是删卡)。
 
 **在读卡的过程中切换账户也停下**：自动核对沿本轮已确认的账户，批量读到候选/编辑正文后先复核再采信。逐条核对在写 Anki 字段、写回笔记或更新关联状态前重查；换账户则沿现有重试队列保留这条笔记。未识别账户的旧连接器仍照旧；正常批次不扩大 `edited:1` 或候选范围。不能撤回已送出的请求。[两个账户同卡号的验证](youtube-study-wiring.md#2026-11-19-同步中切换-anki-账户不改另一份卡)
+
+**「只在 Anki」重建或忽略看列出它时的账户**：即使没有关联笔记，自动扫描也用 `orphanProfile` 记孤卡所见账户，但不认领它用于全库同步。列表带临时键，动作核点按钮时的当前账户与这份列表；读取卡后再核一次，不让相同编号串账户。手选旧卡关联用已确认的账户。新忽略只在该账户生效，老列表无账户仍保留；旧连接器不报告账户则照旧，不改原笔记格式。[同号双账户的临时验证](youtube-study-wiring.md#2026-11-19-只在-anki-恢复时不认错账户)。
 
 **自己的卡去掉学习标签后，每轮都被重新同步，粗体也没了**：明确关联（`linkedExisting`）按选定的 Anki 笔记号检查存在和当天的编辑，不以标签代替其身份。普通扩展制卡的标签核对和孤卡发现照旧。关联自有卡只在笔记里确实改了哪一面的文字时才写那一面；Anki 自己改的字只读回，不重排它的 HTML、原例句、标签或排程。[临时 Anki 的双向实测](youtube-study-wiring.md#2026-11-18-关联自有卡不剥掉它的排版)。
 

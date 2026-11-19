@@ -1624,7 +1624,7 @@ listedQuery :
                     };
                     void studyCall(
                         record.syncState === 'anki-only' ? 'libraryOrphan' : 'libraryRepair',
-                        record.syncState === 'anki-only' ? {noteId, choice, ...restore} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
+                        record.syncState === 'anki-only' ? {noteId, choice, ...restore, ...(record.orphanAccount ? {orphanAccount: record.orphanAccount} : {})} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
                     )
                         .then(async () => {
                             if (label === '重新制卡') { createCard(); }

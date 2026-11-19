@@ -32,6 +32,24 @@ def sync_profile(anki, expected):
     return current, f'{reason}。请在 Anki 打开「{expected}」再同步；原笔记和卡片没有改动。'
 
 
+def orphan_account_key(profile):
+    return hashlib.sha256(profile.encode()).hexdigest()[:32] if profile else ''
+
+
+def ignored_anki_notes(cache, profile, *, add=()):
+    path = pathlib.Path(cache) / 'anki-ignored.json'
+    by_account = json.loads(path.read_text()) if path.exists() else []
+    if isinstance(by_account, list):
+        by_account = {'': by_account}
+    key = orphan_account_key(profile)
+    scoped = set(by_account.get(key, []))
+    if add:
+        scoped.update(add)
+        by_account[key] = sorted(scoped)
+        path.write_text(json.dumps(by_account))
+    return scoped | set(by_account.get('', []))
+
+
 def _compact(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
 
@@ -610,12 +628,11 @@ def reconcile(lib, p):
 def repair_link(lib, p):
     r, body, version = lib.read(p['id'])
     values = local_fields(r, body)
+    expected = getattr(lib, 'expected_anki_profile', '')
     if p['choice'] in ('unlink', 'recreate'):
         if p['choice'] == 'unlink':
-            ignored_path = pathlib.Path(lib.cache_dir) / 'anki-ignored.json'
-            ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
             detached = [n for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n]
-            ignored_path.write_text(json.dumps(sorted(set(ignored + detached))))
+            ignored_anki_notes(lib.cache_dir, expected, add=detached)
             r.update({'cards': [], 'noteId': None, 'syncBaseline': {}})
         else:
             r['cards'] = [c for c in r.get('cards', []) if c['id'] != r['repairCardId']]
@@ -627,9 +644,14 @@ def repair_link(lib, p):
         if not card_id: raise ValueError('这条记录不需要重新关联，请刷新列表。')
         card = next((c for c in r.get('cards', []) if c['id'] == card_id), None)
         tag = 'study_' + r['id'] if card_id == 'legacy' else 'studycard_' + card_id
+        active, paused = sync_profile(lib.anki, expected)
+        if paused: raise ValueError(paused)
         if p['noteId'] not in lib.anki('findNotes', {'query': 'tag:' + tag}):
             raise ValueError('这张卡找不到了，请刷新列表后再选。')
         note = lib.anki('notesInfo', {'notes': [p['noteId']]})[0]
+        if active:
+            _, paused = sync_profile(lib.anki, active)
+            if paused: raise ValueError(paused)
         front = _plain(note['fields']['Word']['value'])
         back = parse_definition(note['fields']['Definition']['value'], {})['answer']
         if card is None:
@@ -699,15 +721,24 @@ def orphan_record(library, note, supplied_word=''):
 
 
 def orphan_action(library, p):
-    cache = pathlib.Path(library.cache_dir)
+    state = library.sync_state()
+    expected = state.get('orphanProfile', state.get('ankiProfile', ''))
+    active, paused = sync_profile(library.anki, expected)
+    if paused: raise ValueError(paused)
+    if active and not expected:
+        raise ValueError('这份列表还没核对 Anki 账户。请等自动同步后刷新学习库。')
+    if p.get('orphanAccount', '') != orphan_account_key(expected):
+        raise ValueError('这张卡来自旧列表。请刷新学习库后再选择。')
     if p['choice'] == 'restore' and p['noteId'] in linked_note_ids(r for _, _, r in library.indexed()[1].values()):
         return {'done': True}
-    state = json.loads((cache / 'auto-sync-state.json').read_text())
     row = next((r for r in state.get('orphans', []) if r['noteId'] == p['noteId']), None)
     if row is None: raise ValueError('这张卡已处理，请刷新列表。')
     if p['choice'] == 'restore':
         from study_library import entry_id, normalize_entry
         info = library.anki('notesInfo', {'notes': [p['noteId']]})
+        if active:
+            _, paused = sync_profile(library.anki, active)
+            if paused: raise ValueError(paused)
         if not info: raise ValueError('Anki 里的卡已被删除，请刷新列表。')
         if 'japanese_study' in info[0].get('tags', []): raise ValueError('这是日语卡，不能重建到英语笔记里。')
         fresh = orphan_record(library, info[0], p.get('word', ''))
@@ -744,10 +775,8 @@ def orphan_action(library, p):
         values = local_fields(r, body)
         values['cards'] = [{'id': c['id'], 'front': c['front'], 'back': c['back']} for c in r['cards']]
         lib.write(r, with_local_fields(body, values), version)
-    ignored_path = cache / 'anki-ignored.json'
-    ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
     if p['choice'] == 'ignore':
-        ignored_path.write_text(json.dumps(sorted(set(ignored + [p['noteId']]))))
+        ignored_anki_notes(library.cache_dir, active, add=[p['noteId']])
     return {'done': True}
 
 

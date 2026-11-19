@@ -370,7 +370,7 @@ class YomitanLibrary:
             linked = linked_note_ids(r for _, _, r in records.values())
             if not linked:
                 state.pop('ankiProfile', None)
-            profile, paused = study_sync.sync_profile(self.anki, state.get('ankiProfile')) if linked else ('', '')
+            profile, paused = study_sync.sync_profile(self.anki, state.get('ankiProfile'))
             if paused:
                 # Do not advance file/Anki stamps or consume retries while the other collection is open.
                 return pause_pass(paused)
@@ -379,12 +379,11 @@ class YomitanLibrary:
                 if personal:
                     edit_scope += ' OR nid:' + ','.join(map(str, personal))
                 edited = self.anki('findNotes', {'query': '(' + edit_scope + ') edited:1'})
-                ignored_path = pathlib.Path(self.cache_dir) / 'anki-ignored.json'
-                ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
+                ignored = study_sync.ignored_anki_notes(self.cache_dir, profile)
                 live = set(self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'}))
                 untagged = personal.keys() - live
                 personal_live = set(self.anki('findNotes', {'query': 'nid:' + ','.join(map(str, untagged))})) if untagged else set()
-                candidates = live - linked - set(ignored)
+                candidates = live - linked - ignored
                 requested = sorted(set(edited) | candidates)
                 info = self.anki('notesInfo', {'notes': requested}) if requested else []
                 if profile and requested:
@@ -397,6 +396,7 @@ class YomitanLibrary:
                                     and 'japanese_study' not in n.get('tags', [])
                                     and not any(t in owner for t in n.get('tags', []))
                                     and any(re.fullmatch(r'study(?:card)?_[a-f0-9]{32}', t) for t in n.get('tags', []))]
+                state['orphanProfile'] = profile
                 for ident, (lib, _path, r) in records.items():
                     missing = any(n not in live and not (n in personal_live and (lib.target_id, ident) in personal[n])
                                   for n in linked_note_ids([r]))
@@ -585,12 +585,15 @@ class YomitanLibrary:
             if p.get('practice') or p.get('scope') in ('sources', 'word'):
                 return indexed_page(rows, p, complete=self.index_complete)
             state_path = pathlib.Path(self.cache_dir or self.config_path.parent) / 'auto-sync-state.json'
-            ignored_path = state_path.with_name('anki-ignored.json')
-            ignored = json.loads(ignored_path.read_text()) if ignored_path.exists() else []
+            from study_sync import ignored_anki_notes, orphan_account_key
             state = json.loads(state_path.read_text()) if state_path.exists() else {}
+            profile = state.get('orphanProfile', state.get('ankiProfile', ''))
+            ignored = ignored_anki_notes(state_path.parent, profile)
+            account = orphan_account_key(profile)
             known = linked_note_ids(rows)
             orphans = [r for r in state.get('orphans', []) if r['noteId'] not in ignored and r['noteId'] not in known]
             for row in orphans:
+                if account: row['orphanAccount'] = account
                 if row.get('targetId') not in self.targets:
                     target = self.targets[self.active_id]
                     row['confirmRestoreTo'] = {'targetId': self.active_id, 'path': str(pathlib.Path(target['vault']) / target['directory'])}
@@ -620,7 +623,7 @@ class YomitanLibrary:
                 if lib is None: raise ValueError('没有找到原学习记录；未改投当前目录。')
                 if action == 'libraryCardsAdd':
                     lib.new_card_defaults = self.settings()
-                if action == 'libraryReconcile':
+                if action in ('libraryReconcile', 'libraryRepair'):
                     lib.expected_anki_profile = self.sync_state().get('ankiProfile')
                 request = {**p}
                 if 'ids' in p: request['ids'] = [ident]
