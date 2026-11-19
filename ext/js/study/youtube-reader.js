@@ -43,6 +43,7 @@ import {youtubeSite} from './youtube-site.js';
 const STYLE_ID = 'study-yt-reader-style';
 const TOKENS_ID = 'study-yt-reader-tokens';
 const WAIT_MS = 10000;
+const SLOW_REPLAY_RATE = 0.75;
 
 
 /**
@@ -109,7 +110,7 @@ export class YoutubeReader extends EventTarget {
         this._shadowPause = null;
         /** @type {(()=>void)|null} */
         this._restoreReplay = null;
-        /** @type {{panel: HTMLElement, listHidden: boolean, wordsHidden: boolean, cancel?: () => void}|null} */
+        /** @type {{panel: HTMLElement, listHidden: boolean, wordsHidden: boolean, replay: (slow: boolean) => void, cancel?: () => void}|null} */
         this._listen = null;
         /** @type {SavedPlayback[]|null} */
         this._libraryListening = null;
@@ -632,6 +633,10 @@ export class YoutubeReader extends EventTarget {
      * @returns {boolean}
      */
     captionShortcut(key, slow) {
+        if (key === 's' && this._listen) {
+            this._listen.replay(slow);
+            return true;
+        }
         const session = this._session;
         const video = this._video;
         if (!session || !video || session.cues.length === 0) { return false; }
@@ -685,7 +690,7 @@ export class YoutubeReader extends EventTarget {
             const end = (session.cue(lastId).endMs + session.offsetMs) / 1000;
             const info = this._rowInfo.get(firstId);
             const isCurrent = () => this._video === video && info?.isCurrent() === true;
-            const cancel = youtubeStudyContext.playRange(video, {start, end, isCurrent, rate: slow ? 0.75 : void 0}, (reason) => {
+            const cancel = youtubeStudyContext.playRange(video, {start, end, isCurrent, rate: slow ? SLOW_REPLAY_RATE : void 0}, (reason) => {
                 this._restoreReplay = null;
                 if (reason === 'failed') { this._status('播放没有开始，请点播放器的播放按钮。'); }
             });
@@ -2148,12 +2153,38 @@ export class YoutubeReader extends EventTarget {
         notes.className = 'r-listen-actions';
         notes.setAttribute('role', 'group');
         notes.setAttribute('aria-label', '这句已存的词义');
-        /** @type {NonNullable<YoutubeReader['_listen']>} */
-        const practice = {panel, listHidden: view.list.hidden, wordsHidden: view.words.hidden};
         /** @type {Set<string>} */
         const missed = new Set();
         let current = 0;
         let retrying = false;
+        const replay = (/** @type {boolean} */ slow) => {
+            if (current === queue.length) { return; }
+            practice.cancel?.();
+            const info = index.get(queue[current]);
+            if (!info) {
+                hint.textContent = '这句的字幕已改变。请退出后重开练习。';
+                return;
+            }
+            try {
+                const isCurrent = () => this._video === video && info.isCurrent();
+                hint.textContent = video.muted || video.volume === 0 ? '正在播放；播放器已静音，请打开声音。' : '正在播放本句…';
+                const rate = slow ? SLOW_REPLAY_RATE : void 0;
+                practice.cancel = youtubeStudyContext.playRange(video, {start: info.start, end: info.end, isCurrent, rate}, (reason) => {
+                    practice.cancel = void 0;
+                    hint.textContent = {ended: '已播完。可以再听，或看原句。', failed: '播放没开始，请再点一次。', cancelled: '已停止。可以再点一次播放。'}[reason];
+                });
+            } catch (error) {
+                hint.textContent = error instanceof Error ? error.message : '播放没开始，请再点一次。';
+            }
+        };
+        /** @type {NonNullable<YoutubeReader['_listen']>} */
+        const practice = {panel, listHidden: view.list.hidden, wordsHidden: view.words.hidden, replay};
+        const play = this._button('播放本句', () => replay(false));
+        play.dataset.listenPlay = '';
+        const slowPlay = this._button('慢速回听', () => replay(true));
+        slowPlay.dataset.listenSlow = '';
+        const playback = Object.assign(document.createElement('div'), {className: 'r-listen-actions'});
+        playback.append(play, slowPlay);
         const prompt = () => {
             answer.hidden = true;
             answer.textContent = '';
@@ -2165,7 +2196,7 @@ export class YoutubeReader extends EventTarget {
             notes.remove();
             const done = current === queue.length;
             dictation.hidden = done;
-            for (const button of [play, miss, next]) { button.hidden = done; }
+            for (const button of [play, slowPlay, miss, next]) { button.hidden = done; }
             retry.hidden = !done || missed.size === 0;
             if (done) {
                 title.textContent = '本轮结束';
@@ -2180,25 +2211,6 @@ export class YoutubeReader extends EventTarget {
                 play.focus();
             }
         };
-        const play = this._button('播放本句', () => {
-            practice.cancel?.();
-            const info = index.get(queue[current]);
-            if (!info) {
-                hint.textContent = '这句的字幕已改变。请退出后重开练习。';
-                return;
-            }
-            try {
-                const isCurrent = () => this._video === video && info.isCurrent();
-                hint.textContent = video.muted || video.volume === 0 ? '正在播放；播放器已静音，请打开声音。' : '正在播放本句…';
-                practice.cancel = youtubeStudyContext.playRange(video, {start: info.start, end: info.end, isCurrent}, (reason) => {
-                    practice.cancel = void 0;
-                    hint.textContent = {ended: '已播完。可以再听，或看原句。', failed: '播放没开始，请再点一次。', cancelled: '已停止。可以再点一次播放。'}[reason];
-                });
-            } catch (error) {
-                hint.textContent = error instanceof Error ? error.message : '播放没开始，请再点一次。';
-            }
-        });
-        play.dataset.listenPlay = '';
         dictation.onsubmit = (event) => {
             event.preventDefault();
             const id = queue[current];
@@ -2282,7 +2294,7 @@ export class YoutubeReader extends EventTarget {
             view.words.querySelector('button[data-listen-saved]')?.focus();
         });
         controls.append(miss, next, retry, stop);
-        panel.append(title, hint, play, dictation, written, answer, controls);
+        panel.append(title, hint, playback, dictation, written, answer, controls);
         this._listen = practice;
         view.words.hidden = true;
         view.list.hidden = true;

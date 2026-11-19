@@ -41,6 +41,7 @@
 | 视频回听点看原句，笔记存过中文却只显示英文 | L-007；`libraryVideoWords(cue)` 与 YoutubeReader._beginListening 的揭晓 |
 | 想只重听刚才没听清的句子 | L-007；YoutubeReader._beginListening 的本轮队列 |
 | 回听完想直接听写，不先录音或制卡 | L-007；`study-dictation.js` 复用学习库核对，视频仍读原播放器。[回听听写](youtube-study-wiring.md#2026-11-19-字幕回听时可以直接听写) |
+| 字幕回听想慢一点，按 Shift+S 却退出听写 | L-007；`captionShortcut` 先给当前练习；按钮和快捷键走同一题、同一句尾和原倍速恢复。[练习内慢放](youtube-study-wiring.md#2026-11-19-字幕回听练习可以慢速重听) |
 | 从学习库或复习答案回原视频听这一句，不只是跳到秒数 | L-007；makeVideoListenButton、videoListenUrl、openVideoListening、claimVideoListening |
 | 词已经记了，却没录当时的原声；补录时不想改自己的解释 | L-007；canSupplementAudio、YoutubeReader.lookupCaption、mountStudyLibrary |
 | 原网页打不开，想播放已附在笔记里的原声 | L-007；study_media.read_audio、libraryAudioRead |
@@ -341,6 +342,8 @@
 **回听不该拖到下一句开头**：实际播放器的 `timeupdate` 不是句尾精确时钟。保留事件兜底，但按剩余媒体时间和倍速只安排一个句尾定时；播放、跳转完成、变速时重算，换媒体、退出或结束仍清除。独立 Chromium 同一音轨原先晚约 0.22–0.25 秒，改后本次晚不到 0.02 秒。没有增加持续轮询，也不追移用户的播放进度。见[实际整轮点播与读回](youtube-study-wiring.md#2026-11-18-独立浏览器串起整轮回听并缩短句尾延迟)。
 
 字幕快捷键 S／Shift+S 也使用这个媒体时钟；读当前行的已校验时间，不另发词卡或原声令牌。Shift+S 以 0.75 倍重听，结束、手动离开这句或视频／字幕偏移变化时恢复原倍率，不把手动跳转暂停。偏移后的开头早于 0 时提示调整，不跳到别处。见[快捷键回听验证](youtube-study-wiring.md#2026-11-19-快捷键回听也停在准确的句尾)。
+
+**在回听练习里的 S／Shift+S 先重播正在练的那题**，不能误进会退出练习的普通字幕回听。点「播放本句」沿播放器当前倍率，点「慢速回听」或 Shift+S 用同一个 0.75 倍率，交给 `YoutubeStudyContext.playRange` 在句尾或取消时恢复。慢放不清听写答案，不改进度、录音或日常播放设置。见[练习内慢放](youtube-study-wiring.md#2026-11-19-字幕回听练习可以慢速重听)。
 
 **循环本句也用同一个句尾时钟**：过去只跳到句首，播放器暂停时不会开始；播放后要等粗粒度的 `timeupdate`。现在用户点循环才开始播放，在此句结束时返回句首；手动拖到下一句、改偏移或换播放器等会清掉原循环，不拦新位置或抢着恢复播放。保留单次回听与跟读的原行为。[暂停点循环](youtube-study-wiring.md#2026-11-19-暂停时点循环也开始播放)
 

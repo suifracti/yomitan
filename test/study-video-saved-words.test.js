@@ -100,12 +100,23 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(savedPanel.hidden).toBe(true);
         expect(practice.textContent).not.toContain(sentence);
         expect(practice.querySelector('[data-listen-note]')).toBeNull();
+        video.playbackRate = 1.5;
         /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-play]')).click();
         expect(play).toHaveBeenCalledOnce();
         expect(video.currentTime).toBe(24.5);
+        expect(video.playbackRate).toBe(1.5);
         video.currentTime = 28.5;
         video.dispatchEvent(new Event('timeupdate'));
         expect(pause).toHaveBeenCalledOnce();
+        video.currentTime = 0;
+        expect(reader.captionShortcut('s', true)).toBe(true);
+        expect(practice.isConnected).toBe(true);
+        expect(video.currentTime).toBe(24.5);
+        expect(video.playbackRate).toBe(0.75);
+        video.currentTime = 28.5;
+        video.dispatchEvent(new Event('timeupdate'));
+        expect(video.playbackRate).toBe(1.5);
+        expect(practice.textContent).toContain('慢速回听');
         expect(translate).not.toHaveBeenCalled();
         expect(progress).not.toHaveBeenCalled();
         expect(practice.textContent).not.toContain(sentence);
@@ -139,8 +150,9 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(practice.textContent).not.toContain(sentence);
         expect(practice.querySelector('[data-listen-note]')).toBeNull();
         const playSentence = /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-play]'));
-        playSentence.click();
+        /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-slow]')).click();
         expect(video.currentTime).toBe(0);
+        expect(video.playbackRate).toBe(0.75);
         expect(miss.getAttribute('aria-pressed')).toBe('false');
         reader.session?.acceptTranslation(reader.session.cues[0].id, '这一处旧桥没有笔记译文，保留字幕译文。');
         /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-reveal]')).click();
@@ -148,6 +160,7 @@ test('explains saved video words, opens uncarded words for card selection, and r
         expect(practice.querySelector('.r-listen-answer')?.textContent)
             .toBe(`${sentence}\n这一处旧桥没有笔记译文，保留字幕译文。`);
         next.click();
+        expect(video.playbackRate).toBe(1.5);
         const retry = /** @type {HTMLButtonElement} */ (practice.querySelector('[data-listen-retry]'));
         expect(retry.textContent).toBe('重听这 1 句');
         retry.click();
