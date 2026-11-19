@@ -148,7 +148,7 @@ export class PageTranslate {
         this.pending = new WeakSet();
         /** @type {Set<Element>} Visible paragraphs not yet started. */
         this.pageQueue = new Set();
-        /** @type {number} Whole-page jobs only; explicit sentence translations don't wait here. */
+        /** @type {number} Whole-page jobs in the current run; explicit sentence translations don't wait here. */
         this.pageRunning = 0;
         /** @type {IntersectionObserver|null} */
         this.io = null;
@@ -755,8 +755,10 @@ export class PageTranslate {
             this.pageQueue.delete(target);
             this.io?.unobserve(target);
             if (!target.isConnected) { continue; }
+            const generation = this.version;
             ++this.pageRunning;
             void this.translateNode(target).finally(() => {
+                if (generation !== this.version) { return; }
                 --this.pageRunning;
                 this.drainPageQueue();
             });
@@ -820,6 +822,7 @@ export class PageTranslate {
         this.approval = null;
         ++this.version;
         this.pageQueue.clear();
+        this.pageRunning = 0;
         this.io?.disconnect();
         this.mo?.disconnect();
         this.mo = null;

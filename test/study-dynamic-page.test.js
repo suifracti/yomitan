@@ -68,6 +68,63 @@ test('fast scrolling skips queued offscreen paragraphs before starting the new v
     }
 });
 
+test('restarting page translation with another service does not wait for cancelled requests', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<main><p>First paragraph.</p><p>Second paragraph.</p><p>Third paragraph.</p><p>Fourth paragraph.</p></main>',
+        url: 'https://example.test/article',
+    }});
+    /** @type {(entries: {target: Element, isIntersecting: boolean}[]) => void} */
+    let deliver = () => {};
+    vi.stubGlobal('IntersectionObserver', class {
+        /** @param {(entries: {target: Element, isIntersecting: boolean}[]) => void} callback */
+        constructor(callback) { deliver = callback; }
+        /** */
+        observe() {}
+        /** */
+        unobserve() {}
+        /** */
+        disconnect() {}
+    });
+    let engine = 'chrome';
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage: async () => ({ok: true, value: {model: 'fixture', effort: 'low'}})},
+        storage: {local: {get: async () => ({studyTranslationPrefs: {engine}})}},
+    });
+    const {PageTranslate} = await import('../ext/js/study/page-translate.js');
+    /** @type {(() => void)[]} */
+    const finish = [];
+    /** @type {typeof import('../ext/js/study/page-translate.js').translateText} */
+    const translateText = (text, options) => new Promise((resolve) => {
+        finish.push(() => resolve(options?.engine + '：' + text));
+    });
+    const translate = vi.fn(translateText);
+    const controller = new PageTranslate({translate});
+    const visible = [...document.querySelectorAll('p')].map((target) => ({target, isIntersecting: true}));
+    try {
+        await controller.toggle();
+        deliver(visible);
+        await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(3));
+        controller.stop();
+        engine = 'apple';
+        await controller.toggle();
+        deliver(visible);
+        await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(6));
+        for (const settle of finish.splice(0, 3)) { settle(); }
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        expect(translate).toHaveBeenCalledTimes(6);
+        expect(document.querySelector('.study-page-translation')).toBeNull();
+
+        finish.shift()?.();
+        await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(7));
+        expect(visible[0].target.nextElementSibling?.textContent).toBe('apple：First paragraph.');
+    } finally {
+        controller.stop();
+        for (const settle of finish) { settle(); }
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 test('active page translation follows new comments, revealed replies and reused text hosts until stopped', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<main><p id="comment"><i hidden></i><span>A first comment.</span></p><section hidden><p id="reply">A hidden reply.</p></section></main>', url: 'https://example.test/article'}});
     vi.stubGlobal('IntersectionObserver', class {
