@@ -37,7 +37,7 @@ import {enhanceStudyUi} from './study-ui.js';
 import {captionUrl, captionTrackId, youtubeVideoId} from './vendor/kiss/youtube-caption-source.js';
 import {pageSourceKey, timedUrl} from './media-key.js';
 import {guessLanguage, parseSubtitles, splitBilingual} from './subtitle-formats.js';
-import {WebVideoSite} from './web-video-site.js';
+import {canOpenVideoDock, WebVideoSite} from './web-video-site.js';
 import {youtubeSite} from './youtube-site.js';
 
 const STYLE_ID = 'study-yt-reader-style';
@@ -606,8 +606,8 @@ export class YoutubeReader extends EventTarget {
     _place() {
         const root = this._view?.root;
         if (root && window.self !== window.top) {
-            root.hidden = innerWidth < 600;
-            if (innerWidth < 600) { this._site.toggleDock(false); }
+            root.hidden = !canOpenVideoDock();
+            if (root.hidden) { this._site.toggleDock(false); }
         }
         const host = root && this._site.pinFirst() ? this._host() : null;
         if (root && host && root.parentElement !== host) {

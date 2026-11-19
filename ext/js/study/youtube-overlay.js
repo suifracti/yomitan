@@ -26,6 +26,7 @@ import {menuSelect} from './study-ui.js';
 import {fillEngineSelect} from './translation-engines.js';
 import {youtubeStudyContext} from './youtube-study-context.js';
 import {youtubeSite} from './youtube-site.js';
+import {canOpenVideoDock} from './web-video-site.js';
 
 const OVERLAY_ID = 'study-yt-overlay';
 const BUTTON_ID = 'study-yt-button';
@@ -113,6 +114,8 @@ export class YoutubeOverlay {
         this._panel = null;
         /** @type {HTMLButtonElement|null} */
         this._button = null;
+        /** @type {HTMLButtonElement|null} */
+        this._dockLauncher = null;
         /** @type {ResizeObserver|null} */
         this._resize = null;
         /** @type {number} */
@@ -139,6 +142,10 @@ export class YoutubeOverlay {
     /** */
     start() {
         const reader = this._reader;
+        if (this._site.kind !== 'youtube') {
+            window.addEventListener('resize', () => this._syncDockLauncher());
+            document.addEventListener('fullscreenchange', () => this._syncDockLauncher());
+        }
         reader.addEventListener('session', () => {
             this._clearShadow();
             this._onSession();
@@ -234,6 +241,13 @@ export class YoutubeOverlay {
         if (controls && !this._button?.isConnected) {
             this._button = this._makeButton();
             controls.prepend(this._button);
+        }
+        if (controls && this._site.kind !== 'youtube' && !this._dockLauncher?.isConnected) {
+            this._dockLauncher = sideButton('字幕栏', '打开字幕栏', () => this._site.toggleDock(true));
+            this._dockLauncher.className = 'w-launch w-dock-launch scan-disable';
+            this._dockLauncher.dataset.action = 'dock';
+            isolate(this._dockLauncher);
+            controls.prepend(this._dockLauncher);
         }
         if (!this._panel?.isConnected) {
             this._panel = this._makePanel();
@@ -353,6 +367,7 @@ export class YoutubeOverlay {
         const prefs = this._reader.prefs;
         const loaded = this._reader.session !== null;
         if (this._button) { this._button.hidden = !prefs.enabled; }
+        this._syncDockLauncher();
         if (this._panel && !prefs.enabled) { this._togglePanel(false); }
         this._site.hideNative((prefs.overlay || this._reader.listening) && loaded);
         if (this._overlay) {
@@ -380,6 +395,13 @@ export class YoutubeOverlay {
             for (const select of this._panel.querySelectorAll('select')) { select.dispatchEvent(new Event('study-ui-sync')); }
             /** @type {HTMLElement} */ (this._panel.querySelector('.p-note')).hidden = Boolean(document.fullscreenElement);
             this._positionPanel();
+        }
+    }
+
+    /** */
+    _syncDockLauncher() {
+        if (this._dockLauncher) {
+            this._dockLauncher.hidden = !this._reader.prefs.enabled || !canOpenVideoDock() || Boolean(document.fullscreenElement);
         }
     }
 
@@ -577,7 +599,7 @@ export class YoutubeOverlay {
         const side = document.createElement('div');
         side.className = 'o-side scan-disable';
         const reveal = sideButton('≡', '在侧栏查看这句', () => this._reader.revealRow(id));
-        reveal.hidden = window.self !== window.top && innerWidth < 600;
+        reveal.hidden = !canOpenVideoDock();
         const loop = sideButton('↻', '循环本句', () => this._reader.toggleLoop(id));
         loop.dataset.loop = '';
         side.append(reveal, loop);

@@ -47,6 +47,8 @@ html.${WEB_CAPTIONS_CLASS} :is(${NATIVE_CAPTIONS}){visibility:hidden!important}
 #${LAYER_ID}[hidden]{display:none}
 #${LAYER_ID} .w-launch{position:absolute;bottom:10px;right:10px;width:34px;height:34px;padding:5px;border:0;border-radius:9px;background:rgb(18 18 20 / 62%);color:#fff;cursor:pointer;pointer-events:auto;opacity:0;transition:opacity 160ms}
 #${LAYER_ID}.is-hover .w-launch,#${LAYER_ID} .w-launch[aria-expanded=true],#${LAYER_ID} .w-launch:focus-visible{opacity:.88}
+#${LAYER_ID} .w-dock-launch{right:50px;width:auto;padding:0 8px;font:12px/1 -apple-system,'PingFang SC',sans-serif;white-space:nowrap}
+#${LAYER_ID} .w-dock-launch[hidden]{display:none}
 #${LAYER_ID} .w-launch svg{width:24px;height:24px}
 #${LAYER_ID} #study-yt-panel{bottom:52px;right:10px;top:auto;pointer-events:auto}
 #${DOCK_ID}{position:fixed;top:72px;right:16px;z-index:2147482001;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 96px);display:flex;flex-direction:column;border-radius:12px;background:var(--st-paper,#fbfaf7);box-shadow:0 10px 32px rgb(0 0 0 / 22%);overflow:hidden}
@@ -355,7 +357,7 @@ export class WebVideoSite {
      * @returns {boolean} Whether the panel is now open.
      */
     toggleDock(open) {
-        if (window.self !== window.top && innerWidth < 600) {
+        if (!canOpenVideoDock()) {
             if (this._dock) { this._dock.hidden = true; }
             return false;
         }
@@ -462,6 +464,11 @@ export class WebVideoSite {
         style.textContent = STYLE;
         (document.head ?? document.documentElement).append(style);
     }
+}
+
+/** @returns {boolean} Keep narrow embedded players caption-only. */
+export function canOpenVideoDock() {
+    return window.self === window.top || innerWidth >= 600;
 }
 
 /**

@@ -125,7 +125,7 @@ test('other sites: page subtitles load, a bilingual file brings its translations
     const site = fakeSite({cues, language: 'en', label: 'English（播放器字幕）', id: 'track:0', all: [{id: 'track:0', label: 'English（播放器字幕）'}, {id: 'track:1', label: '中文（播放器字幕）'}]});
     /** @type {unknown[][]} */
     const calls = [];
-    const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'},
+    const reader = new YoutubeReader({prefs: {merge: false, engine: 'model', overlay: false},
         call: async (action, data) => {
             calls.push([action, data]);
             return {items: []};
@@ -136,7 +136,14 @@ test('other sites: page subtitles load, a bilingual file brings its translations
     await vi.waitFor(() => expect(document.querySelector('#dock #study-yt-reader')).not.toBe(null));
     // No YouTube player bar here: the launcher sits on the video layer instead.
     expect(document.querySelector('#layer #study-yt-button.w-launch')).not.toBe(null);
-    expect(document.querySelector('#layer [data-action=dock]')).not.toBe(null);
+    const launcher = /** @type {HTMLButtonElement} */ (document.querySelector('#layer [data-action=dock]'));
+    expect(launcher?.getAttribute('aria-label')).toBe('打开字幕栏');
+    expect(launcher.hidden).toBe(false);
+    expect(site.dockOpen()).toBe(false);
+    launcher.click();
+    expect(site.dockOpen()).toBe(true);
+    expect(document.querySelector('#study-yt-panel [data-action=dock]')).toBeNull();
+    /** @type {(open: boolean) => void} */ (site.toggleDock)(false);
 
     reader.loadCaptions();
     await vi.waitFor(() => expect(document.querySelectorAll('#study-yt-reader .r-cue').length).toBe(2));
