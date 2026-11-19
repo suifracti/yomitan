@@ -554,12 +554,14 @@ export class YoutubeReader extends EventTarget {
     }
 
     /**
-     * Remembers the sentence being watched, at most every few seconds.
+     * Remembers normal playback, at most every few seconds.
      * @param {number} playbackMs
      */
     _saveProgress(playbackMs) {
         const source = this._rawSession?.source;
-        if (!source || this._restoringVideoState || !this._video || this._video.paused || Date.now() - this._savedAt < 5000) { return; }
+        const video = this._video;
+        if (!source || this._restoringVideoState || !video || video.paused || Date.now() - this._savedAt < 5000) { return; }
+        if (youtubeStudyContext.isTemporaryPlayback(video)) { return; }
         this._savedAt = Date.now();
         void writeVideoState(source, {resumeMs: Math.max(0, Math.round(playbackMs))});
         if (this._resumeMs >= 0 && Math.abs(playbackMs - this._resumeMs) < 15000) { this._clearResume(); }
@@ -1832,17 +1834,16 @@ export class YoutubeReader extends EventTarget {
     _onTime() {
         const session = this._session;
         const video = this._video;
-        if (!session || !video || !this._view) { return; }
-        const active = session.active(video.currentTime * 1000).map((c) => c.id);
+        if (!session || !video || !this._view?.root.isConnected) { return; }
+        const playbackMs = video.currentTime * 1000;
+        if (this._prefs.resume && !this._listen) { this._saveProgress(playbackMs); }
+        const active = session.active(playbackMs).map((c) => c.id);
         const key = active.join('|');
         if (key === this._active) { return; }
         this._active = key;
         for (const [id, row] of this._rows) { row.classList.toggle('is-current', active.includes(id)); }
         this._emit('active', {ids: active});
-        if (!this._listen) {
-            this._autoTranslate(video.currentTime * 1000);
-            if (this._prefs.resume) { this._saveProgress(video.currentTime * 1000); }
-        }
+        if (!this._listen) { this._autoTranslate(playbackMs); }
         const first = active.length > 0 && this._follow && !this._view.search.value.trim() ? this._list.ensure(active[0]) : void 0;
         if (this._follow && first) {
             const list = this._view.list;

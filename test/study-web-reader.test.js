@@ -428,6 +428,61 @@ test('keyboard replay stops on the shared media clock and releases slow speed on
     }
 });
 
+test('watching progress moves through a caption gap but not an earlier playback loop', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    const previous = document.querySelector('video');
+    const video = document.createElement('video');
+    previous?.replaceWith(video);
+    /** @type {Record<string, unknown>} */
+    const store = {};
+    installReaderStorage({
+        get: async (key) => ({[key]: store[key]}),
+        set: async (values) => { Object.assign(store, values); },
+    });
+    const reader = new YoutubeReader({prefs: {merge: false, resume: true}, site: /** @type {never} */ (fakeSite(null)), call: async () => ({items: []})});
+    const paused = vi.spyOn(video, 'paused', 'get').mockReturnValue(true);
+    const play = vi.spyOn(video, 'play').mockResolvedValue();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(100000);
+    try {
+        reader.start();
+        await vi.waitFor(() => expect(document.querySelector('#study-yt-reader')).not.toBeNull());
+        reader.importText('1\n00:00:01,000 --> 00:00:02,000\nThe first line.\n\n2\n00:01:10,000 --> 00:01:12,000\nMuch later.\n', 'lesson.srt');
+        const session = reader.session;
+        if (!session) { throw new Error('Imported captions did not load'); }
+        await readVideoState(session.source);
+        paused.mockReturnValue(false);
+        /**
+         * @param {number} at
+         * @param {number} now
+         */
+        const tick = (at, now) => {
+            clock.mockReturnValue(now);
+            video.currentTime = at;
+            video.dispatchEvent(new Event('timeupdate'));
+        };
+        tick(70.5, 101000);
+        expect((await readVideoState(session.source))?.resumeMs).toBe(70500);
+        tick(72.5, 102000);
+        tick(77.5, 107000);
+        expect((await readVideoState(session.source))?.resumeMs).toBe(77500);
+
+        clock.mockReturnValue(113000);
+        const loop = /** @type {HTMLButtonElement} */ (document.querySelector('#study-yt-reader .r-cue .r-loop'));
+        loop.click();
+        expect(video.currentTime).toBe(1);
+        expect((await readVideoState(session.source))?.resumeMs).toBe(77500);
+        loop.click();
+        tick(92, 119000);
+        expect((await readVideoState(session.source))?.resumeMs).toBe(92000);
+    } finally {
+        if (reader.loopId) { reader.toggleLoop(reader.loopId); }
+        paused.mockRestore();
+        play.mockRestore();
+        clock.mockRestore();
+        if (previous) { video.replaceWith(previous); }
+    }
+});
+
 test('other sites: nothing found explains how to get subtitles', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}, site: /** @type {never} */ (fakeSite(null))});

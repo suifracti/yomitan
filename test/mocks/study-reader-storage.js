@@ -30,7 +30,7 @@ export function installReaderStorage(local, sourceUrl = () => location.href) {
     let receive;
     const runtime = {id: 'fixture',
         getURL: (/** @type {string} */ path) => `chrome-extension://fixture/${path}`,
-        onMessage: {addListener(/** @type {ReaderListener} */ listener) { receive = listener; }},
+        onMessage: {addListener(/** @type {ReaderListener} */ listener) { receive ??= listener; }},
         sendMessage: (/** @type {unknown} */ message) => new Promise((resolve) => { receive(message, {id: 'fixture', frameId: 0, url: sourceUrl()}, resolve); })};
     vi.stubGlobal('chrome', {runtime,
         storage: {local, onChanged: {addListener() {}, removeListener() {}}},

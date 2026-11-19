@@ -28,9 +28,9 @@ export class YoutubeStudyContext {
         this.rows = new WeakMap();
         /** @type {Map<string, Bound>} */
         this.tokens = new Map();
-        /** @type {Map<string, AbortController>} */
+        /** @type {Map<string, {video: HTMLVideoElement, controller: AbortController}>} */
         this.active = new Map();
-        /** @type {((reason: 'ended'|'cancelled'|'failed') => void)|null} Stops the current replay listeners. */
+        /** @type {{video: HTMLVideoElement, stop: (reason: 'ended'|'cancelled'|'failed') => void}|null} */
         this.replay = null;
         /** @type {((range: Range, openPanel?: boolean|'audio', recordId?: string) => Promise<void>)|null} Opens the existing scanner and card panel. */
         this.openCard = null;
@@ -43,11 +43,19 @@ export class YoutubeStudyContext {
     register(element, row) { this.rows.set(element, row); }
     /** Clear source tokens and stop any active capture or replay. */
     reset() {
-        this.replay?.('cancelled');
-        for (const controller of this.active.values()) { controller.abort(); }
+        this.replay?.stop('cancelled');
+        for (const {controller} of this.active.values()) { controller.abort(); }
         this.active.clear();
         this.tokens.clear();
         this.rows = new WeakMap();
+    }
+
+    /**
+     * @param {HTMLVideoElement} video
+     * @returns {boolean}
+     */
+    isTemporaryPlayback(video) {
+        return this.replay?.video === video || [...this.active.values()].some((capture) => capture.video === video);
     }
 
     /**
@@ -82,7 +90,7 @@ export class YoutubeStudyContext {
     }
 
     /** @param {string} token */
-    cancel(token) { this.active.get(token)?.abort(); }
+    cancel(token) { this.active.get(token)?.controller.abort(); }
 
     /**
      * @param {string} token
@@ -131,14 +139,14 @@ export class YoutubeStudyContext {
         video.srcObject === srcObject && isCurrent();
         if (!live()) { throw new Error('视频或字幕已改变，请回到视频里重试。'); }
         if (this.active.size > 0) { throw new Error('正在采集原声，请稍后再回听。'); }
-        this.replay?.('cancelled');
+        this.replay?.stop('cancelled');
         const previousRate = video.playbackRate;
         const clockEvents = ['timeupdate', 'playing', 'seeked', 'ratechange'];
         /** @type {ReturnType<typeof setTimeout>|undefined} */
         let timer;
         /** @param {'ended'|'cancelled'|'failed'} reason */
         const stop = (reason) => {
-            if (this.replay !== stop) { return; }
+            if (this.replay?.stop !== stop) { return; }
             clearTimeout(timer);
             for (const event of clockEvents) { video.removeEventListener(event, onTime); }
             video.removeEventListener('seeking', onSeek);
@@ -184,7 +192,7 @@ export class YoutubeStudyContext {
             }
         };
         const onEmptied = () => { stop('cancelled'); };
-        this.replay = stop;
+        this.replay = {video, stop};
         if (rate !== void 0) { video.playbackRate = rate; }
         video.currentTime = start;
         for (const event of clockEvents) { video.addEventListener(event, onTime); }
@@ -194,7 +202,7 @@ export class YoutubeStudyContext {
         startPlayback();
         if (repeat) { onTime(); }
         return (pause = true) => {
-            if (this.replay !== stop) { return; }
+            if (this.replay?.stop !== stop) { return; }
             if (pause && live()) { video.pause(); }
             stop('cancelled');
         };
@@ -216,7 +224,7 @@ export class YoutubeStudyContext {
         const mediaCurrent = () => video !== null && video.isConnected && row.video() === video &&
         video.src === bound.src && (video.currentSrc || video.src) === bound.media && (video.srcObject ?? null) === bound.srcObject;
         if (!video || !mediaCurrent()) { throw new Error('视频来源已改变，请重新选词后采集。'); }
-        const controller = new AbortController(); this.active.set(token, controller);
+        const controller = new AbortController(); this.active.set(token, {video, controller});
         try {
             return await this.captureAudio(video, start, duration, {signal: controller.signal, isCurrent: () => bound.element.isConnected && row.isCurrent() && mediaCurrent(), withFrame, withVideo});
         } finally { this.active.delete(token); }

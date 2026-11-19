@@ -23,6 +23,7 @@
 | TED 自动选了库尔德语；英语轨消失；一批字幕预取 | L-004；WebVideoSite.remember / sources、languageHint、guessLanguage |
 | TED 广告后没有字幕行或当前句；播放器换 video | L-005；YoutubeReader.start / _rebindVideo |
 | 刷新后字幕语言丢了；找不到继续按钮；进度/偏移互相覆盖 | L-006；YoutubeReader._loadWeb / _restoreVideoState、WebVideoSite.load、subtitle-prefs.js |
+| 字幕空档没记进度，回听旧句或录原声把下次继续位置拉回去 | L-006；YoutubeReader._onTime / _saveProgress、YoutubeStudyContext.isTemporaryPlayback |
 | 跟读暂停后拖了进度条，旧倒计时却启动了播放 | L-006；YoutubeReader.shadowPausedId、YoutubeOverlay._onPlaybackChange |
 | 网页明明有 en-GB／en-US，自动却先读别的字幕；首选读不了时无字幕 | L-006；WebVideoSite.sources 的语言顺序、load 的可读轨道退回 |
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
@@ -256,6 +257,8 @@
 证据：test/study-web-reader.test.js 中新增一个连续场景，先复现错误默认英语，再覆盖恢复中文/偏移与继续入口、显式切英语、旧轨失效退回、并发三种保存后再次载入；原跟读/偏移用例也通过。旧用例查侧栏的 offset output 已与“偏移只放视频面板”的现行UI不符，移除该过时位置断言，实际会话时间和持久偏移断言保留。测试使用临时DOM和内存storage，无真实站点、模型、Vault或Anki调用；源码安装与用户浏览器重载另记交接。
 
 **同壳课程／同名视频的继续位置不共用**：`videoStateScope` 和后台 `videoStateRead/Update` 对浏览器当前来源；网页课程及本地文件存完整来源的摘要，不把地址明文放进进度缓存。YouTube／B 站保留已对应视频或选集的旧键；普通网页及本地文件旧短键无法对回某一课或路径，不复制也不主动删除。读取等本页写入回执；旧课程迟到的请求不改掉新课的选轨、偏移或位置。「继续」还要点击且只在当前来源跳。见[两个课程的进度](youtube-study-wiring.md#2026-11-18-同一播放器的课程进度分开记)。
+
+**观看进度不是字幕行号，也不记临时回听的位置**：旧代码只在当前字幕改变时尝试写入；如果进入空档时还没过五秒，之后一直不写。现在正常播放的 `timeupdate` 沿原五秒节流，跟随滚动和翻译仍按字幕行更新。临时播放和采集由共用上下文标记实际视频；回听、循环、练习或采集期间不更新观看位置。沿用原设置、来源分组和继续提示。见[观看进度与回听分开](youtube-study-wiring.md#2026-11-19-继续观看不会跳回临时回听的位置)。
 
 **双语字幕按两个条目写或只有一两句**：旧识别只认一条里同时有英中行。手动导入时，若两条完全同起止、只有一原句一译文，且整个文件达到原双语识别门槛，就沿同一路径用英文原句的 ID 与秒数显示。只有一两句的手动短片须每句都自带双语，支持自己的两句 VTT 下载读回。中文取文件已有的字，不新翻译；不按近似时间配，不把一般网站轨道按此猜合。见[导入临时 ASS](youtube-study-wiring.md#2026-11-18-双语字幕分两条也能中英对照)和[下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
 
