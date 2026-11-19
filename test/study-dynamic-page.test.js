@@ -18,6 +18,56 @@
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 
+test('fast scrolling skips queued offscreen paragraphs before starting the new viewport', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<main><p>First paragraph.</p><p>Second paragraph.</p><p>Third paragraph.</p><p>Skipped paragraph.</p><p>Newly visible paragraph.</p></main>',
+        url: 'https://example.test/article',
+    }});
+    /** @type {(entries: {target: Element, isIntersecting: boolean}[]) => void} */
+    let deliver = () => {};
+    vi.stubGlobal('IntersectionObserver', class {
+        /** @param {(entries: {target: Element, isIntersecting: boolean}[]) => void} callback */
+        constructor(callback) { deliver = callback; }
+        /** */
+        observe() {}
+        /** */
+        unobserve() {}
+        /** */
+        disconnect() {}
+    });
+    vi.stubGlobal('chrome', {runtime: {sendMessage: async () => ({ok: true, value: {model: 'fixture', effort: 'low'}})}, storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'google'}})}}});
+    const {PageTranslate} = await import('../ext/js/study/page-translate.js');
+    /** @type {(() => void)[]} */
+    const finish = [];
+    const translate = vi.fn((/** @type {string} */ text) => /** @type {Promise<string>} */ (new Promise((resolve) => {
+        finish.push(() => resolve('译：' + text));
+    })));
+    const controller = new PageTranslate({translate});
+    try {
+        await controller.toggle();
+        const paragraphs = [...document.querySelectorAll('p')];
+        deliver(paragraphs.slice(0, 4).map((target) => ({target, isIntersecting: true})));
+        await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(3));
+        deliver([{target: paragraphs[3], isIntersecting: false}, {target: paragraphs[4], isIntersecting: true}]);
+        finish.shift()?.();
+        await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(4));
+        expect(translate.mock.calls.map(([text]) => text)).toEqual([
+            'First paragraph.', 'Second paragraph.', 'Third paragraph.', 'Newly visible paragraph.',
+        ]);
+        deliver([{target: paragraphs[3], isIntersecting: true}]);
+        controller.stop();
+        for (const settle of finish) { settle(); }
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        expect(translate).toHaveBeenCalledTimes(4);
+        expect(document.querySelector('.study-page-translation')).toBeNull();
+    } finally {
+        controller.stop();
+        for (const settle of finish) { settle(); }
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 test('active page translation follows new comments, revealed replies and reused text hosts until stopped', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<main><p id="comment"><i hidden></i><span>A first comment.</span></p><section hidden><p id="reply">A hidden reply.</p></section></main>', url: 'https://example.test/article'}});
     vi.stubGlobal('IntersectionObserver', class {

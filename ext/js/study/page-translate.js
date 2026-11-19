@@ -34,6 +34,7 @@ import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY} from './study-data.js';
 
 /** @typedef {import('./page-prefs.js').PagePrefs} PagePrefs */
 const TRANSLATION_CHUNK_SIZE = 2200;
+const PAGE_CONCURRENCY = 3;
 const SKIP = `${DEFAULT_IGNORE_SELECTOR},${DEFAULT_KEEP_SELECTOR},input,textarea,select,[contenteditable]:not([contenteditable=false]),.scan-disable,.study-page-translation,#study-yt-reader,#study-yt-overlay,#movie_player,#study-web-layer,#study-web-dock`;
 const ORIGINAL_CONTROLS = 'a[href],button:not([disabled])';
 const ORIGINAL_TOGGLE_STYLE = '.study-page-original-toggle{margin-inline-start:.5em;padding:0 .35em;font:inherit;font-size:.85em;line-height:1.4;background:var(--st-paper,#fbfaf7);color:var(--st-accent,#505ead);border:1px solid var(--st-line,#dce2eb);border-radius:4px;cursor:pointer}';
@@ -119,6 +120,10 @@ export class PageTranslate {
         this.cache = new Map();
         /** @type {WeakSet<Element>} */
         this.pending = new WeakSet();
+        /** @type {Set<Element>} Visible paragraphs not yet started. */
+        this.pageQueue = new Set();
+        /** @type {number} Whole-page jobs only; explicit sentence translations don't wait here. */
+        this.pageRunning = 0;
         /** @type {IntersectionObserver|null} */
         this.io = null;
         /** @type {MutationObserver|null} */
@@ -698,17 +703,36 @@ export class PageTranslate {
             if (row.manual && !original.closest('.study-selection-card')) { this.restore(original); }
         }
         this.active = true;
-        ++this.version;
+        const generation = ++this.version;
         this.io = new IntersectionObserver((entries) => {
+            if (generation !== this.version) { return; }
             for (const entry of entries) {
                 if (entry.isIntersecting) {
-                    this.io?.unobserve(entry.target);
-                    void this.translateNode(entry.target);
+                    this.pageQueue.add(entry.target);
+                } else {
+                    this.pageQueue.delete(entry.target);
                 }
             }
+            this.drainPageQueue();
         });
         this.watchChanges();
         this.scan(document.body);
+    }
+
+    /** The observer keeps reporting visibility until a paragraph is ready to start. */
+    drainPageQueue() {
+        while (this.active && this.pageRunning < PAGE_CONCURRENCY) {
+            const target = this.pageQueue.values().next().value;
+            if (!target) { return; }
+            this.pageQueue.delete(target);
+            this.io?.unobserve(target);
+            if (!target.isConnected) { continue; }
+            ++this.pageRunning;
+            void this.translateNode(target).finally(() => {
+                --this.pageRunning;
+                this.drainPageQueue();
+            });
+        }
     }
 
     /** Keep rendered translations attached to the original text in either mode. */
@@ -767,6 +791,7 @@ export class PageTranslate {
         this.approval?.abort.abort();
         this.approval = null;
         ++this.version;
+        this.pageQueue.clear();
         this.io?.disconnect();
         this.mo?.disconnect();
         this.mo = null;
