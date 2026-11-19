@@ -27,7 +27,7 @@ import {menuSelect} from './study-ui.js';
 import {confirmTranslation} from './translation-confirm.js';
 import {mountTranslationBall} from './translation-ball.js';
 import {DEFAULT_PAGE_PREFS, PAGE_PREFS_KEY, readPagePrefs, writePagePrefs} from './page-prefs.js';
-import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY} from './study-data.js';
+import {LOCAL_SYNC_INCOMPLETE_TEXT, WORD_MARKS_KEY, studySentenceEnds} from './study-data.js';
 
 /** @typedef {import('./subtitle-prefs.js').SubtitleEngine} SubtitleEngine */
 /** @typedef {Pick<import('study').StudyConfig, 'model'|'effort'>} TranslationModel */
@@ -433,7 +433,10 @@ export class PageTranslate {
             prefix.selectNodeContents(original);
             prefix.setEnd(caret.startContainer, caret.startOffset);
             const offset = prefix.toString().length;
-            const sentence = [...(original.textContent || '').matchAll(/[^.!?]+[.!?]*|[.!?]+/g)].find((m) => m.index + m[0].length > offset)?.[0].trim();
+            const text = original.textContent || '';
+            const ends = studySentenceEnds(text);
+            const index = ends.findIndex((end) => end > offset);
+            const sentence = index < 0 ? '' : text.slice(ends[index - 1] ?? 0, ends[index]).trim();
             if (!sentence) { return; }
             if (this.rows.get(original)?.text === sentence) {
                 this.restore(original);

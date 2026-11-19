@@ -49,6 +49,31 @@ export function foldSearchPunctuation(text) {
 }
 
 /**
+ * @param {string} text
+ * @param {number} index
+ * @returns {boolean}
+ */
+export function isStudyNumberSeparator(text, index) {
+    return index > 0 && /^\d[.,]\d$/.test(text.slice(index - 1, index + 2));
+}
+
+/**
+ * Sentence boundaries as offsets into the untouched original text.
+ * @param {string} text
+ * @param {boolean} [includeSemicolons]
+ * @returns {number[]}
+ */
+export function studySentenceEnds(text, includeSemicolons = false) {
+    const ends = [];
+    for (const match of text.matchAll(includeSemicolons ? /[.!?;]+/g : /[.!?]+/g)) {
+        if (match[0] === '.' && isStudyNumberSeparator(text, match.index)) { continue; }
+        ends.push(match.index + match[0].length);
+    }
+    if (text.length > (ends.at(-1) ?? 0)) { ends.push(text.length); }
+    return ends;
+}
+
+/**
  * Reads the attachment reference from the saved note, not the capture in progress.
  * The bridge checks the file itself when playing it or making an audio card.
  * @param {import('study').LibraryRecord | null | undefined} record

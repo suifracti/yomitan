@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 import {studyCall} from '../study/study-client.js';
+import {isStudyNumberSeparator, studySentenceEnds} from '../study/study-data.js';
 import {mountStudyLibrary} from './study-library.js';
 import {onSubtitlePrefsChanged, readSubtitlePrefs} from '../study/subtitle-prefs.js';
 import {chromeTranslate} from '../study/free-translators.js';
@@ -34,9 +35,13 @@ export function splitStudySentence(text) {
     const words = (value) => (value.match(/\b[\w'-]+\b/g) || []).length;
     if (words(text) <= 25) { return []; }
     const parts = [];
-    for (const sentence of text.match(/[^.!?;]+[.!?;]*|[.!?;]+/g) || []) {
+    let sentenceStart = 0;
+    for (const sentenceEnd of studySentenceEnds(text, true)) {
+        const sentence = text.slice(sentenceStart, sentenceEnd);
+        sentenceStart = sentenceEnd;
         let start = 0;
         for (const match of sentence.matchAll(/,/g)) {
+            if (isStudyNumberSeparator(sentence, match.index)) { continue; }
             const end = match.index + 1;
             if (words(sentence.slice(start, end)) >= 6 && words(sentence.slice(end)) >= 6) {
                 parts.push(sentence.slice(start, end).trim()); start = end;

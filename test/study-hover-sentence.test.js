@@ -17,9 +17,13 @@
 
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {splitStudySentence} from '../ext/js/display/study-translation.js';
 
-test('Alt translates only the pointed sentence and toggles it off', async () => {
-    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: '<p>First sentence. We learn together! Last sentence.</p>', url: 'https://example.test/article'}});
+test('Alt translates only the pointed sentence without splitting numbers, and toggles it off', async () => {
+    const first = 'The survey group clearly recorded a total of 3,500 samples and an average of 12.5 units per sample during the long morning shift.';
+    const second = 'The team saved all measurements for the next shift.';
+    const original = `${first} ${second}`;
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: `<p>${original}</p>`, url: 'https://example.test/article'}});
     vi.stubGlobal('chrome', {runtime: {sendMessage: async () => ({ok: true, value: {}})}, storage: {local: {get: async () => ({})}}});
     const {PageTranslate} = await import('../ext/js/study/page-translate.js');
     const translate = vi.fn(async () => '我们一起学习！');
@@ -28,17 +32,18 @@ test('Alt translates only the pointed sentence and toggles it off', async () => 
         const source = document.querySelector('p');
         document.caretRangeFromPoint = () => {
             const range = document.createRange();
-            range.setStart(source.firstChild, 20);
+            range.setStart(source.firstChild, first.indexOf('units') + 1);
             return range;
         };
         page.bindSelection();
         source.dispatchEvent(new MouseEvent('pointermove', {bubbles: true, clientX: 50, clientY: 50}));
         for (const type of ['keydown', 'keyup']) { document.dispatchEvent(new KeyboardEvent(type, {key: 'Alt'})); }
-        await vi.waitFor(() => expect(translate).toHaveBeenCalledWith('We learn together!'));
+        await vi.waitFor(() => expect(translate).toHaveBeenCalledWith(first, expect.any(Object)));
         await vi.waitFor(() => expect(source.nextElementSibling.textContent).toContain('我们一起学习'));
         for (const type of ['keydown', 'keyup']) { document.dispatchEvent(new KeyboardEvent(type, {key: 'Alt'})); }
         expect(source.nextElementSibling).toBeNull();
-        expect(source.textContent).toBe('First sentence. We learn together! Last sentence.');
+        expect(source.textContent).toBe(original);
+        expect(splitStudySentence(original)).toEqual([first, second]);
     } finally {
         page.stop();
         vi.unstubAllGlobals();
