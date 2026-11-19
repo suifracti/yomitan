@@ -18,6 +18,7 @@
 import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 import {prepareParallelSentence, splitStudySentence} from '../ext/js/display/study-translation.js';
+import {StudyService} from '../ext/js/study/study-service.js';
 
 test('keeps the white stripe sentence together instead of splitting at and', () => {
     const sentence = 'You have that white stripe running all the way down the middle of your back and you can keep moving forward and I know you can do it.';
@@ -58,6 +59,42 @@ test('keeps a manually translated long sentence when subtitle preferences change
         expect([...source.querySelectorAll('.sf-segment-translation')].map((row) => row.textContent)).toEqual(translations);
         expect(action.hidden).toBe(true);
         expect(call).toHaveBeenCalledOnce();
+    } finally {
+        dispose();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
+test('does not send remaining lookup segments to the newly selected service', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {}});
+    const prefs = {studyTranslationPrefs: {engine: 'google', autoTranslate: false}};
+    const local = {get: async () => ({...prefs}), set: async (value) => Object.assign(prefs, value)};
+    const native = vi.fn(() => ({promise: Promise.resolve({ok: false}), cancel() {}}));
+    const service = new StudyService(local, native);
+    vi.stubGlobal('chrome', {storage: {local, onChanged: {addListener() {}, removeListener() {}}}});
+    const translated = Array.from({length: 8}, (_, i) => `分段译文 ${i + 1}。`);
+    const fetchGoogle = vi.fn(async () => {
+        prefs.studyTranslationPrefs.engine = 'apple';
+        return new Response(JSON.stringify([translated]));
+    });
+    vi.stubGlobal('fetch', fetchGoogle);
+    const source = document.createElement('article');
+    const original = document.createElement('p');
+    original.textContent = Array.from({length: 9}, (_, i) => `This is a practice fragment with number ${i + 1}.`).join(' ');
+    const action = document.createElement('button');
+    action.dataset.studyTranslateSentence = '';
+    source.append(original, action);
+    const dispose = prepareParallelSentence(source, {call: (name, data) => service.handle(name, data), isCurrent: () => true, language: 'en'});
+    try {
+        action.click();
+        await vi.waitFor(() => expect(source.querySelector('.sf-segment-translation button')?.textContent).toBe('重试'));
+        const rows = [...source.querySelectorAll('.sf-segment-translation')];
+        expect(rows.slice(0, 8).map((row) => row.textContent)).toEqual(translated);
+        expect(rows[8].textContent).toContain('这段没翻译成功');
+        expect(source.dataset.studySegmentTranslation).toBeUndefined();
+        expect(fetchGoogle).toHaveBeenCalledOnce();
+        expect(native).not.toHaveBeenCalled();
     } finally {
         dispose();
         vi.unstubAllGlobals();

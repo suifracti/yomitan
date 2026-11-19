@@ -183,7 +183,11 @@ export function prepareParallelSentence(source, {call, isCurrent, language, capt
                 } else {
                     request = `parallel-${crypto.randomUUID()}`;
                     const value = /** @type {{items: {id: string, translation: string}[]}} */ (await call('subtitleTranslate', {
-                        requestId: request, config, language, items: missing.map((row, i) => ({id: `part-${i}`, text: row.text})),
+                        requestId: request,
+                        config,
+                        language,
+                        expectedEngine: engine,
+                        items: missing.map((row, i) => ({id: `part-${i}`, text: row.text})),
                     }));
                     translations = missing.map((_, i) => value.items.find((item) => item.id === `part-${i}`)?.translation || '');
                     request = '';

@@ -90,6 +90,7 @@
 | 字幕正在翻，查词卡又把同一句翻了一遍 | L-010；YoutubeReader._waitCaptionTranslation、frontendReadCaptionTranslation |
 | 整页翻译用免费的，中途切 AI 会不会扣费 | L-010；PageTranslate.approve、SubtitleTranslation.handle 的 expectedEngine |
 | 字幕全文翻译用免费的，另一处切成 AI 后下一批会不会扣费 | L-010；YoutubeReader._translate 每轮的 engine、同一个 expectedEngine |
+| 词卡里一半还在翻，另一个入口换了翻译服务 | L-010；prepareParallelSentence 每批传相同 expectedEngine |
 | 只看译文时想点原段里的链接或按钮 | L-010；PageTranslate.render / paint |
 | 同一页的法语按英语翻、俄语段落没排进翻译、同拼写串译文 | L-010；page-translate.js 的 pageLanguage、requestText |
 | 划词翻译失败，卡片切了服务却还提示重新选词 | L-010；PageTranslate.openSelection 的重译与设置写回 |
@@ -406,6 +407,8 @@
 **免费请求不能因中途切设置变成付费**：整页翻译以同一个引擎快照做确认、缓存和发请求；后台以实际准备使用的全局引擎核 `expectedEngine`，改了就保留原文，提示重试，不自动改投。模型确认让当前页排队段落共用；本人点的单句仍不弹确认。见[切换竞态与替身验证](youtube-study-wiring.md#2026-11-19-整页翻译切服务不跳过费用确认)。
 
 字幕批次同样带上整轮开始时的服务。字幕栏还没收到设置变化时，后台也不会把后续的免费批次发给模型。完成的字幕不重翻，失败的可以重试；原有切服务取消、全文费用确认以及 Chrome 本机翻译不另起一套。见[字幕批次的复现](youtube-study-wiring.md#2026-11-19-免费字幕翻译不转投模型)。
+
+词卡的 `prepareParallelSentence` 也把本轮的服务传给每批 `subtitleTranslate`。旧版长句的后半批可能进新服务，前端却按旧服务保存缓存。后台发现服务已换时拒发，已显示的段落仍在，余下可重试。同一个检查同时覆盖手动和自动的后台请求，不改 Chrome 本机翻译和已保存译文。见[词卡分批换服务](youtube-study-wiring.md#2026-11-19-翻译词卡长句时不会中途改用另一服务)。
 
 **网页翻译设置只交这次改动**：`page-prefs.js` 沿同一后台写队列合并，不用页面手头的整份设置重写。拖动、隐藏、恢复修改同站的独立字段；扩展菜单单站自动翻译只改这一站。旧设置不用迁移，翻译服务仍由原全局入口管理。见[跨标签交错写入](youtube-study-wiring.md#2026-11-19-三个入口不再互相盖掉网页翻译设置)。
 
