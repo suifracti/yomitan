@@ -11,6 +11,7 @@
 | 翻译长段落时把一个词拆开了 | L-010；`translationChunks`，整页和粘贴文字都先保句界。[长篇翻译](youtube-study-wiring.md#2026-11-19-长篇翻译不从单词中间切开) |
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
 | 同一 B 站选集换网址后，字幕栏和学习库的已记词数不同 | L-007；study-service 的 libraryVideoWords、study_settings.video_words |
+| 生成视频小结后想直接看记过的词义和整句译文 | L-007；`video_words(summary_vault=…)`、`VideoLibrary.write_summary`；不重翻、不把详细内容跨库复制。[视频小结](youtube-study-wiring.md#2026-11-19-视频小结带上已存词义和译文) |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
 | Anki 换了账户，一批已有的卡突然显示被删；读卡期间切了账户 | L-002；study_settings.auto_sync、study_sync.sync_profile / reconcile |
 | 切了 Anki 账户后，旧列表的卡片编号在另一边也存在 | L-002；`orphanAccount` 核显示用的账户，`orphan_action` 读卡前后核当前账户。[恢复归属](youtube-study-wiring.md#2026-11-19-只在-anki-恢复时不认错账户) |
@@ -338,6 +339,8 @@
 **整个视频回听不从学习库当前页拼**：`openVideoListening` 用记录确认来源，再由后台给 `libraryVideoWords` 提供 `sourceUrl`。桥把它与视频 key 核对后按同来源取笔记，保留既有上限；没时间的记录可列出但不进回听。队列按已确认字幕行的真实时间排序，重复台词也必须对回原来的时间。见[从同来源进入整轮回听](youtube-study-wiring.md#2026-11-18-从同来源原句回视频练一轮)。
 
 **B 站同一选集的字幕栏、学习库和小结不要各算一份词数**：网页只能传自己的媒体 key，后台用当前顶层网址（iframe 则用自己的文档网址）校验并补来源；桥沿用同 BV／av、同 P 的规则。支持不了该字段的旧桥退回原 key；网页不能指定其他选集。小结选择内容也走同一组，原目标笔记、明确点击才写的规则、字幕轨和进度 key 不变。见[同 P 三处对照](youtube-study-wiring.md#2026-11-18-b-站同选集的已记词和小结对齐)。
+
+**视频小结不必逐条点回原笔记才看到中文**：仍由本人点生成，桥从同一份索引读已存的本句含义、整句译文；同一 Vault 的原句不截短。不用含义顶替缺失译文，不读其他 Vault 的详细内容进入小结，普通词表和单句回听的回执不变。只改原标记块，保留自写笔记和原时间链接。见[临时双库小结](youtube-study-wiring.md#2026-11-19-视频小结带上已存词义和译文)。
 
 **很多长原句让整份已记词读取失败**：原本一次返回 300 条可见原句和全部已制卡上下文，大于本机桥每帧 900,000 字节就整次失败，字符数不能代替 UTF-8 字节数。只在这项请求协商分帧，浏览器收齐后仍交付原样两份列表；不要把制卡上下文裁成前 300 条，否则会重复推荐早已制过的句子。小响应仍单帧、旧桥退回原请求；没有新索引、缓存或记录格式。见[长句回读反例](youtube-study-wiring.md#2026-11-18-视频记了很多长句也能读回)。
 

@@ -225,8 +225,12 @@ class VideoMediaTests(unittest.TestCase):
         url = 'https://www.youtube.com/watch?v=abcdefghijk'
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:abcdefghijk', 'url': url, 'title': 'Bricks'})
+        long_sentence = 'A brick | here. ' + 'The builder checked the wall again. ' * 12 + 'This is the end.'
         for word, t in [('wall', 40), ('brick', 12)]:
-            self.library.handle({'action': 'librarySave', 'entry': {'word': word, 'sentence': f'A {word} | here.', 'meaning': '义', 'url': url, 'videoTime': t}, 'makeCard': False})
+            entry = {'word': word, 'sentence': f'A {word} | here.', 'meaning': '词在这里的意思', 'url': url, 'videoTime': t}
+            if word == 'brick':
+                entry.update(sentence=long_sentence, translation='这里有一块砖。末尾是这句。')
+            self.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})
         # The page cannot ask for another video's summary.
         with self.assertRaises(ValueError):
             self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:zzzzzzzzzzz', 'url': url, 'title': 'Bricks'})
@@ -238,14 +242,29 @@ class VideoMediaTests(unittest.TestCase):
         self.assertIn('记住了 2 个词', body)
         self.assertLess(body.index('**brick**'), body.index('**wall**'))
         self.assertIn('[0:12](https://www.youtube.com/watch?v=abcdefghijk&t=12s) **brick** · 只记了笔记 · [[', body)
+        self.assertIn('This is the end.', body)
+        self.assertIn('**本句含义**：词在这里的意思', body)
+        self.assertEqual(body.count('**原句译文**：'), 1)
+        self.assertIn('**原句译文**：这里有一块砖。末尾是这句。', body)
         # The learner's own writing around the block survives a refresh.
         note.write_text(body.replace('来源：', '我的看法：好视频。\n\n来源：') + '\n## 我的笔记\n\n自己写的。\n')
         self.library.handle({'action': 'librarySave', 'entry': {'word': 'mortar', 'sentence': 'Mortar.', 'meaning': '灰浆', 'url': url, 'videoTime': 50}, 'makeCard': False})
+        settings = self.library.settings()
+        second_vault = self.vault.with_name('other-vault')
+        second_vault.mkdir()
+        other = self.library.save_settings({**settings, 'vault': str(second_vault)})
+        self.library.handle({'action': 'librarySave', 'targetId': other['targetId'], 'makeCard': False,
+                             'entry': {'word': 'beam', 'sentence': 'A beam.', 'meaning': '另一库含义',
+                                       'translation': '另一库译文', 'url': url, 'videoTime': 54}})
+        self.library.save_settings(settings)
         again = self.library.handle({'action': 'libraryVideoSummary', 'mediaKey': 'youtube:abcdefghijk', 'url': url, 'title': 'Other title'})
         self.assertEqual(again['path'], first['path'])
         body = note.read_text()
         self.assertEqual(body.count('<!-- study-video-summary:start -->'), 1)
-        self.assertIn('记住了 3 个词', body)
+        self.assertIn('记住了 4 个词', body)
+        self.assertIn('**beam**', body)
+        self.assertNotIn('另一库含义', body)
+        self.assertNotIn('另一库译文', body)
         self.assertIn('我的看法：好视频。', body)
         self.assertIn('自己写的。', body)
         # A broken marker stops the write instead of guessing.

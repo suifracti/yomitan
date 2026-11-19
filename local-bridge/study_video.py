@@ -267,10 +267,15 @@ class VideoLibrary:
                 facts.append(f"{r['cards']} 张卡" + (f"（到{STAGE_NAMES[r['stage']]}）" if r.get('stage') in STAGE_NAMES else ''))
             if r.get('cardHint') or not r.get('cards'):
                 facts.append(r.get('cardHint') or '只记了笔记')
-            note = f" · [[{links[r['id']]}|笔记]]" if r.get('id') in links else ''
+            same_vault_note = r.get('id') in links
+            note = f" · [[{links[r['id']]}|笔记]]" if same_vault_note else ''
             lines.append(f"- {moment} **{safe_markdown(r['word'])}** · {' · '.join(x for x in facts if x)}{note}")
             if r.get('sentence'):
-                lines.append('  > ' + safe_markdown(' '.join(r['sentence'].split()))[:300])
+                original = safe_markdown(' '.join(r['sentence'].split()))
+                lines.append('  > ' + (original if same_vault_note else original[:300]))
+            for key, label in (('meaning', '本句含义'), ('translation', '原句译文')):
+                if value := r.get(key):
+                    lines.extend(('  >', f"  > **{label}**：{safe_markdown(' '.join(value.split()))}"))
         lines.append(SUMMARY_END)
         block = '\n'.join(lines)
         with self.lock():

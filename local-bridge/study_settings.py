@@ -464,7 +464,7 @@ class YomitanLibrary:
         return {'first': first, 'checked': len(files), 'synced': synced, 'conflicts': conflicts,
                 'errors': errors[:5], 'paused': paused, 'upgrade': upgrade}
 
-    def video_words(self, media_key, source_url='', cue=None):
+    def video_words(self, media_key, source_url='', cue=None, *, summary_vault=None):
         """Read saved words in playback order, using a reader key or a source group."""
         from study_index import saved_record
         from study_sources import media_key_of, page_source_key
@@ -489,11 +489,13 @@ class YomitanLibrary:
                 hint = f"{progress['waiting']} 张还在等 Anki 确认"
             elif not hint and row.get('ankiState') == 'pending':
                 hint = 'Anki 还没确认这次更新，可到学习库查看'
+            same_vault_summary = lib.vault == summary_vault
             rows.append({'id': row['id'], 'word': entry['word'], 'sentence': entry.get('sentence', ''),
                          'path': row.get('path', ''), 'vault': str(lib.vault),
                          'videoTime': entry.get('videoTime'), 'mastery': row.get('mastery', ''),
                          'cards': progress['confirmed'], 'stage': progress['stage'], **({'cardHint': hint} if hint else {}),
-                         **({'translation': entry['translation']} if cue and entry.get('translation') else {}),
+                         **({'meaning': entry['meaning']} if same_vault_summary and entry.get('meaning') else {}),
+                         **({'translation': entry['translation']} if (cue or same_vault_summary) and entry.get('translation') else {}),
                          **({'sense': entry['sense']} if entry.get('sense') else {})})
         rows.sort(key=lambda r: (r['videoTime'] is None, r['videoTime'] or 0))
         return rows
@@ -559,10 +561,10 @@ class YomitanLibrary:
                     'cardContexts': [{'word': r['word'], 'sentence': r['sentence']} for r in items if r['cards'] or r.get('cardHint')]}
         if action == 'libraryVideoSummary':
             from study_video import VideoLibrary
-            rows = self.video_words(p['mediaKey'], p['url'])[:300]
+            videos = VideoLibrary(self.config['vault'])
+            rows = self.video_words(p['mediaKey'], p['url'], summary_vault=videos.vault)[:300]
             if not rows:
                 raise ValueError('这个视频还没有记住的词，先选词「记住它」。')
-            videos = VideoLibrary(self.config['vault'])
             # Link a word's note only when it lives in the same vault as the video note.
             links = {r['id']: r['path'][:-3] if r['path'].endswith('.md') else r['path'] for r in rows
                      if r.get('path') and pathlib.Path(r['vault']) == videos.vault}
