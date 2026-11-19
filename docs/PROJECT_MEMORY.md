@@ -55,6 +55,7 @@
 | 同一视频记了很多句，想按时间一起回听 | L-007；openVideoListening 的 wholeVideo、libraryVideoWords 的 sourceUrl |
 | 视频记了很多长句后，已记词、推荐或整轮回听读不到 | L-007；study_translator.write_frame、study-client.nativeStudyCall |
 | 字幕栏开着时记词或制卡，已记张数和推荐没有变化 | L-007；StudyService 的确认回执通知、YoutubeReader._loadWords |
+| 视频里的词已经制过卡，想直接打开当时的笔记 | L-007；`_loadWords` 的词名按原记录号打开，不展开制卡。[已记词入口](youtube-study-wiring.md#2026-11-19-视频已记词可直接打开原记录) |
 | 回听完一句却多播了下一句开头；Shift+S 后没有恢复原速 | L-007；YoutubeStudyContext.playRange 的媒体时钟、句尾定时和倍率恢复 |
 | 视频暂停时点循环不播放，循环回到句首太晚 | L-007；YoutubeReader.toggleLoop、YoutubeStudyContext.playRange 的 repeat |
 | 搜到跨行短语，想一次听完，不想逐行点时间 | L-007；SubtitleSession.search 的命中范围、YoutubeReader._playCaptionRange |
@@ -314,6 +315,8 @@
 **字幕合并开关不应让旧原句不能回听**：先查当前行；还没找到时，仅在同一英语轨对照原始行和既有规则合并句，采用原文和保存整秒唯一匹配的确切起止。换轨、来源或偏移仍结束旧一轮；同秒却不同文不猜。非当前行只能直接回听和打开原笔记，不借用当前行的译文或补存原声权限。见[合并和拆开各验证一次](youtube-study-wiring.md#2026-11-19-字幕合并或拆开后也能回听旧原句)。
 
 **听完想回到当时记的意思**：`_beginListening` 按字幕行保留匹配的记录，去重的是待播行而非义项；揭晓后才显示各条笔记入口，换一句即清除。用 `openStudyRecord` 读原记录号并在搜索词卡里继续，传 `openPanel:false` 不自动显示制卡；没传这项的旧制卡入口照旧。搜索词卡不因此得到对原视频的取声权限。见[同一句不同义项的回听接续](youtube-study-wiring.md#2026-11-18-回听揭晓后接回原笔记)。
+
+**不进回听也能打开已记笔记**：视频词表点词名，调用同一个 `openStudyRecord`，用这一行的记录号且不展开制卡。即使同词同句有不同义项或者已经制卡，也能各自回到原记录。点时间和单独制卡仍各走原入口；不依赖当前字幕能否对应，不给新页面附带取声权限。见[同词同句的列表反例](youtube-study-wiring.md#2026-11-19-视频已记词可直接打开原记录)。
 
 **回听揭晓优先看自己保存的中文**：以前只看当前字幕轨上已翻的内容。主动点「看原句」才用同来源的 `libraryVideoWords(cue)` 按原文和整秒读已匹配记录的译文，重复译文合并，并保留同一句不同的译法；换句等失效就丢旧回执。整份词表不带译文，老桥无返回仍用字幕轨已有译文。见[双语回听](youtube-study-wiring.md#2026-11-19-视频回听揭晓能看到已存译文)。
 

@@ -108,7 +108,8 @@ margin:0 0 16px;border:1px solid var(--r-line);border-radius:10px;background:var
 #${ROOT_ID} .r-listen-answer,#${ROOT_ID} .r-listen-written{white-space:pre-wrap;overflow-wrap:anywhere}
 #${ROOT_ID} .r-listen-practice mark{color:inherit;background:var(--r-mark);text-decoration:underline;text-underline-offset:3px}
 #${ROOT_ID} .r-word{display:grid;grid-template-columns:46px auto minmax(0,1fr);column-gap:6px;align-items:baseline;padding:7px 8px 7px 0;border-bottom:1px solid var(--r-line)}
-#${ROOT_ID} .r-word-text{font-family:var(--st-serif,Georgia,serif);font-size:15px}
+#${ROOT_ID} .r-word-text{font:600 15px/1.4 var(--st-serif,Georgia,serif);color:var(--r-accent);min-width:0;padding:0;border:0;background:none;text-align:start;overflow-wrap:anywhere;cursor:pointer}
+#${ROOT_ID} .r-word-text:is(:hover,:focus-visible){text-decoration:underline}
 #${ROOT_ID} .r-word-meta{color:var(--r-muted);font-size:11px;text-align:right}
 #${ROOT_ID} .r-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;color:var(--r-muted);font-size:12px}
 #${ROOT_ID} .r-summary-help{flex-basis:100%;color:var(--r-muted)}

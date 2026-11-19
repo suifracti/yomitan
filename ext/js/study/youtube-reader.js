@@ -2330,7 +2330,7 @@ export class YoutubeReader extends EventTarget {
         const recommended = this._recommendations();
         recommended.replaceChildren('正在挑选适合制卡的句子…');
         const saved = document.createElement('div');
-        const note = Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '看视频时点过『记住它』的词。点时间可以回到那一刻。'});
+        const note = Object.assign(document.createElement('p'), {className: 'r-words-note', textContent: '看视频时点过『记住它』的词。点单词看原记录，点时间回到那一刻。'});
         const review = this._button('复习本视频 ↗', () => {
             review.disabled = true;
             void this._call('openPageLibrary', {mediaKey}).catch(() => {
@@ -2383,9 +2383,15 @@ export class YoutubeReader extends EventTarget {
                     this._video.currentTime = seconds;
                     this._resumeFollow();
                 });
-                const word = document.createElement('strong');
+                const word = this._button(item.word, () => {
+                    if (!current()) { return; }
+                    const {id, word: term, sentence} = item;
+                    void this._call('openStudyRecord', {id, word: term, sentence, openPanel: false}).catch(() => {
+                        if (current()) { this._status('没能打开这条笔记，请再点一次或去学习库找。'); }
+                    });
+                });
                 word.className = 'r-word-text';
-                word.textContent = item.word;
+                word.setAttribute('aria-label', `看原记录：${[item.word, item.sense?.gloss].filter(Boolean).join(' · ')}`);
                 const meta = document.createElement('span');
                 meta.className = 'r-word-meta';
                 // With sense-level records (roadmap B8) each sense is its own row.

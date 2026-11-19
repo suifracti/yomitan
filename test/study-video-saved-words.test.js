@@ -73,7 +73,12 @@ test('explains saved video words, opens uncarded words for card selection, and r
         const savedPanel = /** @type {HTMLElement} */ (document.querySelector('#study-yt-reader .r-words'));
         expect(words.textContent).toBe('我在这个视频记的词');
         await vi.waitFor(() => expect(savedPanel.textContent).toContain('已制 2 张卡'));
-        expect(savedPanel.textContent).toContain('看视频时点过『记住它』的词。点时间可以回到那一刻。');
+        expect(savedPanel.textContent).toContain('点单词看原记录，点时间回到那一刻。');
+        const savedNotes = /** @type {NodeListOf<HTMLButtonElement>} */ (savedPanel.querySelectorAll('button.r-word-text'));
+        expect([...savedNotes].map(({textContent}) => textContent)).toEqual(['successful', 'project', 'successful']);
+        savedNotes[2].click();
+        expect(call).toHaveBeenLastCalledWith('openStudyRecord', {id: '3'.repeat(32), word: 'successful', sentence, openPanel: false});
+        expect(open).not.toHaveBeenCalled();
         /** @type {HTMLButtonElement} */ (savedPanel.querySelector('[data-review-source]')).click();
         expect(call).toHaveBeenCalledWith('openPageLibrary', {mediaKey: 'youtube:abcdefghijk'});
         expect(savedPanel.textContent).toContain('还没制卡'); expect(savedPanel.textContent).toContain('已制 2 张卡');
