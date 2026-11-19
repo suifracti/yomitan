@@ -102,6 +102,7 @@
 | 等缓存时换掉 AI 服务，怎么还发出旧请求 | L-010；`SubtitleTranslation.handle` 对仍需发出的自动或模型请求，在查完缓存后复查。[发出前检查](youtube-study-wiring.md#2026-11-19-等缓存时换掉-ai-不再发旧请求) |
 | 词卡里一半还在翻，另一个入口换了翻译服务 | L-010；prepareParallelSentence 每批传相同 expectedEngine |
 | 小数点后只翻了半句、千位逗号把原句拆开 | L-010；study-data.studySentenceEnds / isStudyNumberSeparator，悬停与词卡长句共用 |
+| 遇到 Dr. / U.S. 就只翻半句，右引号跑到下一句 | L-010；`studySentenceEnds` 共用句界，避开英语常见缩写内的点，句末标点带右引号。[断句回归](youtube-study-wiring.md#2026-11-19-英文称谓和缩写不再截断原句) |
 | 只看译文时想点原段里的链接或按钮 | L-010；PageTranslate.render / paint |
 | 同一页的法语按英语翻、俄语段落没排进翻译、同拼写串译文 | L-010；page-translate.js 的 pageLanguage、requestText |
 | 划词翻译失败，卡片切了服务却还提示重新选词 | L-010；PageTranslate.openSelection 的重译与设置写回 |
@@ -445,6 +446,8 @@
 词卡的 `prepareParallelSentence` 也把本轮的服务传给每批 `subtitleTranslate`。旧版长句的后半批可能进新服务，前端却按旧服务保存缓存。后台发现服务已换时拒发，已显示的段落仍在，余下可重试。同一个检查同时覆盖手动和自动的后台请求，不改 Chrome 本机翻译和已保存译文。见[词卡分批换服务](youtube-study-wiring.md#2026-11-19-翻译词卡长句时不会中途改用另一服务)。
 
 悬停和词卡共用 `studySentenceEnds` 按原文位置找句界；点或逗号紧贴在数字之间时保留，例如 `12.5`、`3,500`。悬停按鼠标所在的一句翻，词卡仍按原 25 词和逗号两侧最少 6 词的条件分段，不改字幕轨、短句或原文。[数字断句验证](youtube-study-wiring.md#2026-11-19-断句时保留完整数字)。
+
+Alt、词卡长句和网页长文本分批沿同一 `studySentenceEnds`。英文常见称谓后接名字、点号缩写插在句中、小数都不截断；缩写恰当句尾仍按原文断句。紧贴的右引号或括号随结尾走，保持原文位置和原逗号门槛。不另起分句器或改写来源文字。[缩写断句反例](youtube-study-wiring.md#2026-11-19-英文称谓和缩写不再截断原句)。
 
 **网页翻译设置只交这次改动**：`page-prefs.js` 沿同一后台写队列合并，不用页面手头的整份设置重写。拖动、隐藏、恢复修改同站的独立字段；扩展菜单单站自动翻译只改这一站。旧设置不用迁移，翻译服务仍由原全局入口管理。见[跨标签交错写入](youtube-study-wiring.md#2026-11-19-三个入口不再互相盖掉网页翻译设置)。
 

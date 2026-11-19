@@ -19,10 +19,12 @@ import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 import {splitStudySentence} from '../ext/js/display/study-translation.js';
 
-test('Alt translates only the pointed sentence without splitting numbers, and toggles it off', async () => {
-    const first = 'The survey group clearly recorded a total of 3,500 samples and an average of 12.5 units per sample during the long morning shift.';
-    const second = 'The team saved all measurements for the next shift.';
-    const original = `${first} ${second}`;
+test('Alt and the study card keep titles, initials, numbers, and closing quotes in the right sentence', async () => {
+    const first = 'Dr. Rivera and the U.S. survey group clearly recorded a total of 3,500 samples and an average of 12.5 units per sample during the long morning shift.';
+    const second = '“The team saved all measurements for the next shift.”';
+    const third = 'Several more measurements came from laboratories in the U.S.';
+    const fourth = 'The results were published on the following Monday.';
+    const original = `${first} ${second} ${third} ${fourth}`;
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {html: `<p>${original}</p>`, url: 'https://example.test/article'}});
     vi.stubGlobal('chrome', {runtime: {sendMessage: async () => ({ok: true, value: {}})}, storage: {local: {get: async () => ({})}}});
     const {PageTranslate} = await import('../ext/js/study/page-translate.js');
@@ -43,7 +45,7 @@ test('Alt translates only the pointed sentence without splitting numbers, and to
         for (const type of ['keydown', 'keyup']) { document.dispatchEvent(new KeyboardEvent(type, {key: 'Alt'})); }
         expect(source.nextElementSibling).toBeNull();
         expect(source.textContent).toBe(original);
-        expect(splitStudySentence(original)).toEqual([first, second]);
+        expect(splitStudySentence(original)).toEqual([first, second, third, fourth]);
     } finally {
         page.stop();
         vi.unstubAllGlobals();

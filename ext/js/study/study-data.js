@@ -58,6 +58,21 @@ export function isStudyNumberSeparator(text, index) {
 }
 
 /**
+ * @param {string} text
+ * @param {number} index
+ * @returns {boolean}
+ */
+function isInlinePeriod(text, index) {
+    if (isStudyNumberSeparator(text, index) || /[A-Za-z]\.[A-Za-z]\./u.test(text.slice(index - 1, index + 3))) { return true; }
+    const before = text.slice(Math.max(0, index - 12), index);
+    const after = text.slice(index + 1, index + 16);
+    if (/\b(?:Mr|Mrs|Ms|Mx|Dr|Prof)$/u.test(before) && /^[ \t]+[A-Z]/u.test(after)) { return true; }
+    if (/\b(?:e\.g|i\.e)$/iu.test(before) && /^[ \t]+[A-Za-z\d]/u.test(after)) { return true; }
+    // The last dot of a dotted abbreviation can also end a sentence.
+    return /\b[A-Za-z](?:\.[A-Za-z])+$/u.test(before) && /^[ \t]+[a-z]/u.test(after);
+}
+
+/**
  * Sentence boundaries as offsets into the untouched original text.
  * @param {string} text
  * @param {boolean} [includeSemicolons]
@@ -66,8 +81,10 @@ export function isStudyNumberSeparator(text, index) {
 export function studySentenceEnds(text, includeSemicolons = false) {
     const ends = [];
     for (const match of text.matchAll(includeSemicolons ? /[.!?。！？;；]+/gu : /[.!?。！？]+/gu)) {
-        if (match[0] === '.' && isStudyNumberSeparator(text, match.index)) { continue; }
-        ends.push(match.index + match[0].length);
+        if (match[0] === '.' && isInlinePeriod(text, match.index)) { continue; }
+        let end = match.index + match[0].length;
+        while (end < text.length && /[”’"'\])}»）】》]/u.test(text[end])) { ++end; }
+        ends.push(end);
     }
     if (text.length > (ends.at(-1) ?? 0)) { ends.push(text.length); }
     return ends;
