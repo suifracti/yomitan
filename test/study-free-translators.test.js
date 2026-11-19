@@ -120,6 +120,20 @@ test('the background picks the stored service, not one named by the page', async
     await expect(chrome.service.handle('subtitleTranslate', request('c1'))).rejects.toThrow('页面里运行');
 });
 
+test('changing the service during cache lookup stops an unsent model request', async () => {
+    const {service, native, data} = serviceWith('model');
+    vi.spyOn(service, 'cache').mockImplementationOnce(async () => {
+        data.studySubtitlePrefs = {engine: 'apple'};
+        return [];
+    });
+    await expect(service.handle('subtitleTranslate', {...request('cached-old'), expectedEngine: 'model'}))
+        .rejects.toThrow('翻译服务刚换了');
+    expect(native).toEqual([]);
+    await expect(service.handle('subtitleTranslate', {...request('retry-apple'), expectedEngine: 'apple'}))
+        .resolves.toMatchObject({engine: 'apple', items: [{id: 'r1', translation: '本机 r1'}]});
+    expect(native).toEqual([{action: 'appleTranslate', language: 'en', items: [{id: 'r1', text: 'Keep going.'}]}]);
+});
+
 test('segmentation answers that skip or reorder rows are refused', async () => {
     const {service} = serviceWith('model');
     /** @type {unknown} */

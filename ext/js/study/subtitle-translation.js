@@ -62,14 +62,18 @@ export class SubtitleTranslation {
             if (cancelled) { throw new Error('已取消字幕翻译；晚到结果未写入。'); }
         };
         const promise = (async () => {
-            const {engine, autoTranslate} = await this.service.subtitlePrefs();
+            const prefs = await this.service.subtitlePrefs();
+            const {engine} = prefs;
             const config = studyConfig(await this.service.read(SETTINGS_KEY));
-            checkCancelled();
-            if (v.automatic === true && !autoTranslate) { throw new Error('自动翻译已关闭。要继续，请手动点翻译。'); }
-            if (v.expectedEngine !== void 0 && engine !== v.expectedEngine) { throw new Error('翻译服务刚换了，请点重试。'); }
-            if (v.freeOnly && engine === 'model') { throw new Error('请在设置里选一种免费翻译，再点重试。'); }
-            if (engine === 'chrome') { throw new Error('Chrome 内置翻译在页面里运行；请刷新页面后再点翻译。'); }
-            if (engine === 'model' && (v.config?.model !== config.model || v.config?.effort !== config.effort)) { throw new Error('模型设置已改变，请重新点翻译。'); }
+            const checkChoice = (/** @type {import('./subtitle-prefs.js').SubtitlePrefs} */ current, /** @type {import('study').StudyConfig} */ model) => {
+                checkCancelled();
+                if (v.automatic === true && !current.autoTranslate) { throw new Error('自动翻译已关闭。要继续，请手动点翻译。'); }
+                if (current.engine !== engine || (v.expectedEngine !== void 0 && engine !== v.expectedEngine)) { throw new Error('翻译服务刚换了，请点重试。'); }
+                if (v.freeOnly && engine === 'model') { throw new Error('请在设置里选一种免费翻译，再点重试。'); }
+                if (engine === 'chrome') { throw new Error('Chrome 内置翻译在页面里运行；请刷新页面后再点翻译。'); }
+                if (engine === 'model' && (v.config?.model !== model.model || v.config?.effort !== model.effort)) { throw new Error('模型设置已改变，请重新点翻译。'); }
+            };
+            checkChoice(prefs, config);
             const language = v.language || 'en';
             const target = v.target === 'en' ? 'en' : 'zh';
             const base = language.split('-')[0].toLowerCase();
@@ -96,6 +100,14 @@ export class SubtitleTranslation {
                 translations.set(item.id, text);
                 return false;
             });
+            // The cache read can outlast the user's active choice of service or auto translation.
+            if (missing.length > 0 && config.cacheEnabled && (v.automatic === true || engine === 'model')) {
+                const [current, model] = await Promise.all([
+                    this.service.subtitlePrefs(),
+                    engine === 'model' ? this.service.read(SETTINGS_KEY).then(studyConfig) : config,
+                ]);
+                checkChoice(current, model);
+            }
             if (missing.length > 0 && (engine === 'google' || engine === 'microsoft')) {
                 const translate = engine === 'google' ? googleTranslate : microsoftTranslate;
                 const rows = await translate(missing.map((item) => item.text), {source: base, target, signal: web.signal});
