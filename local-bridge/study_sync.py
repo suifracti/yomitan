@@ -429,10 +429,16 @@ def reconcile(lib, p):
         return {**lib.result(ident), 'syncState':'local-only', 'conflicts':[]}
     if not lib.anki_enabled:
         return {**lib.result(ident), 'syncState':'paused', 'conflicts':[]}
-    if expected := getattr(lib, 'expected_anki_profile', ''):
+    expected = getattr(lib, 'expected_anki_profile', '')
+
+    def pause_if_profile_changed():
+        if not expected: return None
         _, paused = sync_profile(lib.anki, expected)
         if paused:
             return {**lib.result(ident), 'syncState': 'paused', 'error': paused, 'conflicts': []}
+        return None
+
+    if pause := pause_if_profile_changed(): return pause
     if any(not c.get('noteId') for c in r.get('cards', [])):
         synced = lib.sync(ident)
         path = lib.path(ident)
@@ -464,6 +470,7 @@ def reconcile(lib, p):
             r['candidates'] = [{'noteId': n['noteId'], 'front': _plain(n['fields'].get('Word', {}).get('value', ''))[:30]}
                                for n in lib.anki('notesInfo', {'notes': found})] if found else []
             r['error'] = 'Anki 里的卡已被删除' if not found else f'Anki 里有 {len(found)} 张卡对应这条记录'
+            if pause := pause_if_profile_changed(): return pause
             lib.write(r, body, version)
             return {**lib.result(ident), 'conflicts': []}
         note_id = found[0]
@@ -531,6 +538,7 @@ def reconcile(lib, p):
             base_after[baseline_key] = base
     if conflicts:
         r['syncState'] = 'conflict'
+        if pause := pause_if_profile_changed(): return pause
         lib.write(r, body, version)
         return {**lib.result(ident), 'syncState':'conflict', 'conflicts':conflicts}
     # Update all linked Anki notes only after every conflict has a user choice.
@@ -568,6 +576,7 @@ def reconcile(lib, p):
             # Anki reads can outlive our local snapshot. Do not send it after an edit.
             if lib.read_file(path, ident)[2] != version:
                 raise ValueError('笔记在同步时又改过了，请刷新后再同步。')
+            if pause := pause_if_profile_changed(): return pause
             lib.anki('updateNoteFields', {'note':{'id':note_id,'fields':changed}})
             row, raw_after = _note_values(lib, note_id, r, merged, card.get('reviewOnly', False))
             if any(raw_after.get(k) != v for k,v in changed.items()):
@@ -593,6 +602,7 @@ def reconcile(lib, p):
     r['syncState'] = 'synced'
     for key in ('repairCardId', 'candidates', 'error'): r.pop(key, None)
     if r.get('cards'): r['ankiState'] = 'synced' if all(c.get('state') == 'synced' for c in r['cards']) else 'pending'
+    if pause := pause_if_profile_changed(): return pause
     lib.write(r, body, version)
     return {**lib.result(ident), 'syncState':'synced', 'conflicts':[]}
 

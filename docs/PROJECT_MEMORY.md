@@ -11,7 +11,7 @@
 | B站多P、第二P字幕错了；改选集/字幕来源/缓存 | L-001；ext/js/study/web-video-site.js 的 bilibiliSources |
 | 同一 B 站选集换网址后，字幕栏和学习库的已记词数不同 | L-007；study-service 的 libraryVideoWords、study_settings.video_words |
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
-| Anki 换了账户，一批已有的卡突然显示被删 | L-002；study_settings.auto_sync、study_sync.sync_profile |
+| Anki 换了账户，一批已有的卡突然显示被删；读卡期间切了账户 | L-002；study_settings.auto_sync、study_sync.sync_profile / reconcile |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
 | 手里只有带时间的视频链接或课程链接，想找以前记的原句 | L-002；study_sources.source_search_key、study_index.indexed_page |
 | 切分类还在读上一个分类；取消的收藏又出现 | L-002；study-library.js 的 loadPage、refreshSavedWords |
@@ -214,6 +214,8 @@
 **读 Anki 时笔记可能再次修改**：`reconcile` 最后写回笔记本来会拒绝旧版本，但挡不住之前送出的卡片字段。现仅在准备发送变化时，用初次定位的路径再读当前语境版本；变了就不提交旧字段，自动同步按已有 `retryRecords` 重读。一个单词文件中另一条语境的修改不按本语境版本处理。该检查不能取消已经送出的请求，也不替代最终的写入校验。见[同步中再次修改答案](youtube-study-wiring.md#2026-11-19-同步中改了答案不把旧内容送给-anki)。
 
 **换了 Anki 账户不是删卡**：自动同步用已有的关联 ID 看到原卡后，才记当前 Anki profile；只看到一个账户名不算归属。切到其他账户，自动同步和学习库逐条核对暂停，原同步进度不推进；切回后继续比较，同账户真删卡仍进「需处理」。今日复习也走同一判断，不按同名牌组误计另一个账户的数字。首次只采基线，旧连接器从未报告过账户时仍走老流程。没有把同步改成多账户合并，不替人认领迁移或改名的账户。见[切换账户和真正删卡的对照](youtube-study-wiring.md#2026-11-18-换了-anki-账户不是删卡)。
+
+**在读卡的过程中切换账户也停下**：自动核对沿本轮已确认的账户，批量读到候选/编辑正文后先复核再采信。逐条核对在写 Anki 字段、写回笔记或更新关联状态前重查；换账户则沿现有重试队列保留这条笔记。未识别账户的旧连接器仍照旧；正常批次不扩大 `edited:1` 或候选范围。不能撤回已送出的请求。[两个账户同卡号的验证](youtube-study-wiring.md#2026-11-19-同步中切换-anki-账户不改另一份卡)
 
 **自己的卡去掉学习标签后，每轮都被重新同步，粗体也没了**：明确关联（`linkedExisting`）按选定的 Anki 笔记号检查存在和当天的编辑，不以标签代替其身份。普通扩展制卡的标签核对和孤卡发现照旧。关联自有卡只在笔记里确实改了哪一面的文字时才写那一面；Anki 自己改的字只读回，不重排它的 HTML、原例句、标签或排程。[临时 Anki 的双向实测](youtube-study-wiring.md#2026-11-18-关联自有卡不剥掉它的排版)。
 

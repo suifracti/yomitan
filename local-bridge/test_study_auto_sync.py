@@ -144,6 +144,48 @@ class AutoSyncTests(unittest.TestCase):
         self.assertIn('真正要保存的答案', self.notes[note_id]['fields']['Definition'])
         self.assertNotIn(ident, self.library.sync_state()['retryRecords'])
 
+    def test_switching_profiles_during_anki_read_does_not_write_to_the_other_copy(self):
+        import copy
+        ident = self.make_card()
+        note_id = next(iter(self.notes))
+        study_notes = self.notes
+        accounts = {'Study': study_notes, 'Other': copy.deepcopy(study_notes)}
+        active = 'Study'
+        switch_on_read = False
+
+        def anki(action, params):
+            nonlocal active, switch_on_read
+            if action == 'getActiveProfile': return active
+            if action == 'notesInfo' and switch_on_read:
+                active = 'Other'
+                switch_on_read = False
+            self.notes = accounts[active]
+            return self.anki(action, params)
+
+        self.library.anki = anki
+        self.library.auto_sync()
+        self.assertEqual(self.library.sync_state()['ankiProfile'], 'Study')
+        path = next(self.vault.rglob('*brick*.md'))
+        text = path.read_text()
+        start = text.index('##### 答案')
+        edited = text[:start] + text[start:].replace('> 砖', '> 改好的答案', 1)
+        path.write_text(edited)
+        original_answer = accounts['Other'][note_id]['fields']['Definition']
+        self.calls.clear()
+        switch_on_read = True
+        attempt = self.library.auto_sync()
+        self.assertEqual(active, 'Other')
+        self.assertNotIn('updateNoteFields', self.calls)
+        self.assertIn('另一个账户', attempt['paused'])
+        self.assertIn(ident, self.library.sync_state()['retryRecords'])
+        self.assertEqual(path.read_text(), edited)
+        self.assertEqual(accounts['Other'][note_id]['fields']['Definition'], original_answer)
+
+        active = 'Study'
+        self.assertEqual(self.library.auto_sync()['synced'], 1)
+        self.assertIn('改好的答案', study_notes[note_id]['fields']['Definition'])
+        self.assertEqual(accounts['Other'][note_id]['fields']['Definition'], original_answer)
+
     def test_offline_edit_retries_until_the_original_card_is_updated(self):
         from unittest.mock import patch
         ident = self.make_card()

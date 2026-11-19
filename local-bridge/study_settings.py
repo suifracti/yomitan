@@ -361,7 +361,11 @@ class YomitanLibrary:
                     personal.setdefault(link['noteId'], set()).add((lib.target_id, ident))
         files = current_files
         anki_ok = self.anki_enabled
-        paused = ''
+        profile = paused = ''
+
+        def pause_pass(reason):
+            return {'first': first, 'checked': 0, 'synced': 0, 'conflicts': 0, 'errors': [], 'paused': reason, 'upgrade': []}
+
         if anki_ok:
             linked = linked_note_ids(r for _, _, r in records.values())
             if not linked:
@@ -369,7 +373,7 @@ class YomitanLibrary:
             profile, paused = study_sync.sync_profile(self.anki, state.get('ankiProfile')) if linked else ('', '')
             if paused:
                 # Do not advance file/Anki stamps or consume retries while the other collection is open.
-                return {'first': first, 'checked': 0, 'synced': 0, 'conflicts': 0, 'errors': [], 'paused': paused, 'upgrade': []}
+                return pause_pass(paused)
             try:
                 edit_scope = 'tag:english_study OR tag:japanese_study'
                 if personal:
@@ -380,11 +384,14 @@ class YomitanLibrary:
                 live = set(self.anki('findNotes', {'query': '(tag:study_* OR tag:studycard_*)'}))
                 untagged = personal.keys() - live
                 personal_live = set(self.anki('findNotes', {'query': 'nid:' + ','.join(map(str, untagged))})) if untagged else set()
-                if profile and linked & (live | personal_live):
-                    state['ankiProfile'] = profile  # Seeing the name alone does not establish ownership.
                 candidates = live - linked - set(ignored)
                 requested = sorted(set(edited) | candidates)
                 info = self.anki('notesInfo', {'notes': requested}) if requested else []
+                if profile and requested:
+                    _, paused = study_sync.sync_profile(self.anki, profile)
+                    if paused: return pause_pass(paused)
+                if profile and linked & (live | personal_live):
+                    state['ankiProfile'] = profile  # Seeing the name alone does not establish ownership.
                 state['orphans'] = [study_sync.orphan_record(self, n) for n in info
                                     if n['noteId'] not in linked and n['noteId'] not in ignored
                                     and 'japanese_study' not in n.get('tags', [])
@@ -422,9 +429,11 @@ class YomitanLibrary:
                 if not lib.anki_enabled or paused:
                     retry[ident] = target_id
                     continue
+                lib.expected_anki_profile = profile
                 result = study_sync.reconcile(lib, {'id': ident})
                 if result.get('syncState') == 'paused':
                     retry[ident] = target_id
+                    paused = result.get('error') or paused
                     continue
                 synced += 1
                 if result.get('conflicts'):
