@@ -192,6 +192,7 @@ export function prepareParallelSentence(source, {call, isCurrent, language, capt
                         config,
                         language,
                         expectedEngine: engine,
+                        ...(!explicit ? {automatic: true} : {}),
                         items: missing.map((row, i) => ({id: `part-${i}`, text: row.text})),
                     }));
                     translations = missing.map((_, i) => value.items.find((item) => item.id === `part-${i}`)?.translation || '');

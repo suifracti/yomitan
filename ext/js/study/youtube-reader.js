@@ -144,7 +144,7 @@ export class YoutubeReader extends EventTarget {
         this._segmentRun = 0;
         /** @type {typeof studyCall} */
         this._call = call;
-        /** @type {{id: string, engine: import('./subtitle-prefs.js').SubtitleEngine, controller: AbortController, batch: Set<string>, waiting: Map<string, ((value: string) => void)[]>}|null} */
+        /** @type {{id: string, engine: import('./subtitle-prefs.js').SubtitleEngine, automatic: boolean, controller: AbortController, batch: Set<string>, waiting: Map<string, ((value: string) => void)[]>}|null} */
         this._translation = null;
         /** @type {string} Model consent for this video and selected model. */
         this._fullConsent = '';
@@ -169,6 +169,7 @@ export class YoutubeReader extends EventTarget {
                     items,
                     config,
                     expectedEngine: run.engine,
+                    ...(run.automatic ? {automatic: true} : {}),
                     language: this._session?.source.language || 'en',
                     title: document.title.slice(0, 300)}));
                 return result.items;
@@ -297,11 +298,14 @@ export class YoutubeReader extends EventTarget {
      */
     setPrefs(prefs) {
         const previous = this._prefs;
-        if (previous.engine !== prefs.engine && this._translation) {
+        this._prefs = normalizeSubtitlePrefs(prefs);
+        if (previous.engine !== this._prefs.engine && this._translation) {
             this._status('已切换翻译服务；原文和已完成译文保留。');
             this._finishTranslation(true);
+        } else if (this._translation?.automatic && !this._prefs.autoTranslate) {
+            this._status('自动翻译已关闭；已完成的译文保留。');
+            this._finishTranslation(true);
         }
-        this._prefs = normalizeSubtitlePrefs(prefs);
         if (previous.shortcuts && !this._prefs.shortcuts) { this._restoreReplay?.(); }
         if (previous.enabled !== this._prefs.enabled) { this._sync(); }
         this._view?.root.classList.toggle('r-blur', this._prefs.blur);
@@ -1769,7 +1773,7 @@ export class YoutubeReader extends EventTarget {
             if (!automatic) { this._status('这些句子已经翻译好了。'); }
             return;
         }
-        const run = {id: crypto.randomUUID(), engine: this._prefs.engine, controller: new AbortController(), batch: new Set(), waiting: new Map()};
+        const run = {id: crypto.randomUUID(), engine: this._prefs.engine, automatic, controller: new AbortController(), batch: new Set(), waiting: new Map()};
         const live = () => this._translation === run;
         this._translation = run;
         view.translate.disabled = true;

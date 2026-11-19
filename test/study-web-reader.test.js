@@ -19,6 +19,8 @@ import {createHash} from 'node:crypto';
 import {afterAll, expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 import {installReaderStorage} from './mocks/study-reader-storage.js';
+import {deferPromise} from '../ext/js/core/utilities.js';
+import {StudyService} from '../ext/js/study/study-service.js';
 
 const html = '<!DOCTYPE html><html><head></head><body><main><video></video></main><div id="dock"></div><div id="layer"></div></body></html>';
 const environment = await builtinEnvironments.jsdom.setup(global, {jsdom: {html, url: 'https://course.example.org/watch?id=7&utm=x'}});
@@ -34,7 +36,7 @@ const {YoutubeReader} = await import('../ext/js/study/youtube-reader.js');
 const {YoutubeOverlay} = await import('../ext/js/study/youtube-overlay.js');
 const {mediaKeyOf, pageSourceKey, timedUrl} = await import('../ext/js/study/media-key.js');
 const {WebVideoSite} = await import('../ext/js/study/web-video-site.js');
-const {readVideoState, videoStateScope, writeVideoState} = await import('../ext/js/study/subtitle-prefs.js');
+const {readVideoState, TRANSLATION_PREFS_KEY, videoStateScope, writeVideoState} = await import('../ext/js/study/subtitle-prefs.js');
 
 /**
  * @param {string} url
@@ -318,8 +320,6 @@ test('regrouping retains finished translations only for exact rows of the same l
 test('a free subtitle run keeps finished rows but cannot send its next batch to a newly selected model', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     installReaderStorage({get: async () => ({}), set: async () => {}});
-    const {StudyService} = await import('../ext/js/study/study-service.js');
-    const {TRANSLATION_PREFS_KEY} = await import('../ext/js/study/subtitle-prefs.js');
     const {SETTINGS_KEY} = await import('../ext/js/study/study-data.js');
     const prefs = {engine: 'google'};
     /** @type {Record<string, unknown>} */
@@ -483,7 +483,7 @@ test('watching progress moves through a caption gap but not an earlier playback 
     }
 });
 
-test('a caption gap pretranslates only the upcoming window and starts full translation ahead', async () => {
+test('a caption gap pretranslates ahead, stops when turned off, and still allows full translation', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     const previous = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
     const video = document.createElement('video');
@@ -494,14 +494,31 @@ test('a caption gap pretranslates only the upcoming window and starts full trans
     const clock = vi.spyOn(Date, 'now').mockReturnValue(100000);
     /** @type {string[][]} */
     const sent = [];
-    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: true, aheadSeconds: 60, engine: 'google', resume: false},
+    /** @type {Record<string, unknown>[]} */
+    const requests = [];
+    const prefs = {engine: 'apple', autoTranslate: true};
+    const service = new StudyService({
+        get: async (key) => ({[key]: key === TRANSLATION_PREFS_KEY ? prefs : void 0}),
+        set: async () => {},
+    }, (payload) => {
+        const {items} = /** @type {{items: {id:string, text:string}[]}} */ (payload);
+        sent.push(items.map((item) => item.text));
+        return {cancel() {}, promise: Promise.resolve({ok: true, result: {items: items.map(({id}) => ({id, translation: '译文'}))}})};
+    });
+    /** @type {import('core').DeferredPromiseDetails<void>} */
+    const ready = deferPromise();
+    let waitForSettings = false;
+    let settingsStarted = false;
+    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: true, aheadSeconds: 60, engine: 'apple', resume: false},
         site: /** @type {never} */ (fakeSite(null)),
         call: async (action, data) => {
-            if (action === 'subtitleSettings') { return {model: 'fixture', effort: 'low'}; }
-            if (action !== 'subtitleTranslate') { return {}; }
-            const {items} = /** @type {{items: {id:string, text:string}[]}} */ (data);
-            sent.push(items.map((item) => item.text));
-            return {items: items.map(({id}) => ({id, translation: '译文'}))};
+            if (action === 'subtitleSettings' && waitForSettings) {
+                settingsStarted = true;
+                await ready.promise;
+            }
+            if (action === 'subtitleTranslate') { requests.push(/** @type {Record<string, unknown>} */ (data)); }
+            if (action.startsWith('subtitle')) { return await service.handle(action, data); }
+            return {};
         }});
     try {
         reader.start();
@@ -514,10 +531,28 @@ test('a caption gap pretranslates only the upcoming window and starts full trans
         video.dispatchEvent(new Event('timeupdate'));
         await vi.waitFor(() => expect(sent).toEqual([['Next sentence.']]));
         await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('已译 1/3'));
+        waitForSettings = true;
+        clock.mockReturnValue(104000);
+        video.currentTime = 181;
+        video.dispatchEvent(new Event('timeupdate'));
+        expect(settingsStarted).toBe(true);
+        prefs.autoTranslate = false;
+        reader.setPrefs({...reader.prefs, autoTranslate: false});
+        ready.resolve();
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        expect(requests).toHaveLength(1);
+        expect(reader.session?.progress().translated).toBe(1);
+
+        // The background can see the new setting before another tab gets notified.
+        await expect(service.handle('subtitleTranslate', {...requests[0], requestId: 'stale-auto'}))
+            .rejects.toThrow('自动翻译已关闭');
+        expect(sent).toHaveLength(1);
         reader.translateNext();
         await vi.waitFor(() => expect(sent).toEqual([['Next sentence.'], ['Far beyond the window.', 'Already passed.']]));
         await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('已译 3/3'));
     } finally {
+        ready.resolve();
+        reader.setPrefs({...reader.prefs, enabled: false});
         visible.mockRestore();
         clock.mockRestore();
         video.replaceWith(previous);
