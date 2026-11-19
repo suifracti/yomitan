@@ -627,22 +627,27 @@ def reconcile(lib, p):
 
 def repair_link(lib, p):
     r, body, version = lib.read(p['id'])
+    card_id = r.get('repairCardId')
+    if not card_id or p.get('repairCardId', card_id) != card_id:
+        raise ValueError('要处理的卡片已变，请刷新学习库再试。')
+    card = next((c for c in r.get('cards', []) if c['id'] == card_id), None)
     values = local_fields(r, body)
     expected = getattr(lib, 'expected_anki_profile', '')
     if p['choice'] in ('unlink', 'recreate'):
-        if p['choice'] == 'unlink':
-            detached = [n for n in [r.get('noteId')] + [c.get('noteId') for c in r.get('cards', [])] if n]
-            ignored_anki_notes(lib.cache_dir, expected, add=detached)
-            r.update({'cards': [], 'noteId': None, 'syncBaseline': {}})
+        detached = r.get('noteId') if card_id == 'legacy' else card.get('noteId')
+        if p['choice'] == 'unlink' and detached:
+            ignored_anki_notes(lib.cache_dir, expected, add=(detached,))
+        if card_id == 'legacy':
+            r['noteId'] = None
         else:
-            r['cards'] = [c for c in r.get('cards', []) if c['id'] != r['repairCardId']]
-            if r['repairCardId'] == 'legacy': r['noteId'] = None
+            r['cards'].remove(card)
+        values['cards'] = [c for c in values['cards'] if c['id'] != card_id]
+        for field in ('front', 'back'):
+            r.get('syncBaseline', {}).pop('card.' + card_id + '.' + field, None)
         linked = bool(r.get('cards') or r.get('noteId'))
+        if not linked and p['choice'] == 'unlink': r['syncBaseline'] = {}
         r.update({'ankiState': 'synced' if linked else 'saved', 'syncState': 'synced' if linked else 'local-only'})
     else:
-        card_id = r.get('repairCardId')
-        if not card_id: raise ValueError('这条记录不需要重新关联，请刷新列表。')
-        card = next((c for c in r.get('cards', []) if c['id'] == card_id), None)
         tag = 'study_' + r['id'] if card_id == 'legacy' else 'studycard_' + card_id
         active, paused = sync_profile(lib.anki, expected)
         if paused: raise ValueError(paused)
@@ -658,10 +663,11 @@ def repair_link(lib, p):
             r.update({'noteId': p['noteId'], 'linkedExisting': True, 'legacyCard': {'front': front, 'back': back}})
         else:
             card.update({'noteId': p['noteId'], 'linkedExisting': True, 'front': front, 'back': back, 'state': 'synced'})
+        for saved in values['cards']:
+            if saved['id'] == card_id: saved.update(front=front, back=back)
         r.update({'ankiState': 'synced', 'syncState': 'synced'})
         r.setdefault('syncBaseline', {}).update({'card.' + card_id + '.front': front, 'card.' + card_id + '.back': back})
     for key in ('repairCardId', 'candidates', 'error'): r.pop(key, None)
-    values['cards'] = [{'id': c['id'], 'front': c['front'], 'back': c['back']} for c in r.get('cards', [])]
     lib.write(r, with_local_fields(body, values), version)
     return lib.result(r['id'])
 

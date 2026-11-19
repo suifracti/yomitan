@@ -1579,6 +1579,10 @@ listedQuery :
                 button.textContent = label;
                 button.onclick = () => {
                     if (choice === 'restore' && originalWord && !originalWord.reportValidity()) { return; }
+                    if (record.syncState !== 'anki-only' && !record.repairCardId) {
+                        setStatus('请先刷新学习库，再选要处理的卡片。');
+                        return;
+                    }
                     button.disabled = true;
                     const restore = {
                         ...(choice === 'restore' && originalWord ? {word: originalWord.value.trim()} : {}),
@@ -1586,10 +1590,10 @@ listedQuery :
                     };
                     void studyCall(
                         record.syncState === 'anki-only' ? 'libraryOrphan' : 'libraryRepair',
-                        record.syncState === 'anki-only' ? {noteId, choice, ...restore, ...(record.orphanAccount ? {orphanAccount: record.orphanAccount} : {})} : {id: record.id, choice, ...(choice === 'select' ? {noteId} : {})},
+                        record.syncState === 'anki-only' ? {noteId, choice, ...restore, ...(record.orphanAccount ? {orphanAccount: record.orphanAccount} : {})} : {id: record.id, choice, repairCardId: record.repairCardId, ...(choice === 'select' ? {noteId} : {})},
                     )
                         .then(async () => {
-                            if (label === '重新制卡') { createCard(); }
+                            if (choice === 'recreate') { createCard(); }
                             await loadPage(true);
                         })
                         .catch((error) => { setStatus(error instanceof Error ? error.message : '还没处理成功。请打开 Anki，刷新列表后再试。'); button.disabled = false; });
@@ -1597,9 +1601,12 @@ listedQuery :
                 actions.append(button);
             };
             switch (record.syncState) {
-                case 'missing':
-                    repair('重新制卡', 'recreate'); repair('只保留笔记', 'unlink');
+                case 'missing': {
+                    const otherCards = record.cards?.some(({id}) => id !== record.repairCardId) || (record.noteId && record.repairCardId !== 'legacy');
+                    repair('重新制卡', 'recreate');
+                    repair(otherCards ? '解除这张卡的关联' : '只保留笔记', 'unlink');
                     break;
+                }
                 case 'ambiguous':
                     for (const candidate of record.candidates || []) { repair(`关联：${candidate.front}`, 'select', candidate.noteId); }
                     break;

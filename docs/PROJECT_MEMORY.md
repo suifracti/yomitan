@@ -14,6 +14,7 @@
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
 | Anki 换了账户，一批已有的卡突然显示被删；读卡期间切了账户 | L-002；study_settings.auto_sync、study_sync.sync_profile / reconcile |
 | 切了 Anki 账户后，旧列表的卡片编号在另一边也存在 | L-002；`orphanAccount` 核显示用的账户，`orphan_action` 读卡前后核当前账户。[恢复归属](youtube-study-wiring.md#2026-11-19-只在-anki-恢复时不认错账户) |
+| 一张卡不见了，处理时别拆掉同一条笔记的正常卡 | L-002；`repair_link` 只改待处理的卡，保留其他卡的关联和笔记手写改动。[单卡修复](youtube-study-wiring.md#2026-11-19-只处理出问题的那张卡) |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
 | 手里有视频或课程链接，想用关键词找该素材里记过的原句 | L-002；study_sources.source_search_parts / source_search_time、study_index.indexed_page |
 | 切分类还在读上一个分类；收藏或刷新一条后，旧记录混进新搜索 | L-002；`pages/study-library.js` 的 `loadPage`、`refreshSavedWords` 和 `recordResultScope` |
@@ -202,6 +203,8 @@
 **原词、原句都一样，但当时选了不同意思**：新卡保留实际选定的 `entry.sense` 和已有的 lemma。重建不是“又发现了新意思”，不能重新分配 #2/#3，也不能把两张卡按同一行英文合并。原记录标记只与重新算出的编号比较，不用它打开别处的笔记。没有留下义项的旧卡，无法证明同属已有笔记时保持待处理。见[两种 charge 的恢复](youtube-study-wiring.md#2026-11-18-同一句话里的两个意思分别找回)。
 
 “卡已恢复却一直提示被删除”：自动同步原先只在记录还不是missing时比较ID是否消失；处于missing的记录即使同一Anki ID重新出现也不会核对，且mod未变时edited:1无法补触发。现复用每轮已有的带学习标签ID清单，关联ID缺失状态与记录missing状态不一致时才reconcile；恢复后安静轮次不再重复核对。新增临时删除→同ID/同mod返回→清除missing→安静一轮用例通过，原2000卡notesInfo只读当日编辑与候选用例也通过。没有实测Anki撤销按钮，不把替身情景冒充正式库行为；未新增扫描或改变排程。
+
+**一条笔记里只有一张卡出问题，不拆其它卡**：学习库随处理动作传这次的 `repairCardId`；如果待处理的已经是另一张，就先刷新。桥只解除、重做前清理或重新关联这一张，保留其他卡同步区里本人刚写的题面和答案；旧页面未带编号时只允许处理桥当前标记的卡。新版不降级向旧桥发送不带编号的解除请求，不删除卡或改排程。[多卡修复反例](youtube-study-wiring.md#2026-11-19-只处理出问题的那张卡)。
 
 “点需处理没反应／切分类后空白”：学习库 `loadPage` 在加载时只保留最新待刷新请求，旧列表返回后不提交过期快照；等待同步或本地收藏时换分类，则不再发错误分类的列表请求。收藏读取也按发起顺序丢掉旧回应，避免慢回执盖掉后来取消的星标。复用原分类队列与本地收藏监听，不新建第二套加载或同步。见[延迟切分类及星标反例](youtube-study-wiring.md#2026-11-18-快速切分类和取消收藏只采用最新读取)。
 
