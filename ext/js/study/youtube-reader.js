@@ -153,7 +153,7 @@ export class YoutubeReader extends EventTarget {
         /** @type {TranslationQueue} */
         this._queue = new TranslationQueue(async ({items, config, signal}) => {
             const run = this._translation;
-            if (!run || signal.aborted) { throw new Error('已取消'); }
+            if (!run || signal.aborted || this._syncIfSourceChanged()) { throw new Error('已取消'); }
             const requestId = run.id;
             run.batch = new Set(items.map((item) => item.id));
             const cancel = () => { void this._call('subtitleCancel', {requestId}).catch(() => {}); };
@@ -429,6 +429,7 @@ export class YoutubeReader extends EventTarget {
      * @param {boolean} [remember] A restored shift isn't a new learner edit.
      */
     setOffset(ms, remember = true) {
+        if (this._rawSession && this._syncIfSourceChanged()) { return; }
         this._endListening();
         this._restoreReplay?.();
         for (const button of this._view?.list.querySelectorAll('button[data-cue-notes][aria-expanded="true"]') ?? []) { /** @type {HTMLButtonElement} */ (button).click(); }
@@ -751,6 +752,13 @@ export class YoutubeReader extends EventTarget {
         this._seen.push(name);
         if (this._seen.length > 50) { this._seen.shift(); }
         if (this._view && !this._session && !this._loadController) { void this._load(this._generation); }
+    }
+
+    /** @returns {boolean} Refreshes a route change before the site watcher catches it. */
+    _syncIfSourceChanged() {
+        if (this._sourceKey === pageSourceKey(this._site.pageUrl())) { return false; }
+        this._sync();
+        return true;
     }
 
     /** */
@@ -1746,7 +1754,7 @@ export class YoutubeReader extends EventTarget {
     async _translate(retryOnly, full = false, onlyId) {
         const session = this._session;
         const view = this._view;
-        if (!session || !view || this._translation || /^(zh|cmn|yue)(?:-|$)/i.test(session.source.language)) { return; }
+        if (!session || !view || this._syncIfSourceChanged() || this._translation || /^(zh|cmn|yue)(?:-|$)/i.test(session.source.language)) { return; }
         const automatic = !full && !retryOnly && !onlyId;
         const playbackMs = (this._video?.currentTime ?? 0) * 1000;
         const until = playbackMs + this._prefs.aheadSeconds * 1000;
@@ -1774,7 +1782,7 @@ export class YoutubeReader extends EventTarget {
             return;
         }
         const run = {id: crypto.randomUUID(), engine: this._prefs.engine, automatic, controller: new AbortController(), batch: new Set(), waiting: new Map()};
-        const live = () => this._translation === run;
+        const live = () => this._translation === run && !this._syncIfSourceChanged();
         this._translation = run;
         view.translate.disabled = true;
         view.retry.disabled = true;
@@ -1853,7 +1861,7 @@ export class YoutubeReader extends EventTarget {
     _onTime() {
         const session = this._session;
         const video = this._video;
-        if (!session || !video || !this._view?.root.isConnected) { return; }
+        if (!session || !video || !this._view?.root.isConnected || this._syncIfSourceChanged()) { return; }
         const playbackMs = video.currentTime * 1000;
         if (this._prefs.resume && !this._listen) { this._saveProgress(playbackMs); }
         if (!this._listen) { this._autoTranslate(); }

@@ -81,7 +81,7 @@
 | 问 AI 之后笔记原来的解释被换掉 | L-002；StudySync.learned、study_sync.update 的 fillMissing |
 | 收起后同词同句只剩一个标签，或者切回时追问、手编卡题面丢了 | L-002；study-word-tabs.js、study-library.js、study-data.js 的 savedStudyRecordId |
 | 开了网页翻译后，「带上邻句」拿到的是中文译文 | L-007；DOMTextScanner.getElementSeekInfo、PageTranslate.render |
-| 换视频后出现上一段字幕；异步保存后串会话 | L-008；YoutubeReader._load / _loadWeb、_generation |
+| 换视频后出现上一段字幕；同一播放器换课仍翻译上一课 | L-008；YoutubeReader._load / _loadWeb、_generation、_syncIfSourceChanged |
 | 改一种卡要改哪里；卡型显示“既有卡片”；补卡跑进了大牌组 | L-009；local-bridge/study_cards.py、study_sync.card_target |
 | 切了翻译服务又变回去；改字幕外观影响翻译选择 | L-010；subtitle-prefs.js、StudyService 的写队列、translation-engines.js |
 | 另一个标签拖动悬浮球后，显示方式或本站显隐变回去 | L-010；page-prefs.js、StudyService 的设置写队列 |
@@ -382,6 +382,8 @@
 处理与保留：在既有代次机制上补齐YouTube轨道列表返回、选轨保存完成，以及网页异步来源枚举后的检查；先用局部sources收结果，身份有效再写当前字段。仍允许旧视频的选轨写入完成，不删除记忆、不取消用户已经确认的设置，不更动capture/refetch顺序、签名URL或新视频的控制器。
 
 证据：test/study-caption-capture.test.js新增一个“保存中换视频”的用例，旧代码失败、修正后与原截取优先/英语退回/重发用例共2项通过；reader lint仍64、该测试0，无新增诊断。本轮未操作真实Chrome，不把异步夹具说成实机已复现。交接见“2026-11-11 换视频异步载入身份”。
+
+2026-11-19 补充：普通播放器原地换课时，短播放键不变，站点轮询也可能还未察觉。字幕翻译发送、回执和播放进度按 `pageSourceKey` 核当前来源，发现变化走现有 `_sync`，取消旧队列、载入当前课。已发请求不能保证撤回。用保留播放器的哈希换课夹具复现上一课第 9 句被继续发送；修正后没有续发或接受旧回执，新课仍可翻译。见交接“同一播放器换课时停下旧字幕翻译”。
 
 ## L-009 学习卡型只定义一次
 

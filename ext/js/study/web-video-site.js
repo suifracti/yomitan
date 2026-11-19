@@ -207,8 +207,9 @@ export class WebVideoSite {
 
     /** @returns {string} The page itself; other sites have no shared time parameter. */
     pageUrl() {
+        if (location.protocol !== 'file:') { return pageSourceAddress(location.href); }
         const video = this.video();
-        if (location.protocol !== 'file:' || !video) { return pageSourceAddress(location.href); }
+        if (!video) { return location.href; }
         const url = new URL(video.currentSrc || video.src || location.href);
         url.hash = `${FILE_DURATION_KEY}=${Math.round(Number.isFinite(video.duration) ? video.duration : 0)}`;
         return url.href;

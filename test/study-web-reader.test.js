@@ -483,6 +483,67 @@ test('watching progress moves through a caption gap but not an earlier playback 
     }
 });
 
+test('switching the lesson in the same player stops the old translation before the next batch', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    const previous = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+    const video = document.createElement('video');
+    previous.replaceWith(video);
+    const url = location.href;
+    const next = url + '#/lessons/second';
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const track = (/** @type {string} */ name, /** @type {number} */ count) => ({
+        id: 'track:0',
+        language: 'en',
+        label: 'English',
+        all: [],
+        cues: Array.from({length: count}, (_, i) => ({id: String(i), sourceIndex: i, startMs: i * 1000, endMs: (i + 1) * 1000, text: `${name} sentence ${i}.`})),
+    });
+    const site = fakeSite(null);
+    site.load = async () => (location.href === next ? track('Second', 1) : track('First', 9));
+    /** @type {import('core').DeferredPromiseDetails<void>} */
+    const reply = deferPromise();
+    /** @type {string[][]} */
+    const sent = [];
+    const reader = new YoutubeReader({prefs: {merge: false, engine: 'google', resume: false},
+        site: /** @type {never} */ (site),
+        call: async (action, data) => {
+            if (action === 'subtitleSettings') { return {model: 'fixture', effort: 'low'}; }
+            if (action !== 'subtitleTranslate') { return {}; }
+            const {items} = /** @type {{items: {id: string, text: string}[]}} */ (data);
+            sent.push(items.map(({text}) => text));
+            if (sent.length === 1) { await reply.promise; }
+            return {items: items.map(({id}) => ({id, translation: '译文'}))};
+        }});
+    try {
+        reader.start();
+        const old = await vi.waitFor(() => {
+            expect(reader.session?.cues.length).toBe(9);
+            return reader.session;
+        });
+        reader.translateNext();
+        await vi.waitFor(() => expect(sent[0]).toHaveLength(8));
+        history.replaceState(null, '', next);
+        expect(mediaKeyOf(location.href)).toBe(mediaKeyOf(url));
+        reply.resolve();
+        await vi.waitFor(() => expect(reader.session?.source.url === next || sent.length > 1).toBe(true));
+        expect(sent).toHaveLength(1);
+        expect(old?.progress().translated).toBe(0);
+        expect(reader.session?.cues[0].text).toBe('Second sentence 0.');
+        reader.translateNext();
+        await vi.waitFor(() => expect(reader.session?.progress().translated).toBe(1));
+        expect(sent[1]).toEqual(['Second sentence 0.']);
+        history.replaceState(null, '', url);
+        video.dispatchEvent(new Event('timeupdate'));
+        await vi.waitFor(() => expect(reader.session?.source.url).toBe(url));
+        expect(reader.session?.cues).toHaveLength(9);
+    } finally {
+        reply.resolve();
+        reader.setPrefs({...reader.prefs, enabled: false});
+        history.replaceState(null, '', url);
+        video.replaceWith(previous);
+    }
+});
+
 test('a caption gap pretranslates ahead, stops when turned off, and still allows full translation', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     const previous = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
