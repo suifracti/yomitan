@@ -199,9 +199,12 @@ export class WebVideoSite {
         this._quieted = new Map();
     }
 
-    /** @returns {string|null} */
-    mediaKey() {
-        return mainVideo() ? (mediaKeyOf(this.pageUrl()) || null) : null;
+    /**
+     * @param {HTMLVideoElement|null} [video]
+     * @returns {string|null}
+     */
+    mediaKey(video = this.video()) {
+        return video ? (mediaKeyOf(this.pageUrl()) || null) : null;
     }
 
     /** @returns {HTMLVideoElement|null} */
@@ -230,11 +233,28 @@ export class WebVideoSite {
         if (this._seen.length > 100) { this._seen.shift(); }
     }
 
-    /** @param {() => void} onChange */
-    watch(onChange) {
+    /**
+     * @param {() => void} onChange
+     * @param {() => void} onSubtitleTrack
+     */
+    watch(onChange, onSubtitleTrack) {
         let last = '';
+        /** @type {TextTrackList|undefined} */
+        let tracks;
+        const added = (/** @type {Event} */ event) => {
+            if (this.video()?.textTracks !== tracks) { return; }
+            const track = /** @type {TrackEvent} */ (event).track;
+            if (track?.kind === 'subtitles' || track?.kind === 'captions') { onSubtitleTrack(); }
+        };
         const check = () => {
-            const key = `${location.href}|${this.mediaKey() ?? ''}`;
+            const video = this.video();
+            const key = `${location.href}|${this.mediaKey(video) ?? ''}`;
+            const nextTracks = video?.textTracks;
+            if (nextTracks !== tracks) {
+                tracks?.removeEventListener('addtrack', added);
+                tracks = nextTracks;
+                tracks?.addEventListener('addtrack', added);
+            }
             if (key !== last) {
                 last = key;
                 onChange();

@@ -197,6 +197,8 @@ export class YoutubeReader extends EventTarget {
         this._generation = 0;
         /** @type {AbortController|null} */
         this._loadController = null;
+        /** A native subtitle track appeared during this web load. */
+        this._lateWebTrack = false;
         /** @type {string[]} Caption requests made by the player itself (they carry its own tokens). */
         this._seen = [];
         /** @type {Map<string, {url: URL, body: string}>} */
@@ -246,7 +248,17 @@ export class YoutubeReader extends EventTarget {
             });
             observer.observe({type: 'resource', buffered: true});
         } catch { /* Without resource timing the user still gets an explicit failure message. */ }
-        this._site.watch(() => this._sync());
+        const sync = () => this._sync();
+        if (this._site.kind === 'web') {
+            this._site.watch(sync, () => {
+                if (!this._view || this._session || this._syncIfSourceChanged()) { return; }
+                if (this._loadController) {
+                    this._lateWebTrack = true;
+                } else {
+                    void this._loadWeb(this._generation);
+                }
+            });
+        } else { this._site.watch(sync); }
         // A player can hand playback to another <video> without changing the media key.
         window.setInterval(() => this._rebindVideo(), 1500);
         window.addEventListener('resize', () => this._place());
@@ -1387,9 +1399,9 @@ export class YoutubeReader extends EventTarget {
     /**
      * Other sites: the video's own text tracks or a subtitle file the page loaded.
      * @param {number} generation
-     * @param {string} sourceId
+     * @param {string} [sourceId]
      */
-    async _loadWeb(generation, sourceId) {
+    async _loadWeb(generation, sourceId = '') {
         const view = this._view;
         const site = this._site;
         if (!view || !this._mediaKey || generation !== this._generation || this._loadController || site.kind !== 'web') { return; }
@@ -1398,6 +1410,7 @@ export class YoutubeReader extends EventTarget {
         const controller = new AbortController();
         const current = () => generation === this._generation && this._loadController === controller && sourceKey === pageSourceKey(site.pageUrl());
         this._loadController = controller;
+        this._lateWebTrack = false;
         const timeout = setTimeout(() => controller.abort(), WAIT_MS);
         view.load.disabled = true;
         this._status('正在查找这个视频的字幕…');
@@ -1421,10 +1434,12 @@ export class YoutubeReader extends EventTarget {
             if (current()) { this._status(`字幕读取失败：${error instanceof Error ? error.message : String(error)}`); }
         } finally {
             clearTimeout(timeout);
+            const retry = this._lateWebTrack && !sourceId && !this._session && current();
             if (this._loadController === controller) {
                 this._loadController = null;
                 view.load.disabled = this._translation !== null;
             }
+            if (retry) { void this._loadWeb(generation); }
         }
     }
 

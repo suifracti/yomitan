@@ -120,6 +120,60 @@ test('web captions prefer regional English and fall back only for automatic sele
     }
 });
 
+test('a track added during ordinary web startup loads without replacing an existing session', async () => {
+    const video = document.createElement('video');
+    video.style.opacity = '1';
+    video.getBoundingClientRect = () => new DOMRect(0, 0, 1280, 720);
+    const events = new EventTarget();
+    const track = {kind: 'subtitles', label: 'English', language: 'en', mode: 'hidden', cues: [{startTime: 0.5, endTime: 2, text: 'The late subtitle is here.'}]};
+    const tracks = Object.assign(/** @type {object[]} */ ([]), {
+        addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events),
+    });
+    Object.defineProperty(video, 'textTracks', {value: tracks});
+    document.body.append(video);
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    // jsdom's selector engine cannot compute video styles with our UI stylesheet's :has().
+    const style = getComputedStyle;
+    const videoStyle = vi.spyOn(globalThis, 'getComputedStyle').mockImplementation((element) => {
+        if (element === video) { return /** @type {CSSStyleDeclaration} */ ({visibility: 'visible', display: 'block', opacity: '1'}); }
+        return style(element);
+    });
+    const timer = vi.spyOn(window, 'setInterval').mockReturnValue(0);
+    const first = deferPromise();
+    const site = new WebVideoSite();
+    const load = vi.spyOn(site, 'load').mockImplementationOnce(async () => {
+        await first.promise;
+        return null;
+    });
+    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: false, resume: false}, site, call: async () => null});
+    try {
+        reader.start();
+        await vi.waitFor(() => expect(load).toHaveBeenCalledOnce());
+        const add = (/** @type {object} */ subtitle) => {
+            tracks.push(subtitle);
+            events.dispatchEvent(Object.assign(new Event('addtrack'), {track: subtitle}));
+        };
+        add(track);
+        expect(load).toHaveBeenCalledOnce();
+        first.resolve();
+        await vi.waitFor(() => expect(reader.session?.cues[0]?.text).toBe('The late subtitle is here.'));
+        expect(load).toHaveBeenCalledTimes(2);
+
+        reader.importText('1\n00:00:00,000 --> 00:00:02,000\nThe imported subtitle stays.\n', 'local.srt');
+        add({...track, label: 'Another track'});
+        expect(load).toHaveBeenCalledTimes(2);
+        expect(reader.session?.cues[0]?.text).toBe('The imported subtitle stays.');
+    } finally {
+        first.resolve();
+        timer.mockRestore();
+        load.mockRestore();
+        videoStyle.mockRestore();
+        video.remove();
+        document.querySelector('#study-web-dock')?.remove();
+        document.querySelector('#study-web-layer')?.remove();
+    }
+});
+
 test('other sites: page subtitles load, a bilingual file brings its translations, and the panel is a launcher', async () => {
     const cues = [{id: '0', sourceIndex: 0, startMs: 0, endMs: 1500, text: 'The brain can change.'}, {id: '1', sourceIndex: 1, startMs: 2000, endMs: 3000, text: 'Keep going.'}];
     const site = fakeSite({cues, language: 'en', label: 'English（播放器字幕）', id: 'track:0', all: [{id: 'track:0', label: 'English（播放器字幕）'}, {id: 'track:1', label: '中文（播放器字幕）'}]});

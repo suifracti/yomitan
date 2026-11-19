@@ -31,6 +31,7 @@
 | 字幕空档没记进度，回听旧句或录原声把下次继续位置拉回去 | L-006；YoutubeReader._onTime / _saveProgress、YoutubeStudyContext.isTemporaryPlayback |
 | 跟读暂停后拖了进度条，旧倒计时却启动了播放 | L-006；YoutubeReader.shadowPausedId、YoutubeOverlay._onPlaybackChange |
 | 网页明明有 en-GB／en-US，自动却先读别的字幕；首选读不了时无字幕 | L-006；WebVideoSite.sources 的语言顺序、load 的可读轨道退回 |
+| 普通网页播放器后来才加入字幕轨，初次没找到后一直空着 | L-006；`WebVideoSite.watch` 监听当前播放器的字幕轨，`_loadWeb` 收尾再检查。[晚出现的轨](youtube-study-wiring.md#2026-11-19-普通网页能接上晚出现的字幕轨) |
 | 导入双语 ASS，显示两倍行数，英文点不动 | L-006；subtitle-formats.splitBilingual、YoutubeReader._useCues |
 | 刚导入本地字幕，突然被晚到的网站字幕替换 | L-006；YoutubeReader.importText 和正在载入的控制器 |
 | 下载的字幕 JSON 导入时说没有时间，或者丢了原译文／偏移 | L-006；YoutubeReader.download、subtitle-formats.readStudyExport |
@@ -292,6 +293,8 @@
 **双语字幕按两个条目写或只有一两句**：旧识别只认一条里同时有英中行。手动导入时，若两条完全同起止、只有一原句一译文，且整个文件达到原双语识别门槛，就沿同一路径用英文原句的 ID 与秒数显示。只有一两句的手动短片须每句都自带双语，支持自己的两句 VTT 下载读回。中文取文件已有的字，不新翻译；不按近似时间配，不把一般网站轨道按此猜合。见[导入临时 ASS](youtube-study-wiring.md#2026-11-18-双语字幕分两条也能中英对照)和[下载再导入](youtube-study-wiring.md#2026-11-18-下载的字幕-json-可以读回来)。
 
 **普通网页按语言和可读性自动选轨**：默认英语不仅认 `en`，也认 `en-GB`、`en-US` 等基础语言相同的轨道。WebVideoSite 在精确匹配、同基础语言、未知、其他已知语言的顺序里选第一条能读到的；记住的轨仍先试，显式手选失败严格不偷换。排序后不再用尚未读通的首选语言拦其它轨。不改 YouTube、语言标签或取字幕凭证。见[三条浏览器轨](youtube-study-wiring.md#2026-11-19-网页视频优先读英语变体也能退回可读轨)。
+
+普通网页当前播放器后来新增原生字幕轨时，若还没有会话，读者走既有自动选轨。读取进行中只记下变化，自动读取结束仍没有字幕才重读，明确手选失败不换轨。换播放器时沿现有检查改绑轨道事件；已经载入的轨和手动文件不覆盖，不新增定时器、取字幕范围或 YouTube 逻辑。见[启动竞争](youtube-study-wiring.md#2026-11-19-普通网页能接上晚出现的字幕轨)。
 
 **打开字幕栏不依赖字幕本身**：普通网页和本地视频的独立「字幕栏」按钮与「学」并排，不恢复面板内重复入口。未载入、空档或关画面字幕时仍能手动打开，保留原导入提示、主动收起和字幕来源。窄 iframe 的侧栏资格共用 `canOpenVideoDock`；新按钮在全屏不显示，退出全屏不自动打开。YouTube 常驻侧栏不加按钮。[隔离播放器验收](youtube-study-wiring.md#2026-11-19-普通网页没有字幕也能打开字幕栏)
 
