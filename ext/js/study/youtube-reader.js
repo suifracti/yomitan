@@ -136,6 +136,8 @@ export class YoutubeReader extends EventTarget {
         this._pin = null;
         /** @type {number} Automatic translation waits until this time after a failure. */
         this._autoBackoff = 0;
+        /** @type {number} Next automatic look-ahead check, driven by playback events. */
+        this._autoCheckAt = 0;
         /** @type {string[][]|null} Model sentence groups for the current raw track. */
         this._aiGroups = null;
         /** @type {number} */
@@ -1459,6 +1461,7 @@ export class YoutubeReader extends EventTarget {
         this._failed.clear();
         this._finishTranslation(true);
         this._autoBackoff = 0;
+        this._autoCheckAt = 0;
         youtubeStudyContext.reset();
         this._video?.removeEventListener('timeupdate', this._timeListener);
         this._lookup = '';
@@ -1740,18 +1743,30 @@ export class YoutubeReader extends EventTarget {
         const session = this._session;
         const view = this._view;
         if (!session || !view || this._translation || /^(zh|cmn|yue)(?:-|$)/i.test(session.source.language)) { return; }
-        const active = session.active((this._video?.currentTime || 0) * 1000)[0];
-        const index = active ? session.cues.indexOf(active) : 0;
-        const ordered = [...session.cues.slice(index), ...session.cues.slice(0, index)];
-        const needed = ordered.filter((cue) => (retryOnly ? this._failed.has(cue.id) : !session.translation(cue.id)));
-        const selected = onlyId ? needed.filter((cue) => cue.id === onlyId) : (full || retryOnly ? needed : needed.slice(0, 8));
+        const automatic = !full && !retryOnly && !onlyId;
+        const playbackMs = (this._video?.currentTime ?? 0) * 1000;
+        const until = playbackMs + this._prefs.aheadSeconds * 1000;
+        const ahead = (/** @type {import('./subtitle-session.js').SubtitleCue} */ cue) => cue.endMs + session.offsetMs > playbackMs;
+        const needed = session.cues.filter((cue) => {
+            if (retryOnly) { return this._failed.has(cue.id); }
+            if (automatic && (!ahead(cue) || cue.startMs + session.offsetMs > until || this._failed.has(cue.id))) { return false; }
+            return !session.translation(cue.id);
+        });
+        let selected;
+        if (onlyId) {
+            selected = needed.filter((cue) => cue.id === onlyId);
+        } else if (automatic) {
+            selected = needed.slice(0, 8);
+        } else {
+            selected = [...needed.filter(ahead), ...needed.filter((cue) => !ahead(cue))];
+        }
         const items = selected.map((cue) => ({
             id: cue.id,
             text: cue.text.replaceAll(/\s*\n\s*/g, ' '),
             context: this._context(session, session.cues.indexOf(cue)),
         }));
         if (items.length === 0) {
-            this._status('这些句子已经翻译好了。');
+            if (!automatic) { this._status('这些句子已经翻译好了。'); }
             return;
         }
         const run = {id: crypto.randomUUID(), engine: this._prefs.engine, controller: new AbortController(), batch: new Set(), waiting: new Map()};
@@ -1837,13 +1852,13 @@ export class YoutubeReader extends EventTarget {
         if (!session || !video || !this._view?.root.isConnected) { return; }
         const playbackMs = video.currentTime * 1000;
         if (this._prefs.resume && !this._listen) { this._saveProgress(playbackMs); }
+        if (!this._listen) { this._autoTranslate(); }
         const active = session.active(playbackMs).map((c) => c.id);
         const key = active.join('|');
         if (key === this._active) { return; }
         this._active = key;
         for (const [id, row] of this._rows) { row.classList.toggle('is-current', active.includes(id)); }
         this._emit('active', {ids: active});
-        if (!this._listen) { this._autoTranslate(playbackMs); }
         const first = active.length > 0 && this._follow && !this._view.search.value.trim() ? this._list.ensure(active[0]) : void 0;
         if (this._follow && first) {
             const list = this._view.list;
@@ -2373,14 +2388,13 @@ export class YoutubeReader extends EventTarget {
     /**
      * Keeps translations ready ahead of the playback position while the learner has
      * automatic translation on; pauses in background tabs and after failures.
-     * @param {number} playbackMs
      */
-    _autoTranslate(playbackMs) {
-        const session = this._session;
-        if (!session || !this._prefs.autoTranslate || this._translation || document.hidden || Date.now() < this._autoBackoff) { return; }
-        const until = playbackMs + this._prefs.aheadSeconds * 1000;
-        const needed = session.cues.some((cue) => cue.endMs + session.offsetMs >= playbackMs && cue.startMs + session.offsetMs <= until && !session.translation(cue.id));
-        if (needed) { void this._translate(false); }
+    _autoTranslate() {
+        if (!this._prefs.autoTranslate || this._translation || document.hidden) { return; }
+        const now = Date.now();
+        if (now < Math.max(this._autoBackoff, this._autoCheckAt)) { return; }
+        this._autoCheckAt = now + 1000;
+        void this._translate(false);
     }
 
     /** */

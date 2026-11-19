@@ -90,6 +90,7 @@
 | 字幕正在翻，查词卡又把同一句翻了一遍 | L-010；YoutubeReader._waitCaptionTranslation、frontendReadCaptionTranslation |
 | 整页翻译用免费的，中途切 AI 会不会扣费 | L-010；PageTranslate.approve、SubtitleTranslation.handle 的 expectedEngine |
 | 字幕全文翻译用免费的，另一处切成 AI 后下一批会不会扣费 | L-010；YoutubeReader._translate 每轮的 engine、同一个 expectedEngine |
+| 视频中间没字幕，自动预译等到开口才翻；翻全文又从头开始 | L-010；YoutubeReader._autoTranslate 的播放时间，_translate 的候选与顺序 |
 | 词卡里一半还在翻，另一个入口换了翻译服务 | L-010；prepareParallelSentence 每批传相同 expectedEngine |
 | 小数点后只翻了半句、千位逗号把原句拆开 | L-010；study-data.studySentenceEnds / isStudyNumberSeparator，悬停与词卡长句共用 |
 | 只看译文时想点原段里的链接或按钮 | L-010；PageTranslate.render / paint |
@@ -408,6 +409,8 @@
 **免费请求不能因中途切设置变成付费**：整页翻译以同一个引擎快照做确认、缓存和发请求；后台以实际准备使用的全局引擎核 `expectedEngine`，改了就保留原文，提示重试，不自动改投。模型确认让当前页排队段落共用；本人点的单句仍不弹确认。见[切换竞态与替身验证](youtube-study-wiring.md#2026-11-19-整页翻译切服务不跳过费用确认)。
 
 字幕批次同样带上整轮开始时的服务。字幕栏还没收到设置变化时，后台也不会把后续的免费批次发给模型。完成的字幕不重翻，失败的可以重试；原有切服务取消、全文费用确认以及 Chrome 本机翻译不另起一套。见[字幕批次的复现](youtube-study-wiring.md#2026-11-19-免费字幕翻译不转投模型)。
+
+字幕预译不能只靠当前字幕行的变化。用原播放事件限频检查从当前时刻到 `aheadSeconds` 的范围（含字幕偏移）；每批最多八句，不翻已经结束的或范围外的句子。失败留原重试入口，不在同一行每次检查时重送。手动全文仍翻全轨，在空档以接下来的句子起头，再补前面。继续用原服务快照、取消与费用确认。见[字幕空档和实际发出的顺序](youtube-study-wiring.md#2026-11-19-字幕空档也能提前翻译下一句)。
 
 词卡的 `prepareParallelSentence` 也把本轮的服务传给每批 `subtitleTranslate`。旧版长句的后半批可能进新服务，前端却按旧服务保存缓存。后台发现服务已换时拒发，已显示的段落仍在，余下可重试。同一个检查同时覆盖手动和自动的后台请求，不改 Chrome 本机翻译和已保存译文。见[词卡分批换服务](youtube-study-wiring.md#2026-11-19-翻译词卡长句时不会中途改用另一服务)。
 

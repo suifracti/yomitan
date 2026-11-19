@@ -483,6 +483,47 @@ test('watching progress moves through a caption gap but not an earlier playback 
     }
 });
 
+test('a caption gap pretranslates only the upcoming window and starts full translation ahead', async () => {
+    document.querySelector('#study-yt-reader')?.remove();
+    const previous = /** @type {HTMLVideoElement} */ (document.querySelector('video'));
+    const video = document.createElement('video');
+    video.currentTime = 10;
+    previous.replaceWith(video);
+    installReaderStorage({get: async () => ({}), set: async () => {}});
+    const visible = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(100000);
+    /** @type {string[][]} */
+    const sent = [];
+    const reader = new YoutubeReader({prefs: {merge: false, autoTranslate: true, aheadSeconds: 60, engine: 'google', resume: false},
+        site: /** @type {never} */ (fakeSite(null)),
+        call: async (action, data) => {
+            if (action === 'subtitleSettings') { return {model: 'fixture', effort: 'low'}; }
+            if (action !== 'subtitleTranslate') { return {}; }
+            const {items} = /** @type {{items: {id:string, text:string}[]}} */ (data);
+            sent.push(items.map((item) => item.text));
+            return {items: items.map(({id}) => ({id, translation: '译文'}))};
+        }});
+    try {
+        reader.start();
+        await vi.waitFor(() => expect(document.querySelector('#study-yt-reader')).not.toBeNull());
+        const srt = '1\n00:00:01,000 --> 00:00:02,000\nAlready passed.\n\n2\n00:02:00,000 --> 00:02:02,000\nNext sentence.\n\n3\n00:04:00,000 --> 00:04:02,000\nFar beyond the window.\n';
+        reader.importText(srt, 'lesson.srt');
+        expect(sent).toEqual([]);
+        clock.mockReturnValue(102000);
+        video.currentTime = 61;
+        video.dispatchEvent(new Event('timeupdate'));
+        await vi.waitFor(() => expect(sent).toEqual([['Next sentence.']]));
+        await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('已译 1/3'));
+        reader.translateNext();
+        await vi.waitFor(() => expect(sent).toEqual([['Next sentence.'], ['Far beyond the window.', 'Already passed.']]));
+        await vi.waitFor(() => expect(document.querySelector('#study-yt-reader .r-status')?.textContent).toContain('已译 3/3'));
+    } finally {
+        visible.mockRestore();
+        clock.mockRestore();
+        video.replaceWith(previous);
+    }
+});
+
 test('other sites: nothing found explains how to get subtitles', async () => {
     document.querySelector('#study-yt-reader')?.remove();
     const reader = new YoutubeReader({prefs: {merge: false, engine: 'model'}, site: /** @type {never} */ (fakeSite(null))});
