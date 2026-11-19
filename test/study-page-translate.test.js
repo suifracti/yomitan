@@ -19,6 +19,46 @@ import {expect, test, vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
 import {deferPromise} from '../ext/js/core/utilities.js';
 
+test('long page blocks and pasted text send complete sentences to the same translator', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: '<html lang="en"><p></p></html>', url: 'https://example.test/article',
+    }});
+    const first = `${'A short sentence. '.repeat(120)}The introduction is complete.`;
+    const second = 'The measured distance is 12.5 kilometres. It took two hours.';
+    const original = /** @type {HTMLParagraphElement} */ (document.querySelector('p'));
+    original.textContent = `${first} ${second}`;
+    /** @typedef {{studyAction: string, data: {items?: {text: string}[]}}} TranslateMessage */
+    const sent = vi.fn((/** @type {TranslateMessage} */ message) => {
+        if (message.studyAction === 'subtitleSettings') { return {ok: true, value: {model: 'fixture', effort: 'low'}}; }
+        return {ok: true, value: {items: [{translation: '整句译文'}]}};
+    });
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage: async (/** @type {TranslateMessage} */ message) => sent(message)},
+        storage: {local: {get: async () => ({studyTranslationPrefs: {engine: 'google'}})}},
+    });
+    const requests = () => sent.mock.calls.flatMap(([message]) => message.data.items?.map(({text}) => text) ?? []);
+    const {PageTranslate, translateText} = await import('../ext/js/study/page-translate.js');
+    const page = new PageTranslate();
+    try {
+        page.active = true;
+        await page.translateNode(original);
+        expect(requests()).toEqual([first, second]);
+        expect(original.nextElementSibling?.textContent).toBe('整句译文\n整句译文');
+        sent.mockClear();
+        await translateText(original.textContent, {language: 'en'});
+        expect(requests()).toEqual([first, second]);
+        sent.mockClear();
+        const chineseFirst = '这是以前的完整句子。'.repeat(219);
+        const chineseSecond = '我接下来继续读另一句话。';
+        await translateText(chineseFirst + chineseSecond, {language: 'zh', target: 'en'});
+        expect(requests()).toEqual([chineseFirst, chineseSecond]);
+    } finally {
+        page.stop();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
 test('restoring the page stops unsent chunks without interrupting the next translation run', async () => {
     const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
         html: '<p></p>', url: 'https://example.test/article',

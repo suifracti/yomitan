@@ -65,7 +65,7 @@ export function isStudyNumberSeparator(text, index) {
  */
 export function studySentenceEnds(text, includeSemicolons = false) {
     const ends = [];
-    for (const match of text.matchAll(includeSemicolons ? /[.!?;]+/g : /[.!?]+/g)) {
+    for (const match of text.matchAll(includeSemicolons ? /[.!?。！？;；]+/gu : /[.!?。！？]+/gu)) {
         if (match[0] === '.' && isStudyNumberSeparator(text, match.index)) { continue; }
         ends.push(match.index + match[0].length);
     }

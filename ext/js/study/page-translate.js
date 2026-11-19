@@ -61,6 +61,33 @@ function translatableBlock(text, language) {
 }
 
 /**
+ * Keep whole sentences together, including long text pasted into the floating tool.
+ * @param {string} text
+ * @yields {string}
+ */
+function *translationChunks(text) {
+    if (text.length <= TRANSLATION_CHUNK_SIZE) {
+        if (text) { yield text; }
+        return;
+    }
+    const ends = studySentenceEnds(text);
+    let nextEnd = 0;
+    for (let start = 0; start < text.length;) {
+        const limit = Math.min(start + TRANSLATION_CHUNK_SIZE, text.length);
+        while (nextEnd < ends.length && ends[nextEnd] <= limit) { ++nextEnd; }
+        let end = ends[nextEnd - 1] ?? 0;
+        if (end <= start) {
+            const space = text.slice(start, limit).search(/\s+\S*$/u);
+            end = space > 0 ? start + space : limit;
+            if (/[\uD800-\uDBFF]/u.test(text[end - 1])) { --end; }
+        }
+        const part = text.slice(start, end).trim();
+        if (part) { yield part; }
+        start = end;
+    }
+}
+
+/**
  * The same translation engine used by captions and sentence cards.
  * @param {string} text
  * @param {{language?:string,target?:string,engine?:SubtitleEngine,config?:TranslationModel}} [options]
@@ -71,8 +98,7 @@ async function translateText(text, {language, target = 'zh', engine, config} = {
     config ??= /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
     language ||= pageLanguage(document.documentElement);
     const result = [];
-    for (let offset = 0; offset < text.length; offset += TRANSLATION_CHUNK_SIZE) {
-        const part = text.slice(offset, offset + TRANSLATION_CHUNK_SIZE);
+    for (const part of translationChunks(text)) {
         if (engine === 'chrome') {
             const status = await chromeTranslatorStatus(language, target);
             if (status !== 'available') {
@@ -356,9 +382,8 @@ export class PageTranslate {
     async requestText(text, language, engine, isCurrent) {
         const config = /** @type {TranslationModel} */ (await studyCall('subtitleSettings'));
         const chunks = [];
-        for (let offset = 0; offset < text.length; offset += TRANSLATION_CHUNK_SIZE) {
+        for (const part of translationChunks(text)) {
             if (!isCurrent()) { throw new DOMException('已取消', 'AbortError'); }
-            const part = text.slice(offset, offset + TRANSLATION_CHUNK_SIZE);
             const key = JSON.stringify([part, language, engine, config.model, config.effort]);
             let task = this.cache.get(key);
             if (!task) {
