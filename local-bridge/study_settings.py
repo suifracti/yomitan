@@ -14,7 +14,7 @@ from study_protocol import SETTINGS_ACTIONS
 from study_index import IndexUnavailable, indexed_page, needs_attention
 from study_cards import REVIEW_FIELDS as FIELDS, card_progress, linked_note_ids, read_review_view, review_view_state
 from study_library import ID_RE, RELATIVE, StudyLibrary, anki_call, entry_id, normalize_entry, normalize_request, text
-from study_sources import source_search_key
+from study_sources import source_search_parts
 
 EDITABLE = {'ankiEnabled', 'vault', 'directory', 'deck', 'model'}
 
@@ -599,7 +599,7 @@ class YomitanLibrary:
                     row['confirmRestoreTo'] = {'targetId': self.active_id, 'path': str(pathlib.Path(target['vault']) / target['directory'])}
             needs = sum(needs_attention(row) for row in rows) + len(orphans)
             extras = {}
-            if p.get('scope') == 'all' and p.get('query') and not p.get('offset') and not source_search_key(p['query']):
+            if p.get('scope') == 'all' and p.get('query') and not p.get('offset') and not source_search_parts(p['query'])[0]:
                 from study_senses import practice_material
                 extras = practice_material(rows, p['query'])
             if p.get('scope') in ('all', 'pending', 'anki-only', 'linked'): rows += orphans

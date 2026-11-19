@@ -19,7 +19,7 @@ import urllib.request
 from study_cards import MASTERY_LABELS, card_key, with_card_progress
 from study_index import indexed_page
 from study_protocol import SETTINGS_ACTIONS
-from study_sources import article_href, media_key_of, source_link, source_search_key, time_link, with_article_href
+from study_sources import article_href, media_key_of, source_link, source_search_parts, time_link, with_article_href
 
 RELATIVE = pathlib.Path('01-高考2027/05-英语（Larry）/语境词库')
 JAPANESE_RELATIVE = pathlib.Path('02-个人与生活/语言学习/日语/语境词库')
@@ -436,8 +436,12 @@ def _normalize_request(p):
                 p = {**p, 'focus': {**focus, 'word': text(focus['word'], 128, True), 'sentence': text(focus['sentence'], 2400),
                                     **({'videoTime': int(at)} if at is not None else {})}}
         query = text(p.get('query', ''), 2000)
-        if 'query' in p and not source_search_key(query):
-            query = text(p['query'], 240)
+        if 'query' in p:
+            source, _, terms = source_search_parts(query)
+            if source:
+                text(terms, 240)
+            else:
+                query = text(p['query'], 240)
         return {**p, 'url': source_url(p.get('url', '')), 'title': text(p.get('title', ''), 300),
                 **({'query': query} if 'query' in p else {}),
                 **({'word': text(p['word'], 128, True)} if scope == 'word' else {})}

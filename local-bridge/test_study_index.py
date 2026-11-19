@@ -43,9 +43,16 @@ class RecordIndexTests(AutoSyncTests):
             nearby = lookup(shared)
             self.assertEqual(nearby['items'][0]['id'], late)
             self.assertEqual((nearby['nearTime'], nearby['total']), (90, 12))
+            within = lookup(shared + ' example')
+            self.assertEqual((within['nearTime'], within['total'], within['items'][0]['entry']['word']), (90, 10, 'example28'))
+            self.assertEqual(lookup(shared + ' shore')['total'], 0)  # A similarly titled video is not the same source.
             self.assertEqual([r['id'] for r in lookup(bilibili + '?p=2&t=88')['items']], [part2])
-            self.assertEqual([r['id'] for r in lookup(page + '#/PartTwo:~:text=' + '%E4%BA%8C' * 40)['items']], [article])
+            self.assertEqual(lookup(bilibili + '?p=2&t=88 bridge')['total'], 0)
+            long_link = page + '#/PartTwo:~:text=' + '%E4%BA%8C' * 40
+            self.assertEqual([r['id'] for r in lookup(long_link)['items']], [article])
+            self.assertEqual([r['id'] for r in lookup(long_link + ' island')['items']], [article])
             self.assertEqual([row['records'] for row in lookup(shared, scope='sources')['sources']], [12])
+            self.assertEqual([row['records'] for row in lookup(shared + ' example', scope='sources')['sources']], [12])
         self.assertEqual(self.calls, [])
 
     def test_source_shelf_groups_saved_contexts_and_search_keeps_whole_group_counts(self):

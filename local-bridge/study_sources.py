@@ -21,6 +21,14 @@ def source_search_key(query):
         return ''
 
 
+def source_search_parts(query):
+    """Only a leading complete web URL selects a source; the rest stays text."""
+    parts = query.split(maxsplit=1)
+    if parts and (source := source_search_key(parts[0])):
+        return source, parts[0], parts[1] if len(parts) > 1 else ''
+    return '', '', query
+
+
 def source_search_time(query, source):
     """Read a time hint only for a recognized video, without changing its group."""
     youtube = source.startswith('youtube:')
