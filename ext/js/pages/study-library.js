@@ -423,13 +423,18 @@ function showSensePractice(panel, pair, examples = false) {
 function sentencePrompts(rows, picked, mode, limit = SENTENCE_PRACTICE_LIMIT) {
     const prompts = [...picked];
     const recall = mode === 'recall';
-    const seen = new Set(picked.map((prompt) => (recall ? prompt.row.id : prompt.text)));
+    /**
+     * @param {string} text
+     * @returns {string}
+     */
+    const practiceText = (text) => (mode === 'translation' ? text.trim().replaceAll(/\s+/gu, ' ').replaceAll(/[‘’]/gu, "'") : text);
+    const seen = new Set(picked.map((prompt) => (recall ? prompt.row.id : practiceText(prompt.text))));
     for (const row of rows) {
         if (prompts.length >= limit) { break; }
         const {entry} = row;
         if (!matchesCategory(row, 'saved') || !entry?.sentence || !entry.word || !/^en(?:-|$)/i.test(entry.language || 'en')) { continue; }
         const hasAudio = (recall || mode === 'dictation') && savedAudioAttachment(row);
-        const sentenceKey = recall ? row.id : entry.sentence;
+        const sentenceKey = recall ? row.id : practiceText(entry.sentence);
         if (mode === 'translation') {
             if (!entry.translation?.trim() || seen.has(sentenceKey)) { continue; }
             seen.add(sentenceKey);

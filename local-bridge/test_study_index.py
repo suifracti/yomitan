@@ -118,11 +118,11 @@ class RecordIndexTests(AutoSyncTests):
             return self.library.handle({'action': 'librarySave', 'entry': entry, 'makeCard': False})
 
         source = 'https://example.test/coast'
-        old = save('We finally reached the harbor.', source, True, '我们终于到达港口。')
+        old = save("We'd finally reached the harbor.", source, True, '我们终于到达港口。')
         old_word = save('The boats waited at the harbor until sunrise.', source, translation='船只在港口等到日出。', word='sunrise')
         alternate = '有这句的另一版港口译文。'
-        save(old['entry']['sentence'], source, translation=alternate, word='finally', title='海岸一课')
-        save(old['entry']['sentence'], source, translation=alternate, word='reached', title='海岸一课')
+        variant = save('We’d finally  reached the harbor.', source, translation=alternate, word='finally', title='海岸一课')
+        save('We’d finally reached the harbor.', source, translation=alternate, word='reached', title='海岸一课')
         save(old['entry']['sentence'], source + '/another', translation='别的材料里译成港口。', word='harbor')
         save('The harbor was quiet.', source, True)
         save('Ships were near the harbor.', source + '/another', True, '船在港口附近。')
@@ -135,11 +135,14 @@ class RecordIndexTests(AutoSyncTests):
         self.calls.clear()
         with patch.object(StudyLibrary, 'file_content', side_effect=AssertionError('practice reopened a note')):
             result = self.library.handle({**args, 'practice': 'translation', 'query': '港口'})
+            sources = self.library.handle({**args, 'scope': 'sources', 'query': source})
         self.assertEqual(result['total'], 2)
         self.assertEqual({r['id']: r['entry']['translation'] for r in result['items']},
                          {row['id']: row['entry']['translation'] for row in (old, old_word)})
         self.assertEqual({r['id']: r.get('translationAlternates') for r in result['items']},
                          {old['id']: [{'text': alternate, 'title': '海岸一课'}], old_word['id']: None})
+        self.assertEqual(sources['sources'][0]['translated'], 2)
+        self.assertEqual(variant['entry']['sentence'], 'We’d finally  reached the harbor.')
         self.assertEqual(self.calls, [])
 
         sentence = 'The lighthouse stood above the shore.'

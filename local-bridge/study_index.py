@@ -16,6 +16,7 @@ from study_media import has_current_audio, with_audio_context
 
 PAGE_SIZE = 10
 SEARCH_PUNCTUATION = str.maketrans("‘’‐‑–—", "''----")
+APOSTROPHES = str.maketrans("‘’", "''")
 
 
 def search_form(value):
@@ -70,6 +71,10 @@ def has_saved_translation(entry):
     return bool(entry.get('sentence') and entry.get('language', 'en') == 'en' and entry.get('translation', '').strip())
 
 
+def translation_sentence_key(sentence):
+    return ' '.join(sentence.translate(APOSTROPHES).split())
+
+
 def indexed_sources(rows, query, offset, link_source):
     from study_senses import recent_recall
     now = time.time()
@@ -86,7 +91,7 @@ def indexed_sources(rows, query, offset, link_source):
         group['audio'] += bool(entry['sentence'] and has_current_audio(row))
         group['recall'] += bool(recent_recall(row, now))
         if has_saved_translation(entry):
-            group['translated'].add(entry['sentence'])
+            group['translated'].add(translation_sentence_key(entry['sentence']))
         if row['created'] > group['created']:
             group.update(url=url, title=entry['title'] or group['title'], created=row['created'])
         if not group['title']: group['title'] = entry['title']
@@ -174,7 +179,8 @@ def indexed_page(rows, p, *, complete=True):
         unique = {}
         for match in matches:
             entry = match[2]['entry']
-            key = (entry['word'].casefold(), entry['sentence']) if cloze else entry['sentence']
+            sentence = entry['sentence']
+            key = (entry['word'].casefold(), sentence) if cloze else translation_sentence_key(sentence) if translating else sentence
             # Keep the explicit sentence note's translation and its actual position in the list.
             if (translating and key in unique and entry.get('kind') == 'sentence'
                     and unique[key][2]['entry'].get('kind') != 'sentence'):
@@ -183,11 +189,12 @@ def indexed_page(rows, p, *, complete=True):
         matches = list(unique.values())
     extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not practice and not focus and p.get('language', 'en') == 'en' else {}
     page = [row for _, _, row in matches[offset:offset + PAGE_SIZE]]
-    primary_translations = {row['entry']['sentence']: row['entry']['translation'].strip() for row in page} if translating else {}
+    primary_translations = {translation_sentence_key(row['entry']['sentence']): row['entry']['translation'].strip()
+                            for row in page} if translating else {}
     alternates = {sentence: {} for sentence in primary_translations}
     for _, _, row in translation_matches:
         entry = row['entry']
-        sentence = entry['sentence']
+        sentence = translation_sentence_key(entry['sentence'])
         if sentence in alternates and len(alternates[sentence]) < 3:
             text = entry['translation'].strip()
             if text != primary_translations[sentence]:
@@ -199,7 +206,7 @@ def indexed_page(rows, p, *, complete=True):
 
     def list_item(row):
         item = with_article_href(with_card_progress(with_audio_context(row)))
-        if alternatives := alternates.get(row['entry']['sentence']):
+        if translating and (alternatives := alternates.get(translation_sentence_key(row['entry']['sentence']))):
             item = {**item, 'translationAlternates': list(alternatives.values())}
         return item
 

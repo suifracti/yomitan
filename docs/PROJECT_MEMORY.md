@@ -106,7 +106,7 @@
 | 想用自己的旧原句练填空，但不想制卡；首页没有可练的题 | L-012；study_index.indexed_page 的 practice:cloze、study-library.js 的 sentencePrompts、study-card-kinds.js 的 blankStudyWord |
 | 网页记下一整句后想自己先猜意思；旧整句在首页练不到 | L-012；study-library.js 的 sentencePrompts、study_index.indexed_page 的 practice:translation |
 | 词卡里明明存了整句中文，却不能练整句理解或中译英 | L-012；practice:translation 同时读有整句译文的查词笔记 |
-| 同一句以前存了两种译法，练习只看到其中一种 | L-012；study_index.indexed_page 的 translationAlternates 和学习库的揭晓 |
+| 同一句以前存了两种译法，或换了弯撇号、空格就被练两次 | L-012；study_index.translation_sentence_key、translationAlternates 和学习库的揭晓 |
 | 想写下自己的中译再对照，或只重练刚才没想清的整句 | L-012；study-library.js 的 showSentencePractice、同一组的重练队列 |
 | 想用自己存的中文提示练英文表达，不想制卡或调用批改 | L-012；同一组 `practice: 'translation'`，只翻转题面与揭晓 |
 | 不开原网页，想先听自己存的录音再写整句 | L-012；study-library.js 的 sentencePrompts、showSentencePractice |
@@ -442,6 +442,8 @@
 **整句理解用自己的话练，不按措辞判对错**：写不写都能看旧译文；若已输入，则原句、自己的理解和保存的译文同时留在当前题。组末可用原练习队列重练手动标记的句子，重练从空白开始，不读取新题或提前翻页。作答、标记和这组进度均不写回，不评熟悉度。见[作答对照与重练](youtube-study-wiring.md#2026-11-19-拿自己的理解和旧译文对照)。
 
 **同一句的已存译法是对照，不是额外题目**：从 `practice:'translation'` 已按来源和搜索筛好的同句记录找不同译法，只为最终本页题目附最多三条译文和标题。仍优先用独立整句笔记出题，一条英文只出一题，中译英先给原来的中文题面。揭晓后才显示其他译文；旧桥、无其他译文时原样，不为找替代译文读正文或调用服务。见[不同译法的题面与揭晓](youtube-study-wiring.md#2026-11-19-整句练习也能对照过去存下的其他译法)。
+
+弯撇号和多余空白只在双向整句练习的题面比对中当作相同，桥用同一个比对键查其他译法和统计素材可练句数。旧桥回退也不会在同一轮重复出这类题，不额外查译文。保存身份、原文、来源时间、其他标点与大小写、填空和音频仍按原规则。见[同一句只出一题](youtube-study-wiring.md#2026-11-19-排版不同的同一句只出一题)。
 
 **看中文写英文仍用同一批双语句**：沿 `practice: 'translation'`、原分组和旧桥回退，不为反方向另筛或保存题。揭晓前只显示本人已存的中文，原声、英文与出处都在揭晓后才给；保留本人写法供对照，不当听写逐字判错。不发 AI 批改，不记作答或复习成绩。现在两种方向也能练「记住它」保存的词卡整句译文；只存词义不入题。索引里同一原句只取一次，独立整句笔记优先，保留所选笔记的原顺序与入口。见[反方向练习](youtube-study-wiring.md#2026-11-19-用保存的中文练英文表达)和[从查词笔记找题](youtube-study-wiring.md#2026-11-19-查词笔记也能练整句)。
 
