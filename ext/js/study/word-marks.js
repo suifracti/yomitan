@@ -1022,6 +1022,9 @@ export class WordMarks {
             }
         };
         panel.append(title, close, saved, note);
+        const choices = document.createElement('fieldset');
+        choices.style.cssText = 'border:0;margin:0;padding:0;min-inline-size:0';
+        panel.append(choices);
         for (const row of rows) {
             row.meaning = this._glosses[row.word] || row.meaning;
         }
@@ -1044,27 +1047,40 @@ export class WordMarks {
                 void this._manualMark(row.word, 'ignored');
             };
             item.append(label, sentence, ignore);
-            panel.append(item);
+            choices.append(item);
         }
         const done = document.createElement('button');
         done.textContent = '完成';
         panel.append(done);
+        const unchanged = () => source === location.href && !rows.some((row) => !row.ignored && (
+            !row.node.isConnected || row.node.data !== row.sourceText || !isEnglishText(row.node) || this._sentence(row.node, row.start) !== row.sentence
+        ));
+        const reread = () => {
+            note.textContent = '页面内容变了，刚才的选择没有保存。';
+            done.textContent = '重新读取本页';
+            done.onclick = () => { void this.openPageWords(); };
+        };
         done.onclick = async () => {
-            if (source !== location.href || rows.some((r) => !r.ignored && (
-                !r.node.isConnected || r.node.data !== r.sourceText || !isEnglishText(r.node) || this._sentence(r.node, r.start) !== r.sentence
-            ))) {
-                note.textContent = '页面内容变了，刚才的选择没有保存。';
-                done.textContent = '重新读取本页';
-                done.onclick = () => { void this.openPageWords(); };
+            if (!unchanged()) {
+                reread();
                 return;
             }
+            const selected = rows.filter((row) => !row.ignored);
+            const words = selected.filter((row) => !row.box?.checked).map((row) => row.word);
+            const learning = selected.filter((row) => row.box?.checked);
+            choices.disabled = true;
             done.disabled = true;
+            note.textContent = '正在处理刚才的选择…';
             try {
-                const words = rows.filter((r) => !r.ignored && !(/** @type {HTMLInputElement} */ (r.box)).checked).map((r) => r.word);
                 const old = /** @type {KnownWords} */ (await studyCall('knownWords'));
+                if (!panel.isConnected) { return; }
+                if (!unchanged()) {
+                    reread();
+                    return;
+                }
+                close.disabled = true;
                 await studyCall('knownWords', {known: {add: words}});
                 const undo = () => studyCall('knownWords', {known: {remove: words.filter((w) => !old.known.includes(w))}});
-                const learning = rows.filter((r) => !r.ignored && (/** @type {HTMLInputElement} */ (r.box)).checked);
                 if (learning.length > 0) {
                     this._remember(learning, undo, source);
                 } else {
@@ -1073,7 +1089,10 @@ export class WordMarks {
                 panel.remove();
             } catch (error) {
                 note.textContent = `没有保存：${error instanceof Error ? error.message : '请重试。'}`;
+            } finally {
+                choices.disabled = false;
                 done.disabled = false;
+                close.disabled = false;
             }
         };
         document.documentElement.append(panel);

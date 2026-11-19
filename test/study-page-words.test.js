@@ -17,6 +17,7 @@
 
 import {expect,test,vi} from 'vitest';
 import {builtinEnvironments} from 'vitest/environments';
+import {deferPromise} from '../ext/js/core/utilities.js';
 
 // Disable the study control stylesheet: jsdom cannot compute styles with its nested :has() selector.
 const head = '<head><style id="study-ui-style"></style></head>';
@@ -112,6 +113,62 @@ test('page words follow live occurrences and do not submit a stale panel', async
         button.click();
         await vi.waitFor(() => expect(document.querySelector('#study-page-words section')?.textContent).toContain('I appreciate the silence.'));
         expect(document.querySelector('#study-page-words').textContent).toContain('The facade is unique.');
+    } finally {
+        // eslint-disable-next-line no-underscore-dangle -- Stop mutation callbacks before tearing down the document.
+        marks._reset();
+        vi.unstubAllGlobals();
+        await env.teardown(global);
+    }
+});
+
+test('page word confirmation keeps the clicked choices and stops before writing on a changed page', async () => {
+    const env = await builtinEnvironments.jsdom.setup(global, {jsdom: {
+        html: head + '<p>We appreciate the architecture.</p>',
+        url: 'https://example.test/article',
+    }});
+    /** @type {import('core').DeferredPromiseDetails<void>} */
+    let read = deferPromise();
+    const sendMessage = vi.fn(async (/** @type {{data: object}} */ message) => {
+        if (Object.keys(message.data).length === 0) { await read.promise; }
+        return {ok: true, value: {known: [], ignored: []}};
+    });
+    vi.stubGlobal('CSS', {highlights: new Map()});
+    vi.stubGlobal('Highlight', Set);
+    vi.stubGlobal('chrome', {
+        runtime: {sendMessage, getURL: (path) => path},
+        storage: {local: {get: async () => ({studyWordMarks: {encounters: false}})}, onChanged: {addListener() {}}},
+    });
+    const levels = {appreciate: [3, 2000], architecture: [3, 4000]};
+    vi.stubGlobal('fetch', async (/** @type {string} */ url) => new Response(JSON.stringify(url.endsWith('word-levels.json') ? levels : {})));
+    const {WordMarks} = await import('../ext/js/study/word-marks.js');
+    const marks = new WordMarks();
+    try {
+        await marks.start();
+        await vi.waitFor(() => expect(marks.pageWords()).toHaveLength(2));
+        await marks.openPageWords();
+        const panelButton = (/** @type {string} */ label) => [...document.querySelectorAll('#study-page-words button')].find((button) => button.textContent === label);
+        const [first, second] = document.querySelectorAll('#study-page-words button[role="switch"]');
+        first.click();
+        panelButton('完成')?.click();
+        second.click();
+        read.resolve();
+        const notice = await vi.waitFor(() => {
+            const node = document.querySelector('[role="status"]');
+            expect(node?.textContent).toContain('准备保存 1 条笔记');
+            return node;
+        });
+        expect(sendMessage).toHaveBeenCalledWith({studyAction: 'knownWords', data: {known: {add: ['architecture']}}});
+        notice.querySelector('button')?.click();
+        await vi.waitFor(() => expect(document.querySelector('[role="status"]')).toBeNull());
+
+        sendMessage.mockClear();
+        read = deferPromise();
+        await marks.openPageWords();
+        panelButton('完成')?.click();
+        history.replaceState(null, '', '/other');
+        read.resolve();
+        await vi.waitFor(() => expect(panelButton('重新读取本页')).toBeDefined());
+        expect(sendMessage.mock.calls).toEqual([[{studyAction: 'knownWords', data: {}}]]);
     } finally {
         // eslint-disable-next-line no-underscore-dangle -- Stop mutation callbacks before tearing down the document.
         marks._reset();
