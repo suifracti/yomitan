@@ -551,7 +551,12 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
     const recall = mode === 'recall';
     const translating = mode === 'translation';
     const roundMaterial = mode === 'dictation' ? '可练的原声' : (translating ? '带译文的原句' : '可练的原句');
-    const retryLabel = translating ? '重练标记的' : (recall ? '再练没对上的' : '重听没对上的');
+    const retryLabel = {
+        cloze: '重练没对上的',
+        dictation: '重听没对上的',
+        recall: '再练没对上的',
+        translation: '重练标记的',
+    }[mode];
     let queue = prompts;
     let index = 0;
     let retrying = false;
@@ -665,7 +670,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
                 .replaceAll(/\s+/g, ' ');
             const difference = dictation && guess ? differingWords(guess, answer) : null;
             const agrees = !translating && Boolean(guess) && (difference ? difference.written.length + difference.original.length === 0 : normalize(guess) === normalize(answer));
-            if (guess && !agrees && (dictation || recall)) { missed.add(prompt); }
+            if (guess && !agrees && (dictation || kind === 'cloze')) { missed.add(prompt); }
             if (dictation) {
                 if (difference && !agrees) {
                     const comparison = document.createElement('div');
@@ -717,7 +722,7 @@ function showSentencePractice(panel, prompts, mode, makeAudioButton, stopAudio, 
                 const source = createSourceLine(row.entry, row.entry.title || '', row.articleHref);
                 if (source) { form.before(source); }
             }
-            const different = dictation ? '划线的是两边没对上的词，可以再听一次。' : '和原句用词不同。';
+            const different = dictation ? '划线的是两边没对上的词，可以再听一次。' : `和原句用词不同。你填的是「${guess}」。`;
             const prefix = guess ? (agrees ? '和原句一致。' : different) : '';
             const feedback = document.createElement('p');
             feedback.tabIndex = -1;

@@ -621,7 +621,7 @@ describe('study library page', () => {
         expect(mocks.studyCall.mock.calls.some(([action]) => action === 'libraryAudioRead')).toBe(false);
     });
 
-    test('uses saved sentences for a short cloze without grading or changing the records', async () => {
+    test('uses saved sentences for a short cloze and retries only answers that did not match', async () => {
         vi.resetModules();
         makePageDom();
         vi.stubGlobal('chrome', {runtime: {getURL: (name) => `chrome-extension://test${name}`}});
@@ -631,6 +631,7 @@ describe('study library page', () => {
             {word: 'play', sentence: 'The display is clear.'},
             {word: 'left', sentence: 'She left when he left.'},
             {word: 'charges', sentence: 'The bank charges a fee.', sense: {gloss: '收费'}},
+            {word: 'shelter', sentence: 'Our shelter was dry.'},
         ];
         const items = entries.map((entry, index) => ({id: String(index + 1).repeat(32), vaultSaved: true, entry: {...entry, language: 'en', url: '', title: ''}}));
         mocks.studyCall.mockImplementation(async (action, payload) => {
@@ -647,7 +648,7 @@ describe('study library page', () => {
         const panel = /** @type {HTMLElement} */ (document.querySelector('#study-library-practice'));
         const search = /** @type {HTMLElement} */ (document.querySelector('#study-library-search'));
         expect(search.hidden).toBe(true);
-        expect(panel.textContent).toContain('1 / 2');
+        expect(panel.textContent).toContain('1 / 3');
         expect(panel.textContent).toContain('We […] a shelter.');
         expect(panel.textContent).toContain('搭建');
         expect(panel.textContent).not.toContain('built');
@@ -658,6 +659,7 @@ describe('study library page', () => {
         };
         submit('build');
         expect(panel.textContent).toContain('和原句用词不同');
+        expect(panel.textContent).toContain('你填的是「build」');
         expect(panel.textContent).toContain('We built a shelter.');
         /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
         expect(panel.textContent).toContain('The bank […] a fee.');
@@ -665,7 +667,19 @@ describe('study library page', () => {
         expect(panel.textContent).toContain('和原句一致');
         expect(new URL(/** @type {HTMLAnchorElement} */ (panel.querySelector('a')).href).searchParams.get('studyRecordId')).toBe(items[3].id);
         /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
+        expect(panel.textContent).toContain('Our […] was dry.');
+        [...panel.querySelectorAll('button')].find((button) => button.textContent === '直接看答案')?.click();
+        /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
         expect(panel.textContent).toContain('本轮结束');
+        expect(panel.textContent).toContain('重练没对上的 1 句');
+        [...panel.querySelectorAll('button')].find((button) => button.textContent === '重练没对上的 1 句')?.click();
+        expect(panel.textContent).toContain('重练没对上的 · 1 / 1');
+        expect(panel.textContent).toContain('We […] a shelter.');
+        expect(panel.querySelector('input')?.value).toBe('');
+        expect(panel.textContent).not.toContain('We built a shelter.');
+        submit('built');
+        /** @type {HTMLButtonElement} */ (panel.querySelector('[data-cloze-next]')).click();
+        expect(panel.textContent).not.toContain('重练没对上的');
         start.click();
         expect(panel.hidden).toBe(true);
         expect(search.hidden).toBe(false);
