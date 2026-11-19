@@ -207,13 +207,14 @@ export class PageTranslate {
         chrome.storage.onChanged.addListener((changes, area) => {
             if (area !== 'local' || !changes[PAGE_PREFS_KEY]) { return; }
             const prefs = /** @type {PagePrefs} */ (changes[PAGE_PREFS_KEY].newValue);
+            const previousMode = this.prefs.mode;
             this.prefs = {...DEFAULT_PAGE_PREFS, ...prefs};
-            this.paint();
-            document.dispatchEvent(new Event('study-page-change'));
+            if (this.prefs.mode !== previousMode) { this.paint(); }
             if (this.prefs.selection === 'off') {
                 this.selectionUi?.remove();
                 this.closeSelectionCard();
             }
+            document.dispatchEvent(new Event('study-page-change'));
         });
         document.addEventListener('keydown', (event) => {
             if (event.altKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyA' && !this.editing(event.target)) {
@@ -308,10 +309,14 @@ export class PageTranslate {
         });
     }
 
-    /** Switch presentation without replacing, moving or serializing original nodes. */
-    paint() {
-        document.dispatchEvent(new Event('study-page-change'));
-        for (const [original, row] of this.rows) {
+    /**
+     * Switch presentation without replacing, moving or serializing original nodes.
+     * @param {Element} [target] Only paint this row when rendering or expanding it.
+     */
+    paint(target) {
+        for (const original of target ? [target] : this.rows.keys()) {
+            const row = this.rows.get(original);
+            if (!row) { continue; }
             const only = this.prefs.mode === 'translation' && !row.manual && !row.node.classList.contains('study-page-error');
             const hidden = only && row.originalToggle?.getAttribute('aria-expanded') !== 'true';
             original.classList.toggle('study-original-hidden', hidden);
@@ -360,7 +365,7 @@ export class PageTranslate {
                 const expand = button.getAttribute('aria-expanded') !== 'true';
                 button.setAttribute('aria-expanded', String(expand));
                 button.textContent = expand ? '收起原文' : '展开原文';
-                this.paint();
+                this.paint(original);
                 if (expand && event.detail === 0) { /** @type {?HTMLElement} */ (original.querySelector(ORIGINAL_CONTROLS))?.focus(); }
             };
             originalToggle = button;
@@ -368,7 +373,7 @@ export class PageTranslate {
         }
         this.rows.set(original, {node, text, snapshot: this.source(original), language: pageLanguage(original), manual, originalToggle, sourceIsCurrent});
         if (sourceIsCurrent) { this.watchChanges(); }
-        this.paint();
+        this.paint(original);
         return node;
     }
 
