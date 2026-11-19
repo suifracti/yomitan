@@ -13,7 +13,7 @@
 | 记笔记、制卡、保存/同步；两张听写卡播放同一段、同词不同原声；只在Anki、重建、需处理 | L-002；StudyLibrary.sync_cards、study_sync.orphan_action；docs/youtube-study-wiring.md |
 | Anki 换了账户，一批已有的卡突然显示被删；读卡期间切了账户 | L-002；study_settings.auto_sync、study_sync.sync_profile / reconcile |
 | 只记得中文意思、视频标题或几个词，找不到以前那句 | L-002；study_index.indexed_page、study-library.js 的 loadPage |
-| 手里只有带时间的视频链接或课程链接，想找以前记的原句 | L-002；study_sources.source_search_key、study_index.indexed_page |
+| 手里只有带时间的视频链接或课程链接，想找以前记的原句 | L-002；study_sources.source_search_key / source_search_time、study_index.indexed_page |
 | 切分类还在读上一个分类；取消的收藏又出现 | L-002；study-library.js 的 loadPage、refreshSavedWords |
 | 模板说兼容但题面还是旧的；怎么换回自己的卡面 | L-002；study_cards.review_view_state、tools/apply-study-card-view.py |
 | 今天还有到期的卡，学习库和角标却是 0 | L-002；study_stats.anki_today、getDeckStats 的牌组编号 |
@@ -175,7 +175,7 @@
 
 **记得「避风港」，想找回当时那句话**：学习库的 `libraryList` 在原有学习索引里先按分类和线索过滤，再每十条分页。空格连接的线索必须同属一条记录，词头或原形全字匹配、连续短语优先；结果保留原记录号、原句和来源时间。不要对整个记录做 JSON 字符串匹配，也不要为搜索逐条核对 Anki。旧桥只筛已读页；仅在浏览器的收藏仍可在「收藏」里找。见[临时库验证](youtube-study-wiring.md#2026-11-18-用中文意思或几段线索找回旧原句)。
 
-**有原链接就按同一素材找**：完整网页链接保留大小写并使用 `page_source_key`，不走旧文本查询的剥查询串或大小写折叠。YouTube 带时间的分享地址和原播放页同组，B 站选集、普通网页有意义的查询与哈希路由保留。按素材和列表用同一分组，视频结果按时间，不让同标题混进来。链接上限沿原来源字段 2000 字，普通文本请求仍为 240 字。只读同一索引，不访问粘贴的网页或打开附件。见[按链接查笔记](youtube-study-wiring.md#2026-11-19-粘贴来源链接也能找回笔记)。
+**有原链接就按同一素材找**：完整网页链接保留大小写并使用 `page_source_key`，不走旧文本查询的剥查询串或大小写折叠。YouTube 带时间的分享地址和原播放页同组，B 站选集、普通网页有意义的查询与哈希路由保留，不让同标题混进来。搜到有效的 YouTube／B 站视频时间时，同组结果按距离由近到远排，距离相同沿时间线排，无时间笔记放最后；不带时间的链接仍按播放顺序。索引返回秒数 `nearTime` 供页面提示，不改分组、总条数或练习。链接上限沿原来源字段 2000 字，普通文本仍为 240 字。只读索引，不访问粘贴的网页或打开附件。见[按时间找原句](youtube-study-wiring.md#2026-11-19-粘贴视频时间链接先看到附近的原句)。
 
 下次：先查当前产品规格和保存链，而不是重新增加一个同步系统。保留具体版本、对象 ID 与冲突/删除语义；缺真实证据写未知。此前仅为要求与历史证据边界，2026-11-11以下新增临时链证据不代表正式库通过。
 

@@ -1103,6 +1103,8 @@ async function initializePage() {
         const indexedCloze = () => canFindCloze && ['all', 'saved', 'source', 'word'].includes(category);
         let listedQuery = '';
         let listedCategory = 'all';
+        /** @type {number | null} */
+        let listedNearTime = null;
         let searchTimer = 0;
         /** @type {SensePracticeItem[]} */
         let practicePair = [];
@@ -1831,7 +1833,8 @@ listedQuery :
                 } else if (waiting) {
                     setStatus('正在学习库里找…');
                 } else if (loaded) {
-                    setStatus(`当前分类找到 ${total} 条，已显示 ${rows.length} 条${localRows.length > 0 ? `，另有 ${localRows.length} 条本地收藏` : ''}。`);
+                    const proximity = listedNearTime === null ? '' : `笔记优先显示 ${timeLabel(listedNearTime * 1000)} 附近的原句。`;
+                    setStatus(`当前分类找到 ${total} 条，已显示 ${rows.length} 条${localRows.length > 0 ? `，另有 ${localRows.length} 条本地收藏` : ''}。${proximity}`);
                 }
             }
         }
@@ -1906,7 +1909,7 @@ listedQuery :
                     focusRecall = '';
                     value = await studyCall('libraryList', {...libraryScope(scope), ...params});
                 }
-                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, canFindCloze?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], recallRound?: StudyLibraryRecord[], recallTotal?: number, sources?: SourceShelfItem[]}|null} */ (value);
+                const result = /** @type {{total?: number, needsAttention?: number, canSearch?: boolean, canFindCloze?: boolean, practicePair?: SensePracticeItem[], practiceExamples?: SensePracticeItem[], recallRound?: StudyLibraryRecord[], recallTotal?: number, sources?: SourceShelfItem[], nearTime?: number}|null} */ (value);
                 if (shelf && !result?.sources) { throw new Error(SOURCES_UPDATE_BRIDGE); }
                 canSearch = result?.canSearch === true;
                 if (!shelf && !indexed && canSearch && ((tab !== 'word' && search.value.trim()) || scope !== category)) { queuedSearch = true; }
@@ -1928,6 +1931,7 @@ listedQuery :
                 }
                 listedQuery = query;
                 listedCategory = tab;
+                listedNearTime = result?.nearTime ?? null;
                 for (const record of page) {
                     if (record && typeof record.id === 'string') { records.set(record.id, readOnly ? record : {...record, reconcileState: 'checking'}); }
                 }

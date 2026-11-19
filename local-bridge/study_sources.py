@@ -21,6 +21,24 @@ def source_search_key(query):
         return ''
 
 
+def source_search_time(query, source):
+    """Read a time hint only for a recognized video, without changing its group."""
+    youtube = source.startswith('youtube:')
+    if not youtube and not source.startswith(f'web:{BILIBILI_HOST}/video/'):
+        return None
+    parsed = urllib.parse.urlsplit(query)
+    params = urllib.parse.parse_qs(parsed.query)
+    stamp = params.get('t', [''])[0]
+    if youtube and not stamp:
+        stamp = params.get('start', urllib.parse.parse_qs(parsed.fragment).get('t', ['']))[0]
+    if re.fullmatch(r'[0-9]{1,6}s?', stamp):
+        return int(stamp.rstrip('s'))
+    if youtube and (clock := re.fullmatch(r'(?:(\d{1,2})h)?(?:(\d{1,3})m)?(?:(\d{1,3})s)?', stamp)) and any(clock.groups()):
+        hours, minutes, seconds = (int(value or 0) for value in clock.groups())
+        return hours * 3600 + minutes * 60 + seconds
+    return None
+
+
 def page_source_key(url):
     """Group related notes for browsing without changing their source identity."""
     if not url.startswith(('http://', 'https://')):

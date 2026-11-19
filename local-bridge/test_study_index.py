@@ -20,6 +20,8 @@ class RecordIndexTests(AutoSyncTests):
         youtube = 'https://www.youtube.com/watch?v=AbCdEfGhIjK'
         early = save('harbor', youtube, 4)
         late = save('beacon', 'https://youtu.be/AbCdEfGhIjK?t=90', 90)
+        for second in range(10, 30, 2):
+            save(f'example{second}', youtube, second)
         save('shore', youtube.lower())
         bilibili = 'https://www.bilibili.com/video/BV1xx411c7mD'
         part2 = save('charge', bilibili + '?p=2')
@@ -34,11 +36,16 @@ class RecordIndexTests(AutoSyncTests):
             def lookup(link, **params):
                 return self.library.handle({**request, 'query': link, **params})
 
-            shared = 'https://youtu.be/AbCdEfGhIjK?t=40s'
-            self.assertEqual([r['id'] for r in lookup(shared)['items']], [early, late])
+            ordinary = lookup(youtube)
+            self.assertEqual(ordinary['items'][0]['id'], early)
+            self.assertNotIn(late, [item['id'] for item in ordinary['items']])
+            shared = 'https://youtu.be/AbCdEfGhIjK?t=1m30s'
+            nearby = lookup(shared)
+            self.assertEqual(nearby['items'][0]['id'], late)
+            self.assertEqual((nearby['nearTime'], nearby['total']), (90, 12))
             self.assertEqual([r['id'] for r in lookup(bilibili + '?p=2&t=88')['items']], [part2])
             self.assertEqual([r['id'] for r in lookup(page + '#/PartTwo:~:text=' + '%E4%BA%8C' * 40)['items']], [article])
-            self.assertEqual([row['records'] for row in lookup(shared, scope='sources')['sources']], [2])
+            self.assertEqual([row['records'] for row in lookup(shared, scope='sources')['sources']], [12])
         self.assertEqual(self.calls, [])
 
     def test_source_shelf_groups_saved_contexts_and_search_keeps_whole_group_counts(self):

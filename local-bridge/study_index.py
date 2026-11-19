@@ -11,7 +11,7 @@ import tempfile
 import time
 
 from study_cards import card_receipts, linked_note_ids, with_card_progress
-from study_sources import page_source_key, source_search_key, with_article_href
+from study_sources import page_source_key, source_search_key, source_search_time, with_article_href
 from study_media import has_current_audio, with_audio_context
 
 PAGE_SIZE = 10
@@ -128,6 +128,7 @@ def indexed_page(rows, p, *, complete=True):
     matches = []
     source_recall = scope == 'source' and bool(source) and not offset and not practice
     recent_only = scope == 'recent-recall' or recalling
+    near_time = source_search_time(raw_query, link_source) if not practice and not recent_only else None
     if recent_only or source_recall:
         from study_senses import recall_round, recent_recall
         now = time.time()
@@ -161,6 +162,8 @@ def indexed_page(rows, p, *, complete=True):
         # For a single source, follow its video timeline when it has one.
         # The existing recency order still breaks ties and orders untimed notes.
         matches.sort(key=lambda match: match[2]['entry'].get('videoTime', float('inf')))
+        if near_time is not None:
+            matches.sort(key=lambda match: abs(match[2]['entry'].get('videoTime', float('inf')) - near_time))
     focus_ids = set()
     focus = p.get('focus')
     if focus and scope == 'word':
@@ -188,6 +191,7 @@ def indexed_page(rows, p, *, complete=True):
             unique.setdefault(key, match)
         matches = list(unique.values())
     extras = practice_material([row for _, _, row in matches], head) if scope == 'word' and not offset and not practice and not focus and p.get('language', 'en') == 'en' else {}
+    if near_time is not None: extras['nearTime'] = near_time
     page = [row for _, _, row in matches[offset:offset + PAGE_SIZE]]
     primary_translations = {translation_sentence_key(row['entry']['sentence']): row['entry']['translation'].strip()
                             for row in page} if translating else {}
